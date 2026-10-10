@@ -22,7 +22,7 @@ import remarkGfm from "remark-gfm";
 import {
   contentURL,
   decideDraft,
-  getActiveWorkspaceId,
+  ensureActiveWorkspace,
   type DraftBlock,
   type HTMLBlock,
   type MessageBlock,
@@ -191,7 +191,9 @@ function DraftCard({ block }: { block: DraftBlock }) {
   const open = serverStatus === "pending" && decided === null;
 
   async function decide(decision: "approve" | "revise" | "cancel") {
-    const workspaceId = getActiveWorkspaceId();
+    // Resolved rather than only read, so a decision is not refused on a device
+    // that has no workspace stored yet.
+    const workspaceId = await ensureActiveWorkspace();
     if (!workspaceId) {
       setError("Pilih workspace dulu.");
       return;

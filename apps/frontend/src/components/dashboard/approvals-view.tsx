@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   decideDraft,
-  getActiveWorkspaceId,
+  ensureActiveWorkspace,
   listApprovalPolicies,
   listAudit,
   listDrafts,
@@ -69,29 +69,32 @@ export function ApprovalsView() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [trail, setTrail] = useState<{ draft: Draft; revisions: DraftRevision[] } | null>(null);
-
-  const workspaceId = getActiveWorkspaceId();
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!workspaceId) {
-      setError("Pilih workspace dulu.");
-      return;
-    }
-
     const session = await refreshSession();
     if (!session.ok) {
       setError("Sesi berakhir. Masuk lagi.");
       return;
     }
 
+    // Resolved from the session rather than only read from storage, so an account
+    // that owns a workspace is not told to pick one it cannot see.
+    const active = await ensureActiveWorkspace();
+    setWorkspaceId(active);
+    if (!active) {
+      setError("Pilih workspace dulu.");
+      return;
+    }
+
     const [draftResult, policyResult, auditResult] = await Promise.all([
-      listDrafts(workspaceId, {
+      listDrafts(active, {
         status: statusFilter,
         agent_id: agentFilter,
         action_kind: kindFilter,
       }),
-      listApprovalPolicies(workspaceId),
-      listAudit(workspaceId, 50),
+      listApprovalPolicies(active),
+      listAudit(active, 50),
     ]);
 
     if (!draftResult.ok) {
@@ -102,7 +105,7 @@ export function ApprovalsView() {
     setDrafts(draftResult.data);
     if (policyResult.ok) setPolicies(policyResult.data);
     if (auditResult.ok) setAudit(auditResult.data);
-  }, [workspaceId, statusFilter, agentFilter, kindFilter]);
+  }, [statusFilter, agentFilter, kindFilter]);
 
   // The load is wrapped so the effect's body does not call setState directly:
   // the state updates land in the promise's own turn rather than during render.

@@ -213,6 +213,38 @@ export async function refreshSession(): Promise<ApiResult<Session>> {
   return result;
 }
 
+/**
+ * ensureActiveWorkspace returns the workspace this tab is working in, choosing one
+ * when the browser has none stored.
+ *
+ * The id lives in local storage, and only the onboarding form ever wrote it. That
+ * made "which workspace am I in" a property of one browser: signing in on a second
+ * device, or in a private window, left every screen saying "Pilih workspace dulu"
+ * with no way out — the account owned a workspace the app could not see. The
+ * session is refreshed first because choosing a workspace needs a token, and the
+ * first workspace is the right default for an account that owns one.
+ */
+export async function ensureActiveWorkspace(): Promise<string | null> {
+  const stored = getActiveWorkspaceId();
+  if (stored) {
+    return stored;
+  }
+
+  const session = await refreshSession();
+  if (!session.ok) {
+    return null;
+  }
+
+  const result = await listWorkspaces();
+  if (!result.ok || result.data.length === 0) {
+    return null;
+  }
+
+  const workspace = result.data[0].id;
+  setActiveWorkspaceId(workspace);
+  return workspace;
+}
+
 /** logout revokes the session and clears the cookie. */
 export async function logout(): Promise<ApiResult<null>> {
   const result = await request<null>("/auth/logout", { method: "POST" });

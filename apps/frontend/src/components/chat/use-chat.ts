@@ -18,7 +18,7 @@ import {
   ChatConversation,
   ChatMessage,
   MessageEventPayload,
-  getActiveWorkspaceId,
+  ensureActiveWorkspace,
   listConversations,
   listMessages,
   openDirectConversation,
@@ -89,7 +89,10 @@ export function useChat(): ChatState {
   }, [active]);
 
   const refresh = useCallback(async () => {
-    const workspace = getActiveWorkspaceId();
+    // The workspace is resolved before it is read: an account that owns one but
+    // has none stored — a second device, a private window — would otherwise be
+    // told to pick a workspace it has no way to pick.
+    const workspace = await ensureActiveWorkspace();
     setWorkspaceId(workspace);
     if (!workspace) {
       setLoading(false);
