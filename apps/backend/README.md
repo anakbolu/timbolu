@@ -54,6 +54,7 @@ make smoke-task      # the task runtime end to end against the compose stack
 | `llm` | `/api/llm/*`, `/api/agents/:id/model` | The model gateway: provider configuration, fallback chain, per-Bolu override, usage report |
 | `chat` | `/api/conversations/*`, `/api/events*`, `/content/:ref` | Conversations with block messages, attachments, the activity stream, and the sandboxed content origin |
 | `task` | `/api/tasks*` | The durable agent runtime: the task a Bolu runs, the rounds it recorded, the handoffs, and the cancel |
+| `approval` | `/api/drafts*`, `/api/approval-policies`, `/api/audit` | The outbound gate: the draft a Bolu proposes, the policy that decides whether a person is asked, and the trail |
 
 ### Authentication
 
@@ -222,6 +223,49 @@ read back inside the transaction that creates it.
 - **A tool reaches the model only if something can run it.** The registry applies
   both filters — the grant (EPIC 3) and an executor (EPIC 8) — so a tool nothing
   can execute is not offered, because offering it teaches the model to call it.
+
+### Approval and drafts
+
+- **An action that reaches outside Bolu waits for a person.** A tool labelled
+  `write_external` never runs: it becomes a draft, the task parks as
+  `waiting_approval`, and the workflow waits — without holding a worker slot.
+- **An action kind with no stored policy is `always_draft`.** That is enforced in
+  the service, not by hoping every workspace has a row: a missing policy is the
+  safe answer. Onboarding also seeds an explicit conservative row for every kind,
+  so the policy screen always shows something to edit and "no policy for sending
+  email" is a state that cannot exist.
+- **`auto` is a real decision with a ceiling.** A workspace may allow one kind of
+  action to go out unattended, but only while the value it carries is within
+  `max_amount`. An action whose amount cannot be read is treated as unbounded, so
+  a ceiling cannot be satisfied by a payload that never states one. An auto-send
+  is still recorded: the draft row is written and marked sent, so "what did the
+  agents send" has an answer even when nobody was asked.
+- **Approving carries the action out and ends the task, with no further model
+  call.** The person approved what to send; asking the model to produce it again
+  would spend tokens to reach a decision already made. A revision does the
+  opposite: it returns the task to its agent with the note, bounded by
+  `MaxRevisions` so a reviewer and an agent cannot argue past the task's
+  allowance.
+- **A revision ends the draft it was made against.** The agent produces a new
+  one, so the old row keeps `status = 'revise'` and the trail keeps what the
+  person was looking at. `draft_revisions` is what makes "why was this sent,
+  after three attempts" answerable.
+- **The working day decides when, not whether.** An action approved outside the
+  workspace's hours is held with a reason and a `not_before`, and the workflow
+  waits on a Temporal timer rather than re-checking: the wait is durable, so a
+  worker that dies during it resumes it. The hours are read at the moment the
+  decision is carried out, so changing them or the timezone recomputes the hold.
+- **A decision is recorded once.** The store only decides a draft that is still
+  `pending`, so a duplicate signal changes nothing and a second send cannot
+  happen. The chat card and the dashboard both write through the same endpoint,
+  which is what keeps the two surfaces from disagreeing.
+- **Every step is auditable.** `draft.created`, `draft.approved`,
+  `draft.revised`, `draft.sent`, and `policy.updated` land in `audit_logs` with
+  the actor, so a send can be traced to its draft, its task, and the person who
+  allowed it.
+- **Nothing is marked sent that did not leave.** With no integration executor yet
+  (EPIC 8 owns it) the action stops at the send boundary and the task fails with
+  that reason, rather than recording a send that never happened.
 
 ## Configuration
 

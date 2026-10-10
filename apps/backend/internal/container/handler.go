@@ -7,6 +7,7 @@ import (
 	"go.uber.org/zap"
 
 	agenthandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/handler"
+	approvalhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/handler"
 	authhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/handler"
 	chathandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/handler"
 	healthhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/handler"
@@ -29,6 +30,7 @@ type Handlers struct {
 	LLM       *llmhandler.Handler
 	Chat      *chathandler.Handler
 	Task      *taskhandler.Handler
+	Approval  *approvalhandler.Handler
 }
 
 // newHandlers builds every handler from the service set. Handlers receive the
@@ -65,6 +67,9 @@ func newHandlers(services *Services, log *zap.Logger, cfg *config.Config) *Handl
 	}
 	if services.Task != nil {
 		handlers.Task = taskhandler.New(services.Task, log)
+	}
+	if services.Approval != nil {
+		handlers.Approval = approvalhandler.New(services.Approval, log)
 	}
 
 	return handlers
@@ -145,6 +150,16 @@ func (c *Container) registerRoutes() {
 		taskhandler.Routes(tenant, c.Handlers.Task)
 	}
 
+	// Approvals: every member reads the drafts and decides on them, because the
+	// person who notices a wrong invoice is not always the owner. Changing what
+	// the workspace allows unattended needs a managing role, the way the provider
+	// keys do.
+	if c.Handlers.Approval == nil {
+		registerApprovalFallback(tenant)
+	} else {
+		approvalhandler.Routes(tenant, c.Handlers.Approval)
+	}
+
 	// Model configuration is read by every member, because the Bolu screens show
 	// which model a Bolu uses, and written by a managing role, because it holds
 	// the provider keys.
@@ -158,6 +173,9 @@ func (c *Container) registerRoutes() {
 	registry := api.Group("", c.requireUser(), c.requireTenant(), requireRole(domain.RoleOwner, domain.RoleAdmin))
 	if c.Handlers.Agent != nil {
 		agenthandler.ManagerRoutes(registry, c.Handlers.Agent)
+	}
+	if c.Handlers.Approval != nil {
+		approvalhandler.ManagerRoutes(registry, c.Handlers.Approval)
 	}
 	if c.Handlers.Chat != nil {
 		chathandler.ManagerRoutes(registry, c.Handlers.Chat)
@@ -219,6 +237,9 @@ func (c *Container) registerUnavailableModules(api fiber.Router) {
 	if c.Handlers.Task == nil {
 		registerTaskFallback(api)
 	}
+	if c.Handlers.Approval == nil {
+		registerApprovalFallback(api)
+	}
 }
 
 // registerAgentFallback answers 503 for the registry routes.
@@ -244,6 +265,14 @@ func contentFrameAncestors(cfg *config.Config) []string {
 	// Without a configured frontend the safest useful default is the API itself,
 	// which is where a local deployment serves the app from.
 	return []string{"'self'"}
+}
+
+// registerApprovalFallback answers 503 for the approval routes.
+func registerApprovalFallback(router fiber.Router) {
+	message := "the approval gate is not configured"
+	router.All("/drafts*", unavailable(message, "approval_not_configured"))
+	router.All("/approval-policies*", unavailable(message, "approval_not_configured"))
+	router.All("/audit*", unavailable(message, "approval_not_configured"))
 }
 
 // registerTaskFallback answers 503 for the task routes.

@@ -75,6 +75,14 @@ var (
 	// ErrToolNotAvailable means nothing can execute the tool that was asked for,
 	// which is a configuration fact rather than a failure to retry.
 	ErrToolNotAvailable = errors.New("task: tool is not available")
+	// ErrDraftNoSender means nothing can carry an approved action out, which is a
+	// configuration fact rather than a failure to retry.
+	ErrDraftNoSender = errors.New("task: no executor can carry this action out")
+	// ErrDraftNotApproved means the runtime tried to send a draft nobody approved.
+	ErrDraftNotApproved = errors.New("task: the draft is not approved")
+	// ErrRevisionLimitReached stops a task whose action keeps being sent back.
+	// The message is what the user reads, so it is in their language.
+	ErrRevisionLimitReached = errors.New("tugas berhenti: aksi ini terlalu banyak dikembalikan untuk direvisi")
 )
 
 // Limits bound what one task may spend. Zero means the configured default.
@@ -90,6 +98,10 @@ type Limits struct {
 	// megabyte would otherwise be re-sent to the model on every later round,
 	// which is the costliest way to run out of tokens.
 	MaxToolResultBytes int
+	// MaxRevisions bounds how many times a person may send one action back.
+	// Without it a reviewer and an agent can argue for as long as the task's
+	// token allowance lasts, which is a cost nobody agreed to.
+	MaxRevisions int
 }
 
 // DefaultLimits are the bounds a deployment runs with when the configuration
@@ -100,6 +112,7 @@ var DefaultLimits = Limits{
 	MaxTokens:          120_000,
 	MaxHandoffDepth:    2,
 	MaxToolResultBytes: 16 * 1024,
+	MaxRevisions:       3,
 }
 
 // Normalise fills the zero fields from the defaults, so a partially configured
@@ -116,6 +129,9 @@ func (l Limits) Normalise() Limits {
 	}
 	if l.MaxToolResultBytes <= 0 {
 		l.MaxToolResultBytes = DefaultLimits.MaxToolResultBytes
+	}
+	if l.MaxRevisions <= 0 {
+		l.MaxRevisions = DefaultLimits.MaxRevisions
 	}
 	return l
 }
@@ -376,6 +392,21 @@ type Block struct {
 	Body []byte
 }
 
+// Turn is one message of the conversation the agent reads.
+//
+// It is separate from Message because a model's turn carries more than prose: an
+// assistant turn may ask for tools, and the results of those tools are their own
+// turn. The runtime has to keep both, or the model would be asked the same
+// question every round and never learn what its own tool calls answered.
+type Turn struct {
+	Role llmdomain.Role
+	Text string
+	// ToolCalls is what the assistant asked for, on an assistant turn.
+	ToolCalls []llmdomain.ToolCall
+	// ToolResults is what those calls answered, on a tool turn.
+	ToolResults []llmdomain.ToolResult
+}
+
 // FromAgent reports whether a Bolu wrote the message.
 func (m Message) FromAgent() bool { return m.AgentID != uuid.Nil }
 
@@ -508,8 +539,30 @@ type ToolResult struct {
 // the policy that decides whether a draft is even needed; this port is how a
 // task asks.
 type DraftGate interface {
-	// RequestDraft stores the proposal and returns the draft a human decides on.
+	// RequestDraft stores the proposal and returns the draft a human decides on,
+	// or reports that the workspace's policy allowed it to go out unattended.
 	RequestDraft(ctx context.Context, scope Scope, request DraftRequest) (Draft, error)
+	// CarryOut executes a draft a person approved.
+	//
+	// It reports a hold rather than sending when the workspace is closed, which is
+	// what lets the workflow wait for the window to open instead of the runtime
+	// deciding on its own that the action may leave now.
+	CarryOut(ctx context.Context, scope Scope, draftID uuid.UUID) (DraftExecution, error)
+}
+
+// DraftExecution is what carrying out an approved action produced.
+type DraftExecution struct {
+	// Status is the draft's status afterwards: sent when it left, approved when
+	// it is still held.
+	Status string
+	// Content is what the action answered.
+	Content json.RawMessage
+	// Held says the action is waiting for the workspace's working hours, and
+	// NotBefore is when it may leave.
+	Held      bool
+	NotBefore *time.Time
+	// Reason explains a hold in the user's words.
+	Reason string
 }
 
 // DraftRequest is one action awaiting a decision.
@@ -531,6 +584,12 @@ type Draft struct {
 	Status string
 	// Note is what the person said when they decided.
 	Note string
+	// Auto says the workspace's policy allowed the action to go out without a
+	// person, which is a decision the task records rather than a draft it waits
+	// on.
+	Auto bool
+	// Content is what an action that already ran answered.
+	Content json.RawMessage
 }
 
 // Draft statuses, matching the check constraint on `drafts.status`.

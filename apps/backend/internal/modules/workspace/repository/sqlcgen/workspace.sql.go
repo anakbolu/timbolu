@@ -386,6 +386,27 @@ func (q *Queries) GetWorkspace(ctx context.Context, id uuid.UUID) (Workspace, er
 	return i, err
 }
 
+const getWorkspaceHours = `-- name: GetWorkspaceHours :one
+SELECT timezone, work_hours_start, work_hours_end
+FROM workspaces WHERE id = $1
+`
+
+type GetWorkspaceHoursRow struct {
+	Timezone       string
+	WorkHoursStart pgtype.Time
+	WorkHoursEnd   pgtype.Time
+}
+
+// The window a workspace lets actions leave in. It is read on its own rather than
+// through GetWorkspace because the approval runtime asks for it on every send and
+// only needs the three columns the rule is about.
+func (q *Queries) GetWorkspaceHours(ctx context.Context, id uuid.UUID) (GetWorkspaceHoursRow, error) {
+	row := q.db.QueryRow(ctx, getWorkspaceHours, id)
+	var i GetWorkspaceHoursRow
+	err := row.Scan(&i.Timezone, &i.WorkHoursStart, &i.WorkHoursEnd)
+	return i, err
+}
+
 const listInvitations = `-- name: ListInvitations :many
 SELECT id, workspace_id, email, role, token_hash, invited_by, expires_at, accepted_at, accepted_by, created_at FROM invitations
 WHERE workspace_id = $1 AND accepted_at IS NULL

@@ -142,6 +142,22 @@ type Draft struct {
 	IdempotencyKey string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	NotBefore      *time.Time
+	BlockedReason  string
+	Title          string
+	Summary        string
+	CardMessageID  *uuid.UUID
+}
+
+type DraftRevision struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	DraftID     uuid.UUID
+	Revision    int32
+	Note        string
+	Payload     []byte
+	DecidedBy   *uuid.UUID
+	CreatedAt   time.Time
 }
 
 type EmailVerificationToken struct {

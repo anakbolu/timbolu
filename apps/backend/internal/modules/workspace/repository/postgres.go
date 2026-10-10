@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository/sqlcgen"
@@ -35,6 +36,37 @@ type TemplateProvisioner interface {
 	Provision(ctx context.Context, tx pgx.Tx, workspaceID, teamID uuid.UUID) error
 }
 
+// PolicyProvisioner gives a new workspace the conservative approval policies it
+// starts with, inside the onboarding transaction.
+//
+// It is declared here rather than in the domain for the same reason the template
+// provisioner is: its signature carries a transaction handle, which is an
+// infrastructure type, and the container hands over the approval module's
+// repository so neither module imports the other.
+type PolicyProvisioner interface {
+	SeedPolicies(ctx context.Context, tx pgx.Tx, workspaceID uuid.UUID) error
+}
+
+// OnboardedMarker records that an account finished onboarding, inside the same
+// transaction that creates its workspace.
+//
+// It is declared here for the same reason as the two above: the signature carries
+// a transaction handle, so the container hands over the auth module's repository
+// and neither module imports the other. Marking the account here rather than in a
+// second call is what keeps a person from owning a workspace that their session
+// does not believe in — which is the shape that sends them back to the onboarding
+// screen after every sign-in.
+type OnboardedMarker interface {
+	MarkOnboardedInTx(ctx context.Context, tx pgx.Tx, userID uuid.UUID) error
+}
+
+// WorkingHours is the window a workspace lets actions leave in.
+type WorkingHours struct {
+	Start    string
+	End      string
+	Timezone string
+}
+
 // Repository is the Postgres-backed implementation of domain.Repository.
 type Repository struct {
 	pool *database.Pool
@@ -42,6 +74,28 @@ type Repository struct {
 	// It is the agent module's repository, handed over by the container so this
 	// module never imports it.
 	provisioner TemplateProvisioner
+	// policies seeds the approval policies inside the same transaction, so a
+	// workspace never exists without one for every action that reaches outside it.
+	policies PolicyProvisioner
+	// onboarded marks the account finished, inside the same transaction, so owning
+	// a workspace and the session believing it are one fact rather than two.
+	onboarded OnboardedMarker
+}
+
+// SetPolicyProvisioner installs the approval repository as the second
+// provisioner. The container calls it after both are built.
+func (r *Repository) SetPolicyProvisioner(provisioner PolicyProvisioner) {
+	if r != nil {
+		r.policies = provisioner
+	}
+}
+
+// SetOnboardedMarker installs the auth repository as the onboarding marker. The
+// container calls it after both are built.
+func (r *Repository) SetOnboardedMarker(marker OnboardedMarker) {
+	if r != nil {
+		r.onboarded = marker
+	}
 }
 
 // New builds the repository. A nil provisioner leaves a new workspace without
@@ -69,6 +123,12 @@ func (r *Repository) Onboard(ctx context.Context, userID uuid.UUID, req domain.O
 		case err == nil:
 			// Already onboarded: return the workspace and its teams unchanged.
 			if err := database.SetWorkspace(ctx, tx, existing.ID); err != nil {
+				return err
+			}
+			// And record it if it never was. An account that onboarded before the
+			// marker was wired owns a workspace its session does not believe in,
+			// so it is healed on the next attempt rather than staying stuck.
+			if err := r.markOnboarded(ctx, tx, userID); err != nil {
 				return err
 			}
 			teams, err := queries.ListTeams(ctx, existing.ID)
@@ -142,6 +202,18 @@ func (r *Repository) Onboard(ctx context.Context, userID uuid.UUID, req domain.O
 			}
 		}
 
+		// And the conservative approval policies, so no action kind reaches the
+		// outside world without a row the workspace can see and change.
+		if r.policies != nil {
+			if err := r.policies.SeedPolicies(ctx, tx, created.ID); err != nil {
+				return err
+			}
+		}
+
+		if err := r.markOnboarded(ctx, tx, userID); err != nil {
+			return err
+		}
+
 		result = domain.OnboardResult{
 			Workspace: toWorkspace(created, domain.RoleOwner),
 			Teams:     toTeams(teams),
@@ -154,6 +226,66 @@ func (r *Repository) Onboard(ctx context.Context, userID uuid.UUID, req domain.O
 	}
 
 	return result, nil
+}
+
+// markOnboarded records the account inside the onboarding transaction. A
+// deployment without the auth module simply has nothing to mark.
+func (r *Repository) markOnboarded(ctx context.Context, tx pgx.Tx, userID uuid.UUID) error {
+	if r.onboarded == nil {
+		return nil
+	}
+	if err := r.onboarded.MarkOnboardedInTx(ctx, tx, userID); err != nil {
+		return fmt.Errorf("workspace: mark onboarded: %w", err)
+	}
+	return nil
+}
+
+// WorkingHours reads the window a workspace lets actions leave in.
+//
+// It runs unscoped by workspace id rather than through the tenant helpers: the
+// caller is the approval runtime, which already knows the workspace and needs
+// three columns of it, and the row is the workspace's own settings rather than
+// tenant data belonging to somebody else.
+func (r *Repository) WorkingHours(ctx context.Context, workspaceID uuid.UUID) (WorkingHours, error) {
+	if r == nil || r.pool == nil {
+		return WorkingHours{}, fmt.Errorf("workspace: database is not configured")
+	}
+
+	var window WorkingHours
+	err := r.pool.InScopeRead(ctx, database.Scope{UserID: uuid.New(), WorkspaceID: workspaceID}, func(tx pgx.Tx) error {
+		row, err := sqlcgen.New(tx).GetWorkspaceHours(ctx, workspaceID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return domain.ErrWorkspaceNotFound
+			}
+			return fmt.Errorf("workspace: read hours: %w", err)
+		}
+
+		window = WorkingHours{
+			Start:    formatClock(row.WorkHoursStart),
+			End:      formatClock(row.WorkHoursEnd),
+			Timezone: row.Timezone,
+		}
+		return nil
+	})
+	if err != nil {
+		return WorkingHours{}, err
+	}
+
+	return window, nil
+}
+
+// formatClock renders a time-of-day as the "HH:MM" the approval rule parses.
+//
+// A `time` column arrives as pgtype.Time, which carries microseconds since
+// midnight rather than a clock, so it is read as the number it is.
+func formatClock(value pgtype.Time) string {
+	if !value.Valid {
+		return ""
+	}
+
+	micros := value.Microseconds
+	return fmt.Sprintf("%02d:%02d", micros/3_600_000_000, (micros/60_000_000)%60)
 }
 
 // Workspaces lists the workspaces the user belongs to, with their role.

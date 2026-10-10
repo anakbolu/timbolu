@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
@@ -12,6 +14,7 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/testsuite"
 
+	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
 )
 
@@ -49,7 +52,10 @@ func (stub) PrepareHandoff(context.Context, HandoffRequest) (PreparedHandoff, er
 	return PreparedHandoff{}, nil
 }
 func (stub) MarkHandoffStarted(context.Context, HandoffStarted) error { return nil }
-func (stub) ResumeTask(context.Context, ResumeRequest) error          { return nil }
+func (stub) CarryOutDraft(context.Context, DraftCarryRequest) (DraftCarryOutcome, error) {
+	return DraftCarryOutcome{}, nil
+}
+func (stub) ResumeTask(context.Context, ResumeRequest) error { return nil }
 
 // harness is one test environment with the activity set scripted.
 type harness struct {
@@ -61,6 +67,8 @@ type harness struct {
 	calls map[string]int
 	// recorded counts the steps written per task.
 	recorded map[string]int
+	// modelRequests records what each model call was asked, in order.
+	modelRequests []ModelRequest
 	// payloads is the body of every step written, in order. It is what the
 	// determinism test compares: a workflow that built a payload from a map
 	// without sorted keys, or from anything outside its own history, would
@@ -68,17 +76,23 @@ type harness struct {
 	payloads [][]byte
 	// tools is the scripted tool outcome per tool name.
 	tools map[string]ToolOutcome
-	// drafted, resumed, ranTool, and handoffStarted count how often each
-	// activity ran, which is how "the gate was used" and "the executor was not"
-	// are asserted.
+	// drafted, resumed, ranTool, carried, and handoffStarted count how often each
+	// activity ran, which is how "the gate was used", "the executor was not", and
+	// "an approved action was carried out" are asserted.
 	drafted        int
 	resumed        int
 	ranTool        int
+	carried        int
 	handoffStarted int
+	// carriedDrafts records which drafts were carried out.
+	carriedDrafts []string
 
 	// loadErr makes the first activity fail, which is how a task that could not
 	// be prepared is tested.
 	loadErr error
+	// modelFailureFor makes one task's model calls fail, which is how a child
+	// whose provider is down is tested.
+	modelFailureFor string
 	// completed is the last terminal write the workflow made, which is what a
 	// test asserts about the task's own totals.
 	completed CompleteRequest
@@ -94,6 +108,15 @@ type harness struct {
 	// gateCanceled makes the approval gate refuse, which is what a deployment
 	// without a gate answers.
 	gateCanceled bool
+	// draftOutcome scripts the gate's answer per call. It is a field rather than
+	// a re-registered expectation because the environment matches the first
+	// registered expectation for a name, so a second one would never run.
+	draftOutcome func(ToolRequest) DraftOutcome
+	// carryOutcome scripts what carrying an approved action out produces, per
+	// attempt. It is what a hold-then-send sequence needs.
+	carryOutcome func(DraftCarryRequest, int) DraftCarryOutcome
+	// carryAttempts counts how many times a carry-out was attempted.
+	carryAttempts int
 	// handoffRefusal makes the handoff activity refuse instead of opening a
 	// child task.
 	handoffRefusal string
@@ -133,8 +156,12 @@ func newHarness(t *testing.T, limits domain.Limits, tools []domain.Tool) *harnes
 
 	env.OnActivity(ActivityCallModel, mock.Anything, mock.Anything).Return(func(_ context.Context, req ModelRequest) (ModelReply, error) {
 		h.calls[req.TaskID]++
+		h.modelRequests = append(h.modelRequests, req)
 		if h.calls[req.TaskID] <= h.modelFailures {
 			return ModelReply{}, errors.New("provider unavailable")
+		}
+		if h.modelFailureFor != "" && req.TaskID == h.modelFailureFor {
+			return ModelReply{}, errors.New("the provider is down")
 		}
 		queue := h.models[req.TaskID]
 		if len(queue) == 0 {
@@ -156,6 +183,9 @@ func newHarness(t *testing.T, limits domain.Limits, tools []domain.Tool) *harnes
 
 	env.OnActivity(ActivityRequestDraft, mock.Anything, mock.Anything).Return(func(_ context.Context, req ToolRequest) (DraftOutcome, error) {
 		h.drafted++
+		if h.draftOutcome != nil {
+			return h.draftOutcome(req), nil
+		}
 		if h.gateCanceled {
 			return DraftOutcome{
 				Status: domain.DraftCanceled,
@@ -192,6 +222,17 @@ func newHarness(t *testing.T, limits domain.Limits, tools []domain.Tool) *harnes
 		return TaskOutcome{Status: req.Status, Reason: req.Reason, Summary: "ringkasan tugas"}, nil
 	})
 
+	env.OnActivity(ActivityCarryOutDraft, mock.Anything, mock.Anything).Return(func(_ context.Context, req DraftCarryRequest) (DraftCarryOutcome, error) {
+		h.carried++
+		h.carriedDrafts = append(h.carriedDrafts, req.DraftID)
+		h.carryAttempts++
+
+		if h.carryOutcome != nil {
+			return h.carryOutcome(req, h.carryAttempts), nil
+		}
+		return DraftCarryOutcome{Status: domain.DraftSent, Content: []byte(`{"text":"email terkirim"}`)}, nil
+	})
+
 	env.OnActivity(ActivityMarkHandoffStarted, mock.Anything, mock.Anything).Return(func(context.Context, HandoffStarted) error {
 		h.handoffStarted++
 		return nil
@@ -220,6 +261,7 @@ func registerStubs(env *testsuite.TestWorkflowEnvironment) {
 		ActivityPrepareHandoff:     s.PrepareHandoff,
 		ActivityMarkHandoffStarted: s.MarkHandoffStarted,
 		ActivityResume:             s.ResumeTask,
+		ActivityCarryOutDraft:      s.CarryOutDraft,
 	} {
 		env.RegisterActivityWithOptions(fn, activity.RegisterOptions{Name: name})
 	}
@@ -393,15 +435,18 @@ func TestWorkflowStopsOnStepLimit(t *testing.T) {
 	require.Equal(t, 3, h.calls[parentTask], "the loop runs exactly the allowed number of rounds")
 }
 
-// TestWorkflowParksForApprovalThenContinues is the E6.3 gate: a write_external
-// tool becomes a draft, the task waits, and an approval lets it carry on.
-func TestWorkflowParksForApprovalThenContinues(t *testing.T) {
+// TestWorkflowParksForApprovalThenSendsWithoutTheModel is the E7.3 gate: a
+// write_external tool becomes a draft, the task waits, and an approval carries
+// the action out with no further model call.
+//
+// The count is the point. The person approved what to send, so asking the model
+// to produce it again would spend tokens to reach a decision already made.
+func TestWorkflowParksForApprovalThenSendsWithoutTheModel(t *testing.T) {
 	send := domain.Tool{Name: "gmail.send", Label: domain.LabelWriteExternal, Schema: json.RawMessage(`{}`)}
 	h := newHarness(t, domain.DefaultLimits, []domain.Tool{send})
 
 	h.models[parentTask] = []ModelReply{
 		{ToolCalls: []ToolCall{{CallID: "c1", Name: "gmail.send", Arguments: []byte(`{"to":"a@b.c"}`)}}},
-		{Text: "Email sudah dikirim."},
 	}
 
 	// The decision is delivered while the task is parked on the draft. A signal
@@ -412,10 +457,17 @@ func TestWorkflowParksForApprovalThenContinues(t *testing.T) {
 	outcome := h.run(t, h.input(parentTask))
 
 	require.Equal(t, domain.StatusSucceeded, outcome.Status)
-	require.Equal(t, 2, h.calls[parentTask], "the task continues after the decision")
+	require.Equal(t, 1, h.calls[parentTask], "an approval must not spend a second model call")
 	require.Equal(t, 1, h.drafted, "the write went through the approval gate")
 	require.Equal(t, 1, h.resumed, "the task was un-parked when the decision arrived")
+	require.Equal(t, 1, h.carried, "the approved action was carried out")
+	require.Equal(t, []string{draftID}, h.carriedDrafts, "the draft that was approved is the one that was sent")
 	require.Zero(t, h.ranTool, "a write_external tool is never executed directly")
+
+	// The answer the action produced is what the task writes into the thread.
+	require.Len(t, h.completed.Blocks, 1)
+	require.Contains(t, string(h.completed.Blocks[0].Body), "email terkirim",
+		"the task reports what the action answered")
 }
 
 // TestWorkflowFeedsARevisionBackToTheModel covers the other decision: a revision
@@ -556,7 +608,8 @@ func TestWorkflowIgnoresAnApprovalForAnotherDraft(t *testing.T) {
 	outcome := h.run(t, h.input(parentTask))
 
 	require.Equal(t, domain.StatusSucceeded, outcome.Status)
-	require.Equal(t, 2, h.calls[parentTask])
+	require.Equal(t, 1, h.calls[parentTask])
+	require.Equal(t, 1, h.carried, "the real decision carried the action out, once")
 }
 
 // TestWorkflowFailsWhenTheFirstActivityFails is the honest failure: a task that
@@ -638,12 +691,12 @@ func TestSystemPromptCarriesWhoIsAnswering(t *testing.T) {
 	require.NotContains(t, bare, "Persetujuan")
 }
 
-// TestMessagesRendersTheThreadAndThePrompt covers the turns the model reads.
+// TestTurnsRenderTheThreadAndThePrompt covers the turns the model reads.
 //
 // The prompt is the task's own instruction. For a task opened from chat it is the
 // message the user just wrote, which the history already carries: appending it
 // again would send the same words twice and read as the user repeating himself.
-func TestMessagesRendersTheThreadAndThePrompt(t *testing.T) {
+func TestTurnsRenderTheThreadAndThePrompt(t *testing.T) {
 	userID := uuid.New()
 	agentID := uuid.New()
 
@@ -657,34 +710,34 @@ func TestMessagesRendersTheThreadAndThePrompt(t *testing.T) {
 		{AgentID: agentID, Blocks: []domain.Block{}},
 	}}
 
-	turns := Messages(loaded, TaskInput{Prompt: "Rekap pesanan"})
+	turns := Turns(loaded, TaskInput{Prompt: "Rekap pesanan"})
 	require.Len(t, turns, 2, "the two real turns, and nothing for the empty placeholder or the repeated prompt")
-	require.True(t, turns[0].FromAgent())
-	require.False(t, turns[1].FromAgent())
-	require.Equal(t, "Rekap pesanan", textOf(t, turns[1]),
+	require.Equal(t, llmdomain.RoleAssistant, turns[0].Role, "a Bolu's turn reads as the assistant's")
+	require.Equal(t, llmdomain.RoleUser, turns[1].Role)
+	require.Equal(t, "Rekap pesanan", turns[1].Text,
 		"the prompt repeats the message the thread already ends with, so it is not sent twice")
 
 	// A prompt the thread does not already carry is appended, which is what a
 	// routine or a webhook task needs: it has no conversation to read it from.
-	appended := Messages(loaded, TaskInput{Prompt: "Kirim tagihan bulan ini"})
+	appended := Turns(loaded, TaskInput{Prompt: "Kirim tagihan bulan ini"})
 	require.Len(t, appended, 3)
-	require.Equal(t, "Kirim tagihan bulan ini", textOf(t, appended[2]))
-	require.False(t, appended[2].FromAgent(), "the task's own instruction is a user turn")
+	require.Equal(t, "Kirim tagihan bulan ini", appended[2].Text)
+	require.Equal(t, llmdomain.RoleUser, appended[2].Role, "the task's own instruction is a user turn")
 
 	// A task with no history is just its own instruction.
-	only := Messages(Context{}, TaskInput{Prompt: "Rekap pesanan"})
+	only := Turns(Context{}, TaskInput{Prompt: "Rekap pesanan"})
 	require.Len(t, only, 1)
-	require.Equal(t, "Rekap pesanan", textOf(t, only[0]))
+	require.Equal(t, "Rekap pesanan", only[0].Text)
 
-	require.Empty(t, Messages(Context{}, TaskInput{}), "a task with no instruction sends nothing")
+	require.Empty(t, Turns(Context{}, TaskInput{}), "a task with no instruction sends nothing")
 
 	// A block the model cannot read is summarised rather than dropped: a model
 	// that forgot it already produced a chart would produce it again.
-	summarised := Messages(Context{History: []domain.Message{
+	summarised := Turns(Context{History: []domain.Message{
 		{AgentID: agentID, Blocks: []domain.Block{{Type: "chart", Body: []byte(`{"type":"chart"}`)}}},
 	}}, TaskInput{})
 	require.Len(t, summarised, 1)
-	require.Equal(t, "[grafik]", textOf(t, summarised[0]))
+	require.Equal(t, "[grafik]", summarised[0].Text)
 }
 
 // TestAnswerBlocksCarriesTheReasonWhenThereIsNoAnswer is the terminal body: a
@@ -764,29 +817,51 @@ func TestTaskEventCarriesTheScope(t *testing.T) {
 	require.JSONEq(t, `{"status":"running"}`, string(event.Payload))
 }
 
-// TestTextTurnCarriesARealTextBlock is the shape the activity renders back into
-// the model's message: a turn whose body is not a text block would reach the
-// provider as an empty string.
-func TestTextTurnCarriesARealTextBlock(t *testing.T) {
-	agentID := uuid.New()
-	turn := textTurn("Ada 3 pesanan.", agentID, uuid.Nil)
+// TestToolTurnsPairACallWithItsResult is what makes the loop work: a result has
+// to answer a specific call, so both halves of the pair reach the provider.
+func TestToolTurnsPairACallWithItsResult(t *testing.T) {
+	call := ToolCall{CallID: "call-1", Name: "gmail.search", Arguments: []byte(`{"q":"pesanan"}`)}
+	reply := ModelReply{
+		Text:      "Saya cek dulu.",
+		ToolCalls: []ToolCall{call},
+	}
 
-	require.Len(t, turn.Blocks, 1)
-	require.Equal(t, "text", turn.Blocks[0].Type)
-	require.True(t, turn.FromAgent())
-	require.JSONEq(t, `{"type":"text","markdown":"Ada 3 pesanan."}`, string(turn.Blocks[0].Body))
+	asked := assistantTurn(reply)
+	require.Equal(t, llmdomain.RoleAssistant, asked.Role)
+	require.Equal(t, "Saya cek dulu.", asked.Text)
+	require.Len(t, asked.ToolCalls, 1)
+	require.Equal(t, "call-1", asked.ToolCalls[0].ID)
+	require.Equal(t, "gmail.search", asked.ToolCalls[0].Name)
+
+	answered := toolTurn(call, ToolOutcome{Name: "gmail.search", Content: []byte(`{"emails":2}`)})
+	require.Equal(t, llmdomain.RoleTool, answered.Role)
+	require.Len(t, answered.ToolResults, 1)
+	require.Equal(t, "call-1", answered.ToolResults[0].CallID, "the result answers the call it belongs to")
+	require.JSONEq(t, `{"emails":2}`, answered.ToolResults[0].Content)
+	require.False(t, answered.ToolResults[0].IsError)
+
+	// A failed tool is a result like any other: the model is meant to read it.
+	failed := toolTurn(call, ToolOutcome{Name: "gmail.search", IsError: true})
+	require.True(t, failed.ToolResults[0].IsError)
+	require.Equal(t, "{}", failed.ToolResults[0].Content, "an empty answer is still a JSON document")
 }
 
-// textOf reads the markdown out of a rendered turn.
-func textOf(t *testing.T, turn domain.Message) string {
-	t.Helper()
-
-	require.Len(t, turn.Blocks, 1)
-	var body struct {
-		Markdown string `json:"markdown"`
+// lastMessages renders the last model call's turns as one string, which is how a
+// test asserts what the agent was told.
+func (h *harness) lastMessages() string {
+	if len(h.modelRequests) == 0 {
+		return ""
 	}
-	require.NoError(t, json.Unmarshal(turn.Blocks[0].Body, &body))
-	return body.Markdown
+
+	last := h.modelRequests[len(h.modelRequests)-1]
+	parts := make([]string, 0, len(last.Messages))
+	for _, turn := range last.Messages {
+		parts = append(parts, turn.Text)
+		for _, result := range turn.ToolResults {
+			parts = append(parts, result.Content)
+		}
+	}
+	return strings.Join(parts, "\n")
 }
 
 // TestWorkflowHandoffNeverReachesTheExecutor is the routing rule: a handoff is the
@@ -826,18 +901,10 @@ func TestWorkflowRecordsAChildThatFailedAsAFailedToolResult(t *testing.T) {
 		}}, nil
 	})
 
-	// The child answers nothing and fails: its model script is empty, so the
-	// child workflow ends as failed and the parent is told.
-	h.env.OnActivity(ActivityCallModel, mock.Anything, mock.Anything).Return(func(_ context.Context, req ModelRequest) (ModelReply, error) {
-		h.calls[req.TaskID]++
-		if req.TaskID == childTask {
-			return ModelReply{}, errors.New("the child's provider is down")
-		}
-		queue := h.models[req.TaskID]
-		reply := queue[0]
-		h.models[req.TaskID] = queue[1:]
-		return reply, nil
-	})
+	// The child's provider is down, so the child ends as failed and the parent is
+	// told. It is a field rather than a re-registered expectation because the
+	// environment matches the first registered expectation for a name.
+	h.modelFailureFor = childTask
 
 	h.models[parentTask] = []ModelReply{
 		{ToolCalls: []ToolCall{{CallID: "c1", Name: domain.ToolHandoff, Arguments: []byte(`{"agent":"Ijo","instructions":"Ambil data stok"}`)}}},
@@ -856,4 +923,124 @@ func TestWorkflowRecordsAChildThatFailedAsAFailedToolResult(t *testing.T) {
 
 	require.Equal(t, 2, h.calls[parentTask], "the parent carried on after the child failed")
 	require.Equal(t, domain.StatusSucceeded, h.terminal[parentTask].Status)
+}
+
+// TestWorkflowReviseReturnsToTheModelWithTheNote is the other half of E7.3: a
+// revision sends the task back to the agent, carrying what the person said, and
+// the agent proposes again.
+func TestWorkflowReviseReturnsToTheModelWithTheNote(t *testing.T) {
+	send := domain.Tool{Name: "gmail.send", Label: domain.LabelWriteExternal, Schema: json.RawMessage(`{}`)}
+	h := newHarness(t, domain.DefaultLimits, []domain.Tool{send})
+
+	// The first proposal is sent back, so the model gets a second turn. That turn
+	// answers without a tool, which is how the task ends.
+	h.models[parentTask] = []ModelReply{
+		{ToolCalls: []ToolCall{{CallID: "c1", Name: "gmail.send", Arguments: []byte(`{"to":"a@b.c"}`)}}},
+		{Text: "Baik, saya tidak mengirimnya."},
+	}
+
+	h.signalLater(t, SignalApproval, ApprovalSignal{DraftID: draftID, Approved: false, Note: "salah penerima"})
+
+	outcome := h.run(t, h.input(parentTask))
+
+	require.Equal(t, domain.StatusSucceeded, outcome.Status)
+	require.Equal(t, 2, h.calls[parentTask], "a revision is one more turn of the loop")
+	require.Equal(t, 1, h.drafted, "the revision does not open a second draft by itself")
+	require.Zero(t, h.carried, "a revised draft is never carried out")
+
+	// The note is what the agent was told, so the model's next prompt carries it.
+	require.Contains(t, h.modelRequests[1].System+h.lastMessages(), "salah penerima",
+		"the agent must be told what to change")
+}
+
+// TestWorkflowStopsAfterTooManyRevisions bounds the argument: a reviewer and an
+// agent may go back and forth, but not for as long as the task's allowance lasts.
+func TestWorkflowStopsAfterTooManyRevisions(t *testing.T) {
+	send := domain.Tool{Name: "gmail.send", Label: domain.LabelWriteExternal, Schema: json.RawMessage(`{}`)}
+	// A one-revision allowance keeps the test short; the rule is the same.
+	limits := domain.DefaultLimits
+	limits.MaxRevisions = 1
+
+	h := newHarness(t, limits, []domain.Tool{send})
+
+	// Every turn proposes the same action, so every decision can be a revision.
+	for range 4 {
+		h.models[parentTask] = append(h.models[parentTask], ModelReply{
+			ToolCalls: []ToolCall{{CallID: "c", Name: "gmail.send", Arguments: []byte(`{}`)}},
+		})
+	}
+
+	h.signalLater(t, SignalApproval, ApprovalSignal{DraftID: draftID, Approved: false, Note: "belum tepat"})
+	h.signalLater(t, SignalApproval, ApprovalSignal{DraftID: draftID, Approved: false, Note: "belum tepat"})
+
+	outcome := h.run(t, h.input(parentTask))
+
+	require.Equal(t, domain.StatusFailed, outcome.Status)
+	require.Contains(t, outcome.Reason, "terlalu banyak")
+	require.Zero(t, h.carried)
+}
+
+// TestWorkflowHoldsAnApprovedActionUntilTheWindowOpens is the E7.4 gate: an
+// action approved outside working hours waits, and the task resumes on the timer
+// rather than occupying a worker.
+func TestWorkflowHoldsAnApprovedActionUntilTheWindowOpens(t *testing.T) {
+	send := domain.Tool{Name: "gmail.send", Label: domain.LabelWriteExternal, Schema: json.RawMessage(`{}`)}
+	h := newHarness(t, domain.DefaultLimits, []domain.Tool{send})
+
+	h.models[parentTask] = []ModelReply{
+		{ToolCalls: []ToolCall{{CallID: "c1", Name: "gmail.send", Arguments: []byte(`{"to":"a@b.c"}`)}}},
+	}
+
+	// The first attempt is held; the second, after the timer, sends.
+	h.carryOutcome = func(_ DraftCarryRequest, attempt int) DraftCarryOutcome {
+		if attempt == 1 {
+			return DraftCarryOutcome{
+				Status:    domain.DraftApproved,
+				Held:      true,
+				NotBefore: h.env.Now().Add(2 * time.Hour),
+				Reason:    "ditahan sampai jam kerja",
+			}
+		}
+		return DraftCarryOutcome{Status: domain.DraftSent, Content: []byte(`{"text":"terkirim setelah jam kerja"}`)}
+	}
+
+	h.signalLater(t, SignalApproval, ApprovalSignal{DraftID: draftID, Approved: true, Note: "kirim"})
+
+	outcome := h.run(t, h.input(parentTask))
+
+	require.Equal(t, domain.StatusSucceeded, outcome.Status)
+	require.Equal(t, 2, h.carried, "the held action is attempted again once the window opens")
+	require.Equal(t, 1, h.calls[parentTask], "waiting for the window costs no model call")
+	require.Contains(t, string(h.completed.Blocks[0].Body), "terkirim setelah jam kerja")
+}
+
+// TestWorkflowExecutesAnAutoApprovedActionWithoutWaiting is the other side of the
+// policy: when the workspace said this action kind may go out unattended, the
+// task does not park and does not wait for a signal.
+func TestWorkflowExecutesAnAutoApprovedActionWithoutWaiting(t *testing.T) {
+	send := domain.Tool{Name: "gmail.send", Label: domain.LabelWriteExternal, Schema: json.RawMessage(`{}`)}
+	h := newHarness(t, domain.DefaultLimits, []domain.Tool{send})
+
+	h.draftOutcome = func(req ToolRequest) DraftOutcome {
+		return DraftOutcome{
+			DraftID: draftID,
+			Status:  domain.DraftSent,
+			Title:   req.Name,
+			Auto:    true,
+			Content: []byte(`{"text":"terkirim otomatis"}`),
+		}
+	}
+
+	h.models[parentTask] = []ModelReply{
+		{ToolCalls: []ToolCall{{CallID: "c1", Name: "gmail.send", Arguments: []byte(`{"to":"a@b.c"}`)}}},
+		{Text: "Selesai."},
+	}
+
+	outcome := h.run(t, h.input(parentTask))
+
+	require.Equal(t, domain.StatusSucceeded, outcome.Status)
+	require.Equal(t, 1, h.drafted, "the gate was still consulted")
+	require.Zero(t, h.resumed, "nothing was parked, so nothing had to be un-parked")
+	require.Zero(t, h.carried, "the gate already carried it out, so the workflow does not send again")
+	require.Equal(t, 2, h.calls[parentTask], "an auto-approved action continues the loop")
 }

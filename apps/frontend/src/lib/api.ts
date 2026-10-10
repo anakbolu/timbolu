@@ -620,6 +620,12 @@ export type DraftBlock = {
   summary?: string;
   status?: "pending" | "approved" | "revise" | "sent" | "canceled";
   fields?: [string, string][];
+  /** Why an approved action has not gone out, in the user's words. */
+  blocked_reason?: string;
+  /** Until when a held action waits, which is the workspace's next open window. */
+  not_before?: string;
+  /** How many times a person has sent this action back. */
+  revision?: number;
 };
 
 export type ChartSpec = {
@@ -673,7 +679,9 @@ export type Attachment = {
 };
 
 export type ChatMessage = {
-  id: string;
+  /** The server's own field name: it is what the stream's events carry too, so
+   *  the same message from history and from an event compares equal. */
+  message_id: string;
   conversation_id: string;
   agent_id?: string;
   user_id?: string;
@@ -897,4 +905,137 @@ export async function uploadAttachment(
 export function contentURL(reference: string): string {
   const origin = process.env.NEXT_PUBLIC_CONTENT_ORIGIN ?? API_URL;
   return `${origin}/content/${reference}`;
+}
+
+/* ----------------------------------------------------------------- approvals */
+
+/**
+ * A draft is a proposed action that reaches outside Bolu, waiting for a person.
+ *
+ * The payload is the action's own shape, which is what the card shows: the
+ * frontend never interprets it beyond rendering the fields the backend already
+ * labelled.
+ */
+export type Draft = {
+  draft_id: string;
+  task_id: string;
+  agent_id: string;
+  conversation_id?: string;
+  action_kind: string;
+  title: string;
+  summary?: string;
+  status: "pending" | "approved" | "revise" | "sent" | "canceled";
+  revision: number;
+  payload: Record<string, unknown>;
+  decided_by?: string;
+  decided_at?: string;
+  decision_note?: string;
+  blocked_reason?: string;
+  not_before?: string;
+  sent_at?: string;
+  card_message_id?: string;
+  idempotency_key?: string;
+  created_at: string;
+};
+
+/** A revision is one turn of the trail: what the person said, and what they saw. */
+export type DraftRevision = {
+  revision: number;
+  note: string;
+  payload: Record<string, unknown>;
+  decided_by?: string;
+  created_at: string;
+};
+
+/**
+ * A policy is what a workspace allows unattended for one kind of action.
+ *
+ * `auto` carries the action out without asking, but only while its value is
+ * within `max_amount`. An absent ceiling means the workspace trusts the kind
+ * entirely; an absent amount on the action means the ceiling cannot be met, so a
+ * person is asked.
+ */
+export type ApprovalPolicy = {
+  action_kind: string;
+  mode: "always_draft" | "auto";
+  max_amount: number | null;
+  updated_by?: string;
+  updated_at?: string;
+};
+
+/** An audit entry is one thing that happened, for the record. */
+export type AuditEntry = {
+  id: number;
+  action: string;
+  object_type: string;
+  object_id: string;
+  actor_user_id?: string;
+  actor_agent_id?: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+/** listDrafts returns the workspace's drafts, newest first. */
+export function listDrafts(
+  workspaceId: string,
+  filter: { status?: string; agent_id?: string; action_kind?: string; task_id?: string; limit?: number } = {},
+): Promise<ApiResult<Draft[]>> {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(filter)) {
+    if (value !== undefined && value !== "" && value !== 0) query.set(key, String(value));
+  }
+  const suffix = query.toString() ? `?${query}` : "";
+  return request<Draft[]>(`/drafts${suffix}`, { workspace: workspaceId });
+}
+
+/** getDraft returns one draft. */
+export function getDraft(workspaceId: string, draftId: string): Promise<ApiResult<Draft>> {
+  return request<Draft>(`/drafts/${draftId}`, { workspace: workspaceId });
+}
+
+/** listDraftRevisions returns a draft's trail, oldest first. */
+export function listDraftRevisions(workspaceId: string, draftId: string): Promise<ApiResult<DraftRevision[]>> {
+  return request<DraftRevision[]>(`/drafts/${draftId}/revisions`, { workspace: workspaceId });
+}
+
+/**
+ * decideDraft records a person's answer.
+ *
+ * Approving sends, revising returns the task to its agent with the note, and
+ * cancelling stops it. The note is required for a revision: an agent sent back to
+ * work with nothing to change would produce the same draft again.
+ */
+export function decideDraft(
+  workspaceId: string,
+  draftId: string,
+  decision: "approve" | "revise" | "cancel",
+  note = "",
+): Promise<ApiResult<Draft>> {
+  return request<Draft>(`/drafts/${draftId}/${decision}`, {
+    method: "POST",
+    body: { note },
+    workspace: workspaceId,
+  });
+}
+
+/** listApprovalPolicies returns the policy in force for every external action. */
+export function listApprovalPolicies(workspaceId: string): Promise<ApiResult<ApprovalPolicy[]>> {
+  return request<ApprovalPolicy[]>("/approval-policies", { workspace: workspaceId });
+}
+
+/** setApprovalPolicy stores a workspace's decision about one action kind. */
+export function setApprovalPolicy(
+  workspaceId: string,
+  policy: { action_kind: string; mode: string; max_amount: number | null },
+): Promise<ApiResult<ApprovalPolicy>> {
+  return request<ApprovalPolicy>("/approval-policies", {
+    method: "PUT",
+    body: policy,
+    workspace: workspaceId,
+  });
+}
+
+/** listAudit returns the workspace's approval trail, newest first. */
+export function listAudit(workspaceId: string, limit = 50): Promise<ApiResult<AuditEntry[]>> {
+  return request<AuditEntry[]>(`/audit?limit=${limit}`, { workspace: workspaceId });
 }

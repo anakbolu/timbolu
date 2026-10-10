@@ -61,6 +61,17 @@ command -v docker >/dev/null || fail "docker is required: the smoke uses the com
 docker exec bolu-postgres pg_isready -U employeebot >/dev/null 2>&1 ||
     fail "the compose Postgres is not reachable; run 'make up' first"
 
+# The compose workers poll the same Temporal task queue this smoke does, so a
+# running one executes the smoke's task with its own model configuration: a bound
+# this phase sets is then never the bound that stops it, and the phase fails for a
+# reason that has nothing to do with the code. The check is cheap and the failure
+# it prevents is expensive to diagnose.
+for container in bolu-agent-worker bolu-integration-worker; do
+    if docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null | grep -q true; then
+        fail "${container} is running and polls the same task queue; stop it with 'docker stop bolu-api bolu-agent-worker bolu-integration-worker'"
+    fi
+done
+
 # ------------------------------------------------------------- stub provider
 
 cat > /tmp/smoke-llm-stub.py <<'PY'
@@ -187,35 +198,96 @@ stop_stub() {
 log "starting the stub model provider on :${STUB_PORT} (echo mode)"
 start_stub echo
 
-export ENVIRONMENT=local
-export DATABASE_URL="$DB"
-export REDIS_URL="redis://localhost:6379/0"
-export TEMPORAL_HOST_PORT="localhost:7233"
-export HTTP_ADDRESS=":${API_PORT}"
-export FRONTEND_URL="http://localhost:3000"
-# The log mail driver prints the verification link at info level, so the smoke
-# reads the link the same way a developer does.
-export LOG_LEVEL=info
-export LOG_FORMAT=console
-export MAIL_DRIVER=log
-export SECRET_ENCRYPTION_KEY="local_dev_secret_key_32_byte_len"
-export LLM_DEFAULT_ADAPTER=openai
-export LLM_DEFAULT_BASE_URL="http://localhost:${STUB_PORT}"
-export LLM_DEFAULT_MODEL=stub
-export LLM_DEFAULT_API_KEY=stub-key
-export STORAGE_DRIVER=local
-export STORAGE_LOCAL_ROOT=.storage
-export CONTENT_ORIGIN="http://localhost:${API_PORT}"
-export TASK_MAX_STEPS=12
-export TASK_MAX_TOKENS=120000
+# The stack's configuration, and the two bounds a phase changes. They are shell
+# variables rather than exported ones: each process is handed its environment
+# explicitly in start_stack, so a typo here is caught when it is read instead of
+# becoming an exported variable that shadows the value a later phase set.
+#
+# The log mail driver prints the verification link at info level, which is how the
+# smoke reads it the same way a developer does.
+LLM_DEFAULT_ADAPTER=openai
+LLM_DEFAULT_BASE_URL="http://localhost:${STUB_PORT}"
+LLM_DEFAULT_MODEL=stub
+LLM_DEFAULT_API_KEY=stub-key
+TASK_MAX_STEPS=12
+TASK_MAX_TOKENS=120000
+
+# stack_env prints the environment both processes share, so the API and the worker
+# cannot be started with different settings.
+stack_env() {
+    printf '%s\n' \
+        "ENVIRONMENT=local" \
+        "DATABASE_URL=${DB}" \
+        "REDIS_URL=redis://localhost:6379/0" \
+        "TEMPORAL_HOST_PORT=localhost:7233" \
+        "LOG_LEVEL=info" \
+        "LOG_FORMAT=console" \
+        "SECRET_ENCRYPTION_KEY=local_dev_secret_key_32_byte_len" \
+        "LLM_DEFAULT_ADAPTER=${LLM_DEFAULT_ADAPTER}" \
+        "LLM_DEFAULT_BASE_URL=${LLM_DEFAULT_BASE_URL}" \
+        "LLM_DEFAULT_MODEL=${LLM_DEFAULT_MODEL}" \
+        "LLM_DEFAULT_API_KEY=${LLM_DEFAULT_API_KEY}" \
+        "STORAGE_DRIVER=local" \
+        "STORAGE_LOCAL_ROOT=.storage" \
+        "TASK_MAX_STEPS=${TASK_MAX_STEPS:-12}" \
+        "TASK_MAX_TOKENS=${TASK_MAX_TOKENS:-120000}"
+}
+
+# run_with_env runs one command with the shared environment plus extra pairs.
+#
+# It execs the command rather than running it as a child: the caller records `$!`
+# to stop the process later, and a wrapper subshell would make that pid the
+# wrapper's. Killing the wrapper leaves the real API or worker alive and still
+# polling the task queue, and the next run's work is then executed by the previous
+# run's binary — which is a confusing way to fail.
+#
+# Reading the pairs from a file keeps an argument with a space in it — the
+# content-frame list — from being split into two.
+run_with_env() {
+    local extra="$1"
+    shift
+
+    local env_file
+    env_file="$(mktemp)"
+    stack_env > "$env_file"
+    printf '%s\n' "$extra" >> "$env_file"
+
+    set -a
+    # shellcheck disable=SC1090
+    . "$env_file"
+    set +a
+    rm -f "$env_file"
+
+    exec "$@"
+}
 
 start_stack() {
     log "starting the API on :${API_PORT}"
-    "${BIN_DIR}/api" > /tmp/smoke-api.log 2>&1 &
+    ENVIRONMENT=local DATABASE_URL="$DB" REDIS_URL="redis://localhost:6379/0" \
+    TEMPORAL_HOST_PORT="localhost:7233" HTTP_ADDRESS=":${API_PORT}" \
+    FRONTEND_URL="http://localhost:3000" LOG_LEVEL=info LOG_FORMAT=console \
+    MAIL_DRIVER=log SECRET_ENCRYPTION_KEY="local_dev_secret_key_32_byte_len" \
+    LLM_DEFAULT_ADAPTER="$LLM_DEFAULT_ADAPTER" \
+    LLM_DEFAULT_BASE_URL="$LLM_DEFAULT_BASE_URL" \
+    LLM_DEFAULT_MODEL="$LLM_DEFAULT_MODEL" \
+    LLM_DEFAULT_API_KEY="$LLM_DEFAULT_API_KEY" \
+    STORAGE_DRIVER=local STORAGE_LOCAL_ROOT=.storage \
+    CONTENT_ORIGIN="http://localhost:${API_PORT}" \
+    TASK_MAX_STEPS="${TASK_MAX_STEPS:-12}" TASK_MAX_TOKENS="${TASK_MAX_TOKENS:-120000}" \
+        "${BIN_DIR}/api" > /tmp/smoke-api.log 2>&1 &
     API_PID=$!
 
     log "starting the agent worker"
-    "${BIN_DIR}/agent-worker" > /tmp/smoke-worker.log 2>&1 &
+    ENVIRONMENT=local DATABASE_URL="$DB" REDIS_URL="redis://localhost:6379/0" \
+    TEMPORAL_HOST_PORT="localhost:7233" LOG_LEVEL=info LOG_FORMAT=console \
+    SECRET_ENCRYPTION_KEY="local_dev_secret_key_32_byte_len" \
+    LLM_DEFAULT_ADAPTER="$LLM_DEFAULT_ADAPTER" \
+    LLM_DEFAULT_BASE_URL="$LLM_DEFAULT_BASE_URL" \
+    LLM_DEFAULT_MODEL="$LLM_DEFAULT_MODEL" \
+    LLM_DEFAULT_API_KEY="$LLM_DEFAULT_API_KEY" \
+    STORAGE_DRIVER=local STORAGE_LOCAL_ROOT=.storage \
+    TASK_MAX_STEPS="${TASK_MAX_STEPS:-12}" TASK_MAX_TOKENS="${TASK_MAX_TOKENS:-120000}" \
+        "${BIN_DIR}/agent-worker" > /tmp/smoke-worker.log 2>&1 &
     WORKER_PID=$!
 
     for _ in $(seq 1 90); do
@@ -342,7 +414,7 @@ curl -fsS "${API}/conversations/${CONVERSATION}/messages" "${AUTH[@]}" | python3
 
 log "restarting with a one-step allowance, to prove a bound stops the task"
 stop_stack
-export TASK_MAX_STEPS=1
+TASK_MAX_STEPS=1
 start_stub tool
 start_stack
 

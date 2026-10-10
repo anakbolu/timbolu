@@ -2,6 +2,7 @@ package container
 
 import (
 	agentdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
+	approvaldomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/domain"
 	authdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain"
 	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
 	healthdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/domain"
@@ -28,6 +29,9 @@ type Services struct {
 	Chat chatdomain.Service
 	// Task is built by openTask, which needs the registry and the model gateway.
 	Task taskdomain.Service
+	// Approval is built by openApproval, which needs the drafts, the cards, and
+	// the workspace's working hours.
+	Approval approvaldomain.Service
 }
 
 // newServices builds every service. Optional dependencies (Redis today) are

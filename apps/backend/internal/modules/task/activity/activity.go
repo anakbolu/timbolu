@@ -10,8 +10,12 @@ package activity
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
+
+	"go.temporal.io/sdk/temporal"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -224,6 +228,20 @@ func (a *Activities) RequestDraft(ctx context.Context, request workflow.ToolRequ
 		return workflow.DraftOutcome{}, err
 	}
 
+	// A policy that allowed the action unattended means there is nobody to wait
+	// for: the gate already carried it out, and the task records what happened.
+	if draft.Auto {
+		a.emit(ctx, scope, task, workflow.EventTaskStep)
+		return workflow.DraftOutcome{
+			DraftID: draft.ID.String(),
+			Status:  draft.Status,
+			Note:    draft.Note,
+			Title:   draft.Title,
+			Auto:    true,
+			Content: draft.Content,
+		}, nil
+	}
+
 	// The task is parked in the store before the workflow waits, so a worker that
 	// dies during the wait resumes the wait rather than losing the task.
 	parked, err := a.deps.Tasks.Park(ctx, scope, task.ID, "menunggu persetujuan: "+draftTitle(request), draft.ID)
@@ -238,6 +256,79 @@ func (a *Activities) RequestDraft(ctx context.Context, request workflow.ToolRequ
 		Note:    draft.Note,
 		Title:   draft.Title,
 	}, nil
+}
+
+// CarryOutDraft executes an action a person approved.
+//
+// It reports a hold rather than sending when the workspace is closed, which is
+// what lets the workflow wait for the window to open instead of the runtime
+// deciding on its own that the action may leave now.
+func (a *Activities) CarryOutDraft(ctx context.Context, request workflow.DraftCarryRequest) (workflow.DraftCarryOutcome, error) {
+	task, err := a.load(ctx, workflow.TaskInput{TaskID: request.TaskID, WorkspaceID: request.WorkspaceID})
+	if err != nil {
+		return workflow.DraftCarryOutcome{}, err
+	}
+	scope := scopeOf(task)
+
+	draftID, err := uuid.Parse(strings.TrimSpace(request.DraftID))
+	if err != nil {
+		return workflow.DraftCarryOutcome{}, fmt.Errorf("%w: draft id is required", domain.ErrInvalidInput)
+	}
+
+	if a.deps.Drafts == nil {
+		return workflow.DraftCarryOutcome{}, temporal.NewNonRetryableApplicationError(
+			"the approval gate is not configured", "ApprovalMissing", domain.ErrToolNotAvailable)
+	}
+
+	result, err := a.deps.Drafts.CarryOut(ctx, scope, draftID)
+	if err != nil {
+		// A missing executor or a draft nobody approved is a state, not a hiccup:
+		// retrying it would spend the retry budget reaching the same answer four
+		// times and delay the task's honest failure by seconds.
+		if errors.Is(err, domain.ErrDraftNoSender) || errors.Is(err, domain.ErrDraftNotApproved) {
+			return workflow.DraftCarryOutcome{}, temporal.NewNonRetryableApplicationError(
+				err.Error(), "ApprovalRejected", err)
+		}
+		return workflow.DraftCarryOutcome{}, err
+	}
+
+	if result.Held {
+		// A held action is not a failure and not a step: the task is waiting, and
+		// it says so in the store a well as on the wire. Without the park its
+		// status would stay `running` while the workflow slept for hours, and the
+		// office would show it as stuck the moment the heartbeat went stale.
+		reason := result.Reason
+		if reason == "" {
+			reason = "menunggu jam kerja"
+		}
+		if parked, err := a.deps.Tasks.Park(ctx, scope, task.ID, reason, draftID); err == nil {
+			task = parked
+		}
+
+		a.emit(ctx, scope, task, workflow.EventTaskWaiting)
+
+		return workflow.DraftCarryOutcome{
+			Status:    result.Status,
+			Held:      true,
+			NotBefore: derefTime(result.NotBefore),
+			Reason:    reason,
+		}, nil
+	}
+
+	a.emit(ctx, scope, task, workflow.EventTaskStep)
+
+	return workflow.DraftCarryOutcome{
+		Status:  result.Status,
+		Content: result.Content,
+	}, nil
+}
+
+// derefTime reads a time that may be absent.
+func derefTime(value *time.Time) time.Time {
+	if value == nil {
+		return time.Time{}
+	}
+	return *value
 }
 
 // RecordStep writes one round.
@@ -504,13 +595,17 @@ func (a *Activities) chatRequest(request workflow.ModelRequest, task domain.Task
 		tools = append(tools, tool.AsLLMTool())
 	}
 
+	// The turns map one to one: the workflow keeps the conversation in the shape
+	// the model reads, so a tool call and its result reach the provider as the
+	// pair they are rather than as loose prose.
 	messages := make([]llmdomain.Message, 0, len(request.Messages))
-	for _, message := range request.Messages {
-		role := llmdomain.RoleUser
-		if message.FromAgent() {
-			role = llmdomain.RoleAssistant
-		}
-		messages = append(messages, llmdomain.Message{Role: role, Text: domain.RenderBlocks(message.Blocks)})
+	for _, turn := range request.Messages {
+		messages = append(messages, llmdomain.Message{
+			Role:        turn.Role,
+			Text:        turn.Text,
+			ToolCalls:   turn.ToolCalls,
+			ToolResults: turn.ToolResults,
+		})
 	}
 
 	return llmdomain.ChatRequest{

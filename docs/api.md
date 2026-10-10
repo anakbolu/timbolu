@@ -219,6 +219,10 @@ path. Types: `message.new`, `message.updated`, `task.started`, `task.step`,
 `draft.decided`, `agent.state`, `router.decision`, `routine.run`,
 `notification.pending`.
 
+`draft.created` and `draft.decided` carry `{draft_id, task_id, agent_id,
+action_kind, status, title, summary, revision, not_before, blocked}`. The card is
+rewritten in the thread at the same time, so a reload and a live client agree.
+
 A reconnecting client names the last event it saw and receives exactly what it
 missed, in order: over HTTP with `?after_id=`, or on the stream with the
 `Last-Event-ID` header (which a browser's EventSource sends by itself) or
@@ -322,6 +326,74 @@ result. A refusal — a chain past the depth ceiling, a Bolu that is resting, a
 name that matches nobody — is returned to the model as a failed result rather
 than failing the task. A child task is always in the same workspace.
 
+## Approval and drafts (EPIC 7)
+
+An action that reaches outside Bolu never runs on its own. A tool labelled
+`write_external` becomes a **draft**, the task parks as `waiting_approval`, and a
+person decides.
+
+| Endpoint | Auth | Role | Notes |
+| --- | --- | --- | --- |
+| `GET /drafts` | bearer + tenant | any | `?status=&agent_id=&action_kind=&task_id=&limit=`; newest first |
+| `GET /drafts/:id` | bearer + tenant | any | One draft, with the payload the card shows |
+| `GET /drafts/:id/revisions` | bearer + tenant | any | The trail, oldest first |
+| `POST /drafts/:id/approve` | bearer + tenant | any | `{note?}`; carries the action out |
+| `POST /drafts/:id/revise` | bearer + tenant | any | `{note}`; a note is required |
+| `POST /drafts/:id/cancel` | bearer + tenant | any | `{note?}` |
+| `GET /approval-policies` | bearer + tenant | any | The policy in force for every external action kind |
+| `PUT /approval-policies` | bearer + tenant | owner, admin | `{action_kind, mode, max_amount}` |
+| `GET /audit` | bearer + tenant | any | `?limit=`; newest first |
+
+Deciding is open to **every member**, not only a managing role: the person who
+notices a wrong invoice is not always the owner, and a draft nobody can approve is
+a draft nobody will. Changing a policy does need a managing role, because it
+changes what may leave the workspace unattended.
+
+### Draft status
+
+| Status | Meaning |
+| --- | --- |
+| `pending` | Waiting for a person |
+| `approved` | Allowed, and either sent or held until the workspace opens |
+| `revise` | Sent back to the agent, which produces a new draft |
+| `sent` | The action left |
+| `canceled` | Nobody will act on it |
+
+A decision is recorded **once**: only a `pending` draft can be decided, so a
+duplicate signal changes nothing and answers `draft_already_decided` (409).
+
+### Policies
+
+An action kind with **no stored policy is `always_draft`**, enforced in the
+service rather than assumed. Onboarding seeds an explicit conservative row for
+every external kind, so the screen always shows something to edit.
+
+| Mode | Effect |
+| --- | --- |
+| `always_draft` | A person decides, every time (the default) |
+| `auto` | Carried out unattended, but only while the value is within `max_amount` |
+
+`max_amount` is in rupiah. An action whose amount cannot be read is treated as
+unbounded, so a ceiling cannot be satisfied by a payload that never states one.
+An auto-send is still recorded: the draft row is written and marked sent, so
+"what did the agents send" has an answer even when nobody was asked.
+
+### Working hours
+
+An action approved outside the workspace's hours is **held**, not sent: the draft
+carries `blocked_reason` and `not_before`, the task parks as `waiting_approval`,
+and the workflow waits on a durable timer. The hours are `work_hours_start` /
+`work_hours_end` in the workspace's `timezone`, read at the moment the decision is
+carried out, so changing either recomputes the hold.
+
+### The card
+
+A draft reaches the thread it came from as a `draft` block, which is rewritten
+after a decision. The block carries `draft_id`, `action_kind`, `title`,
+`summary`, `status`, `fields`, and — when it is held — `blocked_reason` and
+`not_before`. The `draft.created` and `draft.decided` events carry the same
+payload on the stream.
+
 ## Error codes
 
 | Code | Status | Meaning |
@@ -371,6 +443,11 @@ than failing the task. A child task is always in the same workspace.
 | `unknown_trigger` | 400 | A client may not open a task with that trigger |
 | `task_limit_reached` | 409 | The task hit a step, token, cost, or depth bound |
 | `task_not_configured` | 503 | Module not wired (no database) |
+| `draft_not_found` | 404 | No such draft in this workspace |
+| `draft_already_decided` | 409 | The draft already has an answer; the first stands |
+| `draft_not_approved` | 409 | The action was attempted without an approval |
+| `unknown_mode` | 400 | Mode is not `always_draft` or `auto` |
+| `approval_not_configured` | 503 | Nothing can carry the action out yet (EPIC 8) |
 | `agent_not_in_conversation` | 400 | That Bolu is not a participant here |
 | `no_responder` | 409 | No Bolu in the group can answer (all resting, or none configured) |
 | `invalid_block` | 400 | A block does not satisfy its schema |

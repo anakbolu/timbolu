@@ -119,9 +119,26 @@ stack up — but it is what proves the wiring that unit tests script away:
 2. with `TASK_MAX_STEPS=1`, a task that keeps asking for a tool stops as failed
    with a `stopped_reason` a person can read, rather than looping.
 
+`make smoke-approval` runs the same stack against the approval gate: a
+`write_external` tool call becomes a draft and the task parks; a revision sends the
+task back to its agent with the note; an approval reaches the send boundary and
+stops there honestly, because no integration executor exists yet (EPIC 8); and an
+approval outside working hours is held with a reason the user can read.
+
 The worker-restart guarantee is not covered here: it is
 `TestTaskSurvivesAWorkerRestart` in `test/integration`, which kills a real worker
 mid-task and proves the completed rounds are not repeated.
+
+**The compose workers poll the same Temporal task queue the smokes do**, so a
+running `bolu-agent-worker` executes a smoke's task with its own model
+configuration — `TASK_MAX_STEPS=1` is then never the bound that stops it, and the
+smoke fails for a reason that has nothing to do with the code. Stop them first:
+
+```bash
+docker stop bolu-api bolu-agent-worker bolu-integration-worker
+make smoke-task && make smoke-approval
+docker start bolu-api bolu-agent-worker bolu-integration-worker
+```
 
 ### Coverage
 

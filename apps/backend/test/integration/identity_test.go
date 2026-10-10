@@ -274,6 +274,89 @@ func TestSignupFlowThroughTheAPI(t *testing.T) {
 	require.Len(t, payload["data"].([]any), 1, "there must still be exactly one workspace")
 }
 
+// TestOnboardingIsWhatTellsTheSessionItIsDone is the fact the sign-in redirect
+// reads.
+//
+// The web app sends a person to the onboarding screen or the dashboard based on
+// `user.onboarded`, so an account that owns a workspace while that flag stays
+// false is sent back to onboarding after every sign-in, forever. The flag is
+// written inside the onboarding transaction rather than by a second call, so a
+// crash cannot leave the two disagreeing.
+func TestOnboardingIsWhatTellsTheSessionItIsDone(t *testing.T) {
+	api := newIdentityAPI(t, migratedDatabase(t))
+
+	const email = "onboard-flag@example.com"
+	const password = "a-good-password"
+
+	api.verifyEmail(t, api.register(t, email, password))
+
+	// Before onboarding the flag is false, which is what sends a fresh account
+	// to the form.
+	_, payload, body := api.call(t, fiber.MethodPost, "/api/auth/login",
+		`{"email":"`+email+`","password":"`+password+`"}`, nil)
+	require.False(t, data(t, payload)["user"].(map[string]any)["onboarded"].(bool), body)
+
+	accessToken, _ := api.login(t, email, password)
+	status, _, body := api.call(t, fiber.MethodPost, "/api/workspaces/onboard",
+		`{"name":"Toko Sinar","business_field":"Retail","timezone":"Asia/Jakarta"}`, bearer(accessToken))
+	require.Equal(t, http.StatusOK, status, body)
+
+	// After it, the next sign-in says the account is done, so the app lets it
+	// through to the dashboard.
+	_, payload, body = api.call(t, fiber.MethodPost, "/api/auth/login",
+		`{"email":"`+email+`","password":"`+password+`"}`, nil)
+	require.True(t, data(t, payload)["user"].(map[string]any)["onboarded"].(bool), body)
+
+	// Onboarding again reports the same thing: the fact is not lost by repeating
+	// the call, and it does not depend on the workspace being newly created.
+	status, _, body = api.call(t, fiber.MethodPost, "/api/workspaces/onboard",
+		`{"name":"Toko Sinar","business_field":"Retail","timezone":"Asia/Jakarta"}`, bearer(accessToken))
+	require.Equal(t, http.StatusOK, status, body)
+
+	_, payload, body = api.call(t, fiber.MethodPost, "/api/auth/login",
+		`{"email":"`+email+`","password":"`+password+`"}`, nil)
+	require.True(t, data(t, payload)["user"].(map[string]any)["onboarded"].(bool), body)
+}
+
+// TestAnAccountWithAWorkspaceButNoFlagIsHealed covers the accounts that already
+// existed when the flag was wired: they own a workspace, so onboarding returns it
+// unchanged, and it must still record that they are done.
+func TestAnAccountWithAWorkspaceButNoFlagIsHealed(t *testing.T) {
+	dsn := migratedDatabase(t)
+	api := newIdentityAPI(t, dsn)
+
+	const email = "legacy-onboard@example.com"
+	const password = "a-good-password"
+
+	api.verifyEmail(t, api.register(t, email, password))
+	accessToken, _ := api.login(t, email, password)
+
+	status, _, body := api.call(t, fiber.MethodPost, "/api/workspaces/onboard",
+		`{"name":"Toko Sinar","business_field":"Retail","timezone":"Asia/Jakarta"}`, bearer(accessToken))
+	require.Equal(t, http.StatusOK, status, body)
+
+	// Reproduce the state a deployment that never marked the account is in.
+	pool := poolFor(t, dsn)
+	_, err := pool.PgxPool().Exec(t.Context(),
+		"UPDATE users SET onboarded_at = NULL WHERE lower(email) = lower($1)", email)
+	require.NoError(t, err)
+
+	_, payload, body := api.call(t, fiber.MethodPost, "/api/auth/login",
+		`{"email":"`+email+`","password":"`+password+`"}`, nil)
+	require.False(t, data(t, payload)["user"].(map[string]any)["onboarded"].(bool), body)
+
+	// The next onboarding call returns the workspace it already owns and records
+	// the fact on the way through.
+	status, payload, body = api.call(t, fiber.MethodPost, "/api/workspaces/onboard",
+		`{"name":"Toko Sinar","business_field":"Retail","timezone":"Asia/Jakarta"}`, bearer(accessToken))
+	require.Equal(t, http.StatusOK, status, body)
+	require.False(t, data(t, payload)["created"].(bool), "it must not create a second workspace")
+
+	_, payload, body = api.call(t, fiber.MethodPost, "/api/auth/login",
+		`{"email":"`+email+`","password":"`+password+`"}`, nil)
+	require.True(t, data(t, payload)["user"].(map[string]any)["onboarded"].(bool), body)
+}
+
 // TestInvitationFlow is the second acceptance gate: a second user is invited,
 // joins with the role they were given, and cannot do more than that role allows.
 func TestInvitationFlow(t *testing.T) {

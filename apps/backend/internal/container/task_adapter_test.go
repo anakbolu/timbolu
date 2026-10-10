@@ -371,7 +371,13 @@ func TestTaskLimitsFallBackToTheProductDefaults(t *testing.T) {
 
 	cfg := testConfig()
 	cfg.Tasks = config.TasksConfig{MaxSteps: 3, MaxTokens: 500, MaxHandoffDepth: 1, MaxToolResultBytes: 64}
-	require.Equal(t, taskdomain.Limits{MaxSteps: 3, MaxTokens: 500, MaxHandoffDepth: 1, MaxToolResultBytes: 64}, taskLimits(cfg))
+	require.Equal(t, taskdomain.Limits{
+		MaxSteps:           3,
+		MaxTokens:          500,
+		MaxHandoffDepth:    1,
+		MaxToolResultBytes: 64,
+		MaxRevisions:       taskdomain.DefaultLimits.MaxRevisions,
+	}, taskLimits(cfg), "a bound the configuration does not state keeps the product default")
 }
 
 // TestTaskEventSinkIsAbsentWithoutTheEventStore keeps the container honest: a

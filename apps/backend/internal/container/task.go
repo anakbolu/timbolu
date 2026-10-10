@@ -144,11 +144,16 @@ func (c *Container) toolExecutor() taskdomain.ToolExecutor {
 	return nil
 }
 
-// draftGate turns a write_external action into a draft a human decides on. The
-// approvals module owns the policy and the storage; until it lands, a task
-// refuses the action instead of taking it, which is the safe direction.
+// draftGate turns a write_external action into a draft a human decides on.
+//
+// It is the approval module's own service, adapted: the task proposes an action
+// and the policy decides whether a person is asked. Without it a task refuses the
+// action instead of taking it, which is the safe direction.
 func (c *Container) draftGate() taskdomain.DraftGate {
-	return nil
+	if c == nil || c.Services == nil || c.Services.Approval == nil {
+		return nil
+	}
+	return approvalGate{service: c.Services.Approval}
 }
 
 // costTable prices a model call. It is the gateway's own table, so a task and
