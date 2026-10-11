@@ -66,11 +66,18 @@ func (c *Container) openIntegration(_ context.Context, cfg *config.Config, o *op
 	}
 
 	// The signing key is what makes a callback trustworthy: the value travels
-	// through a browser, so anybody can hand one back.
-	states, err := oauthstate.New(cfg.Integrations.OAuthStateKey)
+	// through a browser, so anybody can hand one back. A deployment without one
+	// runs with connection flows and webhooks disabled, rather than refusing to
+	// start.
+	codec, err := oauthstate.New(cfg.Integrations.OAuthStateKey)
 	if err != nil {
 		return fmt.Errorf("integration: %w", err)
 	}
+	if codec == nil {
+		c.Logger.Warn("connection flows and webhooks are disabled: no OAUTH_STATE_KEY configured")
+	}
+
+	states := stateCodec(codec)
 
 	limits, err := newCallLimits(cfg, c.Limiter, c.Logger)
 	if err != nil {
@@ -143,6 +150,22 @@ type tokenCipher struct {
 	keys   integrationdomain.KeyManager
 	store  integrationdomain.Repository
 	logger *zap.Logger
+}
+
+// stateCodec adapts the platform codec to the ports the integration domain
+// declares.
+//
+// A nil codec stays a nil interface rather than a typed nil, so the service can
+// tell "no key configured" from "the codec failed" instead of calling a method on
+// a nil value.
+func stateCodec(codec *oauthstate.Codec) interface {
+	integrationdomain.StateCodec
+	integrationdomain.RefCodec
+} {
+	if codec == nil {
+		return nil
+	}
+	return codec
 }
 
 // keyManager adapts the platform key-management package to the port the

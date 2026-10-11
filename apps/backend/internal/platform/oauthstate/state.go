@@ -36,10 +36,15 @@ type Codec struct {
 }
 
 // New builds a codec from a configured key.
+//
+// An absent key is not an error: a deployment that has not registered an OAuth
+// application simply cannot start a connection flow, and the screen says so rather
+// than the process refusing to start. A key that is present and too short is a
+// mistake, and is reported as one.
 func New(key string) (*Codec, error) {
 	trimmed := strings.TrimSpace(key)
 	if trimmed == "" {
-		return nil, errors.New("oauthstate: a signing key is required")
+		return nil, nil
 	}
 	if len(trimmed) < minKeySize {
 		return nil, fmt.Errorf("oauthstate: the signing key must be at least %d characters", minKeySize)

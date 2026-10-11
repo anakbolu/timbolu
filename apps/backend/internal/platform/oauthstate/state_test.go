@@ -114,15 +114,25 @@ func TestAShortKeyIsRefused(t *testing.T) {
 	_, err := New("too-short")
 	require.ErrorContains(t, err, "at least 32 characters")
 
-	_, err = New("")
-	require.Error(t, err)
-
 	// And a codec that was never built refuses rather than panics.
 	var absent *Codec
 	_, err = absent.Sign(sampleState())
 	require.Error(t, err)
 	_, err = absent.Verify("anything")
 	require.Error(t, err)
+}
+
+// TestAnAbsentKeyDisablesTheFeatureRatherThanStoppingTheProcess is the convention
+// the rest of the deployment follows: a feature nobody configured is unavailable,
+// not fatal.
+func TestAnAbsentKeyDisablesTheFeatureRatherThanStoppingTheProcess(t *testing.T) {
+	for _, absent := range []string{"", "   "} {
+		codec, err := New(absent)
+		require.NoError(t, err, "an absent key must not stop a deployment from starting")
+		// A nil codec is what the container hands the service, which refuses a
+		// flow with a message rather than calling a method on a nil value.
+		require.Nil(t, codec)
+	}
 }
 
 // TestExpiryTravelsWithTheState keeps the check in the callback honest: the codec
