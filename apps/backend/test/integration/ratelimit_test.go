@@ -5,11 +5,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 
+	"github.com/robzlabz/employeebot/apps/backend/internal/platform/quota"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/ratelimit"
 )
 
@@ -172,4 +174,62 @@ func TestLimiterIsAtomic(t *testing.T) {
 	}
 
 	require.Equal(t, capacity, allowed, "concurrent callers must not each take the last token")
+}
+
+// TestQuotaCounterKeepsTwoWindowsAgainstRealRedis is the cache's real behaviour:
+// the period total and the day total are separate keys, both incremented
+// atomically, and neither survives its window forever.
+//
+// It is an integration test because the counter is a Redis script: what can be
+// wrong about it — the increment not being atomic, a key without a lifetime, the
+// two windows sharing a key — is only visible against a real server.
+func TestQuotaCounterKeepsTwoWindowsAgainstRealRedis(t *testing.T) {
+	options, err := redis.ParseURL(redisURL(t))
+	require.NoError(t, err)
+	client := redis.NewClient(options)
+	t.Cleanup(func() { _ = client.Close() })
+
+	counter := quota.New(client)
+	workspaceID := uuid.New()
+	ctx := t.Context()
+
+	// A new workspace has spent nothing in either window.
+	require.Zero(t, spent(t, counter, workspaceID))
+	require.Zero(t, spentToday(t, counter, workspaceID))
+
+	require.NoError(t, counter.Add(ctx, workspaceID, 120))
+	require.NoError(t, counter.Add(ctx, workspaceID, 40))
+	require.NoError(t, counter.AddCost(ctx, workspaceID, 2_500))
+	require.NoError(t, counter.AddCost(ctx, workspaceID, 1_500))
+
+	require.Equal(t, int64(160), spent(t, counter, workspaceID))
+	require.Equal(t, int64(4_000), spentToday(t, counter, workspaceID))
+
+	// A call that reported nothing does not create a key, so a workspace that
+	// never spends leaves nothing behind.
+	fresh := uuid.New()
+	require.NoError(t, counter.Add(ctx, fresh, 0))
+	require.NoError(t, counter.AddCost(ctx, fresh, 0))
+	require.Zero(t, spent(t, counter, fresh))
+
+	// And the counter can be cleared, which is what the period rollover and the
+	// tests use.
+	require.NoError(t, counter.Reset(ctx, workspaceID))
+	require.Zero(t, spent(t, counter, workspaceID))
+}
+
+func spent(t *testing.T, counter *quota.Counter, workspaceID uuid.UUID) int64 {
+	t.Helper()
+
+	total, err := counter.Spent(t.Context(), workspaceID)
+	require.NoError(t, err)
+	return total
+}
+
+func spentToday(t *testing.T, counter *quota.Counter, workspaceID uuid.UUID) int64 {
+	t.Helper()
+
+	total, err := counter.SpentCostToday(t.Context(), workspaceID)
+	require.NoError(t, err)
+	return total
 }

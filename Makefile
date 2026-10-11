@@ -1,5 +1,5 @@
 .PHONY: help up down logs build dev frontend backend api worker-logs \
-        test test-integration cover lint archcheck sqlc mocks generate llm-fixtures \
+        test test-integration smoke-task cover lint archcheck sqlc mocks generate llm-fixtures \
         migrate-up migrate-down migrate-create psql ci
 
 COMPOSE := docker compose
@@ -73,6 +73,9 @@ test: ## Run the test suite (integration tests need Docker)
 
 test-integration: ## Run only the testcontainers integration tests
 	cd $(BACKEND) && CGO_ENABLED=0 go test ./test/integration/... -count=1
+
+smoke-task: ## Run the task runtime end to end against the compose stack (needs `make up`)
+	cd $(BACKEND) && bash scripts/smoke-task.sh
 
 cover: ## Run the tests and enforce the coverage gate (MIN_COVERAGE, default 80)
 	cd $(BACKEND) && CGO_ENABLED=0 MIN_COVERAGE=$(or $(MIN_COVERAGE),80) ./scripts/coverage.sh

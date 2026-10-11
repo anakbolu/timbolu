@@ -30,6 +30,26 @@ x-backend-env: &backend-env
   # The origin allowed to frame a content document. It must name the app, because
   # the document is served from a different host by design.
   CONTENT_FRAME_ANCESTORS: ${CONTENT_FRAME_ANCESTORS:-http://localhost:3000}
+  # Model gateway: the key that seals provider secrets at rest, and the provider
+  # the platform offers a workspace that configured none. Leaving the model empty
+  # disables the fallback, so every workspace must configure its own.
+  SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:-local_dev_secret_key_32_byte_len}
+  LLM_DEFAULT_ADAPTER: ${LLM_DEFAULT_ADAPTER:-}
+  LLM_DEFAULT_BASE_URL: ${LLM_DEFAULT_BASE_URL:-}
+  LLM_DEFAULT_MODEL: ${LLM_DEFAULT_MODEL:-}
+  LLM_DEFAULT_API_KEY: ${LLM_DEFAULT_API_KEY:-}
+  LLM_QUOTA_ENABLED: ${LLM_QUOTA_ENABLED:-false}
+  LLM_TOKENS_PER_PERIOD: ${LLM_TOKENS_PER_PERIOD:-0}
+  LLM_CHAIN_LIMIT: ${LLM_CHAIN_LIMIT:-3}
+  # The cost ceiling of one day per workspace, in micro-rupiah. Zero means
+  # unlimited. It is the second bound the quota asks, alongside the period's
+  # token allowance.
+  PLAN_DAILY_COST_MICROS: ${PLAN_DAILY_COST_MICROS:-0}
+  # What one task may spend. A zero falls back to the product default.
+  TASK_MAX_STEPS: ${TASK_MAX_STEPS:-12}
+  TASK_MAX_TOKENS: ${TASK_MAX_TOKENS:-120000}
+  TASK_MAX_HANDOFF_DEPTH: ${TASK_MAX_HANDOFF_DEPTH:-2}
+  TASK_MAX_TOOL_RESULT_BYTES: ${TASK_MAX_TOOL_RESULT_BYTES:-16384}
 
 services:
   postgres:

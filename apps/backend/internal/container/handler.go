@@ -11,6 +11,7 @@ import (
 	chathandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/handler"
 	healthhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/handler"
 	llmhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/handler"
+	taskhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/handler"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	workspacehandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/handler"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
@@ -27,6 +28,7 @@ type Handlers struct {
 	Agent     *agenthandler.Handler
 	LLM       *llmhandler.Handler
 	Chat      *chathandler.Handler
+	Task      *taskhandler.Handler
 }
 
 // newHandlers builds every handler from the service set. Handlers receive the
@@ -60,6 +62,9 @@ func newHandlers(services *Services, log *zap.Logger, cfg *config.Config) *Handl
 		handlers.Chat = chathandler.New(services.Chat, log).WithContent(chathandler.ContentConfig{
 			FrameAncestors: contentFrameAncestors(cfg),
 		})
+	}
+	if services.Task != nil {
+		handlers.Task = taskhandler.New(services.Task, log)
 	}
 
 	return handlers
@@ -128,6 +133,16 @@ func (c *Container) registerRoutes() {
 		registerChatFallback(tenant)
 	} else {
 		chathandler.Routes(tenant, c.Handlers.Chat)
+	}
+
+	// Tasks: everyone in the workspace reads the history and the steps, because
+	// the office and the feed are built from them. A task is never opened here:
+	// chat, a routine, a webhook, or another task opens one, and each of those
+	// has its own entry point.
+	if c.Handlers.Task == nil {
+		registerTaskFallback(tenant)
+	} else {
+		taskhandler.Routes(tenant, c.Handlers.Task)
 	}
 
 	// Model configuration is read by every member, because the Bolu screens show
@@ -201,6 +216,9 @@ func (c *Container) registerUnavailableModules(api fiber.Router) {
 	if c.Handlers.Chat == nil {
 		registerChatFallback(api)
 	}
+	if c.Handlers.Task == nil {
+		registerTaskFallback(api)
+	}
 }
 
 // registerAgentFallback answers 503 for the registry routes.
@@ -226,6 +244,12 @@ func contentFrameAncestors(cfg *config.Config) []string {
 	// Without a configured frontend the safest useful default is the API itself,
 	// which is where a local deployment serves the app from.
 	return []string{"'self'"}
+}
+
+// registerTaskFallback answers 503 for the task routes.
+func registerTaskFallback(router fiber.Router) {
+	message := "the task runtime is not configured"
+	router.All("/tasks*", unavailable(message, "task_not_configured"))
 }
 
 // registerChatFallback answers 503 for the conversation routes.

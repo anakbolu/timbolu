@@ -1,9 +1,9 @@
-// Command agent-worker runs the Temporal worker that executes agent tasks:
-// the LLM loop, tool calls, approvals and handoffs.
+// Command agent-worker runs the Temporal worker that executes agent tasks: the
+// LLM loop, tool calls, approvals, and handoffs.
 //
-// EPIC 6 (#52) registers AgentTaskWorkflow and its activities here; until then
-// the worker registers the connectivity probe so a deployment can be verified
-// end to end.
+// The workflows and activities are built by the container, so the worker and the
+// API share one assembly point: the API starts a task and signals it, and this
+// process is where the task actually runs.
 package main
 
 import (
@@ -13,8 +13,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-
-	sdkworker "go.temporal.io/sdk/worker"
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/container"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
@@ -59,9 +57,8 @@ func run() error {
 		Name:          "agent-worker",
 		NeedsDatabase: true,
 		TaskQueue:     func(t *temporal.Client) string { return t.TaskQueueAgent() },
-		Register: func(w sdkworker.Worker, _ *container.Container) {
-			w.RegisterWorkflow(temporal.WorkerPingWorkflow)
-			w.RegisterActivity(temporal.WorkerPingActivity)
-		},
+		// The container owns what is registered: cmd reaches a module through
+		// it, which is what keeps this binary from importing the runtime.
+		Register: container.RegisterAgentTasks,
 	})
 }

@@ -43,6 +43,11 @@ func (c *Container) openLLM(_ context.Context, cfg *config.Config) error {
 		c.Repositories.LLMAgents = c.Repositories.LLM.NewAgentStore(box)
 	}
 
+	// The price table is kept on the container as well as handed to the gateway:
+	// the task runtime prices its own steps with the same table, so a task's
+	// total and the ledger cannot disagree about what a token cost.
+	c.Costs = pricing.New(pricing.Default(), pricing.DefaultFallback)
+
 	deps := llmservice.Deps{
 		Store:    c.Repositories.LLM,
 		Agents:   c.Repositories.LLMAgents,
@@ -50,7 +55,7 @@ func (c *Container) openLLM(_ context.Context, cfg *config.Config) error {
 		Box:      secretBox(box),
 		Recorder: c.Repositories.LLM,
 		Reader:   c.Repositories.LLM,
-		Costs:    pricing.New(pricing.Default(), pricing.DefaultFallback),
+		Costs:    c.Costs,
 		Default:  platformProvider(cfg),
 		Settings: llmservice.Config{
 			QuotaEnabled: cfg.Llm.QuotaEnabled,
@@ -67,7 +72,10 @@ func (c *Container) openLLM(_ context.Context, cfg *config.Config) error {
 			// the ledger, which is slower but correct.
 			c.Logger.Warn("quota is enabled but redis is not configured: every check reads the ledger")
 		}
-		deps.Quota = fixedAllowance{tokens: cfg.Llm.TokensPerPeriod}
+		deps.Quota = fixedAllowance{
+			tokens:      cfg.Llm.TokensPerPeriod,
+			dailyMicros: cfg.Plan.DailyCostMicros,
+		}
 	}
 
 	c.Services.LLM = llmservice.New(deps)
@@ -117,16 +125,24 @@ func secretBox(box *crypto.Box) llmdomain.SecretBox {
 }
 
 // fixedAllowance is the quota policy before subscriptions exist: every workspace
-// of the deployment gets the same monthly allowance, and zero means unlimited.
-// EPIC 12 (#97) replaces it with the subscription's package.
+// of the deployment gets the same period allowance and the same daily ceiling,
+// and zero on either means unlimited. EPIC 12 (#97) replaces it with the
+// subscription's package.
 type fixedAllowance struct {
 	tokens int64
+	// dailyMicros is the day's cost ceiling, in micro-rupiah.
+	dailyMicros int64
 }
 
 // Allowance implements the quota policy port. A zero allowance means unlimited,
 // which is what a deployment without subscriptions runs with.
 func (f fixedAllowance) Allowance(context.Context, uuid.UUID) (int64, error) {
 	return f.tokens, nil
+}
+
+// DailyCostAllowance implements the quota policy port for the day's ceiling.
+func (f fixedAllowance) DailyCostAllowance(context.Context, uuid.UUID) (int64, error) {
+	return f.dailyMicros, nil
 }
 
 // compile-time checks that the adapters satisfy the ports they are wired to.

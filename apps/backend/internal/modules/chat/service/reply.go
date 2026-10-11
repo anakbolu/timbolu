@@ -98,6 +98,14 @@ func (s *Service) Send(ctx context.Context, scope chatdomain.Scope, req chatdoma
 		s.emitRouterDecision(ctx, scope, conversation, userMessage, decision)
 	}
 
+	// The durable runtime owns the answer when it is configured. A task survives
+	// the request, a restart, and an approval that takes hours; the in-process
+	// reply below does not, which is why it is the fallback rather than the
+	// default.
+	if s.deps.Tasks != nil {
+		return s.dispatchTask(ctx, scope, conversation, responder, userMessage, placeholder, text, result)
+	}
+
 	// The reply runs on a context of its own: the request that started it ends
 	// as soon as the message is stored, and the answer must not end with it.
 	replyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), replyTimeout)
@@ -106,6 +114,48 @@ func (s *Service) Send(ctx context.Context, scope chatdomain.Scope, req chatdoma
 		defer cancel()
 		s.runReply(replyCtx, scope, conversation, responder, userMessage, placeholder)
 	}()
+
+	return result, nil
+}
+
+// dispatchTask hands the message to the durable runtime and records the task on
+// the placeholder, so a client can follow the task from the message it answers.
+//
+// A dispatch that fails marks the placeholder failed rather than leaving it
+// streaming forever: the user asked a question and must not be shown a Bolu that
+// is still thinking about it.
+func (s *Service) dispatchTask(
+	ctx context.Context,
+	scope chatdomain.Scope,
+	conversation chatdomain.Conversation,
+	responder chatdomain.AgentRef,
+	userMessage, placeholder chatdomain.Message,
+	prompt string,
+	result chatdomain.SendResult,
+) (chatdomain.SendResult, error) {
+	taskID, err := s.deps.Tasks.Start(ctx, scope, chatdomain.StartRequest{
+		ConversationID: conversation.ID,
+		MessageID:      placeholder.ID,
+		AgentID:        responder.ID,
+		Trigger:        chatdomain.TriggerChat,
+		Title:          prompt,
+	})
+	if err != nil {
+		s.finishReply(ctx, scope, conversation, responder, placeholder, nil, chatdomain.MessageFailed, err.Error())
+		return result, fmt.Errorf("chat: open task: %w", err)
+	}
+
+	placeholder.TaskID = taskID
+	if stored, err := s.deps.Messages.Update(ctx, scope, placeholder); err == nil {
+		placeholder = stored
+		result.Message = userMessage
+	}
+
+	s.emitMessage(ctx, scope, placeholder, conversation.ID, chatdomain.EventMessageUpdated)
+	s.emitAgentState(ctx, scope, responder.ID, chatdomain.StateWorking, chatdomain.AgentStatePayload{
+		Reason: "mengerjakan tugas",
+		TaskID: chatdomain.WireID(taskID),
+	})
 
 	return result, nil
 }

@@ -16,6 +16,8 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"go.uber.org/zap"
 
+	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
+	taskactivity "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/activity"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/authn"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
@@ -42,6 +44,14 @@ type Container struct {
 	Mailer  mail.Sender
 	Limiter *ratelimit.Limiter
 	Google  *google.Client
+
+	// Costs prices a model call. It is built with the gateway and shared with
+	// the task runtime, so a task's own total and the ledger cannot disagree.
+	Costs llmdomain.CostTable
+	// Tasks is the activity set the agent worker registers. It is built in every
+	// process so the API and the worker share one assembly point, and only the
+	// worker runs it.
+	Tasks *taskactivity.Activities
 
 	Repositories *Repositories
 	Services     *Services
@@ -199,8 +209,16 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Container, e
 		return nil, err
 	}
 
-	// Conversations come last of the modules: they answer with the gateway and
-	// address the Bolu the registry owns, so both must be assembled first.
+	// The task runtime is assembled before the conversations: a chat message is
+	// handed to it, so it must exist when the chat service is built.
+	if err := c.openTask(ctx, cfg); err != nil {
+		c.Close()
+		return nil, err
+	}
+
+	// Conversations come after the runtime: they answer with the gateway, address
+	// the Bolu the registry owns, and hand a message to the task runtime, so all
+	// three must be assembled first.
 	if err := c.openChat(ctx, cfg); err != nil {
 		c.Close()
 		return nil, err

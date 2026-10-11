@@ -313,6 +313,10 @@ type UsageReader interface {
 	// SumSince returns the tokens recorded since a moment, which is the durable
 	// fallback when the live counter is unavailable.
 	SumSince(ctx context.Context, workspaceID uuid.UUID, since time.Time) (int64, error)
+	// CostSince returns the cost recorded since a moment, in micro-rupiah. It is
+	// the durable fallback for the daily ceiling, and it reads the daily
+	// aggregation rather than scanning the ledger.
+	CostSince(ctx context.Context, workspaceID uuid.UUID, since time.Time) (int64, error)
 }
 
 // UsageRecorder persists what a call cost. Every provider call goes through it,
@@ -327,19 +331,34 @@ type QuotaChecker interface {
 	Check(ctx context.Context, workspaceID uuid.UUID) error
 }
 
-// QuotaCounter is the live token spend of a workspace. It is a cache in front of
-// the ledger, so a Redis restart costs accuracy but not correctness: the
-// repository can always recompute the total from usage_ledger.
+// QuotaCounter is the live spend of a workspace. It is a cache in front of the
+// ledger, so a Redis restart costs accuracy but not correctness: the repository
+// can always recompute the total from usage_ledger.
+//
+// It tracks two windows because the product bounds two: a token allowance per
+// billing period, and a cost ceiling per day. A runaway task is stopped by the
+// day before it can consume a month.
 type QuotaCounter interface {
+	// Spent is the tokens recorded for the current period.
 	Spent(ctx context.Context, workspaceID uuid.UUID) (int64, error)
+	// Add records tokens spent by one call.
 	Add(ctx context.Context, workspaceID uuid.UUID, tokens int64) error
+	// SpentCostToday is the cost recorded for the current day, in micro-rupiah.
+	SpentCostToday(ctx context.Context, workspaceID uuid.UUID) (int64, error)
+	// AddCost records what one call cost.
+	AddCost(ctx context.Context, workspaceID uuid.UUID, costMicros int64) error
 }
 
-// QuotaPolicy reports how many tokens a workspace may spend in the current
-// period. Zero means unlimited. EPIC 12 (#97) replaces the configured value with
-// the subscription's package.
+// QuotaPolicy reports what a workspace may spend. Zero means unlimited, and the
+// two bounds are separate: a workspace may have tokens left for the month and
+// still be out for the day.
+//
+// EPIC 12 (#97) replaces the configured values with the subscription's package.
 type QuotaPolicy interface {
+	// Allowance is the token allowance of the current period.
 	Allowance(ctx context.Context, workspaceID uuid.UUID) (int64, error)
+	// DailyCostAllowance is the cost ceiling of one day, in micro-rupiah.
+	DailyCostAllowance(ctx context.Context, workspaceID uuid.UUID) (int64, error)
 }
 
 // Clock reports the time, so cost and expiry rules are testable.

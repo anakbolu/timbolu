@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
 )
 
@@ -124,6 +125,21 @@ func (c *Client) TaskQueueIntegration() string {
 		return ""
 	}
 	return c.taskQueueIntegration
+}
+
+// StartOptions is what a caller passes to start a workflow on the agent queue.
+//
+// The workflow id is the caller's, and it is what makes a restart resume the
+// work instead of opening a second copy of it: two starts with the same id and
+// the same run collide, which is exactly the protection a task needs.
+func (c *Client) StartOptions(workflowID string) client.StartWorkflowOptions {
+	return client.StartWorkflowOptions{
+		ID:        workflowID,
+		TaskQueue: c.TaskQueueAgent(),
+		// A workflow id that already ran is refused rather than reused, so a
+		// duplicate dispatch cannot silently replace a finished task's history.
+		WorkflowIDReusePolicy: enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE,
+	}
 }
 
 // Close releases the client. Safe on a nil client.

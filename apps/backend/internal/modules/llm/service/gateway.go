@@ -249,6 +249,9 @@ func (s *Service) record(ctx context.Context, scope domain.Scope, cfg domain.Pro
 
 	if s.deps.Counter != nil {
 		_ = s.deps.Counter.Add(ctx, scope.WorkspaceID, int64(response.Usage.Total()))
+		// The day counter is moved with the same row, so the two windows cannot
+		// disagree about what was spent.
+		_ = s.deps.Counter.AddCost(ctx, scope.WorkspaceID, entry.CostMicros)
 	}
 
 	return nil

@@ -99,6 +99,29 @@ What they prove:
 - `TestWorkerRunsAgainstTemporal` — the container connects to Temporal, the
   worker registers a workflow, the workflow executes, and the worker stops
   cleanly.
+- `TestTaskSurvivesAWorkerRestart` — the gate the durable runtime exists for: a
+  worker is killed while a model call is in flight, a second worker takes over,
+  and the task finishes with each completed round recorded exactly once. The
+  model and the tools are stubs; what is under test is the durable execution.
+- `TestEveryTriggerIsStoredWithItsOwnStatus`, `TestHandoffChainIsStoredWithItsDepthAndParent`,
+  `TestStepsAreRecordedInOrder`, `TestTaskRuntimeIsTenantScoped` — the task
+  schema, the handoff chain, and tenant isolation, against a real Postgres.
+
+### The end-to-end smoke
+
+`make smoke-task` runs the API and the agent worker on the host against the
+compose Postgres, Redis, and Temporal, with the model gateway pointed at a stub
+that speaks the [OI]-compatible format. It is not a gate — it needs the compose
+stack up — but it is what proves the wiring that unit tests script away:
+
+1. a chat message becomes a durable task, the task runs out of process, records
+   its rounds, and writes the answer into the thread it was asked in;
+2. with `TASK_MAX_STEPS=1`, a task that keeps asking for a tool stops as failed
+   with a `stopped_reason` a person can read, rather than looping.
+
+The worker-restart guarantee is not covered here: it is
+`TestTaskSurvivesAWorkerRestart` in `test/integration`, which kills a real worker
+mid-task and proves the completed rounds are not repeated.
 
 ### Coverage
 

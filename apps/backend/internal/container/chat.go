@@ -75,6 +75,16 @@ func (c *Container) openChat(_ context.Context, cfg *config.Config) error {
 		}
 	}
 
+	// A message becomes a durable task when the runtime is configured, and is
+	// answered in process otherwise. The task runtime needs the registry to know
+	// which Bolu the message addresses, so both must be present.
+	if c.Services.Task != nil && deps.Agents != nil {
+		deps.Tasks = chatTaskStarter{service: c.Services.Task}
+	} else {
+		c.Logger.Warn("chat replies run in process: the task runtime is not configured, " +
+			"so an answer does not survive a restart")
+	}
+
 	if deps.Responder == nil || deps.Agents == nil {
 		// Without a gateway or a registry a message can be stored and read, but
 		// nothing can answer it. Saying so is better than a Bolu that never

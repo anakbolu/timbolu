@@ -83,6 +83,22 @@ Llm:
   TokensPerPeriod: 0
   ChainLimit: 3
 
+Plan:
+  # The cost ceiling of one day per workspace, in micro-rupiah (1 IDR = 1e6).
+  # Zero means unlimited, which is what local development runs with. It is the
+  # second bound the quota asks: the period's token allowance stops a workspace
+  # from spending a month's tokens, and this stops one runaway task from
+  # spending a month in an afternoon.
+  DailyCostMicros: 0
+
+# What one task may spend. A zero falls back to the product default, so the
+# section states only what differs from it.
+Tasks:
+  MaxSteps: 12
+  MaxTokens: 120000
+  MaxHandoffDepth: 2
+  MaxToolResultBytes: 16384
+
 Storage:
   # The local driver writes to a directory, so development needs no container and
   # the stored files are inspectable. Deployments use "s3".

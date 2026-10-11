@@ -371,6 +371,11 @@ type Task struct {
 	FinishedAt     *time.Time
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	Depth          int32
+	HeartbeatAt    *time.Time
+	WaitingReason  string
+	WaitingDraftID *uuid.UUID
+	ReplyMessageID *uuid.UUID
 }
 
 type TaskStep struct {

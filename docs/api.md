@@ -184,6 +184,12 @@ the backend did not check.
 | `GET /events/socket` | bearer + tenant (query token) | any | WebSocket; the primary transport |
 | `GET /content/:reference` | none | — | One sandboxed document, from the content origin |
 
+A message with `reply=true` becomes a durable task (see *Task runtime*): the chat
+module writes the placeholder the answer fills, opens the task, and records the
+task id on that message, so a client follows the answer from the message rather
+than watching the whole thread. A dispatch that cannot be opened marks the
+placeholder `failed` instead of leaving it streaming forever.
+
 ### The block contract
 
 | Type | Required | Notes |
@@ -209,8 +215,9 @@ points, 256 KB of text, 64 KB of Mermaid, 500 KB of HTML, 25 MB per attachment,
 An event is written to `activity_events` **before** it is published to the Redis
 channel `ws:{workspace_id}`, so the row is the record and the channel is the fast
 path. Types: `message.new`, `message.updated`, `task.started`, `task.step`,
-`task.finished`, `draft.created`, `draft.decided`, `agent.state`,
-`router.decision`, `routine.run`, `notification.pending`.
+`task.running`, `task.waiting_approval`, `task.finished`, `draft.created`,
+`draft.decided`, `agent.state`, `router.decision`, `routine.run`,
+`notification.pending`.
 
 A reconnecting client names the last event it saw and receives exactly what it
 missed, in order: over HTTP with `?after_id=`, or on the stream with the
@@ -242,6 +249,78 @@ The client frames it with `sandbox="allow-scripts"` and no `allow-same-origin`,
 so the document has an opaque origin and cannot read the application's cookies,
 storage, or DOM. `connect-src 'none'` is what stops a script inside it from
 reaching the network at all.
+
+## Task runtime (EPIC 6)
+
+A task is a durable unit of work: a Bolu thinks, calls the tools it was granted,
+and records every round. It runs as a Temporal workflow, so it survives a worker
+restart, waits for an approval for hours without holding a connection, and stops
+on a bound with a reason a person can read.
+
+```
+POST /api/tasks            — not exposed: a task is opened by chat, a routine,
+                             a webhook, or another task, never by a browser
+GET  /api/tasks            — the workspace history, newest first
+GET  /api/tasks/:id        — one task
+GET  /api/tasks/:id/steps  — the recorded rounds, in order
+GET  /api/tasks/:id/children — the tasks this one handed work to
+POST /api/tasks/:id/cancel — stop a task that has not finished
+```
+
+All of them need a bearer token and an active workspace; the routes answer 503
+with `task_not_configured` when the runtime is not wired.
+
+`GET /api/tasks` filters: `status`, `live=true` (queued, running, or waiting),
+`agent_id`, `parent_task_id`, `limit` (default 50, max 200). An unknown status is
+refused with `invalid_input` rather than ignored.
+
+A task payload carries `trigger` (`chat`, `routine`, `webhook`, `handoff`),
+`status`, and a derived `health`:
+
+| `health` | Stored status | Meaning |
+| --- | --- | --- |
+| `running` | `queued`, `running` | Working, and its heartbeat is fresh |
+| `waiting` | `waiting_approval` | Parked on a human decision |
+| `stuck` | `queued`, `running` | No heartbeat for five minutes: the worker died |
+
+`health` is derived from `heartbeat_at`, never stored: the status alone cannot
+tell a working task from one whose worker was evicted, because both read
+`running`.
+
+### What one task may spend
+
+| Bound | Default | Effect |
+| --- | --- | --- |
+| `TASK_MAX_STEPS` | 12 | Rounds of the model-and-tools loop |
+| `TASK_MAX_TOKENS` | 120000 | Input and output tokens together, per task |
+| `TASK_MAX_HANDOFF_DEPTH` | 2 | How deep a chain of handoffs may nest |
+| `TASK_MAX_TOOL_RESULT_BYTES` | 16384 | A longer tool answer is truncated |
+| `LLM_TOKENS_PER_PERIOD` | 0 (unlimited) | Tokens per workspace per billing period |
+| `PLAN_DAILY_COST_MICROS` | 0 (unlimited) | Cost per workspace per day, in micro-rupiah |
+
+The last two are the workspace's, not one task's, and they are asked at two
+boundaries: the task asks them at a clean round boundary, and the gateway asks the
+same policy before every model call. The first is what stops a task with a reason
+the user reads; the second is what stops a round from crossing the bound in the
+middle of it.
+
+A task that hits a bound finishes as `failed` with a `stopped_reason` in
+Indonesian, rather than hanging or being silently truncated. A workspace that hits
+one has the call refused with `quota_exceeded` (429).
+
+### Approvals and handoffs
+
+A tool labelled `write_external` is never executed directly: it becomes a draft,
+the task is parked as `waiting_approval`, and the workflow waits for the
+decision. An approval continues the round; a revision comes back to the model as
+a failed tool result, so it can try again. A deployment with no approval gate
+configured refuses the action instead of taking it.
+
+`handoff` is a tool the runtime performs itself: it opens a child task for
+another Bolu and waits for its answer, which the parent then uses as the tool
+result. A refusal — a chain past the depth ceiling, a Bolu that is resting, a
+name that matches nobody — is returned to the model as a failed result rather
+than failing the task. A child task is always in the same workspace.
 
 ## Error codes
 
@@ -288,6 +367,10 @@ reaching the network at all.
 | `conversation_not_found` | 404 | No such conversation in this workspace |
 | `message_not_found` | 404 | No such message in this workspace |
 | `attachment_not_found` | 404 | No such attachment in this workspace |
+| `task_not_found` | 404 | No such task in this workspace |
+| `unknown_trigger` | 400 | A client may not open a task with that trigger |
+| `task_limit_reached` | 409 | The task hit a step, token, cost, or depth bound |
+| `task_not_configured` | 503 | Module not wired (no database) |
 | `agent_not_in_conversation` | 400 | That Bolu is not a participant here |
 | `no_responder` | 409 | No Bolu in the group can answer (all resting, or none configured) |
 | `invalid_block` | 400 | A block does not satisfy its schema |

@@ -17,8 +17,14 @@ const (
 	// which is how a streamed reply grows.
 	EventMessageUpdated = "message.updated"
 	// EventTaskStarted, EventTaskStep, and EventTaskFinished follow a task.
-	EventTaskStarted  = "task.started"
-	EventTaskStep     = "task.step"
+	EventTaskStarted = "task.started"
+	EventTaskStep    = "task.step"
+	// EventTaskRunning is a task's heartbeat. It is what moves a Bolu in the
+	// office view without the client polling.
+	EventTaskRunning = "task.running"
+	// EventTaskWaiting is a task parked on a human decision, which the office
+	// shows at the approval desk rather than as work in progress.
+	EventTaskWaiting  = "task.waiting_approval"
 	EventTaskFinished = "task.finished"
 	// EventDraftCreated and EventDraftDecided follow an approval.
 	EventDraftCreated = "draft.created"

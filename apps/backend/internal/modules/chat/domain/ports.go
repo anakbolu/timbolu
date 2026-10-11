@@ -210,8 +210,10 @@ type TaskStarter interface {
 // StartRequest is one task to open.
 type StartRequest struct {
 	ConversationID uuid.UUID
-	MessageID      uuid.UUID
-	AgentID        uuid.UUID
+	// MessageID is the placeholder message the task's answer fills. It is the
+	// message the user is watching, not the one they wrote.
+	MessageID uuid.UUID
+	AgentID   uuid.UUID
 	// Trigger is what caused the task: chat, routine, webhook, or handoff.
 	Trigger string
 	Title   string

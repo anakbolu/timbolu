@@ -70,6 +70,7 @@ func TestContainerAssemblesEveryDependency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("call /health: %v", err)
 	}
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != fiber.StatusOK {
 		t.Fatalf("expected /health to answer 200, got %d", resp.StatusCode)
 	}
@@ -87,6 +88,7 @@ func TestReadyWithoutDependencies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("call /ready: %v", err)
 	}
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != fiber.StatusOK {
 		t.Fatalf("expected 200 while nothing is configured, got %d", resp.StatusCode)
 	}
@@ -133,6 +135,7 @@ func TestErrorHandlerUsesTheEnvelope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("call unknown route: %v", err)
 	}
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != fiber.StatusNotFound {
 		t.Fatalf("expected 404, got %d", resp.StatusCode)
 	}

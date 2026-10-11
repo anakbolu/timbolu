@@ -17,9 +17,14 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// keyPrefix namespaces the counters, so they can be flushed together when the
-// period rolls over.
+// keyPrefix namespaces the period counters, so they can be flushed together when
+// the period rolls over.
 const keyPrefix = "quota:spent:"
+
+// costKeyPrefix namespaces the day counters, which answer a different question:
+// how much a workspace has spent today, in micro-rupiah. A runaway task is
+// stopped by the day before it can consume a month.
+const costKeyPrefix = "quota:cost:"
 
 // ttl keeps a counter a little longer than the period it belongs to, so the last
 // day of a period still reads the right total.
@@ -46,6 +51,39 @@ type Counter struct {
 // that the counter is not configured, and the caller falls back to the ledger.
 func New(client *redis.Client) *Counter {
 	return &Counter{client: client, clock: time.Now}
+}
+
+// SpentCostToday returns the cost recorded for the workspace today.
+func (c *Counter) SpentCostToday(ctx context.Context, workspaceID uuid.UUID) (int64, error) {
+	if c == nil || c.client == nil {
+		return 0, fmt.Errorf("quota: redis is not configured")
+	}
+
+	total, err := c.client.Get(ctx, c.costKey(workspaceID)).Int64()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			// Nothing spent today, which is the normal state of a new day.
+			return 0, nil
+		}
+		return 0, fmt.Errorf("quota: read today's cost: %w", err)
+	}
+	return total, nil
+}
+
+// AddCost records what one call cost, in micro-rupiah.
+func (c *Counter) AddCost(ctx context.Context, workspaceID uuid.UUID, costMicros int64) error {
+	if c == nil || c.client == nil {
+		return fmt.Errorf("quota: redis is not configured")
+	}
+	if costMicros <= 0 {
+		// A call that cost nothing must not create a counter.
+		return nil
+	}
+
+	if _, err := addScript.Run(ctx, c.client, []string{c.costKey(workspaceID)}, costMicros, ttl.Milliseconds()).Result(); err != nil {
+		return fmt.Errorf("quota: add today's cost: %w", err)
+	}
+	return nil
 }
 
 // Spent returns the tokens recorded for the workspace in the current period.
@@ -103,6 +141,18 @@ func (c *Counter) key(workspaceID uuid.UUID) string {
 	}
 	jakarta := now.In(jakartaLocation)
 	return fmt.Sprintf("%s%s:%s", keyPrefix, workspaceID, jakarta.Format("2006-01"))
+}
+
+// costKey is the day the spend belongs to. The day is the calendar day in
+// Jakarta, which is where the customers are and therefore where their day
+// boundary falls.
+func (c *Counter) costKey(workspaceID uuid.UUID) string {
+	now := time.Now()
+	if c != nil && c.clock != nil {
+		now = c.clock()
+	}
+	jakarta := now.In(jakartaLocation)
+	return fmt.Sprintf("%s%s:%s", costKeyPrefix, workspaceID, jakarta.Format("2006-01-02"))
 }
 
 // jakartaLocation is where the customers are, so their month boundary is the one

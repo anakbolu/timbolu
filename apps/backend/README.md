@@ -40,6 +40,7 @@ make archcheck       # dependency rules
 make sqlc            # regenerate the query code
 make mocks           # regenerate the domain mocks
 make migrate-up      # apply migrations to $DATABASE_URL
+make smoke-task      # the task runtime end to end against the compose stack
 ```
 
 ## Modules
@@ -52,6 +53,7 @@ make migrate-up      # apply migrations to $DATABASE_URL
 | `agent` | `/api/agents/*`, `/api/teams` | The Bolu registry: profiles, derived status, tools, grants |
 | `llm` | `/api/llm/*`, `/api/agents/:id/model` | The model gateway: provider configuration, fallback chain, per-Bolu override, usage report |
 | `chat` | `/api/conversations/*`, `/api/events*`, `/content/:ref` | Conversations with block messages, attachments, the activity stream, and the sandboxed content origin |
+| `task` | `/api/tasks*` | The durable agent runtime: the task a Bolu runs, the rounds it recorded, the handoffs, and the cancel |
 
 ### Authentication
 
@@ -168,6 +170,59 @@ read back inside the transaction that creates it.
   strings; a typed field would publish
   `00000000-0000-0000-0000-000000000000` and a client would read it as an author.
 
+### Task runtime
+
+- **A task is a Temporal workflow, not a goroutine.** A chat message opens one,
+  and the answer arrives out of process, so it survives the request that started
+  it, a worker restart, and an approval that takes hours. The workflow id is the
+  task id, so a duplicate dispatch is refused rather than silently replacing a
+  finished task's history.
+- **A task is opened by chat, a routine, a webhook, or another task — never by a
+  browser.** `handoff` is not in the client whitelist: a chain of handoffs is
+  opened by the runtime, and a client that could claim the trigger would make the
+  chain look like something a person asked for.
+- **The workflow is free of I/O.** Everything that touches a database, a model,
+  or the clock is an activity, because a workflow is replayed from its history: a
+  non-deterministic step would make the replay disagree with the run and the task
+  would be stuck forever. The activity names are the workflow's own constants,
+  and `TestEveryActivityNameHasAMethod` fails if a name and a registered method
+  ever drift apart — the failure mode that would otherwise be a task stalling
+  silently until its timeout.
+- **Every round is recorded.** A thinking round, each tool call, each tool
+  result, and the final answer become `task_steps` rows with the sequence the
+  store assigns. The one-line summary is written on the task itself, so it
+  survives the retention job that prunes the raw payloads.
+- **Bounds are decided in one place.** `BeatTask` is where a step, token, cost, or
+  cancel check happens, so "the task stopped because it hit a limit" has one
+  implementation and produces the reason the user reads. Defaults:
+  `TASK_MAX_STEPS=12`, `TASK_MAX_TOKENS=120000`, `TASK_MAX_HANDOFF_DEPTH=2`,
+  `TASK_MAX_TOOL_RESULT_BYTES=16384`.
+- **Two spend bounds, asked at two boundaries.** The period's token allowance
+  stops a workspace from spending a month's tokens, and `PLAN_DAILY_COST_MICROS`
+  stops one runaway task from spending a month in an afternoon. The task asks both
+  at a clean round boundary — which is where it stops with a reason — and the
+  gateway asks the same policy before every call, which is what stops a round from
+  crossing the bound in the middle of it. One policy answers both places, so they
+  cannot disagree. The live totals are two Redis windows (the period and the day,
+  both following Jakarta), and the ledger's daily aggregation is the durable
+  fallback: a Redis outage must not hand every workspace a fresh allowance.
+- **A `write_external` tool is never executed directly.** It becomes a draft and
+  the task is parked as `waiting_approval`; the workflow waits for the decision
+  without holding a worker slot. An approval continues the round; a revision
+  comes back to the model as a failed tool result. A deployment with no approval
+  gate refuses the action rather than taking it, which is the safe direction.
+- **`handoff` is performed by the workflow itself**, because it opens a child task
+  and waits for its answer: that wait is what makes a chain traceable rather than
+  a conversation. A refusal — a chain past the ceiling, a resting Bolu, a name
+  that matches nobody — returns to the model as a failed tool result, so the
+  parent can carry on.
+- **A stale heartbeat is what "stuck" means.** The status alone cannot tell a
+  working task from one whose worker was evicted, because both read `running`, so
+  `health` is derived from `heartbeat_at` and never stored.
+- **A tool reaches the model only if something can run it.** The registry applies
+  both filters — the grant (EPIC 3) and an executor (EPIC 8) — so a tool nothing
+  can execute is not offered, because offering it teaches the model to call it.
+
 ## Configuration
 
 Configuration is read from `internal/platform/config/config.yaml` (or
@@ -189,8 +244,11 @@ prints the links, `smtp` sends them), and the model gateway's
 `SECRET_ENCRYPTION_KEY` (32 bytes, base64/hex/raw, seals the provider keys at
 rest), `LLM_DEFAULT_*` (the provider the platform offers a workspace that
 configured none), `LLM_QUOTA_ENABLED`/`LLM_TOKENS_PER_PERIOD`, and
-`LLM_CHAIN_LIMIT`. Object storage is `STORAGE_DRIVER` (`local` writes to a
-directory, `s3` speaks the S3 API that MinIO, R2, B2, and AWS share) plus
+`LLM_CHAIN_LIMIT`. The task runtime's bounds are `TASK_MAX_STEPS`,
+`TASK_MAX_TOKENS`, `TASK_MAX_HANDOFF_DEPTH`, and `TASK_MAX_TOOL_RESULT_BYTES`;
+a zero falls back to the product default. Object storage is `STORAGE_DRIVER`
+(`local` writes to a directory, `s3` speaks the S3 API that MinIO, R2, B2, and
+AWS share) plus
 `STORAGE_LOCAL_ROOT` or `S3_*`, and `CONTENT_ORIGIN` is where sandboxed documents
 are served from — a different origin from the app in every deployment.
 

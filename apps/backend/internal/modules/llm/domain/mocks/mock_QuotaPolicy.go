@@ -80,6 +80,63 @@ func (_c *QuotaPolicy_Allowance_Call) RunAndReturn(run func(context.Context, uui
 	return _c
 }
 
+// DailyCostAllowance provides a mock function with given fields: ctx, workspaceID
+func (_m *QuotaPolicy) DailyCostAllowance(ctx context.Context, workspaceID uuid.UUID) (int64, error) {
+	ret := _m.Called(ctx, workspaceID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DailyCostAllowance")
+	}
+
+	var r0 int64
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uuid.UUID) (int64, error)); ok {
+		return rf(ctx, workspaceID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uuid.UUID) int64); ok {
+		r0 = rf(ctx, workspaceID)
+	} else {
+		r0 = ret.Get(0).(int64)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uuid.UUID) error); ok {
+		r1 = rf(ctx, workspaceID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// QuotaPolicy_DailyCostAllowance_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DailyCostAllowance'
+type QuotaPolicy_DailyCostAllowance_Call struct {
+	*mock.Call
+}
+
+// DailyCostAllowance is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workspaceID uuid.UUID
+func (_e *QuotaPolicy_Expecter) DailyCostAllowance(ctx interface{}, workspaceID interface{}) *QuotaPolicy_DailyCostAllowance_Call {
+	return &QuotaPolicy_DailyCostAllowance_Call{Call: _e.mock.On("DailyCostAllowance", ctx, workspaceID)}
+}
+
+func (_c *QuotaPolicy_DailyCostAllowance_Call) Run(run func(ctx context.Context, workspaceID uuid.UUID)) *QuotaPolicy_DailyCostAllowance_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uuid.UUID))
+	})
+	return _c
+}
+
+func (_c *QuotaPolicy_DailyCostAllowance_Call) Return(_a0 int64, _a1 error) *QuotaPolicy_DailyCostAllowance_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *QuotaPolicy_DailyCostAllowance_Call) RunAndReturn(run func(context.Context, uuid.UUID) (int64, error)) *QuotaPolicy_DailyCostAllowance_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // NewQuotaPolicy creates a new instance of QuotaPolicy. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
 // The first argument is typically a *testing.T value.
 func NewQuotaPolicy(t interface {

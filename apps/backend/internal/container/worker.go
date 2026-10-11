@@ -7,6 +7,7 @@ import (
 	sdkworker "go.temporal.io/sdk/worker"
 	"go.uber.org/zap"
 
+	"github.com/robzlabz/employeebot/apps/backend/internal/modules/task/workflow"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/temporal"
 )
 
@@ -24,6 +25,36 @@ type WorkerConfig struct {
 	// NeedsDatabase makes a missing Postgres an explicit startup error instead
 	// of a nil dereference on the first query.
 	NeedsDatabase bool
+}
+
+// RegisterAgentTasks installs the workflows and activities the agent worker
+// runs.
+//
+// It lives in the container because cmd must reach a module through it: the
+// container is the only package allowed to know both the task module and the
+// Temporal SDK.
+func RegisterAgentTasks(w sdkworker.Worker, c *Container) {
+	// The connectivity probe stays registered: deployment verification proves a
+	// worker is reachable with it, which is cheaper than opening a task to find
+	// out.
+	w.RegisterWorkflow(temporal.WorkerPingWorkflow)
+	w.RegisterActivity(temporal.WorkerPingActivity)
+
+	if c == nil || c.Tasks == nil {
+		// A worker without the runtime still starts, so a deployment whose
+		// database is being migrated is reachable rather than crash-looping. It
+		// answers the probe and nothing else.
+		if c != nil && c.Logger != nil {
+			c.Logger.Warn("agent tasks are disabled: the task runtime is not configured")
+		}
+		return
+	}
+
+	w.RegisterWorkflow(workflow.AgentTaskWorkflow)
+	// The activity set is registered under the names the workflow calls, which
+	// the method names mirror: a mismatch here would leave a scheduled activity
+	// with no worker to run it, and the task would stall rather than fail.
+	w.RegisterActivity(c.Tasks)
 }
 
 // RunWorker starts the worker and blocks until ctx is cancelled. Every failure

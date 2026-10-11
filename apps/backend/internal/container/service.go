@@ -7,6 +7,7 @@ import (
 	healthdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/domain"
 	healthservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/service"
 	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
+	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
 	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/redis"
 )
@@ -25,6 +26,8 @@ type Services struct {
 	LLM llmdomain.Gateway
 	// Chat is built by openChat, which needs the object storage and the gateway.
 	Chat chatdomain.Service
+	// Task is built by openTask, which needs the registry and the model gateway.
+	Task taskdomain.Service
 }
 
 // newServices builds every service. Optional dependencies (Redis today) are

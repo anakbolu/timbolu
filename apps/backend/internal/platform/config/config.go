@@ -16,8 +16,25 @@ type Config struct {
 	Mail        MailConfig
 	Plan        PlanConfig
 	Llm         LlmConfig
+	Tasks       TasksConfig
 	Storage     StorageConfig
 	Logging     LoggingConfig
+}
+
+// TasksConfig bounds what one task may spend. Every field is optional: a zero
+// falls back to the product default, so a deployment only states what it wants
+// to differ from.
+type TasksConfig struct {
+	// MaxSteps is how many rounds of the model-and-tools loop a task may take.
+	MaxSteps int `mapstructure:"MaxSteps" validate:"optional"`
+	// MaxTokens is how many tokens one task may spend, input and output
+	// together.
+	MaxTokens int64 `mapstructure:"MaxTokens" validate:"optional"`
+	// MaxHandoffDepth is how deep a chain of handoffs may nest.
+	MaxHandoffDepth int `mapstructure:"MaxHandoffDepth" validate:"optional"`
+	// MaxToolResultBytes truncates a tool's answer, which is what keeps one
+	// large read from being re-sent to the model on every later round.
+	MaxToolResultBytes int `mapstructure:"MaxToolResultBytes" validate:"optional"`
 }
 
 // AppConfig holds application-level settings.
@@ -127,6 +144,15 @@ type MailConfig struct {
 type PlanConfig struct {
 	// MaxAgentsPerWorkspace caps the Bolu registry. Zero means unlimited.
 	MaxAgentsPerWorkspace int `mapstructure:"MaxAgentsPerWorkspace" validate:"optional"`
+	// DailyCostMicros is the cost ceiling of one day per workspace, in
+	// micro-rupiah. Zero means unlimited.
+	//
+	// It is the second bound the quota asks, alongside the period's token
+	// allowance: the period stops a workspace from spending a month's tokens,
+	// and this stops one runaway task from spending a month in an afternoon.
+	// EPIC 12 (#97) replaces the configured value with the subscription's
+	// package.
+	DailyCostMicros int64 `mapstructure:"DailyCostMicros" validate:"optional"`
 }
 
 // LlmConfig holds the model gateway settings: how the provider keys are sealed

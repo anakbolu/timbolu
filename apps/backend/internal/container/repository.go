@@ -8,6 +8,7 @@ import (
 	chatrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/repository"
 	healthrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/repository"
 	llmrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/repository"
+	taskrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/repository"
 	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
 )
@@ -26,6 +27,9 @@ type Repositories struct {
 	LLMAgents *llmrepo.AgentStore
 	// Chat holds conversations, messages, attachments, and the activity stream.
 	Chat *chatrepo.Repository
+	// Task holds the tasks and the steps they recorded. One connection serves
+	// both ports, which is why it is one struct.
+	Task *taskrepo.Repository
 }
 
 // newRepositories builds every repository. When there is no pool the
@@ -60,6 +64,10 @@ func newRepositories(pool *database.Pool) *Repositories {
 		// attachments, and the event store. They share one connection and one
 		// tenant scope, so they are one struct.
 		repositories.Chat = chatrepo.New(pool)
+
+		// The task runtime implements two ports — tasks and steps — over the
+		// same connection and the same tenant scope.
+		repositories.Task = taskrepo.New(pool)
 	}
 	return repositories
 }

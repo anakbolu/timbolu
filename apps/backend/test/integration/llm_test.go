@@ -499,6 +499,13 @@ func newRedisRawClient(t *testing.T) *redis.Client {
 }
 
 // fixedQuota is the allowance policy before subscriptions exist.
-type fixedQuota struct{ tokens int64 }
+type fixedQuota struct {
+	tokens    int64
+	dailyCost int64
+}
 
 func (f fixedQuota) Allowance(context.Context, uuid.UUID) (int64, error) { return f.tokens, nil }
+
+func (f fixedQuota) DailyCostAllowance(context.Context, uuid.UUID) (int64, error) {
+	return f.dailyCost, nil
+}

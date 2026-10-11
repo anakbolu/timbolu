@@ -36,6 +36,7 @@ func TestAgentRoutesReportUnavailableWithoutADatabase(t *testing.T) {
 	req := httptest.NewRequest(fiber.MethodGet, "/api/agents", nil)
 	resp, err := c.App().Test(req)
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
 	require.Equal(t, fiber.StatusServiceUnavailable, resp.StatusCode)
 }
 

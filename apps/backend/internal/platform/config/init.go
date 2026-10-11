@@ -182,5 +182,45 @@ func loadFromEnv(cfg *Config) error {
 		cfg.Llm.Default.ContextTokens = tokens
 	}
 
+	if v := os.Getenv("PLAN_DAILY_COST_MICROS"); v != "" {
+		micros, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return fmt.Errorf("parse PLAN_DAILY_COST_MICROS: %w", err)
+		}
+		cfg.Plan.DailyCostMicros = micros
+	}
+
+	if v := os.Getenv("TASK_MAX_STEPS"); v != "" {
+		steps, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse TASK_MAX_STEPS: %w", err)
+		}
+		cfg.Tasks.MaxSteps = steps
+	}
+
+	if v := os.Getenv("TASK_MAX_TOKENS"); v != "" {
+		tokens, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return fmt.Errorf("parse TASK_MAX_TOKENS: %w", err)
+		}
+		cfg.Tasks.MaxTokens = tokens
+	}
+
+	if v := os.Getenv("TASK_MAX_HANDOFF_DEPTH"); v != "" {
+		depth, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse TASK_MAX_HANDOFF_DEPTH: %w", err)
+		}
+		cfg.Tasks.MaxHandoffDepth = depth
+	}
+
+	if v := os.Getenv("TASK_MAX_TOOL_RESULT_BYTES"); v != "" {
+		size, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse TASK_MAX_TOOL_RESULT_BYTES: %w", err)
+		}
+		cfg.Tasks.MaxToolResultBytes = size
+	}
+
 	return nil
 }

@@ -26,6 +26,64 @@ func (_m *UsageReader) EXPECT() *UsageReader_Expecter {
 	return &UsageReader_Expecter{mock: &_m.Mock}
 }
 
+// CostSince provides a mock function with given fields: ctx, workspaceID, since
+func (_m *UsageReader) CostSince(ctx context.Context, workspaceID uuid.UUID, since time.Time) (int64, error) {
+	ret := _m.Called(ctx, workspaceID, since)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CostSince")
+	}
+
+	var r0 int64
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uuid.UUID, time.Time) (int64, error)); ok {
+		return rf(ctx, workspaceID, since)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uuid.UUID, time.Time) int64); ok {
+		r0 = rf(ctx, workspaceID, since)
+	} else {
+		r0 = ret.Get(0).(int64)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uuid.UUID, time.Time) error); ok {
+		r1 = rf(ctx, workspaceID, since)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// UsageReader_CostSince_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CostSince'
+type UsageReader_CostSince_Call struct {
+	*mock.Call
+}
+
+// CostSince is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workspaceID uuid.UUID
+//   - since time.Time
+func (_e *UsageReader_Expecter) CostSince(ctx interface{}, workspaceID interface{}, since interface{}) *UsageReader_CostSince_Call {
+	return &UsageReader_CostSince_Call{Call: _e.mock.On("CostSince", ctx, workspaceID, since)}
+}
+
+func (_c *UsageReader_CostSince_Call) Run(run func(ctx context.Context, workspaceID uuid.UUID, since time.Time)) *UsageReader_CostSince_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uuid.UUID), args[2].(time.Time))
+	})
+	return _c
+}
+
+func (_c *UsageReader_CostSince_Call) Return(_a0 int64, _a1 error) *UsageReader_CostSince_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *UsageReader_CostSince_Call) RunAndReturn(run func(context.Context, uuid.UUID, time.Time) (int64, error)) *UsageReader_CostSince_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Daily provides a mock function with given fields: ctx, workspaceID, since
 func (_m *UsageReader) Daily(ctx context.Context, workspaceID uuid.UUID, since time.Time) ([]domain.UsageDaily, error) {
 	ret := _m.Called(ctx, workspaceID, since)

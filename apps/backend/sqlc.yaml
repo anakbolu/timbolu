@@ -205,3 +205,36 @@ sql:
             go_type: "time.Time"
           - db_type: "date"
             go_type: "time.Time"
+  - engine: "postgresql"
+    schema: "migrations"
+    queries: "internal/modules/task/repository/queries"
+    gen:
+      go:
+        package: "sqlcgen"
+        out: "internal/modules/task/repository/sqlcgen"
+        sql_package: "pgx/v5"
+        emit_pointers_for_null_types: true
+        emit_empty_slices: true
+        overrides:
+          - db_type: "vector"
+            go_type: "string"
+          - db_type: "uuid"
+            go_type: "github.com/google/uuid.UUID"
+          - db_type: "uuid"
+            nullable: true
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+              pointer: true
+          - db_type: "timestamptz"
+            go_type: "time.Time"
+          - db_type: "timestamptz"
+            nullable: true
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
+          - db_type: "time"
+            go_type: "time.Time"
+          - db_type: "date"
+            go_type: "time.Time"

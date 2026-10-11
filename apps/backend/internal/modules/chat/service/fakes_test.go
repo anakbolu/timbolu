@@ -158,6 +158,12 @@ func (s *memoryStore) Update(_ context.Context, _ chatdomain.Scope, message chat
 	stored.Blocks = message.Blocks
 	stored.Status = message.Status
 	stored.FinishReason = message.FinishReason
+	// The task link is set once and never cleared, which is the COALESCE in the
+	// statement the fake stands in for: a later write of the answer must not
+	// erase which task produced it.
+	if message.TaskID != uuid.Nil {
+		stored.TaskID = message.TaskID
+	}
 	stored.UpdatedAt = time.Now()
 	s.messages[message.ID] = stored
 	return stored, nil

@@ -71,6 +71,54 @@ func (_c *QuotaCounter_Add_Call) RunAndReturn(run func(context.Context, uuid.UUI
 	return _c
 }
 
+// AddCost provides a mock function with given fields: ctx, workspaceID, costMicros
+func (_m *QuotaCounter) AddCost(ctx context.Context, workspaceID uuid.UUID, costMicros int64) error {
+	ret := _m.Called(ctx, workspaceID, costMicros)
+
+	if len(ret) == 0 {
+		panic("no return value specified for AddCost")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, uuid.UUID, int64) error); ok {
+		r0 = rf(ctx, workspaceID, costMicros)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// QuotaCounter_AddCost_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AddCost'
+type QuotaCounter_AddCost_Call struct {
+	*mock.Call
+}
+
+// AddCost is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workspaceID uuid.UUID
+//   - costMicros int64
+func (_e *QuotaCounter_Expecter) AddCost(ctx interface{}, workspaceID interface{}, costMicros interface{}) *QuotaCounter_AddCost_Call {
+	return &QuotaCounter_AddCost_Call{Call: _e.mock.On("AddCost", ctx, workspaceID, costMicros)}
+}
+
+func (_c *QuotaCounter_AddCost_Call) Run(run func(ctx context.Context, workspaceID uuid.UUID, costMicros int64)) *QuotaCounter_AddCost_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uuid.UUID), args[2].(int64))
+	})
+	return _c
+}
+
+func (_c *QuotaCounter_AddCost_Call) Return(_a0 error) *QuotaCounter_AddCost_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *QuotaCounter_AddCost_Call) RunAndReturn(run func(context.Context, uuid.UUID, int64) error) *QuotaCounter_AddCost_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Spent provides a mock function with given fields: ctx, workspaceID
 func (_m *QuotaCounter) Spent(ctx context.Context, workspaceID uuid.UUID) (int64, error) {
 	ret := _m.Called(ctx, workspaceID)
@@ -124,6 +172,63 @@ func (_c *QuotaCounter_Spent_Call) Return(_a0 int64, _a1 error) *QuotaCounter_Sp
 }
 
 func (_c *QuotaCounter_Spent_Call) RunAndReturn(run func(context.Context, uuid.UUID) (int64, error)) *QuotaCounter_Spent_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// SpentCostToday provides a mock function with given fields: ctx, workspaceID
+func (_m *QuotaCounter) SpentCostToday(ctx context.Context, workspaceID uuid.UUID) (int64, error) {
+	ret := _m.Called(ctx, workspaceID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SpentCostToday")
+	}
+
+	var r0 int64
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uuid.UUID) (int64, error)); ok {
+		return rf(ctx, workspaceID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uuid.UUID) int64); ok {
+		r0 = rf(ctx, workspaceID)
+	} else {
+		r0 = ret.Get(0).(int64)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uuid.UUID) error); ok {
+		r1 = rf(ctx, workspaceID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// QuotaCounter_SpentCostToday_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SpentCostToday'
+type QuotaCounter_SpentCostToday_Call struct {
+	*mock.Call
+}
+
+// SpentCostToday is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workspaceID uuid.UUID
+func (_e *QuotaCounter_Expecter) SpentCostToday(ctx interface{}, workspaceID interface{}) *QuotaCounter_SpentCostToday_Call {
+	return &QuotaCounter_SpentCostToday_Call{Call: _e.mock.On("SpentCostToday", ctx, workspaceID)}
+}
+
+func (_c *QuotaCounter_SpentCostToday_Call) Run(run func(ctx context.Context, workspaceID uuid.UUID)) *QuotaCounter_SpentCostToday_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uuid.UUID))
+	})
+	return _c
+}
+
+func (_c *QuotaCounter_SpentCostToday_Call) Return(_a0 int64, _a1 error) *QuotaCounter_SpentCostToday_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *QuotaCounter_SpentCostToday_Call) RunAndReturn(run func(context.Context, uuid.UUID) (int64, error)) *QuotaCounter_SpentCostToday_Call {
 	_c.Call.Return(run)
 	return _c
 }

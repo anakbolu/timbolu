@@ -201,6 +201,24 @@ func (r *Repository) Record(ctx context.Context, entry domain.UsageEntry) error 
 }
 
 // Daily returns the per-day usage totals since a date, most recent first.
+// CostSince returns the cost recorded since a moment, in micro-rupiah.
+//
+// It reads the daily aggregation rather than the ledger: the view is one row per
+// workspace, day, provider, model, and purpose, so a day's ceiling is answered by
+// a handful of rows instead of a scan that grows without bound.
+func (r *Repository) CostSince(ctx context.Context, workspaceID uuid.UUID, since time.Time) (int64, error) {
+	days, err := r.Daily(ctx, workspaceID, since)
+	if err != nil {
+		return 0, err
+	}
+
+	var total int64
+	for _, day := range days {
+		total += day.CostMicros
+	}
+	return total, nil
+}
+
 func (r *Repository) Daily(ctx context.Context, workspaceID uuid.UUID, since time.Time) ([]domain.UsageDaily, error) {
 	var days []domain.UsageDaily
 
