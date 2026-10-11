@@ -113,6 +113,16 @@ func (b *Box) Fingerprint() string {
 
 // Encrypt seals a secret. The result is the nonce followed by the ciphertext.
 func (b *Box) Encrypt(plaintext string) ([]byte, error) {
+	return b.EncryptWith(plaintext, nil)
+}
+
+// EncryptWith seals a secret bound to additional data.
+//
+// The binding is authenticated but not stored: opening the value requires
+// producing the same bytes, so a ciphertext moved to another row — another
+// workspace, another account — fails to open rather than being accepted as that
+// row's secret. Callers that do not need the binding use Encrypt.
+func (b *Box) EncryptWith(plaintext string, associated []byte) ([]byte, error) {
 	if b == nil {
 		return nil, ErrNoKey
 	}
@@ -122,12 +132,19 @@ func (b *Box) Encrypt(plaintext string) ([]byte, error) {
 		return nil, fmt.Errorf("crypto: read nonce: %w", err)
 	}
 
-	return b.aead.Seal(nonce, nonce, []byte(plaintext), nil), nil
+	return b.aead.Seal(nonce, nonce, []byte(plaintext), associated), nil
 }
 
 // Decrypt opens a value this box wrote. A value written with a different key
 // fails with ErrInvalidCiphertext instead of returning garbage.
 func (b *Box) Decrypt(ciphertext []byte) (string, error) {
+	return b.DecryptWith(ciphertext, nil)
+}
+
+// DecryptWith opens a value sealed with EncryptWith, given the same additional
+// data. A value written with a different key, or opened with different data,
+// fails with ErrInvalidCiphertext instead of returning garbage.
+func (b *Box) DecryptWith(ciphertext []byte, associated []byte) (string, error) {
 	if b == nil {
 		return "", ErrNoKey
 	}
@@ -138,7 +155,7 @@ func (b *Box) Decrypt(ciphertext []byte) (string, error) {
 	}
 
 	nonce, sealed := ciphertext[:size], ciphertext[size:]
-	plaintext, err := b.aead.Open(nil, nonce, sealed, nil)
+	plaintext, err := b.aead.Open(nil, nonce, sealed, associated)
 	if err != nil {
 		return "", fmt.Errorf("%w (key %s): %w", ErrInvalidCiphertext, b.fingerprint, err)
 	}

@@ -5,20 +5,81 @@ import "time"
 // Config is the root application configuration. Values come from the YAML file
 // matching ENVIRONMENT and are then overridden by environment variables.
 type Config struct {
-	Application AppConfig
-	Http        HttpConfig
-	Database    DatabaseConfig
-	Redis       RedisConfig
-	Temporal    TemporalConfig
-	JWT         JWTConfig
-	Auth        AuthConfig
-	Google      GoogleConfig
-	Mail        MailConfig
-	Plan        PlanConfig
-	Llm         LlmConfig
-	Tasks       TasksConfig
-	Storage     StorageConfig
-	Logging     LoggingConfig
+	Application  AppConfig
+	Http         HttpConfig
+	Database     DatabaseConfig
+	Redis        RedisConfig
+	Temporal     TemporalConfig
+	JWT          JWTConfig
+	Auth         AuthConfig
+	Google       GoogleConfig
+	Mail         MailConfig
+	Plan         PlanConfig
+	Llm          LlmConfig
+	Kms          KmsConfig
+	Integrations IntegrationConfig
+	Tasks        TasksConfig
+	Storage      StorageConfig
+	Logging      LoggingConfig
+}
+
+// IntegrationConfig holds what the integration hub needs beyond its adapters.
+type IntegrationConfig struct {
+	// OAuthStateKey signs the value an authorization flow carries. It must be at
+	// least 32 characters: the value travels through a browser, and a guessable
+	// signature is a forged callback. Empty disables connection flows.
+	OAuthStateKey string `mapstructure:"OAuthStateKey" validate:"optional"`
+	// OAuthRedirectBase is the public origin providers redirect back to. It has
+	// to be the address registered with the provider, so it is configured rather
+	// than derived from the request.
+	OAuthRedirectBase string `mapstructure:"OAuthRedirectBase" validate:"optional"`
+	// DefaultCallsPerMinute paces every application that has no ceiling of its
+	// own. Zero means unlimited, which is what a deployment without Redis runs
+	// with.
+	DefaultCallsPerMinute int `mapstructure:"DefaultCallsPerMinute" validate:"optional"`
+	// RateLimits overrides the ceiling per application, as `app:perMinute` pairs
+	// separated by commas. A provider publishes its own quota, and a routine that
+	// runs every hour must not spend a day's worth of it.
+	RateLimits string `mapstructure:"RateLimits" validate:"optional"`
+	// MCPTimeout bounds one request to an MCP server. A task is blocked while it
+	// runs, so a server that does not answer within it is treated as unavailable
+	// rather than waited on. Zero takes the default.
+	MCPTimeout time.Duration `mapstructure:"MCPTimeout" validate:"optional"`
+	// GmailClientID and GmailClientSecret are the deployment's own OAuth
+	// application. They are not shared with the sign-in flow's: a person signing
+	// in and a workspace connecting a mailbox are different consents, and Google
+	// requires them to be different clients.
+	//
+	// Both empty disables the Gmail adapter, which is what a deployment that has
+	// not registered an application looks like.
+	GmailClientID     string `mapstructure:"GmailClientID" validate:"optional"`
+	GmailClientSecret string `mapstructure:"GmailClientSecret" validate:"optional"`
+	// GmailAPIBase, GmailAuthEndpoint, and GmailTokenEndpoint point the adapter
+	// somewhere other than Google. They exist for the same reason the model
+	// gateway has a base URL: a staging deployment or a smoke test needs to run
+	// the whole path without a real account. Empty means Google.
+	GmailAPIBase       string `mapstructure:"GmailAPIBase" validate:"optional"`
+	GmailAuthEndpoint  string `mapstructure:"GmailAuthEndpoint" validate:"optional"`
+	GmailTokenEndpoint string `mapstructure:"GmailTokenEndpoint" validate:"optional"`
+}
+
+// KmsConfig holds the key-management key that protects the data keys of every
+// workspace's integration tokens.
+//
+// The data key is what actually encrypts a token, so the tokens survive a
+// rotation of this key: rotating it re-wraps the data keys and nothing else. The
+// retired keys are still configured after a rotation, which is what lets an
+// existing connection be opened and re-wrapped instead of being broken.
+type KmsConfig struct {
+	// MasterKey wraps the per-workspace data keys. Same accepted forms as
+	// SECRET_ENCRYPTION_KEY: base64, hex, or 32 raw characters. Empty leaves
+	// integrations read-only, because no token could be sealed.
+	MasterKey string `mapstructure:"MasterKey" validate:"optional"`
+	// MasterKeyID names the active key, so a wrap records which key made it.
+	MasterKeyID string `mapstructure:"MasterKeyID" validate:"optional"`
+	// RetiredKeys are the older keys, as `id:key` pairs separated by commas.
+	// They are read-only: a wrap always uses the active key.
+	RetiredKeys string `mapstructure:"RetiredKeys" validate:"optional"`
 }
 
 // TasksConfig bounds what one task may spend. Every field is optional: a zero

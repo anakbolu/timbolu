@@ -18,6 +18,7 @@ import (
 	approvaldomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/domain"
 	approvalhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/handler"
 	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
+	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
 	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
@@ -557,12 +558,24 @@ func TestTheCardStillWorksWithoutAStream(t *testing.T) {
 	require.NotEqual(t, uuid.Nil, messageID)
 }
 
-// TestTheApprovalSenderIsAbsentUntilEpic8 owns the gap rather than hiding it: no
-// integration executor exists, so an approved action stops at that boundary and the
-// task says why instead of recording a send that never happened.
-func TestTheApprovalSenderIsAbsentUntilEpic8(t *testing.T) {
-	c := &Container{Logger: zap.NewNop()}
-	require.Nil(t, c.approvalSender(), "EPIC 8 (#66) supplies the executor")
+// TestTheApprovalSenderNeedsTheIntegrationHub is the seam between the two modules:
+// the gate performs an approved action through the hub, so a deployment without one
+// has no sender and an approved action is held with a reason rather than recorded
+// as sent.
+func TestTheApprovalSenderNeedsTheIntegrationHub(t *testing.T) {
+	// Without the hub there is nothing that could carry the action out.
+	absent := &Container{Logger: zap.NewNop()}
+	require.Nil(t, absent.approvalSender(),
+		"a deployment with no integration hub must not claim it can send")
+
+	// With it, the sender is the executor that asks the hub to perform the action.
+	//
+	// The service is a stub here: what this test is about is that the container
+	// hands the gate a sender at all, and the behaviour of the executor itself is
+	// covered by the integration tests that drive a real provider.
+	present := &Container{Logger: zap.NewNop(), Services: &Services{Integration: stubIntegrationService{}}}
+	require.NotNil(t, present.approvalSender(),
+		"EPIC 8 (#66) supplies the executor, so the gate must be given it")
 }
 
 // TestAPublishThatFailsStillStoresTheCard is why the publish is not allowed to
@@ -617,4 +630,20 @@ func TestRewritingAMissingCardIsReported(t *testing.T) {
 
 	err := cards.Rewrite(context.Background(), approvaldomain.Scope{UserID: uuid.New()}, uuid.New(), approvaldomain.Draft{})
 	require.ErrorIs(t, err, chatdomain.ErrMessageNotFound)
+}
+
+// stubIntegrationService satisfies the port the executor holds, so a container test
+// can prove the sender is wired without a database.
+type stubIntegrationService struct{ integrationdomain.Service }
+
+func (stubIntegrationService) ListMCPServers(context.Context, integrationdomain.Scope) ([]integrationdomain.MCPServer, error) {
+	return nil, nil
+}
+
+func (stubIntegrationService) List(context.Context, integrationdomain.Scope) ([]integrationdomain.Integration, error) {
+	return nil, nil
+}
+
+func (stubIntegrationService) AllowedPermissions(context.Context, integrationdomain.Scope, uuid.UUID) (map[uuid.UUID]string, error) {
+	return nil, nil
 }

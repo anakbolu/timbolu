@@ -179,10 +179,10 @@ type Integration struct {
 	AccessTokenEncrypted  []byte
 	RefreshTokenEncrypted []byte
 	TokenExpiresAt        *time.Time
-	DataKeyWrapped        []byte
-	DataKeyKmsKeyID       string
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
+	StatusReason          string
+	LastRefreshedAt       *time.Time
 }
 
 type Invitation struct {
@@ -225,6 +225,21 @@ type LlmProvider struct {
 	Enabled         bool
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+}
+
+type McpServer struct {
+	ID                  uuid.UUID
+	WorkspaceID         uuid.UUID
+	App                 string
+	Label               string
+	Endpoint            string
+	CredentialEncrypted []byte
+	Enabled             bool
+	LastError           string
+	Tools               []byte
+	ToolCount           int32
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 type Member struct {
@@ -276,6 +291,17 @@ type MessageAttachment struct {
 	ByteSize       int64
 	ChecksumSha256 string
 	CreatedAt      time.Time
+}
+
+type OauthState struct {
+	NonceHash   string
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+	App         string
+	ReturnTo    string
+	ExpiresAt   time.Time
+	ConsumedAt  *time.Time
+	CreatedAt   time.Time
 }
 
 type PasswordResetToken struct {
@@ -469,6 +495,20 @@ type User struct {
 	OnboardedAt     *time.Time
 }
 
+type WebhookEvent struct {
+	ID            uuid.UUID
+	WorkspaceID   uuid.UUID
+	IntegrationID *uuid.UUID
+	App           string
+	DeliveryID    string
+	Event         string
+	Payload       []byte
+	ReceivedAt    time.Time
+	ProcessedAt   *time.Time
+	Attempts      int32
+	LastError     string
+}
+
 type Workspace struct {
 	ID             uuid.UUID
 	Name           string
@@ -480,4 +520,12 @@ type Workspace struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	OwnerUserID    *uuid.UUID
+}
+
+type WorkspaceKey struct {
+	WorkspaceID    uuid.UUID
+	WrappedDataKey []byte
+	KmsKeyID       string
+	CreatedAt      time.Time
+	RotatedAt      *time.Time
 }

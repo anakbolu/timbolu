@@ -51,14 +51,8 @@ func (c *Container) openApproval(_ context.Context, _ *config.Config) error {
 	return nil
 }
 
-// approvalSender carries an approved action out.
-//
-// No integration executor exists yet, so this is nil and an approved draft is
-// held with a reason rather than recorded as sent. EPIC 8 (#66) supplies the
-// implementation.
-func (c *Container) approvalSender() approvaldomain.Sender {
-	return nil
-}
+// approvalSender carries an approved action out. It lives in executor.go, beside
+// the integration hub it asks to perform the action.
 
 // approvalCards writes the draft card into the conversation a task came from.
 func (c *Container) approvalCards() approvaldomain.Cards {

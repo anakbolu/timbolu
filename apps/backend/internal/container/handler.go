@@ -11,6 +11,7 @@ import (
 	authhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/handler"
 	chathandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/handler"
 	healthhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/handler"
+	integrationhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/handler"
 	llmhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/handler"
 	taskhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/handler"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
@@ -31,6 +32,8 @@ type Handlers struct {
 	Chat      *chathandler.Handler
 	Task      *taskhandler.Handler
 	Approval  *approvalhandler.Handler
+	// Integration serves the connected accounts and the authorization flow.
+	Integration *integrationhandler.Handler
 }
 
 // newHandlers builds every handler from the service set. Handlers receive the
@@ -72,6 +75,13 @@ func newHandlers(services *Services, log *zap.Logger, cfg *config.Config) *Handl
 		handlers.Approval = approvalhandler.New(services.Approval, log)
 	}
 
+	if services.Integration != nil {
+		handlers.Integration = integrationhandler.New(services.Integration, log, integrationhandler.Config{
+			FrontendURL:  cfg.Application.FrontendURL,
+			RedirectBase: cfg.Integrations.OAuthRedirectBase,
+		})
+	}
+
 	return handlers
 }
 
@@ -97,6 +107,18 @@ func (c *Container) registerRoutes() {
 		return
 	}
 	authhandler.Routes(api, c.Handlers.Auth)
+
+	// The endpoints a provider reaches directly are registered here, with the
+	// other public routes. Where they are registered is what makes them public:
+	// an empty-path group below applies its middleware to the whole prefix, so a
+	// route added after it would be asked for a session it cannot have.
+	//
+	// What makes them safe instead is what each carries: a signed, single-use
+	// state for the redirect, and a signed reference plus the adapter's own
+	// signature for a webhook.
+	if c.Handlers.Integration != nil {
+		integrationhandler.CallbackRoutes(api, c.Handlers.Integration)
+	}
 
 	// Authenticated, no active workspace required.
 	user := api.Group("", c.requireUser())
@@ -158,6 +180,16 @@ func (c *Container) registerRoutes() {
 		registerApprovalFallback(tenant)
 	} else {
 		approvalhandler.Routes(tenant, c.Handlers.Approval)
+	}
+
+	// Integrations: every member reads the connections and their grants, because
+	// a screen has to show what a Bolu can reach. Starting a connection flow is
+	// open to every member for the same reason deciding a draft is: the person
+	// who notices the account is broken is not always the owner.
+	if c.Handlers.Integration == nil {
+		registerIntegrationFallback(tenant)
+	} else {
+		integrationhandler.Routes(tenant, c.Handlers.Integration)
 	}
 
 	// Model configuration is read by every member, because the Bolu screens show
@@ -240,6 +272,9 @@ func (c *Container) registerUnavailableModules(api fiber.Router) {
 	if c.Handlers.Approval == nil {
 		registerApprovalFallback(api)
 	}
+	if c.Handlers.Integration == nil {
+		registerIntegrationFallback(api)
+	}
 }
 
 // registerAgentFallback answers 503 for the registry routes.
@@ -273,6 +308,17 @@ func registerApprovalFallback(router fiber.Router) {
 	router.All("/drafts*", unavailable(message, "approval_not_configured"))
 	router.All("/approval-policies*", unavailable(message, "approval_not_configured"))
 	router.All("/audit*", unavailable(message, "approval_not_configured"))
+}
+
+// registerIntegrationFallback answers 503 for the integration routes.
+//
+// The callback is left out on purpose: it is reached by a browser redirect with
+// no session, and the fallback group requires a tenant. A deployment with no
+// integration module has no adapters, so nothing can start a flow to reach it.
+func registerIntegrationFallback(router fiber.Router) {
+	message := "the integration hub is not configured"
+	router.All("/integrations*", unavailable(message, "integration_not_configured"))
+	router.All("/agents/:agentID/grants*", unavailable(message, "integration_not_configured"))
 }
 
 // registerTaskFallback answers 503 for the task routes.

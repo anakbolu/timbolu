@@ -2,6 +2,9 @@ package integration
 
 import (
 	"context"
+	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,37 +18,73 @@ import (
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/ratelimit"
 )
 
-// redisURL starts a Redis container and returns its URL.
+// redisURL returns a URL to a database of its own inside the package's Redis
+// container.
+//
+// Redis is shared for the same reason Postgres is: starting a container per test
+// dominated the suite's runtime. Each test gets a different database index, which
+// is what keeps two tests' buckets apart.
+var (
+	redisOnce sync.Once
+	redisHost string
+	redisPort string
+	redisErr  error
+	redisSeq  atomic.Int64
+)
+
 func redisURL(t *testing.T) string {
 	t.Helper()
 
 	testcontainers.SkipIfProviderIsNotHealthy(t)
+	startSharedRedis(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	t.Cleanup(cancel)
+	// Index 0 is left alone: a client that defaults to it would otherwise land on
+	// a test's buckets.
+	index := redisSeq.Add(1) % 15
+	return fmt.Sprintf("redis://%s:%s/%d", redisHost, redisPort, index)
+}
 
-	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "redis:7-alpine",
-			ExposedPorts: []string{"6379/tcp"},
-			WaitingFor:   wait.ForLog("Ready to accept connections").WithStartupTimeout(2 * time.Minute),
-		},
-		Started: true,
+// startSharedRedis starts the package's container once.
+func startSharedRedis(t *testing.T) {
+	t.Helper()
+
+	redisOnce.Do(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+
+		container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+			ContainerRequest: testcontainers.ContainerRequest{
+				Image:        "redis:7-alpine",
+				ExposedPorts: []string{"6379/tcp"},
+				WaitingFor:   wait.ForLog("Ready to accept connections").WithStartupTimeout(2 * time.Minute),
+			},
+			Started: true,
+		})
+		if err != nil {
+			redisErr = fmt.Errorf("start redis container: %w", err)
+			return
+		}
+
+		redisHost, err = container.Host(ctx)
+		if err != nil {
+			redisErr = fmt.Errorf("resolve redis host: %w", err)
+			return
+		}
+		port, err := container.MappedPort(ctx, "6379")
+		if err != nil {
+			redisErr = fmt.Errorf("resolve redis port: %w", err)
+			return
+		}
+		redisPort = port.Port()
+
+		registerShutdown(func() {
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer shutdownCancel()
+			_ = container.Terminate(shutdownCtx)
+		})
 	})
-	require.NoError(t, err, "start redis container")
 
-	t.Cleanup(func() {
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cleanupCancel()
-		require.NoError(t, container.Terminate(cleanupCtx))
-	})
-
-	host, err := container.Host(ctx)
-	require.NoError(t, err)
-	port, err := container.MappedPort(ctx, "6379")
-	require.NoError(t, err)
-
-	return "redis://" + host + ":" + port.Port() + "/0"
+	require.NoError(t, redisErr)
 }
 
 func newLimiter(t *testing.T) *ratelimit.Limiter {

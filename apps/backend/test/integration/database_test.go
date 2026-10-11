@@ -8,6 +8,8 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,7 +23,7 @@ import (
 )
 
 // latestMigration is the version of the newest migration file.
-const latestMigration = 7
+const latestMigration = 11
 
 const (
 	pgUser     = "postgres"
@@ -35,46 +37,101 @@ const (
 	appPassword = "bolu_app_secret"
 )
 
-// postgresDSN starts a Postgres+pgvector container and returns its connection
-// string. Docker being unavailable skips the test instead of failing it.
+// sharedPostgres is one container for the whole package.
+//
+// Starting a container per test dominated the suite's runtime and pushed it past
+// Go's default ten-minute limit. Isolation does not need a container: each test
+// gets its own database inside this one, created and migrated on demand, which is
+// what keeps a test's rows its own while paying for the container once.
+var (
+	sharedOnce sync.Once
+	sharedHost string
+	sharedPort string
+	sharedErr  error
+	// databaseSeq names each test's database, so two tests running together in one
+	// package cannot collide on one.
+	databaseSeq atomic.Int64
+)
+
+// postgresDSN returns a connection string to a database of its own inside the
+// package's container. Docker being unavailable skips the test instead of failing
+// it.
 func postgresDSN(t *testing.T) string {
 	t.Helper()
 
 	testcontainers.SkipIfProviderIsNotHealthy(t)
+	startSharedPostgres(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	t.Cleanup(cancel)
+	name := fmt.Sprintf("bolu_%d", databaseSeq.Add(1))
 
-	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "pgvector/pgvector:pg16",
-			ExposedPorts: []string{"5432/tcp"},
-			Env: map[string]string{
-				"POSTGRES_USER":     pgUser,
-				"POSTGRES_PASSWORD": pgPassword,
-				"POSTGRES_DB":       pgDatabase,
-			},
-			WaitingFor: wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(2 * time.Minute),
-		},
-		Started: true,
-	})
-	require.NoError(t, err, "start postgres container")
+	// The database is created through the container's own default database, which
+	// is what the image's POSTGRES_DB created.
+	admin := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		pgUser, pgPassword, sharedHost, sharedPort, pgDatabase)
 
-	t.Cleanup(func() {
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cleanupCancel()
-		require.NoError(t, container.Terminate(cleanupCtx))
-	})
-
-	host, err := container.Host(ctx)
+	ctx := t.Context()
+	pool, err := pgxpool.New(ctx, admin)
 	require.NoError(t, err)
-	port, err := container.MappedPort(ctx, "5432")
-	require.NoError(t, err)
+	defer pool.Close()
+
+	if _, err := pool.Exec(ctx, "CREATE DATABASE "+name); err != nil {
+		t.Fatalf("create test database %s: %v", name, err)
+	}
 
 	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-		pgUser, pgPassword, host, port.Port(), pgDatabase)
+		pgUser, pgPassword, sharedHost, sharedPort, name)
+}
+
+// startSharedPostgres starts the package's container once.
+func startSharedPostgres(t *testing.T) {
+	t.Helper()
+
+	sharedOnce.Do(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+
+		container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+			ContainerRequest: testcontainers.ContainerRequest{
+				Image:        "pgvector/pgvector:pg16",
+				ExposedPorts: []string{"5432/tcp"},
+				Env: map[string]string{
+					"POSTGRES_USER":     pgUser,
+					"POSTGRES_PASSWORD": pgPassword,
+					"POSTGRES_DB":       pgDatabase,
+				},
+				WaitingFor: wait.ForLog("database system is ready to accept connections").
+					WithOccurrence(2).
+					WithStartupTimeout(2 * time.Minute),
+			},
+			Started: true,
+		})
+		if err != nil {
+			sharedErr = fmt.Errorf("start postgres container: %w", err)
+			return
+		}
+
+		sharedHost, err = container.Host(ctx)
+		if err != nil {
+			sharedErr = fmt.Errorf("resolve postgres host: %w", err)
+			return
+		}
+		port, err := container.MappedPort(ctx, "5432")
+		if err != nil {
+			sharedErr = fmt.Errorf("resolve postgres port: %w", err)
+			return
+		}
+		sharedPort = port.Port()
+
+		// The container outlives every test in the package, so it is stopped by the
+		// process rather than by a test's cleanup.
+		registerShutdown(func() {
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer shutdownCancel()
+			_ = container.Terminate(shutdownCtx)
+		})
+	})
+
+	require.NoError(t, sharedErr)
 }
 
 // migratedDatabase returns a DSN whose schema is up to date.
@@ -252,6 +309,13 @@ func newPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	return pgxpool.New(ctx, dsn)
 }
 
+// appRoleOnce creates the application role once per cluster.
+//
+// The role is cluster-wide while each test has a database of its own, so creating
+// it per test would collide on the second one. What is per database is the grant,
+// which is what this returns to do.
+var appRoleOnce sync.Once
+
 func createAppRole(ctx context.Context, dsn string) error {
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
@@ -259,8 +323,17 @@ func createAppRole(ctx context.Context, dsn string) error {
 	}
 	defer pool.Close()
 
+	var roleErr error
+	appRoleOnce.Do(func() {
+		_, roleErr = pool.Exec(ctx,
+			fmt.Sprintf(`CREATE ROLE %s LOGIN PASSWORD '%s' NOSUPERUSER NOBYPASSRLS`, appRole, appPassword))
+	})
+	if roleErr != nil {
+		return fmt.Errorf("create the application role: %w", roleErr)
+	}
+
+	// The grants belong to this database, so they are made for every one of them.
 	statements := []string{
-		fmt.Sprintf(`CREATE ROLE %s LOGIN PASSWORD '%s' NOSUPERUSER NOBYPASSRLS`, appRole, appPassword),
 		fmt.Sprintf(`GRANT USAGE ON SCHEMA public TO %s`, appRole),
 		fmt.Sprintf(`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO %s`, appRole),
 		fmt.Sprintf(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO %s`, appRole),

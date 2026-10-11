@@ -7,6 +7,7 @@ import (
 	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
 	healthdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/domain"
 	healthservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/service"
+	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
 	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
 	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
@@ -32,6 +33,9 @@ type Services struct {
 	// Approval is built by openApproval, which needs the drafts, the cards, and
 	// the workspace's working hours.
 	Approval approvaldomain.Service
+	// Integration is built by openIntegration, which needs the key-management key
+	// that seals every stored token.
+	Integration integrationdomain.Service
 }
 
 // newServices builds every service. Optional dependencies (Redis today) are

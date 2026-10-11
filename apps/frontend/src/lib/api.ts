@@ -1071,3 +1071,159 @@ export function setApprovalPolicy(
 export function listAudit(workspaceId: string, limit = 50): Promise<ApiResult<AuditEntry[]>> {
   return request<AuditEntry[]>(`/audit?limit=${limit}`, { workspace: workspaceId });
 }
+
+// ------------------------------------------------------- integration hub (EPIC 8)
+
+/** A connected account, as the hub reports it. */
+export type HubIntegration = {
+  integration_id: string;
+  app: string;
+  account_label: string;
+  status: "connected" | "needs_relogin" | "disconnected";
+  status_reason?: string;
+  scopes: string[];
+  expires_at?: string;
+  last_refreshed_at?: string;
+};
+
+/** One tool an application offers, with the label that decides approval. */
+export type AdapterTool = {
+  name: string;
+  label: string;
+  description: string;
+  /** The label restated for a screen: whether a person is asked before it runs. */
+  needs_human: boolean;
+};
+
+export type AdapterTrigger = {
+  kind: string;
+  event: string;
+  description: string;
+};
+
+/** An application this deployment speaks, and what connecting it would give. */
+export type HubAdapter = {
+  app: string;
+  oauth: boolean;
+  default_scopes?: string[];
+  tools: AdapterTool[];
+  triggers?: AdapterTrigger[];
+};
+
+/** A Model Context Protocol server a workspace added. */
+export type MCPServer = {
+  id: string;
+  app: string;
+  label: string;
+  endpoint: string;
+  enabled: boolean;
+  tool_count: number;
+  /** Why the server could not be reached, so a screen can say so. */
+  last_error?: string;
+};
+
+/** A Bolu's permission on one connection. */
+export type HubGrant = {
+  integration_id: string;
+  permission: "read" | "read_write";
+};
+
+/** listHubIntegrations returns the workspace's connected accounts. */
+export function listHubIntegrations(workspaceId: string): Promise<ApiResult<HubIntegration[]>> {
+  return request<HubIntegration[]>("/integrations", { workspace: workspaceId });
+}
+
+/** listHubAdapters returns the applications this deployment speaks. */
+export function listHubAdapters(workspaceId: string): Promise<ApiResult<HubAdapter[]>> {
+  return request<HubAdapter[]>("/integrations/adapters", { workspace: workspaceId });
+}
+
+/**
+ * startAuthorization asks where to send the browser to connect an application.
+ *
+ * It is a request rather than a link, because the app authenticates with a token
+ * held in memory: a plain navigation would carry no credential and be refused, and
+ * putting the token in the URL would write it into the browser's history and the
+ * server's log. So the consent URL is fetched with the header, and the browser is
+ * sent to the provider from there.
+ */
+export function startAuthorization(
+  workspaceId: string,
+  app: string,
+  returnTo = "/dashboard/integrations",
+): Promise<ApiResult<{ url: string; state: string }>> {
+  const query = new URLSearchParams({ return_to: returnTo });
+  return request<{ url: string; state: string }>(
+    `/integrations/${encodeURIComponent(app)}/connect?${query}`,
+    { workspace: workspaceId },
+  );
+}
+
+/** disconnectIntegration clears a connection's stored tokens. */
+export function disconnectIntegration(workspaceId: string, id: string): Promise<ApiResult<null>> {
+  return request<null>(`/integrations/${id}/disconnect`, { method: "POST", workspace: workspaceId });
+}
+
+/** refreshIntegration trades a stored refresh token for a new access token. */
+export function refreshIntegration(workspaceId: string, id: string): Promise<ApiResult<HubIntegration>> {
+  return request<HubIntegration>(`/integrations/${id}/refresh`, { method: "POST", workspace: workspaceId });
+}
+
+/** removeIntegration deletes a connection. */
+export function removeIntegration(workspaceId: string, id: string): Promise<ApiResult<null>> {
+  return request<null>(`/integrations/${id}`, { method: "DELETE", workspace: workspaceId });
+}
+
+/** listHubGrants returns the connections one Bolu may use. */
+export function listHubGrants(workspaceId: string, agentId: string): Promise<ApiResult<HubGrant[]>> {
+  return request<HubGrant[]>(`/agents/${agentId}/grants`, { workspace: workspaceId });
+}
+
+/** setHubGrant gives a Bolu read or read-write access to a connection. */
+export function setHubGrant(
+  workspaceId: string,
+  agentId: string,
+  integrationId: string,
+  permission: string,
+): Promise<ApiResult<HubGrant>> {
+  return request<HubGrant>(`/agents/${agentId}/grants/${integrationId}`, {
+    method: "PUT",
+    body: { permission },
+    workspace: workspaceId,
+  });
+}
+
+/** deleteHubGrant takes a connection away from a Bolu. */
+export function deleteHubGrant(
+  workspaceId: string,
+  agentId: string,
+  integrationId: string,
+): Promise<ApiResult<null>> {
+  return request<null>(`/agents/${agentId}/grants/${integrationId}`, {
+    method: "DELETE",
+    workspace: workspaceId,
+  });
+}
+
+/** listMCPServers returns the Model Context Protocol servers a workspace added. */
+export function listMCPServers(workspaceId: string): Promise<ApiResult<MCPServer[]>> {
+  return request<MCPServer[]>("/mcp/servers", { workspace: workspaceId });
+}
+
+/** addMCPServer registers a server and asks it what it offers. */
+export function addMCPServer(
+  workspaceId: string,
+  input: { app: string; label?: string; endpoint: string; credential?: string; enabled?: boolean },
+): Promise<ApiResult<MCPServer>> {
+  return request<MCPServer>("/mcp/servers", { method: "POST", body: input, workspace: workspaceId });
+}
+
+/** refreshMCPServer asks one server what it offers and records the answer. */
+export function refreshMCPServer(workspaceId: string, id: string): Promise<ApiResult<MCPServer>> {
+  return request<MCPServer>(`/mcp/servers/${id}/refresh`, { method: "POST", workspace: workspaceId });
+}
+
+/** removeMCPServer removes one. */
+export function removeMCPServer(workspaceId: string, id: string): Promise<ApiResult<null>> {
+  return request<null>(`/mcp/servers/${id}`, { method: "DELETE", workspace: workspaceId });
+}

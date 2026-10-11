@@ -8,6 +8,7 @@ import (
 	authrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository"
 	chatrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/repository"
 	healthrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/repository"
+	integrationrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/repository"
 	llmrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/repository"
 	taskrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/repository"
 	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
@@ -21,6 +22,9 @@ type Repositories struct {
 	Auth      *authrepo.Repository
 	Workspace *workspacerepo.Repository
 	Agent     *agentrepo.Repository
+	// Integration holds the connected accounts, the workspace key ring, and the
+	// per-Bolu grants.
+	Integration *integrationrepo.Repository
 	// LLM holds the provider configuration, the usage ledger, and the Bolu model
 	// override; LLMAgents is the same connection with the encryption attached,
 	// and is filled in by openLLM.
@@ -76,6 +80,11 @@ func newRepositories(pool *database.Pool) *Repositories {
 		// The task runtime implements two ports — tasks and steps — over the
 		// same connection and the same tenant scope.
 		repositories.Task = taskrepo.New(pool)
+
+		// The integration hub holds the tokens, the key ring that seals them, and
+		// the grants. It is built before the approval gate, which asks it for a
+		// token when an approved action is finally carried out.
+		repositories.Integration = integrationrepo.New(pool)
 
 		// The approval module implements the draft, policy, revision, and audit
 		// ports over one connection and one tenant scope.
