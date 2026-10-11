@@ -70,6 +70,11 @@ func (c *Container) openIntegration(_ context.Context, cfg *config.Config, o *op
 		return fmt.Errorf("integration: %w", err)
 	}
 
+	limits, err := newCallLimits(cfg, c.Limiter, c.Logger)
+	if err != nil {
+		return err
+	}
+
 	c.Services.Integration = integrationservice.New(integrationservice.Deps{
 		Repository: c.Repositories.Integration,
 		Cipher:     c.tokenCipher(keys),
@@ -80,9 +85,10 @@ func (c *Container) openIntegration(_ context.Context, cfg *config.Config, o *op
 		// The same codec signs a webhook reference: both values travel outside
 		// the app, and both are bound to a purpose so one cannot be spent as the
 		// other.
-		Refs:   states,
-		Queue:  c.Repositories.Integration,
-		Logger: c.Logger,
+		Refs:    states,
+		Queue:   c.Repositories.Integration,
+		Limiter: limits,
+		Logger:  c.Logger,
 	})
 
 	return nil

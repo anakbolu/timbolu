@@ -54,6 +54,9 @@ var (
 	// ErrUnknownPermission means a caller asked for a permission the schema does
 	// not have.
 	ErrUnknownPermission = errors.New("integration: unknown grant permission")
+	// ErrRateLimited means the workspace has spent the calls this integration is
+	// allowed for now. It is retryable: the work is held, not refused.
+	ErrRateLimited = errors.New("integration: the call limit for this integration is reached")
 	// ErrNoToken means the connection has nothing usable stored, which is what a
 	// connection waiting for a fresh login looks like. The caller asks the person
 	// to reconnect rather than retrying.

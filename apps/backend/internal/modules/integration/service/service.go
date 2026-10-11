@@ -55,6 +55,9 @@ type Deps struct {
 	// Queue is where a verified delivery waits to be acted on. Optional, for the
 	// same reason as Refs.
 	Queue domain.Queue
+	// Limiter paces the calls a workspace makes on one integration. Optional:
+	// without one nothing is paced, which is what a deployment with no Redis is.
+	Limiter domain.CallLimiter
 }
 
 type service struct {
@@ -313,6 +316,28 @@ func (s *service) Execute(ctx context.Context, scope domain.Scope, integrationID
 	if s.deps.Validator != nil {
 		if err := s.deps.Validator.Validate(spec.Schema, arguments); err != nil {
 			return domain.Result{}, err
+		}
+	}
+
+	// The limit is checked before the token is opened: a call that is going to be
+	// held should not decrypt a credential on its way to waiting.
+	if s.deps.Limiter != nil {
+		decision, err := s.deps.Limiter.Allow(ctx, spec.App(), integrationID)
+		if err != nil {
+			return domain.Result{}, err
+		}
+		if !decision.Allowed {
+			s.deps.Logger.Info("an integration call was held",
+				zap.String("app", spec.App()),
+				zap.String("integration", integrationID.String()),
+				zap.Int("per_minute", decision.PerMinute),
+				zap.Duration("retry_after", decision.RetryAfter),
+			)
+			return domain.Result{}, &domain.RateLimitedError{
+				App:        spec.App(),
+				PerMinute:  decision.PerMinute,
+				RetryAfter: decision.RetryAfter,
+			}
 		}
 	}
 

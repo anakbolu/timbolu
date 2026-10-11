@@ -33,6 +33,14 @@ type IntegrationConfig struct {
 	// to be the address registered with the provider, so it is configured rather
 	// than derived from the request.
 	OAuthRedirectBase string `mapstructure:"OAuthRedirectBase" validate:"optional"`
+	// DefaultCallsPerMinute paces every application that has no ceiling of its
+	// own. Zero means unlimited, which is what a deployment without Redis runs
+	// with.
+	DefaultCallsPerMinute int `mapstructure:"DefaultCallsPerMinute" validate:"optional"`
+	// RateLimits overrides the ceiling per application, as `app:perMinute` pairs
+	// separated by commas. A provider publishes its own quota, and a routine that
+	// runs every hour must not spend a day's worth of it.
+	RateLimits string `mapstructure:"RateLimits" validate:"optional"`
 }
 
 // KmsConfig holds the key-management key that protects the data keys of every

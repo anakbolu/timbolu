@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -136,6 +137,47 @@ type Result struct {
 	// see what happened without reading the payload.
 	Summary string
 }
+
+// LimitDecision is what a limiter answers about one call.
+type LimitDecision struct {
+	// Allowed says whether the call may go out now.
+	Allowed bool
+	// RetryAfter is how long to wait when it may not. A caller holds the work for
+	// that long rather than failing it: a limit is a pace, not a refusal.
+	RetryAfter time.Duration
+	// PerMinute is the ceiling in force, so what a person reads can name it
+	// instead of saying "too many".
+	PerMinute int
+}
+
+// CallLimiter decides whether a workspace may spend one call on an integration.
+//
+// It is a port because the bucket lives in Redis: the domain layer holds no
+// infrastructure, and the container hands over the platform limiter.
+type CallLimiter interface {
+	// Allow takes one token for a connection, or reports how long to wait.
+	Allow(ctx context.Context, app string, integrationID uuid.UUID) (LimitDecision, error)
+}
+
+// RateLimitedError says a call was held rather than refused.
+//
+// It is a type rather than a bare sentinel because the wait is the useful part:
+// the runtime schedules its retry from it instead of guessing, and what a person
+// reads names the ceiling.
+type RateLimitedError struct {
+	App        string
+	PerMinute  int
+	RetryAfter time.Duration
+}
+
+func (e *RateLimitedError) Error() string {
+	return fmt.Sprintf("%s: %s allows %d calls a minute and they are spent; retry in %s",
+		ErrRateLimited.Error(), e.App, e.PerMinute, e.RetryAfter.Round(time.Second))
+}
+
+// Unwrap makes the error answer errors.Is for ErrRateLimited, so a caller that
+// only needs "was this a limit" does not have to know the type.
+func (e *RateLimitedError) Unwrap() error { return ErrRateLimited }
 
 // Adapter is one application's whole surface.
 //
