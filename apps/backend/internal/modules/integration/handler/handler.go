@@ -49,6 +49,13 @@ func Routes(group fiber.Router, h *Handler) {
 	group.Get("/agents/:agentID/grants", h.Grants)
 	group.Put("/agents/:agentID/grants/:integrationID", h.SetGrant)
 	group.Delete("/agents/:agentID/grants/:integrationID", h.DeleteGrant)
+
+	// The MCP servers a workspace added. They are per workspace rather than per
+	// connection, which is why they are their own set of routes.
+	group.Get("/mcp/servers", h.ListMCPServers)
+	group.Post("/mcp/servers", h.AddMCPServer)
+	group.Post("/mcp/servers/:serverID/refresh", h.RefreshMCPServer)
+	group.Delete("/mcp/servers/:serverID", h.RemoveMCPServer)
 }
 
 // CallbackRoutes registers the endpoints a provider reaches directly.
@@ -364,6 +371,70 @@ func (h *Handler) DeleteGrant(c *fiber.Ctx) error {
 	return response.OK(c, "the grant was removed", nil)
 }
 
+// ListMCPServers returns the servers the workspace added.
+func (h *Handler) ListMCPServers(c *fiber.Ctx) error {
+	servers, err := h.service.ListMCPServers(c.UserContext(), scope(c))
+	if err != nil {
+		return h.fail(c, "list MCP servers", err)
+	}
+
+	payload := make([]mcpServerPayload, 0, len(servers))
+	for _, server := range servers {
+		payload = append(payload, toMCPServerPayload(server))
+	}
+	return response.OK(c, "ok", payload)
+}
+
+// AddMCPServer registers a server and asks it what it offers.
+func (h *Handler) AddMCPServer(c *fiber.Ctx) error {
+	var body mcpServerRequest
+	if err := c.BodyParser(&body); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "the body is not readable", "invalid_input", nil)
+	}
+
+	server, err := h.service.AddMCPServer(c.UserContext(), scope(c), domain.MCPServerInput{
+		App:        body.App,
+		Label:      body.Label,
+		Endpoint:   body.Endpoint,
+		Credential: body.Credential,
+		// A server nobody enabled is one somebody added but does not want used
+		// yet, which is the sensible reading of an absent field.
+		Enabled: body.Enabled == nil || *body.Enabled,
+	})
+	if err != nil {
+		return h.fail(c, "add MCP server", err)
+	}
+
+	return response.Created(c, "the server was added", toMCPServerPayload(server))
+}
+
+// RefreshMCPServer asks one server what it offers.
+func (h *Handler) RefreshMCPServer(c *fiber.Ctx) error {
+	id, err := parseID(c.Params("serverID"))
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "serverID is not a uuid", "invalid_input", nil)
+	}
+
+	server, err := h.service.RefreshMCPServer(c.UserContext(), scope(c), id)
+	if err != nil {
+		return h.fail(c, "refresh MCP server", err)
+	}
+	return response.OK(c, "ok", toMCPServerPayload(server))
+}
+
+// RemoveMCPServer removes one.
+func (h *Handler) RemoveMCPServer(c *fiber.Ctx) error {
+	id, err := parseID(c.Params("serverID"))
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "serverID is not a uuid", "invalid_input", nil)
+	}
+
+	if err := h.service.RemoveMCPServer(c.UserContext(), scope(c), id); err != nil {
+		return h.fail(c, "remove MCP server", err)
+	}
+	return response.OK(c, "the server was removed", nil)
+}
+
 // ------------------------------------------------------------------ helpers
 
 // redirect sends the browser back into the app with the outcome in the query.
@@ -403,6 +474,11 @@ func (h *Handler) fail(c *fiber.Ctx, action string, err error) error {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		return response.Error(c, fiber.StatusNotFound, "not found", "not_found", nil)
+	case errors.Is(err, domain.ErrMCPServerNotFound):
+		return response.Error(c, fiber.StatusNotFound, "the MCP server was not found", "not_found", nil)
+	case errors.Is(err, domain.ErrMCPUnavailable):
+		return response.Error(c, fiber.StatusBadGateway,
+			"the MCP server could not be reached", "mcp_unavailable", nil)
 	case errors.Is(err, domain.ErrNoCipher):
 		return response.Error(c, fiber.StatusServiceUnavailable,
 			"no encryption key is configured, so tokens cannot be stored", "integration_not_configured", nil)
@@ -497,6 +573,39 @@ type grantPayload struct {
 
 type grantRequest struct {
 	Permission string `json:"permission"`
+}
+
+type mcpServerPayload struct {
+	ID        string `json:"id"`
+	App       string `json:"app"`
+	Label     string `json:"label"`
+	Endpoint  string `json:"endpoint"`
+	Enabled   bool   `json:"enabled"`
+	ToolCount int    `json:"tool_count"`
+	LastError string `json:"last_error,omitempty"`
+}
+
+// mcpServerRequest is what a person supplies. Enabled is a pointer so an absent
+// field means "yes" rather than "no": adding a server nobody wants used yet is the
+// unusual case.
+type mcpServerRequest struct {
+	App        string `json:"app"`
+	Label      string `json:"label"`
+	Endpoint   string `json:"endpoint"`
+	Credential string `json:"credential"`
+	Enabled    *bool  `json:"enabled"`
+}
+
+func toMCPServerPayload(server domain.MCPServer) mcpServerPayload {
+	return mcpServerPayload{
+		ID:        server.ID.String(),
+		App:       server.App,
+		Label:     server.Label,
+		Endpoint:  server.Endpoint,
+		Enabled:   server.Enabled,
+		ToolCount: server.ToolCount,
+		LastError: server.LastError,
+	}
 }
 
 // toPayload renders a connection for a client.
