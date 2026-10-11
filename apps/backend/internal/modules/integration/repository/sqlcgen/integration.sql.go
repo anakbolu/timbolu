@@ -118,6 +118,73 @@ func (q *Queries) DisconnectIntegration(ctx context.Context, arg DisconnectInteg
 	return i, err
 }
 
+const enqueueWebhookEvent = `-- name: EnqueueWebhookEvent :one
+
+INSERT INTO webhook_events (workspace_id, integration_id, app, delivery_id, event, payload)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (workspace_id, app, delivery_id) DO NOTHING
+RETURNING id, workspace_id, integration_id, app, delivery_id, event, payload, received_at, processed_at, attempts, last_error
+`
+
+type EnqueueWebhookEventParams struct {
+	WorkspaceID   uuid.UUID
+	IntegrationID *uuid.UUID
+	App           string
+	DeliveryID    string
+	Event         string
+	Payload       []byte
+}
+
+// ----------------------------------------------------------- webhook queue
+// A provider retries, and a retry is not a second event. The unique index on the
+// delivery is what makes that true; ON CONFLICT DO NOTHING turns the retry into
+// no row, which the repository reports as already queued.
+func (q *Queries) EnqueueWebhookEvent(ctx context.Context, arg EnqueueWebhookEventParams) (WebhookEvent, error) {
+	row := q.db.QueryRow(ctx, enqueueWebhookEvent,
+		arg.WorkspaceID,
+		arg.IntegrationID,
+		arg.App,
+		arg.DeliveryID,
+		arg.Event,
+		arg.Payload,
+	)
+	var i WebhookEvent
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.IntegrationID,
+		&i.App,
+		&i.DeliveryID,
+		&i.Event,
+		&i.Payload,
+		&i.ReceivedAt,
+		&i.ProcessedAt,
+		&i.Attempts,
+		&i.LastError,
+	)
+	return i, err
+}
+
+const failWebhookEvent = `-- name: FailWebhookEvent :execrows
+UPDATE webhook_events
+SET attempts = attempts + 1, last_error = $3
+WHERE workspace_id = $1 AND id = $2
+`
+
+type FailWebhookEventParams struct {
+	WorkspaceID uuid.UUID
+	ID          uuid.UUID
+	LastError   string
+}
+
+func (q *Queries) FailWebhookEvent(ctx context.Context, arg FailWebhookEventParams) (int64, error) {
+	result, err := q.db.Exec(ctx, failWebhookEvent, arg.WorkspaceID, arg.ID, arg.LastError)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getIntegration = `-- name: GetIntegration :one
 SELECT id, workspace_id, app, account_label, status, scopes, access_token_encrypted, refresh_token_encrypted, token_expires_at, created_at, updated_at, status_reason, last_refreshed_at FROM integrations
 WHERE workspace_id = $1 AND id = $2
@@ -278,6 +345,70 @@ func (q *Queries) ListIntegrations(ctx context.Context, workspaceID uuid.UUID) (
 			&i.UpdatedAt,
 			&i.StatusReason,
 			&i.LastRefreshedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markWebhookEventProcessed = `-- name: MarkWebhookEventProcessed :execrows
+UPDATE webhook_events
+SET processed_at = now()
+WHERE workspace_id = $1 AND id = $2 AND processed_at IS NULL
+`
+
+type MarkWebhookEventProcessedParams struct {
+	WorkspaceID uuid.UUID
+	ID          uuid.UUID
+}
+
+func (q *Queries) MarkWebhookEventProcessed(ctx context.Context, arg MarkWebhookEventProcessedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markWebhookEventProcessed, arg.WorkspaceID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const pendingWebhookEvents = `-- name: PendingWebhookEvents :many
+SELECT id, workspace_id, integration_id, app, delivery_id, event, payload, received_at, processed_at, attempts, last_error FROM webhook_events
+WHERE workspace_id = $1 AND processed_at IS NULL
+ORDER BY received_at, id
+LIMIT $2
+`
+
+type PendingWebhookEventsParams struct {
+	WorkspaceID uuid.UUID
+	Limit       int32
+}
+
+// The worker's read: oldest first, so nothing starves behind a busy provider.
+func (q *Queries) PendingWebhookEvents(ctx context.Context, arg PendingWebhookEventsParams) ([]WebhookEvent, error) {
+	rows, err := q.db.Query(ctx, pendingWebhookEvents, arg.WorkspaceID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WebhookEvent{}
+	for rows.Next() {
+		var i WebhookEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.IntegrationID,
+			&i.App,
+			&i.DeliveryID,
+			&i.Event,
+			&i.Payload,
+			&i.ReceivedAt,
+			&i.ProcessedAt,
+			&i.Attempts,
+			&i.LastError,
 		); err != nil {
 			return nil, err
 		}

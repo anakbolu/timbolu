@@ -11,6 +11,7 @@ package handler
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -50,14 +51,80 @@ func Routes(group fiber.Router, h *Handler) {
 	group.Delete("/agents/:agentID/grants/:integrationID", h.DeleteGrant)
 }
 
-// CallbackRoutes registers the provider's redirect.
+// CallbackRoutes registers the endpoints a provider reaches directly.
 //
-// It is public by necessity: the provider sends the browser here, and the
-// browser carries no session header. What makes it safe is the signed,
-// single-use state, which names the workspace and the person who started the
-// flow.
+// They are public by necessity: the provider sends a browser to the first and a
+// server to the second, and neither carries a session. What makes them safe is
+// what each carries instead — a signed, single-use state for the redirect, and a
+// signed reference plus the adapter's own signature for the webhook.
 func CallbackRoutes(group fiber.Router, h *Handler) {
 	group.Get("/integrations/oauth/callback", h.Callback)
+	group.Post("/webhooks/:app", h.Webhook)
+}
+
+// Webhook receives a delivery from a provider.
+//
+// It answers 200 for everything it accepted, including a delivery it has already
+// seen: a provider that retries must be told to stop, and "duplicate" reads to a
+// provider as a reason to try again. A request that is not from the provider is
+// refused before anything is written.
+func (h *Handler) Webhook(c *fiber.Ctx) error {
+	app := strings.TrimSpace(c.Params("app"))
+
+	query := map[string]string{}
+	c.Request().URI().QueryArgs().VisitAll(func(key, value []byte) {
+		query[string(key)] = string(value)
+	})
+
+	headers := map[string]string{}
+	c.Request().Header.VisitAll(func(key, value []byte) {
+		headers[strings.ToLower(string(key))] = string(value)
+	})
+
+	// The body is read as bytes: a signature is computed over what was sent, and
+	// a parsed body would not verify.
+	body := c.Body()
+
+	accepted, err := h.service.ReceiveWebhook(c.UserContext(), app, domain.WebhookRequest{
+		App:        app,
+		Headers:    headers,
+		Body:       body,
+		Query:      query,
+		ReceivedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		return h.webhookFail(c, app, err)
+	}
+
+	h.log.Info("a webhook delivery was accepted",
+		zap.String("app", app),
+		zap.Int("events", accepted),
+	)
+	return response.OK(c, "accepted", fiber.Map{"accepted": accepted})
+}
+
+// webhookFail answers a provider.
+//
+// The codes are chosen for what a provider does with them: 401 for a request that
+// is not theirs, so it stops; 400 for one that is theirs but unreadable, which is
+// a bug on their side rather than a reason to retry; and 200 for a duplicate,
+// because retrying is exactly what it would otherwise do.
+func (h *Handler) webhookFail(c *fiber.Ctx, app string, err error) error {
+	switch {
+	case errors.Is(err, domain.ErrSignatureInvalid):
+		h.log.Warn("a webhook was refused", zap.String("app", app), zap.Error(err))
+		return response.Error(c, fiber.StatusUnauthorized, "invalid signature", "invalid_signature", nil)
+	case errors.Is(err, domain.ErrDeliveryExists):
+		// Already queued, which is a success from the provider's point of view.
+		return response.OK(c, "already accepted", fiber.Map{"accepted": 0})
+	case errors.Is(err, domain.ErrNoWebhook),
+		errors.Is(err, domain.ErrUnknownAdapter),
+		errors.Is(err, domain.ErrInvalidInput):
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), "invalid_input", nil)
+	default:
+		h.log.Error("a webhook could not be queued", zap.String("app", app), zap.Error(err))
+		return response.Error(c, fiber.StatusInternalServerError, "internal server error", "internal_error", nil)
+	}
 }
 
 // List returns the workspace's connections.

@@ -77,7 +77,12 @@ func (c *Container) openIntegration(_ context.Context, cfg *config.Config, o *op
 		Validator:  schemas,
 		States:     states,
 		StateStore: c.Repositories.Integration,
-		Logger:     c.Logger,
+		// The same codec signs a webhook reference: both values travel outside
+		// the app, and both are bound to a purpose so one cannot be spent as the
+		// other.
+		Refs:   states,
+		Queue:  c.Repositories.Integration,
+		Logger: c.Logger,
 	})
 
 	return nil

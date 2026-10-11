@@ -366,6 +366,137 @@ func (r *Repository) write(ctx context.Context, scope domain.Scope, fn func(*sql
 	})
 }
 
+// Enqueue stores a verified delivery.
+//
+// The insert conflicts on the delivery rather than failing, so a provider's retry
+// returns ErrDeliveryExists while the endpoint still answers 200: the provider
+// did its job, and telling it the event is a duplicate would make it retry
+// forever.
+func (r *Repository) Enqueue(ctx context.Context, input domain.EnqueueInput) (domain.QueuedEvent, error) {
+	var out domain.QueuedEvent
+
+	err := r.write(ctx, domain.Scope{WorkspaceID: input.WorkspaceID}, func(queries *sqlcgen.Queries) error {
+		row, err := queries.EnqueueWebhookEvent(ctx, sqlcgen.EnqueueWebhookEventParams{
+			WorkspaceID:   input.WorkspaceID,
+			IntegrationID: nullableID(input.IntegrationID),
+			App:           input.App,
+			DeliveryID:    input.DeliveryID,
+			Event:         input.Event,
+			Payload:       payloadOr(input.Payload),
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return domain.ErrDeliveryExists
+			}
+			return translateWriteError(err, "enqueue webhook event")
+		}
+		out = toQueuedEvent(row)
+		return nil
+	})
+	if err != nil {
+		return domain.QueuedEvent{}, err
+	}
+	return out, nil
+}
+
+// Pending returns the oldest unprocessed deliveries of a workspace.
+func (r *Repository) Pending(ctx context.Context, scope domain.Scope, limit int) ([]domain.QueuedEvent, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	var out []domain.QueuedEvent
+
+	err := r.read(ctx, scope, func(queries *sqlcgen.Queries) error {
+		rows, err := queries.PendingWebhookEvents(ctx, sqlcgen.PendingWebhookEventsParams{
+			WorkspaceID: scope.WorkspaceID,
+			Limit:       int32(limit),
+		})
+		if err != nil {
+			return fmt.Errorf("integration: pending webhook events: %w", err)
+		}
+		out = make([]domain.QueuedEvent, 0, len(rows))
+		for _, row := range rows {
+			out = append(out, toQueuedEvent(row))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// Processed marks a delivery as acted on.
+func (r *Repository) Processed(ctx context.Context, scope domain.Scope, id uuid.UUID) error {
+	return r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
+		affected, err := queries.MarkWebhookEventProcessed(ctx, sqlcgen.MarkWebhookEventProcessedParams{
+			WorkspaceID: scope.WorkspaceID,
+			ID:          id,
+		})
+		if err != nil {
+			return translateWriteError(err, "mark webhook event processed")
+		}
+		if affected == 0 {
+			return domain.ErrNotFound
+		}
+		return nil
+	})
+}
+
+// Failed records an attempt that did not work.
+func (r *Repository) Failed(ctx context.Context, scope domain.Scope, id uuid.UUID, reason string) error {
+	return r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
+		affected, err := queries.FailWebhookEvent(ctx, sqlcgen.FailWebhookEventParams{
+			WorkspaceID: scope.WorkspaceID,
+			ID:          id,
+			LastError:   reason,
+		})
+		if err != nil {
+			return translateWriteError(err, "fail webhook event")
+		}
+		if affected == 0 {
+			return domain.ErrNotFound
+		}
+		return nil
+	})
+}
+
+// toQueuedEvent renders a stored delivery.
+func toQueuedEvent(row sqlcgen.WebhookEvent) domain.QueuedEvent {
+	out := domain.QueuedEvent{
+		ID:          row.ID,
+		WorkspaceID: row.WorkspaceID,
+		App:         row.App,
+		DeliveryID:  row.DeliveryID,
+		Event:       row.Event,
+		Payload:     row.Payload,
+		ReceivedAt:  row.ReceivedAt,
+		Attempts:    int(row.Attempts),
+	}
+	if row.IntegrationID != nil {
+		out.IntegrationID = *row.IntegrationID
+	}
+	return out
+}
+
+// payloadOr keeps an absent body as an empty object rather than null, so a
+// consumer never has to handle two shapes of nothing.
+func payloadOr(payload []byte) []byte {
+	if len(payload) == 0 {
+		return []byte(`{}`)
+	}
+	return payload
+}
+
+// nullableID renders a uuid the column allows to be absent.
+func nullableID(id uuid.UUID) *uuid.UUID {
+	if id == uuid.Nil {
+		return nil
+	}
+	return &id
+}
+
 // toIntegration renders a stored row without its sealed columns.
 func toIntegration(row sqlcgen.Integration) domain.Integration {
 	return domain.Integration{

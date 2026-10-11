@@ -49,6 +49,12 @@ type Deps struct {
 	// StateStore remembers which state nonces are still unspent. Optional, for
 	// the same reason as States.
 	StateStore domain.StateStore
+	// Refs signs and verifies a webhook URL's reference. Optional: without it no
+	// webhook address can be issued or trusted.
+	Refs domain.RefCodec
+	// Queue is where a verified delivery waits to be acted on. Optional, for the
+	// same reason as Refs.
+	Queue domain.Queue
 }
 
 type service struct {

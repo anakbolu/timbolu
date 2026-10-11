@@ -132,3 +132,31 @@ WHERE nonce_hash = $1
   AND consumed_at IS NULL
   AND expires_at > $3
 RETURNING user_id, app, return_to;
+
+-- ----------------------------------------------------------- webhook queue
+
+-- name: EnqueueWebhookEvent :one
+-- A provider retries, and a retry is not a second event. The unique index on the
+-- delivery is what makes that true; ON CONFLICT DO NOTHING turns the retry into
+-- no row, which the repository reports as already queued.
+INSERT INTO webhook_events (workspace_id, integration_id, app, delivery_id, event, payload)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (workspace_id, app, delivery_id) DO NOTHING
+RETURNING *;
+
+-- name: PendingWebhookEvents :many
+-- The worker's read: oldest first, so nothing starves behind a busy provider.
+SELECT * FROM webhook_events
+WHERE workspace_id = $1 AND processed_at IS NULL
+ORDER BY received_at, id
+LIMIT $2;
+
+-- name: MarkWebhookEventProcessed :execrows
+UPDATE webhook_events
+SET processed_at = now()
+WHERE workspace_id = $1 AND id = $2 AND processed_at IS NULL;
+
+-- name: FailWebhookEvent :execrows
+UPDATE webhook_events
+SET attempts = attempts + 1, last_error = $3
+WHERE workspace_id = $1 AND id = $2;

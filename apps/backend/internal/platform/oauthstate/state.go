@@ -49,6 +49,10 @@ func New(key string) (*Codec, error) {
 
 // payload is what actually travels, base64url encoded and signed.
 type payload struct {
+	// Purpose says what this signature is for. Both values are signed with the
+	// same key, and one that does not say what it is for can be spent as the
+	// other.
+	Purpose     string `json:"p"`
 	WorkspaceID string `json:"w"`
 	UserID      string `json:"u"`
 	App         string `json:"a"`
@@ -64,6 +68,7 @@ func (c *Codec) Sign(state integrationdomain.OAuthState) (string, error) {
 	}
 
 	document, err := json.Marshal(payload{
+		Purpose:     statePurpose,
 		WorkspaceID: state.WorkspaceID.String(),
 		UserID:      state.UserID.String(),
 		App:         state.App,
@@ -114,6 +119,9 @@ func (c *Codec) Verify(value string) (integrationdomain.OAuthState, error) {
 	if err != nil {
 		return integrationdomain.OAuthState{}, fmt.Errorf("%w: it names no person", integrationdomain.ErrInvalidState)
 	}
+	if decoded.Purpose != statePurpose {
+		return integrationdomain.OAuthState{}, fmt.Errorf("%w: it was not signed as an authorization state", integrationdomain.ErrInvalidState)
+	}
 	if decoded.App == "" || decoded.Nonce == "" {
 		return integrationdomain.OAuthState{}, fmt.Errorf("%w: it is incomplete", integrationdomain.ErrInvalidState)
 	}
@@ -135,5 +143,91 @@ func (c *Codec) signature(encoded string) string {
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
-// compile-time check that the codec satisfies the port it is wired to.
-var _ integrationdomain.StateCodec = (*Codec)(nil)
+// refPayload is what a webhook URL carries.
+type refPayload struct {
+	WorkspaceID   string `json:"w"`
+	IntegrationID string `json:"i"`
+	App           string `json:"a"`
+	// Purpose keeps a webhook reference from being usable as an OAuth state or
+	// the other way round: both are signed with the same key, and a signature
+	// that does not say what it is for is a signature that can be spent twice.
+	Purpose string `json:"p"`
+}
+
+const (
+	refPurpose   = "webhook"
+	statePurpose = "oauth-state"
+)
+
+// SignRef renders a webhook reference as the value that travels in a URL.
+func (c *Codec) SignRef(ref integrationdomain.WebhookRef) (string, error) {
+	if c == nil {
+		return "", errors.New("oauthstate: codec is not configured")
+	}
+
+	document, err := json.Marshal(refPayload{
+		WorkspaceID:   ref.WorkspaceID.String(),
+		IntegrationID: ref.IntegrationID.String(),
+		App:           ref.App,
+		Purpose:       refPurpose,
+	})
+	if err != nil {
+		return "", fmt.Errorf("oauthstate: encode reference: %w", err)
+	}
+
+	encoded := base64.RawURLEncoding.EncodeToString(document)
+	return encoded + "." + c.signature(encoded), nil
+}
+
+// VerifyRef reads a webhook reference back, refusing anything this codec did not
+// sign or that was signed for another purpose.
+func (c *Codec) VerifyRef(value string) (integrationdomain.WebhookRef, error) {
+	if c == nil {
+		return integrationdomain.WebhookRef{}, errors.New("oauthstate: codec is not configured")
+	}
+
+	encoded, signature, found := strings.Cut(value, ".")
+	if !found || encoded == "" || signature == "" {
+		return integrationdomain.WebhookRef{}, integrationdomain.ErrSignatureInvalid
+	}
+	if !hmac.Equal([]byte(c.signature(encoded)), []byte(signature)) {
+		return integrationdomain.WebhookRef{}, fmt.Errorf("%w: the signature does not match", integrationdomain.ErrSignatureInvalid)
+	}
+
+	document, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		return integrationdomain.WebhookRef{}, fmt.Errorf("%w: it is not readable", integrationdomain.ErrSignatureInvalid)
+	}
+
+	var decoded refPayload
+	if err := json.Unmarshal(document, &decoded); err != nil {
+		return integrationdomain.WebhookRef{}, fmt.Errorf("%w: it is not readable", integrationdomain.ErrSignatureInvalid)
+	}
+	if decoded.Purpose != refPurpose {
+		return integrationdomain.WebhookRef{}, fmt.Errorf("%w: it was not signed as a webhook reference", integrationdomain.ErrSignatureInvalid)
+	}
+
+	workspaceID, err := uuid.Parse(decoded.WorkspaceID)
+	if err != nil {
+		return integrationdomain.WebhookRef{}, fmt.Errorf("%w: it names no workspace", integrationdomain.ErrSignatureInvalid)
+	}
+	integrationID, err := uuid.Parse(decoded.IntegrationID)
+	if err != nil {
+		return integrationdomain.WebhookRef{}, fmt.Errorf("%w: it names no connection", integrationdomain.ErrSignatureInvalid)
+	}
+	if decoded.App == "" {
+		return integrationdomain.WebhookRef{}, fmt.Errorf("%w: it names no app", integrationdomain.ErrSignatureInvalid)
+	}
+
+	return integrationdomain.WebhookRef{
+		WorkspaceID:   workspaceID,
+		IntegrationID: integrationID,
+		App:           decoded.App,
+	}, nil
+}
+
+// compile-time checks that the codec satisfies the ports it is wired to.
+var (
+	_ integrationdomain.StateCodec = (*Codec)(nil)
+	_ integrationdomain.RefCodec   = (*Codec)(nil)
+)

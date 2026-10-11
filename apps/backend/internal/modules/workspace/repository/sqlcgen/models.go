@@ -480,6 +480,20 @@ type User struct {
 	OnboardedAt     *time.Time
 }
 
+type WebhookEvent struct {
+	ID            uuid.UUID
+	WorkspaceID   uuid.UUID
+	IntegrationID *uuid.UUID
+	App           string
+	DeliveryID    string
+	Event         string
+	Payload       []byte
+	ReceivedAt    time.Time
+	ProcessedAt   *time.Time
+	Attempts      int32
+	LastError     string
+}
+
 type Workspace struct {
 	ID             uuid.UUID
 	Name           string

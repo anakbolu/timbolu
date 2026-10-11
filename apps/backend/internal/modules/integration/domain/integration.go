@@ -368,4 +368,19 @@ type Service interface {
 	// RefreshExpiring refreshes every connection of a workspace whose token is
 	// close to expiring, and reports what it did.
 	RefreshExpiring(ctx context.Context, scope Scope) ([]Integration, error)
+
+	// WebhookURL returns the address a provider should call for one connection.
+	// It is signed, so it authenticates its own tenant and a delivery for one
+	// workspace cannot be replayed against another.
+	WebhookURL(ctx context.Context, scope Scope, integrationID uuid.UUID, baseURL string) (string, error)
+	// ReceiveWebhook verifies a delivery and queues it, reporting how many events
+	// were newly accepted. Zero means the delivery was already queued, which is a
+	// success: a provider that retries must be told to stop.
+	ReceiveWebhook(ctx context.Context, app string, request WebhookRequest) (int, error)
+	// PendingWebhooks returns the oldest deliveries a workspace has not acted on.
+	PendingWebhooks(ctx context.Context, scope Scope, limit int) ([]QueuedEvent, error)
+	// WebhookProcessed marks a delivery as acted on.
+	WebhookProcessed(ctx context.Context, scope Scope, id uuid.UUID) error
+	// WebhookFailed records an attempt that did not work.
+	WebhookFailed(ctx context.Context, scope Scope, id uuid.UUID, reason string) error
 }

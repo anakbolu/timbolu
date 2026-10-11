@@ -105,6 +105,18 @@ func (c *Container) registerRoutes() {
 	}
 	authhandler.Routes(api, c.Handlers.Auth)
 
+	// The endpoints a provider reaches directly are registered here, with the
+	// other public routes. Where they are registered is what makes them public:
+	// an empty-path group below applies its middleware to the whole prefix, so a
+	// route added after it would be asked for a session it cannot have.
+	//
+	// What makes them safe instead is what each carries: a signed, single-use
+	// state for the redirect, and a signed reference plus the adapter's own
+	// signature for a webhook.
+	if c.Handlers.Integration != nil {
+		integrationhandler.CallbackRoutes(api, c.Handlers.Integration)
+	}
+
 	// Authenticated, no active workspace required.
 	user := api.Group("", c.requireUser())
 	authhandler.ProtectedRoutes(user, c.Handlers.Auth)
@@ -165,13 +177,6 @@ func (c *Container) registerRoutes() {
 		registerApprovalFallback(tenant)
 	} else {
 		approvalhandler.Routes(tenant, c.Handlers.Approval)
-	}
-
-	// The provider's redirect is public by necessity: it arrives as a browser
-	// navigation with no session. What makes it safe is the signed, single-use
-	// state, which names the workspace and the person who started the flow.
-	if c.Handlers.Integration != nil {
-		integrationhandler.CallbackRoutes(api, c.Handlers.Integration)
 	}
 
 	// Integrations: every member reads the connections and their grants, because
