@@ -43,6 +43,12 @@ type Deps struct {
 	// without one the schema is not enforced, which is stated in the log rather
 	// than silently assumed.
 	Validator domain.SchemaValidator
+	// States signs and verifies the OAuth state value. Optional: without it no
+	// connection flow can start, which is what a deployment with no signing key is.
+	States domain.StateCodec
+	// StateStore remembers which state nonces are still unspent. Optional, for
+	// the same reason as States.
+	StateStore domain.StateStore
 }
 
 type service struct {

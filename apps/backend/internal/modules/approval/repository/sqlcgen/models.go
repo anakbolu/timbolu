@@ -278,6 +278,17 @@ type MessageAttachment struct {
 	CreatedAt      time.Time
 }
 
+type OauthState struct {
+	NonceHash   string
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+	App         string
+	ReturnTo    string
+	ExpiresAt   time.Time
+	ConsumedAt  *time.Time
+	CreatedAt   time.Time
+}
+
 type PasswordResetToken struct {
 	ID        uuid.UUID
 	UserID    uuid.UUID

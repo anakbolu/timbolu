@@ -12,6 +12,37 @@ import (
 	"github.com/google/uuid"
 )
 
+const consumeOAuthState = `-- name: ConsumeOAuthState :one
+UPDATE oauth_states
+SET consumed_at = now()
+WHERE nonce_hash = $1
+  AND workspace_id = $2
+  AND consumed_at IS NULL
+  AND expires_at > $3
+RETURNING user_id, app, return_to
+`
+
+type ConsumeOAuthStateParams struct {
+	NonceHash   string
+	WorkspaceID uuid.UUID
+	ExpiresAt   time.Time
+}
+
+type ConsumeOAuthStateRow struct {
+	UserID   uuid.UUID
+	App      string
+	ReturnTo string
+}
+
+// Spending a state is one statement, so two callbacks arriving together cannot
+// both win: the second finds no row because consumed_at is already set.
+func (q *Queries) ConsumeOAuthState(ctx context.Context, arg ConsumeOAuthStateParams) (ConsumeOAuthStateRow, error) {
+	row := q.db.QueryRow(ctx, consumeOAuthState, arg.NonceHash, arg.WorkspaceID, arg.ExpiresAt)
+	var i ConsumeOAuthStateRow
+	err := row.Scan(&i.UserID, &i.App, &i.ReturnTo)
+	return i, err
+}
+
 const deleteGrant = `-- name: DeleteGrant :execrows
 DELETE FROM agent_grants
 WHERE workspace_id = $1 AND agent_id = $2 AND integration_id = $3
@@ -256,6 +287,35 @@ func (q *Queries) ListIntegrations(ctx context.Context, workspaceID uuid.UUID) (
 		return nil, err
 	}
 	return items, nil
+}
+
+const saveOAuthState = `-- name: SaveOAuthState :exec
+
+INSERT INTO oauth_states (nonce_hash, workspace_id, user_id, app, return_to, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (nonce_hash) DO NOTHING
+`
+
+type SaveOAuthStateParams struct {
+	NonceHash   string
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+	App         string
+	ReturnTo    string
+	ExpiresAt   time.Time
+}
+
+// ------------------------------------------------------------ oauth states
+func (q *Queries) SaveOAuthState(ctx context.Context, arg SaveOAuthStateParams) error {
+	_, err := q.db.Exec(ctx, saveOAuthState,
+		arg.NonceHash,
+		arg.WorkspaceID,
+		arg.UserID,
+		arg.App,
+		arg.ReturnTo,
+		arg.ExpiresAt,
+	)
+	return err
 }
 
 const saveRefreshedToken = `-- name: SaveRefreshedToken :one

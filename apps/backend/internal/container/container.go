@@ -16,6 +16,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"go.uber.org/zap"
 
+	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
 	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 	taskactivity "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/activity"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/authn"
@@ -78,6 +79,11 @@ type options struct {
 	googleSet   bool
 	limiter     *ratelimit.Limiter
 	limiterSet  bool
+	// adapters are the integration adapters this deployment speaks. A test
+	// supplies its own, which is how a provider's flow is exercised without
+	// reaching the provider.
+	adapters    []integrationdomain.Adapter
+	adaptersSet bool
 	buildApp    bool
 }
 
@@ -139,6 +145,17 @@ func WithLimiter(limiter *ratelimit.Limiter) Option {
 	return func(o *options) {
 		o.limiter = limiter
 		o.limiterSet = true
+	}
+}
+
+// WithIntegrationAdapters replaces the applications this deployment speaks.
+//
+// The list is what the integration hub registers, so a test can exercise a
+// provider's flow against a stub instead of the provider.
+func WithIntegrationAdapters(adapters ...integrationdomain.Adapter) Option {
+	return func(o *options) {
+		o.adapters = adapters
+		o.adaptersSet = true
 	}
 }
 
@@ -211,7 +228,7 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Container, e
 
 	// The integration hub is assembled before the approval gate, because the gate
 	// asks it for a token when an approved action is finally carried out.
-	if err := c.openIntegration(ctx, cfg); err != nil {
+	if err := c.openIntegration(ctx, cfg, o); err != nil {
 		c.Close()
 		return nil, err
 	}

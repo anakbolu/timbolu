@@ -13,6 +13,7 @@ import (
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/crypto"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/kms"
+	"github.com/robzlabz/employeebot/apps/backend/internal/platform/oauthstate"
 )
 
 // openIntegration builds the integration hub: the connected accounts, the key
@@ -20,7 +21,7 @@ import (
 //
 // It is assembled before the approval gate because the gate's executor asks it
 // for a token when an approved action is finally carried out.
-func (c *Container) openIntegration(_ context.Context, cfg *config.Config) error {
+func (c *Container) openIntegration(_ context.Context, cfg *config.Config, o *options) error {
 	if c.Repositories == nil || c.Repositories.Integration == nil {
 		c.Logger.Warn("the integration hub is disabled: no database connection")
 		return nil
@@ -48,7 +49,7 @@ func (c *Container) openIntegration(_ context.Context, cfg *config.Config) error
 	// The adapters are registered first: they are what declares the tools, their
 	// labels, and their schemas, and everything else reads that.
 	registry := integrationservice.NewRegistry()
-	for _, adapter := range c.integrationAdapters() {
+	for _, adapter := range c.integrationAdapters(o) {
 		if err := registry.Register(adapter); err != nil {
 			// An adapter that declares something the registry refuses is a bug in
 			// that adapter. Failing here names it while the process is starting,
@@ -62,11 +63,20 @@ func (c *Container) openIntegration(_ context.Context, cfg *config.Config) error
 		return err
 	}
 
+	// The signing key is what makes a callback trustworthy: the value travels
+	// through a browser, so anybody can hand one back.
+	states, err := oauthstate.New(cfg.Integrations.OAuthStateKey)
+	if err != nil {
+		return fmt.Errorf("integration: %w", err)
+	}
+
 	c.Services.Integration = integrationservice.New(integrationservice.Deps{
 		Repository: c.Repositories.Integration,
 		Cipher:     c.tokenCipher(keys),
 		Registry:   registry,
 		Validator:  schemas,
+		States:     states,
+		StateStore: c.Repositories.Integration,
 		Logger:     c.Logger,
 	})
 
@@ -78,7 +88,10 @@ func (c *Container) openIntegration(_ context.Context, cfg *config.Config) error
 // It is the only place an application is named. Adding one is adding an adapter
 // here; the agent worker, the approval gate, and the tool registry never learn
 // that it happened.
-func (c *Container) integrationAdapters() []integrationdomain.Adapter {
+func (c *Container) integrationAdapters(o *options) []integrationdomain.Adapter {
+	if o != nil && o.adaptersSet {
+		return o.adapters
+	}
 	return nil
 }
 

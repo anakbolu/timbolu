@@ -293,6 +293,13 @@ type Repository interface {
 	// how a rotation converges.
 	SaveDataKey(ctx context.Context, scope Scope, wrapped WrappedKey) error
 
+	// SaveState records an OAuth state as usable until it expires.
+	SaveState(ctx context.Context, state OAuthState) error
+	// ConsumeState spends a state's nonce. It returns ErrInvalidState when the
+	// nonce was already spent, never existed, or has expired, and it must be
+	// atomic so two callbacks arriving together cannot both succeed.
+	ConsumeState(ctx context.Context, workspaceID uuid.UUID, nonce string, now time.Time) error
+
 	// Grants lists the grants of one Bolu.
 	Grants(ctx context.Context, scope Scope, agentID uuid.UUID) ([]Grant, error)
 	// SetGrant adds or updates one Bolu's permission on one integration.
@@ -346,4 +353,19 @@ type Service interface {
 	// Registry exposes the adapters this deployment knows, so a screen can list
 	// what an application offers before anything is connected.
 	Registry() Registry
+
+	// BeginAuth starts a connection flow for an application, returning where to
+	// send the person and the state the callback will carry back.
+	BeginAuth(ctx context.Context, scope Scope, app, returnTo string) (AuthURL, error)
+	// CompleteAuth finishes a flow. It reads the tenant from the signed state
+	// rather than from a session, because the callback arrives from the
+	// provider's browser redirect and carries no session of its own.
+	CompleteAuth(ctx context.Context, req CompleteAuthRequest) (Integration, error)
+	// RefreshConnection trades a stored refresh token for a new access token. A
+	// provider that refuses marks the connection as needing a fresh login rather
+	// than discarding what it already knows.
+	RefreshConnection(ctx context.Context, scope Scope, id uuid.UUID) (Integration, error)
+	// RefreshExpiring refreshes every connection of a workspace whose token is
+	// close to expiring, and reports what it did.
+	RefreshExpiring(ctx context.Context, scope Scope) ([]Integration, error)
 }

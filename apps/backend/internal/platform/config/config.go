@@ -5,21 +5,34 @@ import "time"
 // Config is the root application configuration. Values come from the YAML file
 // matching ENVIRONMENT and are then overridden by environment variables.
 type Config struct {
-	Application AppConfig
-	Http        HttpConfig
-	Database    DatabaseConfig
-	Redis       RedisConfig
-	Temporal    TemporalConfig
-	JWT         JWTConfig
-	Auth        AuthConfig
-	Google      GoogleConfig
-	Mail        MailConfig
-	Plan        PlanConfig
-	Llm         LlmConfig
-	Kms         KmsConfig
-	Tasks       TasksConfig
-	Storage     StorageConfig
-	Logging     LoggingConfig
+	Application  AppConfig
+	Http         HttpConfig
+	Database     DatabaseConfig
+	Redis        RedisConfig
+	Temporal     TemporalConfig
+	JWT          JWTConfig
+	Auth         AuthConfig
+	Google       GoogleConfig
+	Mail         MailConfig
+	Plan         PlanConfig
+	Llm          LlmConfig
+	Kms          KmsConfig
+	Integrations IntegrationConfig
+	Tasks        TasksConfig
+	Storage      StorageConfig
+	Logging      LoggingConfig
+}
+
+// IntegrationConfig holds what the integration hub needs beyond its adapters.
+type IntegrationConfig struct {
+	// OAuthStateKey signs the value an authorization flow carries. It must be at
+	// least 32 characters: the value travels through a browser, and a guessable
+	// signature is a forged callback. Empty disables connection flows.
+	OAuthStateKey string `mapstructure:"OAuthStateKey" validate:"optional"`
+	// OAuthRedirectBase is the public origin providers redirect back to. It has
+	// to be the address registered with the provider, so it is configured rather
+	// than derived from the request.
+	OAuthRedirectBase string `mapstructure:"OAuthRedirectBase" validate:"optional"`
 }
 
 // KmsConfig holds the key-management key that protects the data keys of every

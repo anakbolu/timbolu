@@ -9,8 +9,11 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -220,6 +223,54 @@ func (r *Repository) SaveDataKey(ctx context.Context, scope domain.Scope, wrappe
 		}
 		return nil
 	})
+}
+
+// SaveState records an OAuth state as usable until it expires.
+func (r *Repository) SaveState(ctx context.Context, state domain.OAuthState) error {
+	return r.write(ctx, domain.Scope{UserID: state.UserID, WorkspaceID: state.WorkspaceID}, func(queries *sqlcgen.Queries) error {
+		if err := queries.SaveOAuthState(ctx, sqlcgen.SaveOAuthStateParams{
+			NonceHash:   hashNonce(state.Nonce),
+			WorkspaceID: state.WorkspaceID,
+			UserID:      state.UserID,
+			App:         state.App,
+			ReturnTo:    state.ReturnTo,
+			ExpiresAt:   state.ExpiresAt,
+		}); err != nil {
+			return translateWriteError(err, "save oauth state")
+		}
+		return nil
+	})
+}
+
+// ConsumeState spends a state's nonce.
+//
+// The single statement is the guarantee: the second of two callbacks carrying the
+// same state finds no row, because the first set consumed_at.
+func (r *Repository) ConsumeState(ctx context.Context, workspaceID uuid.UUID, nonce string, now time.Time) error {
+	return r.write(ctx, domain.Scope{WorkspaceID: workspaceID}, func(queries *sqlcgen.Queries) error {
+		_, err := queries.ConsumeOAuthState(ctx, sqlcgen.ConsumeOAuthStateParams{
+			NonceHash:   hashNonce(nonce),
+			WorkspaceID: workspaceID,
+			ExpiresAt:   now,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return domain.ErrInvalidState
+			}
+			return fmt.Errorf("integration: consume oauth state: %w", err)
+		}
+		return nil
+	})
+}
+
+// hashNonce renders the stored form of a state's nonce.
+//
+// The value handed to the provider is never stored, so a leaked backup cannot be
+// used to finish somebody's flow. The nonce is random and high-entropy, so a
+// plain hash is enough here: there is nothing to guess.
+func hashNonce(nonce string) string {
+	sum := sha256.Sum256([]byte(nonce))
+	return hex.EncodeToString(sum[:])
 }
 
 // Grants lists the grants of one Bolu.
