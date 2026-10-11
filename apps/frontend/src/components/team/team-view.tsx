@@ -21,7 +21,7 @@ import {
   Tool,
   createAgent,
   deleteAgent,
-  getActiveWorkspaceId,
+  ensureActiveWorkspace,
   listAgentGrants,
   listAgentTools,
   listIntegrations,
@@ -58,25 +58,28 @@ export function TeamView() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  const workspaceId = getActiveWorkspaceId();
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!workspaceId) {
-      setError("Pilih workspace dulu.");
-      return;
-    }
-
     const session = await refreshSession();
     if (!session.ok) {
       setError("Sesi berakhir. Masuk lagi.");
       return;
     }
 
+    // Resolved from the session rather than only read from storage, so an account
+    // that owns a workspace is not told to pick one it cannot see.
+    const active = await ensureActiveWorkspace();
+    setWorkspaceId(active);
+    if (!active) {
+      setError("Pilih workspace dulu.");
+      return;
+    }
+
     const [teamResult, templateResult, integrationResult] = await Promise.all([
-      listAgentTeams(workspaceId),
+      listAgentTeams(active),
       listTemplates(),
-      listIntegrations(workspaceId),
+      listIntegrations(active),
     ]);
 
     if (!teamResult.ok) {
@@ -90,7 +93,7 @@ export function TeamView() {
     if (integrationResult.ok) {
       setIntegrations(integrationResult.data);
     }
-  }, [workspaceId]);
+  }, []);
 
   useEffect(() => {
     // The loader sets state after its first await, so nothing is set

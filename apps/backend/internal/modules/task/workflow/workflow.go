@@ -9,7 +9,10 @@
 package workflow
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"go.temporal.io/sdk/temporal"
@@ -34,6 +37,7 @@ const (
 	ActivityPrepareHandoff     = "PrepareHandoff"
 	ActivityMarkHandoffStarted = "MarkHandoffStarted"
 	ActivityResume             = "ResumeTask"
+	ActivityCarryOutDraft      = "CarryOutDraft"
 )
 
 // Signal names a running task accepts.
@@ -59,6 +63,9 @@ const (
 	// childTimeout bounds one child task's whole life, because the parent waits
 	// for the answer rather than for the request to be accepted.
 	childTimeout = 60 * time.Minute
+	// maxHoldWait bounds one wait for the workspace to open. A workspace whose
+	// hours never open would otherwise pin the task forever.
+	maxHoldWait = 12 * time.Hour
 )
 
 // DefaultRetry is the retry policy every activity gets unless it says otherwise.
@@ -125,8 +132,11 @@ type ModelRequest struct {
 	WorkspaceID string
 	AgentID     string
 	System      string
-	Messages    []domain.Message
-	Tools       []domain.Tool
+	// Messages is the conversation so far, in order, including the tool calls the
+	// model made and what they answered. Without those the model would be asked
+	// the same question every round.
+	Messages []domain.Turn
+	Tools    []domain.Tool
 }
 
 // ModelReply is what the model answered.
@@ -184,6 +194,25 @@ type HandoffStarted struct {
 	RunID       string
 }
 
+// DraftCarryRequest asks for an approved action to be carried out.
+type DraftCarryRequest struct {
+	TaskID      string
+	WorkspaceID string
+	DraftID     string
+}
+
+// DraftCarryOutcome is what carrying out an approved action produced.
+type DraftCarryOutcome struct {
+	Status string
+	// Content is what the action answered, when it ran.
+	Content []byte
+	// Held says the action is waiting for the workspace's working hours.
+	Held      bool
+	NotBefore time.Time
+	// Reason explains a hold in the user's words.
+	Reason string
+}
+
 // ResumeRequest clears a parked task's waiting state.
 type ResumeRequest struct {
 	TaskID      string
@@ -223,6 +252,11 @@ type DraftOutcome struct {
 	Status  string
 	Note    string
 	Title   string
+	// Auto says the workspace's policy allowed the action to go out without a
+	// person, so there is nothing to wait for.
+	Auto bool
+	// Content is what an action that already ran answered.
+	Content []byte
 }
 
 // StepRecord is one round to write to `task_steps`.
@@ -316,6 +350,10 @@ func AgentTaskWorkflow(ctx workflow.Context, input TaskInput) (TaskOutcome, erro
 		return state.fail(ctx, "gagal menyiapkan tugas: "+err.Error())
 	}
 
+	// The conversation starts from what was already said and grows by a turn per
+	// round, so a tool's answer reaches the model on the next one.
+	state.turns = Turns(loaded, input)
+
 	for state.steps < loaded.Limits.MaxSteps {
 		// The cancel check is here rather than at the top so it covers a signal
 		// that arrived while the previous round ran.
@@ -358,6 +396,14 @@ type runState struct {
 	outputTokens int64
 	canceled     bool
 	answer       string
+	// revisions counts how many times a person has sent an action back. It is
+	// the workflow's own tally rather than the store's, because the bound is
+	// about this run's cost and a restart must not reset it.
+	revisions int
+	// turns is the conversation the model reads, grown by each round. It lives in
+	// the workflow because it is rebuilt from history on a replay, which is what
+	// keeps a restarted task's next round identical to the one it would have sent.
+	turns []domain.Turn
 }
 
 // oneRound asks the model, runs what it asked for, and records the round. It
@@ -377,7 +423,7 @@ func (s *runState) oneRound(ctx workflow.Context, loaded Context, approvals, can
 		WorkspaceID: s.input.WorkspaceID,
 		AgentID:     s.input.AgentID,
 		System:      SystemPrompt(loaded, s.input),
-		Messages:    Messages(loaded, s.input),
+		Messages:    s.turns,
 		Tools:       loaded.Tools,
 	}
 
@@ -389,6 +435,10 @@ func (s *runState) oneRound(ctx workflow.Context, loaded Context, approvals, can
 	s.steps++
 	s.inputTokens += int64(reply.Usage.InputTokens)
 	s.outputTokens += int64(reply.Usage.OutputTokens)
+
+	// The assistant's own turn joins the conversation, with the calls it asked
+	// for, so the results that follow have something to answer.
+	s.turns = append(s.turns, assistantTurn(reply))
 
 	// The thinking round is recorded before its tools, so the order in the
 	// history is the order the model produced.
@@ -421,10 +471,20 @@ func (s *runState) oneRound(ctx workflow.Context, loaded Context, approvals, can
 			return false, err
 		}
 
-		if outcome.Draft != nil {
-			// A tool that touches the outside world becomes a draft, and the
-			// task parks on it: the workflow waits for the decision rather than
-			// holding a worker slot open.
+		// A policy that allowed the action unattended means there is no decision
+		// to wait for: the gate already carried it out, so the round records what
+		// happened and the model reads the answer on its next turn.
+		if outcome.Draft != nil && outcome.Draft.Auto {
+			outcome.Content = marshalQuiet(map[string]any{
+				"executed": true,
+				"content":  json.RawMessage(nonEmpty(outcome.Draft.Content)),
+			})
+		}
+
+		// A tool that touches the outside world becomes a draft, and the task
+		// parks on it: the workflow waits for the decision rather than holding a
+		// worker slot open.
+		if outcome.Draft != nil && !outcome.Draft.Auto {
 			decision, stopped := waitForApproval(ctx, approvals, cancel, outcome.Draft.DraftID)
 			if stopped {
 				return false, errors.New("dibatalkan saat menunggu persetujuan")
@@ -432,15 +492,35 @@ func (s *runState) oneRound(ctx workflow.Context, loaded Context, approvals, can
 			if err := s.resume(ctx, outcome.Draft.DraftID, decision); err != nil {
 				return false, err
 			}
-			if !decision.Approved {
-				// A revision is fed back to the model as a failed result, which
-				// is how the agent learns the human disagreed.
-				outcome.Content = marshalQuiet(map[string]any{
-					"approved": false,
-					"note":     decision.Note,
-				})
-				outcome.IsError = true
+
+			if decision.Approved {
+				// An approved action is carried out and the task ends there: the
+				// person approved what to send, so asking the model to produce it
+				// again would spend tokens to reach a decision already made.
+				sent, err := s.carryOut(ctx, outcome.Draft.DraftID)
+				if err != nil {
+					return false, err
+				}
+
+				s.answer = draftAnswer(outcome.Draft, sent)
+				return true, nil
 			}
+
+			// A revision goes back to the model with the person's note, which is
+			// how the agent learns what to change. The tally is bounded so the
+			// argument cannot outlast the task's allowance.
+			s.revisions++
+			if s.revisions > loaded.Limits.MaxRevisions {
+				return false, fmt.Errorf("%w: %d kali, batasnya %d",
+					domain.ErrRevisionLimitReached, s.revisions, loaded.Limits.MaxRevisions)
+			}
+
+			outcome.Content = marshalQuiet(map[string]any{
+				"approved": false,
+				"note":     decision.Note,
+				"revision": s.revisions,
+			})
+			outcome.IsError = true
 		}
 
 		callStep := StepRecord{
@@ -470,6 +550,10 @@ func (s *runState) oneRound(ctx workflow.Context, loaded Context, approvals, can
 		if err := s.record(ctx, recordCtx, resultStep); err != nil {
 			return false, err
 		}
+
+		// The result is what the model reads next round. A refusal or a failure is
+		// a result like any other: the model is meant to react to it.
+		s.turns = append(s.turns, toolTurn(call, outcome))
 	}
 
 	return false, nil
@@ -578,6 +662,56 @@ func (s *runState) requestDraft(ctx workflow.Context, tool domain.Tool, request 
 		Content: content,
 		Draft:   &draft,
 	}, nil
+}
+
+// carryOut executes an approved action, waiting for the workspace to open.
+//
+// A hold is waited out on a Temporal timer rather than by re-checking: the wait
+// is durable, so a worker that dies during it resumes the wait, and the task does
+// not occupy a worker while it lasts.
+func (s *runState) carryOut(ctx workflow.Context, draftID string) (DraftCarryOutcome, error) {
+	carryCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: draftTimeout,
+		RetryPolicy:         DefaultRetry,
+	})
+
+	var outcome DraftCarryOutcome
+	request := DraftCarryRequest{
+		TaskID:      s.input.TaskID,
+		WorkspaceID: s.input.WorkspaceID,
+		DraftID:     draftID,
+	}
+
+	if err := workflow.ExecuteActivity(carryCtx, ActivityCarryOutDraft, request).Get(carryCtx, &outcome); err != nil {
+		return DraftCarryOutcome{}, errors.New("gagal menjalankan aksi yang disetujui: " + err.Error())
+	}
+
+	// The action is held until the workspace opens. The wait is bounded by a
+	// ceiling of its own so a workspace whose hours never open cannot pin the
+	// task forever.
+	for outcome.Held {
+		// The workflow clock, not the wall clock: a duration read from time.Now
+		// would differ between the run and its replay, which is what makes a
+		// workflow non-deterministic.
+		delay := outcome.NotBefore.Sub(workflow.Now(ctx))
+		if delay <= 0 {
+			// The window opened while the round ran, so the next attempt sends.
+			delay = time.Second
+		}
+		if delay > maxHoldWait {
+			delay = maxHoldWait
+		}
+
+		if err := workflow.Sleep(ctx, delay); err != nil {
+			return DraftCarryOutcome{}, err
+		}
+
+		if err := workflow.ExecuteActivity(carryCtx, ActivityCarryOutDraft, request).Get(carryCtx, &outcome); err != nil {
+			return DraftCarryOutcome{}, errors.New("gagal menjalankan aksi yang disetujui: " + err.Error())
+		}
+	}
+
+	return outcome, nil
 }
 
 // resume clears the parked state once the decision is in.
@@ -806,6 +940,41 @@ func waitForApproval(ctx workflow.Context, approvals, cancel workflow.ReceiveCha
 	}
 
 	return decision, stopped
+}
+
+// nonEmpty keeps a JSON document that may be absent from producing a null field.
+func nonEmpty(content []byte) []byte {
+	if len(content) == 0 {
+		return []byte("{}")
+	}
+	return content
+}
+
+// draftAnswer is what the task reports after carrying an approved action out.
+//
+// The action's own answer is preferred when it gave one, because it is the most
+// specific thing that happened; otherwise the draft's summary stands in, so a
+// task that sent an email reads as "sent the invoice" rather than as nothing.
+func draftAnswer(draft *DraftOutcome, sent DraftCarryOutcome) string {
+	if len(sent.Content) > 0 {
+		var payload struct {
+			Text    string `json:"text"`
+			Message string `json:"message"`
+			Summary string `json:"summary"`
+		}
+		if err := json.Unmarshal(sent.Content, &payload); err == nil {
+			for _, candidate := range []string{payload.Text, payload.Message, payload.Summary} {
+				if strings.TrimSpace(candidate) != "" {
+					return strings.TrimSpace(candidate)
+				}
+			}
+		}
+	}
+
+	if draft != nil && strings.TrimSpace(draft.Title) != "" {
+		return draft.Title
+	}
+	return ""
 }
 
 // drainCancel reports whether a cancel signal is waiting, without blocking.

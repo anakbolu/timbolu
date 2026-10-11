@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
 )
 
@@ -45,13 +46,13 @@ func SystemPrompt(loaded Context, input TaskInput) string {
 	return strings.Join(parts, "\n")
 }
 
-// Messages renders the conversation the task answers.
+// Turns renders the conversation the task answers, as the model reads it.
 //
 // The task's own prompt is appended as the last user turn, because the workflow
 // may run long after the message that started it and the stored history is what
 // the model should see.
-func Messages(loaded Context, input TaskInput) []domain.Message {
-	messages := make([]domain.Message, 0, len(loaded.History)+1)
+func Turns(loaded Context, input TaskInput) []domain.Turn {
+	turns := make([]domain.Turn, 0, len(loaded.History)+1)
 	last := ""
 
 	for _, message := range loaded.History {
@@ -61,7 +62,12 @@ func Messages(loaded Context, input TaskInput) []domain.Message {
 			// round starts, so it is skipped rather than sent as a blank turn.
 			continue
 		}
-		messages = append(messages, textTurn(text, message.AgentID, message.UserID))
+
+		role := llmdomain.RoleUser
+		if message.FromAgent() {
+			role = llmdomain.RoleAssistant
+		}
+		turns = append(turns, domain.Turn{Role: role, Text: text})
 		last = text
 	}
 
@@ -71,24 +77,47 @@ func Messages(loaded Context, input TaskInput) []domain.Message {
 	// repeating themselves.
 	prompt := strings.TrimSpace(input.Prompt)
 	if prompt != "" && prompt != last {
-		messages = append(messages, textTurn(prompt, uuid.Nil, uuid.Nil))
+		turns = append(turns, domain.Turn{Role: llmdomain.RoleUser, Text: prompt})
 	}
 
-	return messages
+	return turns
 }
 
-// textTurn builds one turn whose body is a real text block, which is the shape
-// the activity renders back into the model's message.
-func textTurn(text string, agentID, userID uuid.UUID) domain.Message {
-	body, err := json.Marshal(map[string]any{"type": "text", "markdown": text})
-	if err != nil {
-		body = []byte(`{"type":"text","markdown":""}`)
+// assistantTurn is what the model just said, as a turn of the conversation.
+//
+// The calls it asked for travel with it: a tool result has to answer a specific
+// call, so the call has to be in the conversation before the result is.
+func assistantTurn(reply ModelReply) domain.Turn {
+	turn := domain.Turn{Role: llmdomain.RoleAssistant, Text: reply.Text}
+
+	for _, call := range reply.ToolCalls {
+		turn.ToolCalls = append(turn.ToolCalls, llmdomain.ToolCall{
+			ID:        call.CallID,
+			Name:      call.Name,
+			Arguments: call.Arguments,
+		})
 	}
 
-	return domain.Message{
-		AgentID: agentID,
-		UserID:  userID,
-		Blocks:  []domain.Block{{Type: "text", Body: body}},
+	return turn
+}
+
+// toolTurn is what one call answered, as a turn of the conversation.
+//
+// A refusal and a failure are results like any other: the model is meant to read
+// them and decide what to do, which is why they are not dropped.
+func toolTurn(call ToolCall, outcome ToolOutcome) domain.Turn {
+	content := string(outcome.Content)
+	if content == "" {
+		content = "{}"
+	}
+
+	return domain.Turn{
+		Role: llmdomain.RoleTool,
+		ToolResults: []llmdomain.ToolResult{{
+			CallID:  call.CallID,
+			Content: content,
+			IsError: outcome.IsError,
+		}},
 	}
 }
 

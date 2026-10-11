@@ -196,10 +196,21 @@ func (s stubAgents) ByName(_ context.Context, _ domain.Scope, name string) (doma
 	return agent, nil
 }
 
-// stubDrafts records the proposals it was asked to open.
+// stubDrafts records the proposals it was asked to open and the drafts it was
+// asked to carry out.
 type stubDrafts struct {
 	requests []domain.DraftRequest
 	status   string
+	// execution is what carrying out an approved draft produces.
+	execution domain.DraftExecution
+	// carried records which drafts were carried out.
+	carried []uuid.UUID
+}
+
+// CarryOut implements the gate's second half.
+func (s *stubDrafts) CarryOut(_ context.Context, _ domain.Scope, draftID uuid.UUID) (domain.DraftExecution, error) {
+	s.carried = append(s.carried, draftID)
+	return s.execution, nil
 }
 
 func (s *stubDrafts) RequestDraft(_ context.Context, _ domain.Scope, req domain.DraftRequest) (domain.Draft, error) {
@@ -389,10 +400,9 @@ func TestCallModelRecordsTheCall(t *testing.T) {
 		WorkspaceID: h.scope.WorkspaceID.String(),
 		AgentID:     h.task.AgentID.String(),
 		System:      "Kamu Oren.",
-		Messages: []domain.Message{{
-			UserID: uuid.New(),
-			Blocks: []domain.Block{{Type: "text", Body: []byte(`{"type":"text","markdown":"Rekap pesanan"}`)}},
-		}},
+		Messages: []domain.Turn{
+			{Role: llmdomain.RoleUser, Text: "Rekap pesanan"},
+		},
 		Tools: []domain.Tool{{Name: "gmail.search", Description: "Cari email", Schema: json.RawMessage(`{}`), Label: domain.LabelRead}},
 	})
 	require.NoError(t, err)

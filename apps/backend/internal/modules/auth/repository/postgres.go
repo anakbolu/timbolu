@@ -176,6 +176,21 @@ func (r *Repository) MarkOnboarded(ctx context.Context, userID uuid.UUID) (domai
 	return toUser(user), nil
 }
 
+// MarkOnboardedInTx records the same fact inside a transaction the caller owns,
+// which is how onboarding writes it together with the workspace it just created.
+// A crash between the two would otherwise leave an account that owns a workspace
+// its session does not believe in.
+func (r *Repository) MarkOnboardedInTx(ctx context.Context, tx pgx.Tx, userID uuid.UUID) error {
+	if tx == nil {
+		return fmt.Errorf("auth: marking onboarded needs a transaction")
+	}
+
+	if _, err := sqlcgen.New(tx).MarkOnboarded(ctx, userID); err != nil {
+		return mapNotFound(err, "mark onboarded")
+	}
+	return nil
+}
+
 // PasswordHash returns the stored hash, or an empty string for an account
 // without a password (Google-only).
 func (r *Repository) PasswordHash(ctx context.Context, userID uuid.UUID) (string, error) {

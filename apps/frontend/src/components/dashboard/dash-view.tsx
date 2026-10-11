@@ -1,4 +1,5 @@
 import { BotSvg } from "@/components/bolu/bot-svg";
+import { ApprovalsView } from "./approvals-view";
 import type { Dashboard } from "./use-dashboard-state";
 
 /** The Dasbor view: greeting, "Suruh Bolu", stats, pending drafts, feed, week, bills. */
@@ -83,56 +84,12 @@ export function DashView({ d }: { d: Dashboard }) {
       </div>
 
       <div className="flex flex-wrap items-start gap-[18px]">
+        {/* The approval pane is the real one: it reads the workspace's drafts from
+            the API and decides through the same endpoint the chat card uses, so
+            the two surfaces cannot disagree. The mock that stood here was a
+            design placeholder. */}
         <div className="flex min-w-0 flex-[999_1_420px] flex-col gap-3 rounded-[26px] border border-bolu-border bg-white p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2.5">
-            <h2 className="font-display text-[22px] font-semibold">Menunggu persetujuanmu</h2>
-            <span className="text-[14px] text-bolu-muted">{d.pendingLabel}</span>
-          </div>
-
-          {d.hasPending ? (
-            <div className="flex flex-col gap-2">
-              {d.pending.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex flex-wrap items-center gap-3 rounded-[18px] border border-bolu-line p-[10px_12px]"
-                >
-                  <BotSvg bot={item.bot} className="size-11 flex-none" />
-                  <div className="flex min-w-0 flex-[1_1_200px] flex-col">
-                    <div className="text-[13px] font-semibold text-bolu-muted">
-                      {item.kind} · dari {item.botName}
-                    </div>
-                    <div className="font-semibold">{item.title}</div>
-                    <div className="text-[14px] text-bolu-muted">{item.meta}</div>
-                  </div>
-                  <div className="flex flex-none gap-1.5">
-                    <button
-                      type="button"
-                      onClick={item.open}
-                      className="min-h-10 cursor-pointer rounded-full border-2 border-bolu-ink bg-white px-3.5 text-[14px] font-semibold text-bolu-ink"
-                    >
-                      Buka obrolan
-                    </button>
-                    <button
-                      type="button"
-                      onClick={item.approve}
-                      className="min-h-10 cursor-pointer rounded-full border-0 bg-bolu-ink px-3.5 text-[14px] font-bold text-white"
-                    >
-                      Setujui
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="pop flex flex-col items-center gap-2.5 p-[30px_12px] text-center">
-              <BotSvg bot={d.happy} className="bob size-[90px]" />
-              <div className="font-display text-[22px] font-semibold">Semua beres</div>
-              <div className="max-w-[320px] text-bolu-muted">
-                Tidak ada yang menunggu. Draf berikutnya muncul di sini begitu tim selesai
-                menyiapkannya.
-              </div>
-            </div>
-          )}
+          <ApprovalsView />
         </div>
 
         <div className="flex min-w-0 flex-[1_1_320px] flex-col gap-2.5 rounded-[26px] border border-bolu-border bg-white p-5">

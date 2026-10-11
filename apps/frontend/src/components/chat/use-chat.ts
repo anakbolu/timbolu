@@ -18,7 +18,7 @@ import {
   ChatConversation,
   ChatMessage,
   MessageEventPayload,
-  getActiveWorkspaceId,
+  ensureActiveWorkspace,
   listConversations,
   listMessages,
   openDirectConversation,
@@ -89,7 +89,10 @@ export function useChat(): ChatState {
   }, [active]);
 
   const refresh = useCallback(async () => {
-    const workspace = getActiveWorkspaceId();
+    // The workspace is resolved before it is read: an account that owns one but
+    // has none stored — a second device, a private window — would otherwise be
+    // told to pick a workspace it has no way to pick.
+    const workspace = await ensureActiveWorkspace();
     setWorkspaceId(workspace);
     if (!workspace) {
       setLoading(false);
@@ -321,7 +324,7 @@ function applyEvent(
 
   setMessages((previous) => {
     const incoming: ChatMessage = {
-      id: payload.message_id,
+      message_id: payload.message_id,
       conversation_id: payload.conversation_id,
       agent_id: payload.agent_id,
       user_id: payload.user_id,
@@ -332,7 +335,7 @@ function applyEvent(
       created_at: event.created_at,
     };
 
-    const index = previous.findIndex((message) => message.id === incoming.id);
+    const index = previous.findIndex((message) => message.message_id === incoming.message_id);
     if (index === -1) {
       return [...previous, incoming];
     }
@@ -356,7 +359,7 @@ function readString(value: unknown): string | undefined {
 
 /** append adds a message once, by id, so a stream echo cannot duplicate it. */
 function append(messages: ChatMessage[], message: ChatMessage): ChatMessage[] {
-  if (messages.some((existing) => existing.id === message.id)) {
+  if (messages.some((existing) => existing.message_id === message.message_id)) {
     return messages;
   }
   return [...messages, message];

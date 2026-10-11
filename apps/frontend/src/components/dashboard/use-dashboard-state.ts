@@ -257,17 +257,6 @@ export type SideItem = {
 
 export type StatItem = { label: string; value: string; note: string };
 
-export type PendingItem = {
-  id: DraftId;
-  bot: BotShape;
-  botName: string;
-  kind: string;
-  title: string;
-  meta: string;
-  open: () => void;
-  approve: () => void;
-};
-
 export type FeedRow = {
   key: string;
   who: string;
@@ -483,10 +472,8 @@ export type Dashboard = {
   horeMinis: BotShape[];
   toggleHore: () => void;
   activeLabel: string;
-  hasPending: boolean;
   noPending: boolean;
   pendingCount: number;
-  pendingLabel: string;
   navOpen: boolean;
   toggleNav: () => void;
   closeNav: () => void;
@@ -500,7 +487,6 @@ export type Dashboard = {
   onDashMsg: (value: string) => void;
   sendDash: () => void;
   stats: StatItem[];
-  pending: PendingItem[];
   feed: FeedRow[];
   week: WeekBar[];
   bills: BillRow[];
@@ -945,10 +931,8 @@ export function useDashboardState(): Dashboard {
     horeMinis: HORE_BOTS.map((b) => face(b.name)),
     toggleHore: () => setState((prev) => ({ ...prev, horeOpen: !prev.horeOpen })),
     activeLabel: `${DASH_BOTS.filter((b) => !paused[b.name]).length} aktif`,
-    hasPending: pend.length > 0,
     noPending: pend.length === 0,
     pendingCount: pend.length,
-    pendingLabel: pend.length ? `${pend.length} draf` : "",
     navOpen: state.navOpen,
     toggleNav: () => setState((prev) => ({ ...prev, navOpen: !prev.navOpen })),
     closeNav: () => setState((prev) => ({ ...prev, navOpen: false })),
@@ -1440,11 +1424,6 @@ export function useDashboardState(): Dashboard {
     sendDash,
     stats: [
       {
-        label: "Menunggu persetujuanmu",
-        value: String(pend.length),
-        note: pend.length ? "paling lama 12 menit" : "semua sudah beres",
-      },
-      {
         label: "Tugas selesai hari ini",
         value: String(77 + Math.floor(tick / 2) + doneCount),
         note: "oleh 6 anggota tim",
@@ -1452,19 +1431,6 @@ export function useDashboardState(): Dashboard {
       { label: "Perkiraan waktu dihemat", value: "± 3 jam", note: "dibanding dikerjakan manual" },
       { label: "Tagihan belum dibayar", value: "Rp 2,4 jt", note: "5 invoice · 2 lewat tempo" },
     ],
-    pending: pend.map((id) => {
-      const draft = DRAFTS[id];
-      return {
-        id,
-        bot: allBot(draft.bot),
-        botName: draft.bot,
-        kind: draft.kind,
-        title: draft.title,
-        meta: draft.meta,
-        open: () => open(draft.bot),
-        approve: () => decide(id, true),
-      };
-    }),
     feed: state.feed.map((item, index) => ({
       key: `${item.time}-${item.who}-${index}`,
       who: item.who,

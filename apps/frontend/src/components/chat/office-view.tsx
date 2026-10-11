@@ -14,7 +14,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { BotSvg } from "@/components/bolu/bot-svg";
 import type { AgentStatePayload, Agent, ActivityEvent } from "@/lib/api";
-import { getActiveWorkspaceId, listAgentTeams, refreshSession } from "@/lib/api";
+import { ensureActiveWorkspace, listAgentTeams, refreshSession } from "@/lib/api";
 import { bot, type BotShape } from "@/lib/crew";
 import { connect, type RealtimeStatus } from "@/lib/realtime";
 
@@ -57,22 +57,24 @@ export function OfficeView() {
   const [states, setStates] = useState<Record<string, AgentStatePayload>>({});
   const [status, setStatus] = useState<RealtimeStatus>("connecting");
   const [error, setError] = useState<string | null>(null);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
-      const workspaceId = getActiveWorkspaceId();
-      if (!workspaceId) {
-        setError("Pilih workspace dulu.");
-        return;
-      }
-
       const session = await refreshSession();
       if (!session.ok) {
         setError("Sesi berakhir. Masuk lagi.");
         return;
       }
 
-      const result = await listAgentTeams(workspaceId);
+      const active = await ensureActiveWorkspace();
+      setWorkspaceId(active);
+      if (!active) {
+        setError("Pilih workspace dulu.");
+        return;
+      }
+
+      const result = await listAgentTeams(active);
       if (!result.ok) {
         setError(result.message);
         return;
@@ -81,9 +83,10 @@ export function OfficeView() {
     })();
   }, []);
 
-  // The office is a view of the same stream as the chat and the feed.
+  // The office is a view of the same stream as the chat and the feed. The id comes
+  // from the load above rather than from storage, so a tab that had none stored
+  // still opens its stream once the workspace is known.
   useEffect(() => {
-    const workspaceId = getActiveWorkspaceId();
     if (!workspaceId) {
       return;
     }
@@ -107,7 +110,7 @@ export function OfficeView() {
     );
 
     return () => handle.close();
-  }, []);
+  }, [workspaceId]);
 
   const placed = useMemo(() => place(agents, states), [agents, states]);
 

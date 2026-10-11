@@ -25,7 +25,7 @@ import {
   UsageDay,
   createModelProvider,
   deleteModelProvider,
-  getActiveWorkspaceId,
+  ensureActiveWorkspace,
   getAgentModel,
   listAgentTeams,
   listModelAdapters,
@@ -93,29 +93,32 @@ export function ModelView() {
   const [capabilities, setCapabilities] = useState<{ provider: string; result: ProviderCapabilities } | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string>("");
   const [override, setOverride] = useState<AgentModelOverride | null>(null);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const workspaceId = getActiveWorkspaceId();
-
   const load = useCallback(async () => {
-    if (!workspaceId) {
-      setError("Pilih workspace dulu.");
-      return;
-    }
-
     const session = await refreshSession();
     if (!session.ok) {
       setError("Sesi berakhir. Masuk lagi.");
       return;
     }
 
+    // Resolved from the session rather than only read from storage, so an account
+    // that owns a workspace is not told to pick one it cannot see.
+    const active = await ensureActiveWorkspace();
+    setWorkspaceId(active);
+    if (!active) {
+      setError("Pilih workspace dulu.");
+      return;
+    }
+
     const [providerResult, adapterResult, teamResult, usageResult] = await Promise.all([
-      listModelProviders(workspaceId),
+      listModelProviders(active),
       listModelAdapters(),
-      listAgentTeams(workspaceId),
-      modelUsage(workspaceId, 30),
+      listAgentTeams(active),
+      modelUsage(active, 30),
     ]);
 
     if (!providerResult.ok) {
@@ -130,7 +133,7 @@ export function ModelView() {
       setAgents(teamResult.data.flatMap((team) => team.agents));
     }
     setUsage(usageResult.ok ? usageResult.data : []);
-  }, [workspaceId]);
+  }, []);
 
   useEffect(() => {
     void (async () => {

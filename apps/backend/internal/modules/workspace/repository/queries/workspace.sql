@@ -8,6 +8,13 @@ RETURNING *;
 -- name: GetWorkspace :one
 SELECT * FROM workspaces WHERE id = $1;
 
+-- name: GetWorkspaceHours :one
+-- The window a workspace lets actions leave in. It is read on its own rather than
+-- through GetWorkspace because the approval runtime asks for it on every send and
+-- only needs the three columns the rule is about.
+SELECT timezone, work_hours_start, work_hours_end
+FROM workspaces WHERE id = $1;
+
 -- name: UpdateWorkspace :one
 UPDATE workspaces
 SET name = $2, business_field = $3, timezone = $4, updated_at = now()

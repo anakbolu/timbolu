@@ -148,7 +148,7 @@ export function ChatView({ agentId }: { agentId?: string }) {
             <div className="mx-auto flex max-w-[760px] flex-col gap-3">
               {chat.messages.map((message) => (
                 <MessageRow
-                  key={message.id}
+                  key={message.message_id}
                   message={message}
                   name={nameOf(chat.active, message)}
                   face={faceOf(chat.active, message)}
@@ -293,7 +293,7 @@ function MessageRow({ message, name, face }: { message: ChatMessage; name: strin
           ) : null}
 
           {message.blocks.map((block, index) => (
-            <Block key={`${message.id}-${index}`} block={block} />
+            <Block key={`${message.message_id}-${index}`} block={block} />
           ))}
 
           {notice ? (

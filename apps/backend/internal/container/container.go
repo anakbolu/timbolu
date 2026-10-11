@@ -209,6 +209,14 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Container, e
 		return nil, err
 	}
 
+	// The approval gate comes before the task runtime: the runtime asks it whether
+	// an action may leave, and a task that could not ask would have nothing
+	// stopping it from sending.
+	if err := c.openApproval(ctx, cfg); err != nil {
+		c.Close()
+		return nil, err
+	}
+
 	// The task runtime is assembled before the conversations: a chat message is
 	// handed to it, so it must exist when the chat service is built.
 	if err := c.openTask(ctx, cfg); err != nil {
@@ -225,6 +233,14 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Container, e
 	}
 
 	c.Handlers = newHandlers(c.Services, c.Logger, cfg)
+
+	// A decision is handed to the task waiting on it through Temporal. It is
+	// installed here because the handler is built before the client is known to it,
+	// and because a decision that cannot be delivered is not an error: the workflow
+	// reads its own status at its next checkpoint.
+	if c.Handlers.Approval != nil && c.Temporal != nil {
+		c.Handlers.Approval = c.Handlers.Approval.WithSignaler(approvalSignaler{client: c.Temporal})
+	}
 
 	if o.buildApp {
 		c.app = c.newApp(cfg)

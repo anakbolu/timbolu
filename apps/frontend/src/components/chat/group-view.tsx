@@ -16,7 +16,7 @@ import {
   ChatConversation,
   addGroupParticipants,
   createGroup,
-  getActiveWorkspaceId,
+  ensureActiveWorkspace,
   listAgentTeams,
   listConversations,
   refreshSession,
@@ -28,27 +28,30 @@ export function GroupView() {
   const [groups, setGroups] = useState<ChatConversation[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [title, setTitle] = useState("");
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const workspaceId = getActiveWorkspaceId();
-
   const load = useCallback(async () => {
-    if (!workspaceId) {
-      setError("Pilih workspace dulu.");
-      return;
-    }
-
     const session = await refreshSession();
     if (!session.ok) {
       setError("Sesi berakhir. Masuk lagi.");
       return;
     }
 
+    // Resolved from the session rather than only read from storage, so an account
+    // that owns a workspace is not told to pick one it cannot see.
+    const active = await ensureActiveWorkspace();
+    setWorkspaceId(active);
+    if (!active) {
+      setError("Pilih workspace dulu.");
+      return;
+    }
+
     const [teams, conversations] = await Promise.all([
-      listAgentTeams(workspaceId),
-      listConversations(workspaceId),
+      listAgentTeams(active),
+      listConversations(active),
     ]);
 
     if (!teams.ok) {
@@ -60,7 +63,7 @@ export function GroupView() {
       setGroups(conversations.data.filter((conversation) => conversation.kind === "group"));
     }
     setError(null);
-  }, [workspaceId]);
+  }, []);
 
   useEffect(() => {
     void (async () => {

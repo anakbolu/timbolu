@@ -4,6 +4,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	agentrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/repository"
+	approvalrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/repository"
 	authrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository"
 	chatrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/repository"
 	healthrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/repository"
@@ -30,6 +31,8 @@ type Repositories struct {
 	// Task holds the tasks and the steps they recorded. One connection serves
 	// both ports, which is why it is one struct.
 	Task *taskrepo.Repository
+	// Approval holds the drafts, the policies, and the audit trail.
+	Approval *approvalrepo.Repository
 }
 
 // newRepositories builds every repository. When there is no pool the
@@ -56,6 +59,11 @@ func newRepositories(pool *database.Pool) *Repositories {
 		// transaction, and this is the only place that knows both modules.
 		repositories.Workspace = workspacerepo.New(pool, repositories.Agent)
 
+		// And the auth repository as its onboarding marker, for the same reason:
+		// owning a workspace and the account's session believing it must be one
+		// fact, written in one transaction.
+		repositories.Workspace.SetOnboardedMarker(repositories.Auth)
+
 		// The model gateway works without a database too: it answers "not
 		// configured" rather than failing, exactly like the other modules.
 		repositories.LLM = llmrepo.New(pool)
@@ -68,6 +76,10 @@ func newRepositories(pool *database.Pool) *Repositories {
 		// The task runtime implements two ports — tasks and steps — over the
 		// same connection and the same tenant scope.
 		repositories.Task = taskrepo.New(pool)
+
+		// The approval module implements the draft, policy, revision, and audit
+		// ports over one connection and one tenant scope.
+		repositories.Approval = approvalrepo.New(pool)
 	}
 	return repositories
 }

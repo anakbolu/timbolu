@@ -81,6 +81,9 @@ var blockSchemas = map[string]string{
 			"title": {"type": "string"},
 			"summary": {"type": "string"},
 			"status": {"enum": ["pending", "approved", "revise", "sent", "canceled"]},
+			"blocked_reason": {"type": "string"},
+			"not_before": {"type": "string"},
+			"revision": {"type": "integer"},
 			"fields": {
 				"type": "array",
 				"items": {

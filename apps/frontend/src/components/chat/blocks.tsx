@@ -21,6 +21,8 @@ import remarkGfm from "remark-gfm";
 
 import {
   contentURL,
+  decideDraft,
+  ensureActiveWorkspace,
   type DraftBlock,
   type HTMLBlock,
   type MessageBlock,
@@ -157,12 +159,67 @@ const DRAFT_STATUS: Record<string, { label: string; className: string }> = {
 /**
  * DraftCard is the approval card.
  *
- * It shows the state and links to the dashboard rather than offering the
- * decision inline: approving is what EPIC 7 owns, and a card that could approve
- * would be a second implementation of the approval policy.
+ * It offers the decision inline, because a person decides where they are already
+ * reading: sending them to another page to approve what the thread just showed
+ * them is how a wrong action gets approved out of impatience. The card is one
+ * source of truth with the dashboard — both read the same draft and both write
+ * through the same endpoint.
+ *
+ * The controls appear only while a decision is still open. Once one is made the
+ * card is a record, and the thread is rewritten in place by the runtime, so a
+ * reload shows what happened rather than a stale button.
  */
 function DraftCard({ block }: { block: DraftBlock }) {
-  const status = DRAFT_STATUS[block.status ?? "pending"] ?? DRAFT_STATUS.pending;
+  const [note, setNote] = useState("");
+  const [revising, setRevising] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // The decision this card made, if any. It is a *remembered answer* rather than
+  // a copy of the prop: the block is what the server says, and the two are
+  // combined at render time. Mirroring the prop into state would need an effect
+  // and would show a stale status between the decision and the rewrite.
+  const [decided, setDecided] = useState<DraftBlock["status"] | null>(null);
+
+  const serverStatus = block.status ?? "pending";
+  const status = decided ?? serverStatus;
+  const current = DRAFT_STATUS[status] ?? DRAFT_STATUS.pending;
+
+  // Only the server's own `pending` is open. Once this card answered, the
+  // controls are gone even before the thread is rewritten, so a double click
+  // cannot send a second decision.
+  const open = serverStatus === "pending" && decided === null;
+
+  async function decide(decision: "approve" | "revise" | "cancel") {
+    // Resolved rather than only read, so a decision is not refused on a device
+    // that has no workspace stored yet.
+    const workspaceId = await ensureActiveWorkspace();
+    if (!workspaceId) {
+      setError("Pilih workspace dulu.");
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+
+    const result = await decideDraft(workspaceId, block.draft_id, decision, note.trim());
+    setBusy(false);
+
+    if (!result.ok) {
+      // A second decision is refused by the backend, which is the point: the
+      // first answer stands. Saying so is better than showing the button again.
+      setError(
+        result.code === "draft_already_decided"
+          ? "Draf ini sudah kamu putuskan."
+          : result.message,
+      );
+      return;
+    }
+
+    setDecided(result.data.status);
+    setRevising(false);
+    setNote("");
+  }
 
   return (
     <div className="my-1 rounded-2xl border border-bolu-border bg-bolu-surface px-4 py-3">
@@ -173,8 +230,8 @@ function DraftCard({ block }: { block: DraftBlock }) {
           </p>
           <p className="truncate font-semibold">{block.title ?? "Draf menunggu persetujuan"}</p>
         </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${status.className}`}>
-          {status.label}
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${current.className}`}>
+          {current.label}
         </span>
       </div>
 
@@ -191,12 +248,99 @@ function DraftCard({ block }: { block: DraftBlock }) {
         </dl>
       ) : null}
 
-      <a
-        href="/dashboard"
-        className="mt-2.5 inline-block text-sm font-medium text-bolu-accent hover:underline"
-      >
-        Buka di Dasbor →
-      </a>
+      {/* A held action says why and until when, which is what answers "why has
+          this not gone out" without leaving the thread. */}
+      {block.blocked_reason ? (
+        <p className="mt-2 rounded-xl bg-bolu-panel px-3 py-2 text-sm text-bolu-body">
+          {block.blocked_reason}
+          {block.not_before ? ` · ${new Date(block.not_before).toLocaleString("id-ID")}` : null}
+        </p>
+      ) : null}
+
+      {block.revision && block.revision > 0 ? (
+        <p className="mt-2 text-xs text-bolu-muted">
+          Sudah direvisi {block.revision}×.
+        </p>
+      ) : null}
+
+      {open ? (
+        <div className="mt-3 space-y-2">
+          {revising ? (
+            <label className="block">
+              <span className="text-sm text-bolu-muted">Apa yang perlu diubah?</span>
+              <textarea
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                rows={2}
+                className="mt-1 w-full rounded-xl border border-bolu-border bg-bolu-page px-3 py-2 text-sm"
+                placeholder="Mis. penerimanya salah, harusnya Budi"
+              />
+            </label>
+          ) : null}
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => decide("approve")}
+              className="rounded-full bg-bolu-accent px-3.5 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {busy ? "Menyimpan…" : "Setujui"}
+            </button>
+
+            {revising ? (
+              <>
+                <button
+                  type="button"
+                  disabled={busy || note.trim() === ""}
+                  onClick={() => decide("revise")}
+                  className="rounded-full border border-bolu-border px-3.5 py-1.5 text-sm font-medium disabled:opacity-50"
+                >
+                  Kirim revisi
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setRevising(false);
+                    setNote("");
+                  }}
+                  className="rounded-full px-3 py-1.5 text-sm text-bolu-muted"
+                >
+                  Batal
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setRevising(true)}
+                className="rounded-full border border-bolu-border px-3.5 py-1.5 text-sm font-medium disabled:opacity-50"
+              >
+                Minta revisi
+              </button>
+            )}
+
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => decide("cancel")}
+              className="rounded-full px-3 py-1.5 text-sm text-bolu-muted disabled:opacity-50"
+            >
+              Batalkan
+            </button>
+          </div>
+        </div>
+      ) : (
+        <a
+          href="/dashboard"
+          className="mt-2.5 inline-block text-sm font-medium text-bolu-accent hover:underline"
+        >
+          Buka di Dasbor →
+        </a>
+      )}
+
+      {error ? <p className="mt-2 text-sm text-bolu-flag">{error}</p> : null}
     </div>
   );
 }
