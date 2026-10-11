@@ -386,4 +386,18 @@ type Service interface {
 	WebhookProcessed(ctx context.Context, scope Scope, id uuid.UUID) error
 	// WebhookFailed records an attempt that did not work.
 	WebhookFailed(ctx context.Context, scope Scope, id uuid.UUID, reason string) error
+
+	// AddMCPServer registers a server a workspace wants to use and asks it what it
+	// offers, so a mistyped address is found while the person is still looking at
+	// the form.
+	AddMCPServer(ctx context.Context, scope Scope, input MCPServerInput) (MCPServer, error)
+	// ListMCPServers returns the workspace's servers.
+	ListMCPServers(ctx context.Context, scope Scope) ([]MCPServer, error)
+	// RefreshMCPServer asks one server what it offers and records the answer.
+	RefreshMCPServer(ctx context.Context, scope Scope, id uuid.UUID) (MCPServer, error)
+	// RemoveMCPServer removes one.
+	RemoveMCPServer(ctx context.Context, scope Scope, id uuid.UUID) error
+	// MCPTools lists the tools the workspace's servers contribute, read from what
+	// they last reported rather than by reaching them.
+	MCPTools(ctx context.Context, scope Scope) ([]ToolSpec, error)
 }

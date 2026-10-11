@@ -160,3 +160,44 @@ WHERE workspace_id = $1 AND id = $2 AND processed_at IS NULL;
 UPDATE webhook_events
 SET attempts = attempts + 1, last_error = $3
 WHERE workspace_id = $1 AND id = $2;
+
+-- ------------------------------------------------------------- MCP servers
+
+-- name: ListMCPServers :many
+SELECT * FROM mcp_servers WHERE workspace_id = $1 ORDER BY app;
+
+-- name: GetMCPServer :one
+SELECT * FROM mcp_servers WHERE workspace_id = $1 AND id = $2;
+
+-- name: UpsertMCPServer :one
+INSERT INTO mcp_servers (workspace_id, app, label, endpoint, credential_encrypted, enabled)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (workspace_id, app) DO UPDATE SET
+    label = EXCLUDED.label,
+    endpoint = EXCLUDED.endpoint,
+    credential_encrypted = COALESCE(EXCLUDED.credential_encrypted, mcp_servers.credential_encrypted),
+    enabled = EXCLUDED.enabled,
+    last_error = '',
+    updated_at = now()
+RETURNING *;
+
+-- name: SaveMCPTools :one
+-- The tool list a server last reported, so a task can be offered a tool without
+-- reaching the server first. An empty list is stored too: a server that reports
+-- no tools is a fact worth remembering.
+UPDATE mcp_servers
+SET tools = $3, tool_count = $4, last_error = '', updated_at = now()
+WHERE workspace_id = $1 AND id = $2
+RETURNING *;
+
+-- name: SetMCPServerError :one
+UPDATE mcp_servers
+SET last_error = $3, updated_at = now()
+WHERE workspace_id = $1 AND id = $2
+RETURNING *;
+
+-- name: DeleteMCPServer :execrows
+DELETE FROM mcp_servers WHERE workspace_id = $1 AND id = $2;
+
+-- name: GetMCPServerCredential :one
+SELECT credential_encrypted FROM mcp_servers WHERE workspace_id = $1 AND id = $2;

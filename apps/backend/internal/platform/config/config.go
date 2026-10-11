@@ -41,6 +41,10 @@ type IntegrationConfig struct {
 	// separated by commas. A provider publishes its own quota, and a routine that
 	// runs every hour must not spend a day's worth of it.
 	RateLimits string `mapstructure:"RateLimits" validate:"optional"`
+	// MCPTimeout bounds one request to an MCP server. A task is blocked while it
+	// runs, so a server that does not answer within it is treated as unavailable
+	// rather than waited on. Zero takes the default.
+	MCPTimeout time.Duration `mapstructure:"MCPTimeout" validate:"optional"`
 }
 
 // KmsConfig holds the key-management key that protects the data keys of every

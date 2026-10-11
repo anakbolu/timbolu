@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -460,6 +461,207 @@ func (r *Repository) Failed(ctx context.Context, scope domain.Scope, id uuid.UUI
 		}
 		return nil
 	})
+}
+
+// ListMCPServers returns the servers a workspace added.
+func (r *Repository) ListMCPServers(ctx context.Context, scope domain.Scope) ([]domain.MCPServer, error) {
+	var out []domain.MCPServer
+
+	err := r.read(ctx, scope, func(queries *sqlcgen.Queries) error {
+		rows, err := queries.ListMCPServers(ctx, scope.WorkspaceID)
+		if err != nil {
+			return fmt.Errorf("integration: list MCP servers: %w", err)
+		}
+		out = make([]domain.MCPServer, 0, len(rows))
+		for _, row := range rows {
+			out = append(out, toMCPServer(row))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// GetMCPServer returns one server.
+func (r *Repository) GetMCPServer(ctx context.Context, scope domain.Scope, id uuid.UUID) (domain.MCPServer, error) {
+	var out domain.MCPServer
+
+	err := r.read(ctx, scope, func(queries *sqlcgen.Queries) error {
+		row, err := queries.GetMCPServer(ctx, sqlcgen.GetMCPServerParams{
+			WorkspaceID: scope.WorkspaceID,
+			ID:          id,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return domain.ErrMCPServerNotFound
+			}
+			return fmt.Errorf("integration: get MCP server: %w", err)
+		}
+		out = toMCPServer(row)
+		return nil
+	})
+	if err != nil {
+		return domain.MCPServer{}, err
+	}
+	return out, nil
+}
+
+// UpsertMCPServer stores a server, keyed by app.
+func (r *Repository) UpsertMCPServer(ctx context.Context, scope domain.Scope, input domain.MCPServerInput, sealedCredential []byte) (domain.MCPServer, error) {
+	var out domain.MCPServer
+
+	err := r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
+		row, err := queries.UpsertMCPServer(ctx, sqlcgen.UpsertMCPServerParams{
+			WorkspaceID:         scope.WorkspaceID,
+			App:                 input.App,
+			Label:               input.Label,
+			Endpoint:            input.Endpoint,
+			CredentialEncrypted: sealedCredential,
+			Enabled:             input.Enabled,
+		})
+		if err != nil {
+			return translateWriteError(err, "upsert MCP server")
+		}
+		out = toMCPServer(row)
+		return nil
+	})
+	if err != nil {
+		return domain.MCPServer{}, err
+	}
+	return out, nil
+}
+
+// SaveMCPTools records the tool list a server reported.
+func (r *Repository) SaveMCPTools(ctx context.Context, scope domain.Scope, id uuid.UUID, tools []domain.MCPTool) error {
+	encoded, err := json.Marshal(tools)
+	if err != nil {
+		return fmt.Errorf("integration: encode MCP tools: %w", err)
+	}
+
+	return r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
+		_, err := queries.SaveMCPTools(ctx, sqlcgen.SaveMCPToolsParams{
+			WorkspaceID: scope.WorkspaceID,
+			ID:          id,
+			Tools:       encoded,
+			ToolCount:   int32(len(tools)),
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return domain.ErrMCPServerNotFound
+			}
+			return translateWriteError(err, "save MCP tools")
+		}
+		return nil
+	})
+}
+
+// MCPServerTools returns the tool list a server last reported.
+func (r *Repository) MCPServerTools(ctx context.Context, scope domain.Scope, id uuid.UUID) ([]domain.MCPTool, error) {
+	var out []domain.MCPTool
+
+	err := r.read(ctx, scope, func(queries *sqlcgen.Queries) error {
+		row, err := queries.GetMCPServer(ctx, sqlcgen.GetMCPServerParams{
+			WorkspaceID: scope.WorkspaceID,
+			ID:          id,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return domain.ErrMCPServerNotFound
+			}
+			return fmt.Errorf("integration: read MCP tools: %w", err)
+		}
+
+		if len(row.Tools) == 0 {
+			return nil
+		}
+		if err := json.Unmarshal(row.Tools, &out); err != nil {
+			// A stored list this build cannot read is reported as no tools rather
+			// than as an error: the next refresh replaces it, and failing a task
+			// because a cache is unreadable would be the wrong trade.
+			out = nil
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SetMCPServerError records why a server could not be reached.
+func (r *Repository) SetMCPServerError(ctx context.Context, scope domain.Scope, id uuid.UUID, reason string) error {
+	return r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
+		_, err := queries.SetMCPServerError(ctx, sqlcgen.SetMCPServerErrorParams{
+			WorkspaceID: scope.WorkspaceID,
+			ID:          id,
+			LastError:   reason,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return domain.ErrMCPServerNotFound
+			}
+			return translateWriteError(err, "set MCP server error")
+		}
+		return nil
+	})
+}
+
+// DeleteMCPServer removes one.
+func (r *Repository) DeleteMCPServer(ctx context.Context, scope domain.Scope, id uuid.UUID) error {
+	return r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
+		affected, err := queries.DeleteMCPServer(ctx, sqlcgen.DeleteMCPServerParams{
+			WorkspaceID: scope.WorkspaceID,
+			ID:          id,
+		})
+		if err != nil {
+			return translateWriteError(err, "delete MCP server")
+		}
+		if affected == 0 {
+			return domain.ErrMCPServerNotFound
+		}
+		return nil
+	})
+}
+
+// MCPServerCredential returns the sealed credential of a server.
+func (r *Repository) MCPServerCredential(ctx context.Context, scope domain.Scope, id uuid.UUID) ([]byte, error) {
+	var sealed []byte
+
+	err := r.read(ctx, scope, func(queries *sqlcgen.Queries) error {
+		value, err := queries.GetMCPServerCredential(ctx, sqlcgen.GetMCPServerCredentialParams{
+			WorkspaceID: scope.WorkspaceID,
+			ID:          id,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return domain.ErrMCPServerNotFound
+			}
+			return fmt.Errorf("integration: read MCP credential: %w", err)
+		}
+		sealed = value
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return sealed, nil
+}
+
+// toMCPServer renders a stored server.
+func toMCPServer(row sqlcgen.McpServer) domain.MCPServer {
+	return domain.MCPServer{
+		ID:        row.ID,
+		App:       row.App,
+		Label:     row.Label,
+		Endpoint:  row.Endpoint,
+		Enabled:   row.Enabled,
+		ToolCount: int(row.ToolCount),
+		LastError: row.LastError,
+		CreatedAt: row.CreatedAt,
+		UpdatedAt: row.UpdatedAt,
+	}
 }
 
 // toQueuedEvent renders a stored delivery.

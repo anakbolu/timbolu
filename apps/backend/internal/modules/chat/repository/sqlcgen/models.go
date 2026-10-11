@@ -227,6 +227,21 @@ type LlmProvider struct {
 	UpdatedAt       time.Time
 }
 
+type McpServer struct {
+	ID                  uuid.UUID
+	WorkspaceID         uuid.UUID
+	App                 string
+	Label               string
+	Endpoint            string
+	CredentialEncrypted []byte
+	Enabled             bool
+	LastError           string
+	Tools               []byte
+	ToolCount           int32
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+}
+
 type Member struct {
 	ID          uuid.UUID
 	WorkspaceID uuid.UUID

@@ -80,6 +80,23 @@ func (q *Queries) DeleteIntegration(ctx context.Context, arg DeleteIntegrationPa
 	return result.RowsAffected(), nil
 }
 
+const deleteMCPServer = `-- name: DeleteMCPServer :execrows
+DELETE FROM mcp_servers WHERE workspace_id = $1 AND id = $2
+`
+
+type DeleteMCPServerParams struct {
+	WorkspaceID uuid.UUID
+	ID          uuid.UUID
+}
+
+func (q *Queries) DeleteMCPServer(ctx context.Context, arg DeleteMCPServerParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteMCPServer, arg.WorkspaceID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const disconnectIntegration = `-- name: DisconnectIntegration :one
 UPDATE integrations
 SET status = 'disconnected',
@@ -248,6 +265,51 @@ func (q *Queries) GetIntegrationToken(ctx context.Context, arg GetIntegrationTok
 	return i, err
 }
 
+const getMCPServer = `-- name: GetMCPServer :one
+SELECT id, workspace_id, app, label, endpoint, credential_encrypted, enabled, last_error, tools, tool_count, created_at, updated_at FROM mcp_servers WHERE workspace_id = $1 AND id = $2
+`
+
+type GetMCPServerParams struct {
+	WorkspaceID uuid.UUID
+	ID          uuid.UUID
+}
+
+func (q *Queries) GetMCPServer(ctx context.Context, arg GetMCPServerParams) (McpServer, error) {
+	row := q.db.QueryRow(ctx, getMCPServer, arg.WorkspaceID, arg.ID)
+	var i McpServer
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.App,
+		&i.Label,
+		&i.Endpoint,
+		&i.CredentialEncrypted,
+		&i.Enabled,
+		&i.LastError,
+		&i.Tools,
+		&i.ToolCount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getMCPServerCredential = `-- name: GetMCPServerCredential :one
+SELECT credential_encrypted FROM mcp_servers WHERE workspace_id = $1 AND id = $2
+`
+
+type GetMCPServerCredentialParams struct {
+	WorkspaceID uuid.UUID
+	ID          uuid.UUID
+}
+
+func (q *Queries) GetMCPServerCredential(ctx context.Context, arg GetMCPServerCredentialParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getMCPServerCredential, arg.WorkspaceID, arg.ID)
+	var credential_encrypted []byte
+	err := row.Scan(&credential_encrypted)
+	return credential_encrypted, err
+}
+
 const getWorkspaceKey = `-- name: GetWorkspaceKey :one
 
 SELECT wrapped_data_key, kms_key_id FROM workspace_keys
@@ -356,6 +418,45 @@ func (q *Queries) ListIntegrations(ctx context.Context, workspaceID uuid.UUID) (
 	return items, nil
 }
 
+const listMCPServers = `-- name: ListMCPServers :many
+
+SELECT id, workspace_id, app, label, endpoint, credential_encrypted, enabled, last_error, tools, tool_count, created_at, updated_at FROM mcp_servers WHERE workspace_id = $1 ORDER BY app
+`
+
+// ------------------------------------------------------------- MCP servers
+func (q *Queries) ListMCPServers(ctx context.Context, workspaceID uuid.UUID) ([]McpServer, error) {
+	rows, err := q.db.Query(ctx, listMCPServers, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []McpServer{}
+	for rows.Next() {
+		var i McpServer
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.App,
+			&i.Label,
+			&i.Endpoint,
+			&i.CredentialEncrypted,
+			&i.Enabled,
+			&i.LastError,
+			&i.Tools,
+			&i.ToolCount,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markWebhookEventProcessed = `-- name: MarkWebhookEventProcessed :execrows
 UPDATE webhook_events
 SET processed_at = now()
@@ -418,6 +519,48 @@ func (q *Queries) PendingWebhookEvents(ctx context.Context, arg PendingWebhookEv
 		return nil, err
 	}
 	return items, nil
+}
+
+const saveMCPTools = `-- name: SaveMCPTools :one
+UPDATE mcp_servers
+SET tools = $3, tool_count = $4, last_error = '', updated_at = now()
+WHERE workspace_id = $1 AND id = $2
+RETURNING id, workspace_id, app, label, endpoint, credential_encrypted, enabled, last_error, tools, tool_count, created_at, updated_at
+`
+
+type SaveMCPToolsParams struct {
+	WorkspaceID uuid.UUID
+	ID          uuid.UUID
+	Tools       []byte
+	ToolCount   int32
+}
+
+// The tool list a server last reported, so a task can be offered a tool without
+// reaching the server first. An empty list is stored too: a server that reports
+// no tools is a fact worth remembering.
+func (q *Queries) SaveMCPTools(ctx context.Context, arg SaveMCPToolsParams) (McpServer, error) {
+	row := q.db.QueryRow(ctx, saveMCPTools,
+		arg.WorkspaceID,
+		arg.ID,
+		arg.Tools,
+		arg.ToolCount,
+	)
+	var i McpServer
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.App,
+		&i.Label,
+		&i.Endpoint,
+		&i.CredentialEncrypted,
+		&i.Enabled,
+		&i.LastError,
+		&i.Tools,
+		&i.ToolCount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const saveOAuthState = `-- name: SaveOAuthState :exec
@@ -540,6 +683,39 @@ func (q *Queries) SetIntegrationStatus(ctx context.Context, arg SetIntegrationSt
 	return i, err
 }
 
+const setMCPServerError = `-- name: SetMCPServerError :one
+UPDATE mcp_servers
+SET last_error = $3, updated_at = now()
+WHERE workspace_id = $1 AND id = $2
+RETURNING id, workspace_id, app, label, endpoint, credential_encrypted, enabled, last_error, tools, tool_count, created_at, updated_at
+`
+
+type SetMCPServerErrorParams struct {
+	WorkspaceID uuid.UUID
+	ID          uuid.UUID
+	LastError   string
+}
+
+func (q *Queries) SetMCPServerError(ctx context.Context, arg SetMCPServerErrorParams) (McpServer, error) {
+	row := q.db.QueryRow(ctx, setMCPServerError, arg.WorkspaceID, arg.ID, arg.LastError)
+	var i McpServer
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.App,
+		&i.Label,
+		&i.Endpoint,
+		&i.CredentialEncrypted,
+		&i.Enabled,
+		&i.LastError,
+		&i.Tools,
+		&i.ToolCount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const upsertGrant = `-- name: UpsertGrant :one
 INSERT INTO agent_grants (workspace_id, agent_id, integration_id, permission)
 VALUES ($1, $2, $3, $4)
@@ -630,6 +806,55 @@ func (q *Queries) UpsertIntegration(ctx context.Context, arg UpsertIntegrationPa
 		&i.UpdatedAt,
 		&i.StatusReason,
 		&i.LastRefreshedAt,
+	)
+	return i, err
+}
+
+const upsertMCPServer = `-- name: UpsertMCPServer :one
+INSERT INTO mcp_servers (workspace_id, app, label, endpoint, credential_encrypted, enabled)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (workspace_id, app) DO UPDATE SET
+    label = EXCLUDED.label,
+    endpoint = EXCLUDED.endpoint,
+    credential_encrypted = COALESCE(EXCLUDED.credential_encrypted, mcp_servers.credential_encrypted),
+    enabled = EXCLUDED.enabled,
+    last_error = '',
+    updated_at = now()
+RETURNING id, workspace_id, app, label, endpoint, credential_encrypted, enabled, last_error, tools, tool_count, created_at, updated_at
+`
+
+type UpsertMCPServerParams struct {
+	WorkspaceID         uuid.UUID
+	App                 string
+	Label               string
+	Endpoint            string
+	CredentialEncrypted []byte
+	Enabled             bool
+}
+
+func (q *Queries) UpsertMCPServer(ctx context.Context, arg UpsertMCPServerParams) (McpServer, error) {
+	row := q.db.QueryRow(ctx, upsertMCPServer,
+		arg.WorkspaceID,
+		arg.App,
+		arg.Label,
+		arg.Endpoint,
+		arg.CredentialEncrypted,
+		arg.Enabled,
+	)
+	var i McpServer
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.App,
+		&i.Label,
+		&i.Endpoint,
+		&i.CredentialEncrypted,
+		&i.Enabled,
+		&i.LastError,
+		&i.Tools,
+		&i.ToolCount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

@@ -58,6 +58,11 @@ type Deps struct {
 	// Limiter paces the calls a workspace makes on one integration. Optional:
 	// without one nothing is paced, which is what a deployment with no Redis is.
 	Limiter domain.CallLimiter
+	// MCP stores the servers a workspace added. Optional: without it this
+	// deployment offers only the adapters it was built with.
+	MCP domain.MCPRepository
+	// MCPClients builds a client for one server. Optional, for the same reason.
+	MCPClients domain.MCPClientFactory
 }
 
 type service struct {
@@ -289,16 +294,24 @@ func (s *service) RotateDataKey(ctx context.Context, scope domain.Scope) error {
 // application, validate the arguments, and only then open the token. Nothing is
 // decrypted for a call that was never going to be made.
 func (s *service) Execute(ctx context.Context, scope domain.Scope, integrationID uuid.UUID, tool string, arguments json.RawMessage) (domain.Result, error) {
-	if integrationID == uuid.Nil {
-		return domain.Result{}, fmt.Errorf("%w: an integration id is required", domain.ErrInvalidInput)
-	}
-	if s.deps.Registry == nil {
-		return domain.Result{}, fmt.Errorf("%w: no adapter is registered", domain.ErrUnknownAdapter)
+	// Which path a tool takes is decided by who offers it. A native adapter is
+	// reached through a connection, so it needs one; a server a workspace added is
+	// the connection, so it has no integration row to name. Looking the tool up
+	// first is what keeps the requirement where it applies.
+	spec, adapter, native := domain.ToolSpec{}, domain.Adapter(nil), false
+	if s.deps.Registry != nil {
+		spec, adapter, native = s.deps.Registry.Lookup(tool)
 	}
 
-	spec, adapter, ok := s.deps.Registry.Lookup(tool)
-	if !ok {
-		return domain.Result{}, fmt.Errorf("%w: %q", domain.ErrUnknownTool, tool)
+	if !native {
+		// No native adapter offers it, so it may belong to a server this workspace
+		// added. That path is scoped, which is why it is reached here rather than
+		// from the registry.
+		return s.executeMCP(ctx, scope, tool, arguments)
+	}
+
+	if integrationID == uuid.Nil {
+		return domain.Result{}, fmt.Errorf("%w: an integration id is required", domain.ErrInvalidInput)
 	}
 
 	// The tool has to belong to the application the connection is for: running a

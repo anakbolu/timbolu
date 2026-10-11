@@ -88,7 +88,12 @@ func (c *Container) openIntegration(_ context.Context, cfg *config.Config, o *op
 		Refs:    states,
 		Queue:   c.Repositories.Integration,
 		Limiter: limits,
-		Logger:  c.Logger,
+		// The MCP servers belong to a workspace, so the tools they contribute are
+		// read per scope rather than registered here with the deployment's own
+		// adapters.
+		MCP:        c.Repositories.Integration,
+		MCPClients: newMCPClients(cfg),
+		Logger:     c.Logger,
 	})
 
 	return nil
