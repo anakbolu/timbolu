@@ -45,6 +45,15 @@ type IntegrationConfig struct {
 	// runs, so a server that does not answer within it is treated as unavailable
 	// rather than waited on. Zero takes the default.
 	MCPTimeout time.Duration `mapstructure:"MCPTimeout" validate:"optional"`
+	// GmailClientID and GmailClientSecret are the deployment's own OAuth
+	// application. They are not shared with the sign-in flow's: a person signing
+	// in and a workspace connecting a mailbox are different consents, and Google
+	// requires them to be different clients.
+	//
+	// Both empty disables the Gmail adapter, which is what a deployment that has
+	// not registered an application looks like.
+	GmailClientID     string `mapstructure:"GmailClientID" validate:"optional"`
+	GmailClientSecret string `mapstructure:"GmailClientSecret" validate:"optional"`
 }
 
 // KmsConfig holds the key-management key that protects the data keys of every

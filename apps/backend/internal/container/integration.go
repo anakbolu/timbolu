@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/adapters/gmail"
 	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
 	integrationservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/service"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
@@ -49,7 +51,7 @@ func (c *Container) openIntegration(_ context.Context, cfg *config.Config, o *op
 	// The adapters are registered first: they are what declares the tools, their
 	// labels, and their schemas, and everything else reads that.
 	registry := integrationservice.NewRegistry()
-	for _, adapter := range c.integrationAdapters(o) {
+	for _, adapter := range c.integrationAdapters(o, cfg) {
 		if err := registry.Register(adapter); err != nil {
 			// An adapter that declares something the registry refuses is a bug in
 			// that adapter. Failing here names it while the process is starting,
@@ -104,11 +106,32 @@ func (c *Container) openIntegration(_ context.Context, cfg *config.Config, o *op
 // It is the only place an application is named. Adding one is adding an adapter
 // here; the agent worker, the approval gate, and the tool registry never learn
 // that it happened.
-func (c *Container) integrationAdapters(o *options) []integrationdomain.Adapter {
+func (c *Container) integrationAdapters(o *options, cfg *config.Config) []integrationdomain.Adapter {
 	if o != nil && o.adaptersSet {
 		return o.adapters
 	}
-	return nil
+
+	adapters := make([]integrationdomain.Adapter, 0, 1)
+
+	// Gmail is the integration the MVP is built around. A deployment that has not
+	// registered an OAuth application for it simply does not offer it, rather than
+	// offering it and failing at the consent screen.
+	if strings.TrimSpace(cfg.Integrations.GmailClientID) != "" &&
+		strings.TrimSpace(cfg.Integrations.GmailClientSecret) != "" {
+		gmailAdapter, err := gmail.New(gmail.Config{
+			ClientID:     cfg.Integrations.GmailClientID,
+			ClientSecret: cfg.Integrations.GmailClientSecret,
+		})
+		if err != nil {
+			// Said rather than fatal: the rest of the hub works without Gmail, and
+			// a deployment that mistyped a credential should still serve.
+			c.Logger.Error("the Gmail adapter is disabled", zap.Error(err))
+		} else {
+			adapters = append(adapters, gmailAdapter)
+		}
+	}
+
+	return adapters
 }
 
 // tokenCipher seals and opens tokens with the workspace's data key.
