@@ -563,7 +563,7 @@ func (q *Queries) ListGrants(ctx context.Context, arg ListGrantsParams) ([]ListG
 }
 
 const listIntegrations = `-- name: ListIntegrations :many
-SELECT id, workspace_id, app, account_label, status, scopes, access_token_encrypted, refresh_token_encrypted, token_expires_at, data_key_wrapped, data_key_kms_key_id, created_at, updated_at FROM integrations WHERE workspace_id = $1 ORDER BY app, account_label
+SELECT id, workspace_id, app, account_label, status, scopes, access_token_encrypted, refresh_token_encrypted, token_expires_at, created_at, updated_at, status_reason, last_refreshed_at FROM integrations WHERE workspace_id = $1 ORDER BY app, account_label
 `
 
 // The integrations of the workspace, which the grant screen lists.
@@ -586,10 +586,10 @@ func (q *Queries) ListIntegrations(ctx context.Context, workspaceID uuid.UUID) (
 			&i.AccessTokenEncrypted,
 			&i.RefreshTokenEncrypted,
 			&i.TokenExpiresAt,
-			&i.DataKeyWrapped,
-			&i.DataKeyKmsKeyID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.StatusReason,
+			&i.LastRefreshedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -16,9 +16,29 @@ type Config struct {
 	Mail        MailConfig
 	Plan        PlanConfig
 	Llm         LlmConfig
+	Kms         KmsConfig
 	Tasks       TasksConfig
 	Storage     StorageConfig
 	Logging     LoggingConfig
+}
+
+// KmsConfig holds the key-management key that protects the data keys of every
+// workspace's integration tokens.
+//
+// The data key is what actually encrypts a token, so the tokens survive a
+// rotation of this key: rotating it re-wraps the data keys and nothing else. The
+// retired keys are still configured after a rotation, which is what lets an
+// existing connection be opened and re-wrapped instead of being broken.
+type KmsConfig struct {
+	// MasterKey wraps the per-workspace data keys. Same accepted forms as
+	// SECRET_ENCRYPTION_KEY: base64, hex, or 32 raw characters. Empty leaves
+	// integrations read-only, because no token could be sealed.
+	MasterKey string `mapstructure:"MasterKey" validate:"optional"`
+	// MasterKeyID names the active key, so a wrap records which key made it.
+	MasterKeyID string `mapstructure:"MasterKeyID" validate:"optional"`
+	// RetiredKeys are the older keys, as `id:key` pairs separated by commas.
+	// They are read-only: a wrap always uses the active key.
+	RetiredKeys string `mapstructure:"RetiredKeys" validate:"optional"`
 }
 
 // TasksConfig bounds what one task may spend. Every field is optional: a zero

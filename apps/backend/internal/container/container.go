@@ -209,6 +209,13 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Container, e
 		return nil, err
 	}
 
+	// The integration hub is assembled before the approval gate, because the gate
+	// asks it for a token when an approved action is finally carried out.
+	if err := c.openIntegration(ctx, cfg); err != nil {
+		c.Close()
+		return nil, err
+	}
+
 	// The approval gate comes before the task runtime: the runtime asks it whether
 	// an action may leave, and a task that could not ask would have nothing
 	// stopping it from sending.

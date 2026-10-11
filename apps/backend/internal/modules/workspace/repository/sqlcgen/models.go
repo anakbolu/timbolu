@@ -179,10 +179,10 @@ type Integration struct {
 	AccessTokenEncrypted  []byte
 	RefreshTokenEncrypted []byte
 	TokenExpiresAt        *time.Time
-	DataKeyWrapped        []byte
-	DataKeyKmsKeyID       string
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
+	StatusReason          string
+	LastRefreshedAt       *time.Time
 }
 
 type Invitation struct {
@@ -480,4 +480,12 @@ type Workspace struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	OwnerUserID    *uuid.UUID
+}
+
+type WorkspaceKey struct {
+	WorkspaceID    uuid.UUID
+	WrappedDataKey []byte
+	KmsKeyID       string
+	CreatedAt      time.Time
+	RotatedAt      *time.Time
 }
