@@ -76,7 +76,10 @@ func newHandlers(services *Services, log *zap.Logger, cfg *config.Config) *Handl
 	}
 
 	if services.Integration != nil {
-		handlers.Integration = integrationhandler.New(services.Integration, log, cfg.Application.FrontendURL)
+		handlers.Integration = integrationhandler.New(services.Integration, log, integrationhandler.Config{
+			FrontendURL:  cfg.Application.FrontendURL,
+			RedirectBase: cfg.Integrations.OAuthRedirectBase,
+		})
 	}
 
 	return handlers

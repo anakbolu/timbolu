@@ -14,7 +14,6 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   addMCPServer,
-  connectURL,
   deleteHubGrant,
   disconnectIntegration,
   getActiveWorkspaceId,
@@ -29,6 +28,7 @@ import {
   removeIntegration,
   removeMCPServer,
   setHubGrant,
+  startAuthorization,
   type Agent,
   type HubAdapter,
   type HubIntegration,
@@ -141,6 +141,10 @@ export function IntegrationsPanel() {
   // to it afterwards.
   const [outcome] = useState<string | null>(() => readOutcome());
 
+  // What a finished flow did is shown until something else says otherwise, which
+  // is what makes the provider's redirect land somewhere that explains itself.
+  const shown = notice ?? outcome;
+
   // And the query is then cleared, so a reload does not repeat a message about a
   // flow that already finished. This is the side effect an effect is for.
   useEffect(() => {
@@ -201,6 +205,22 @@ export function IntegrationsPanel() {
     });
   }
 
+  /** connect asks where to send the browser, then sends it there. */
+  async function connect(app: string) {
+    if (!workspaceId) return;
+
+    setBusy(true);
+    setError(null);
+    const result = await startAuthorization(workspaceId, app);
+    setBusy(false);
+
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
+    window.location.assign(result.data.url);
+  }
+
   async function act(action: () => Promise<{ ok: boolean; message?: string }>, done: string) {
     setBusy(true);
     const result = await action();
@@ -231,8 +251,8 @@ export function IntegrationsPanel() {
           {error}
         </p>
       ) : null}
-      {notice ? (
-        <p className="rounded-xl bg-bolu-live/10 px-3 py-2 text-sm text-bolu-lunas">{notice}</p>
+      {shown ? (
+        <p className="rounded-xl bg-bolu-live/10 px-3 py-2 text-sm text-bolu-lunas">{shown}</p>
       ) : null}
 
       {/* Connected accounts ------------------------------------------------ */}
@@ -282,12 +302,14 @@ export function IntegrationsPanel() {
                       >
                         Coba segarkan
                       </button>
-                      <a
-                        href={connectURL(connection.app)}
-                        className="min-h-9 rounded-full bg-bolu-ink px-3 py-2 text-sm font-semibold text-white"
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void connect(connection.app)}
+                        className="min-h-9 cursor-pointer rounded-full bg-bolu-ink px-3 text-sm font-semibold text-white disabled:opacity-50"
                       >
                         Sambungkan ulang
-                      </a>
+                      </button>
                     </>
                   ) : null}
 
@@ -349,12 +371,14 @@ export function IntegrationsPanel() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-semibold">{adapter.app}</p>
                   {adapter.oauth ? (
-                    <a
-                      href={connectURL(adapter.app)}
-                      className="min-h-9 rounded-full bg-bolu-ink px-3.5 py-2 text-sm font-semibold text-white"
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void connect(adapter.app)}
+                      className="min-h-9 cursor-pointer rounded-full bg-bolu-ink px-3.5 text-sm font-semibold text-white disabled:opacity-50"
                     >
                       Hubungkan
-                    </a>
+                    </button>
                   ) : null}
                 </div>
 

@@ -32,9 +32,25 @@ type Handler struct {
 	frontendURL  string
 }
 
+// Config is where the handler sends a person.
+type Config struct {
+	// FrontendURL is the app's origin, which is where a finished flow returns to.
+	FrontendURL string
+	// RedirectBase is the public origin providers redirect back to. It has to be
+	// the address registered with the provider, so it is configured rather than
+	// derived from the request: behind a proxy the request's own base URL is the
+	// internal one, and a provider checks that the two match.
+	RedirectBase string
+}
+
 // New builds the handler.
-func New(service domain.Service, log *zap.Logger, frontendURL string) *Handler {
-	return &Handler{service: service, log: log, frontendURL: strings.TrimRight(frontendURL, "/")}
+func New(service domain.Service, log *zap.Logger, cfg Config) *Handler {
+	return &Handler{
+		service:      service,
+		log:          log,
+		frontendURL:  strings.TrimRight(cfg.FrontendURL, "/"),
+		redirectBase: strings.TrimRight(cfg.RedirectBase, "/"),
+	}
 }
 
 // Routes registers the endpoints a member of the workspace may use.
@@ -209,23 +225,32 @@ func (h *Handler) Adapters(c *fiber.Ctx) error {
 	return response.OK(c, "ok", payload)
 }
 
-// Connect starts an authorization flow and sends the person to the provider.
+// Connect starts an authorization flow and answers with the provider's consent
+// URL.
 //
-// It redirects rather than returning a URL: the browser has to follow the
-// provider's consent page, and doing it here keeps the state out of the client
-// where it could be replayed by hand.
+// It answers JSON rather than redirecting, and that is not a style choice. The app
+// authenticates with a bearer token held in memory, so a plain navigation to this
+// endpoint carries no credential and would be refused; the alternatives are worse
+// than they look. Putting the token in the query string — which is how the live
+// stream does it, for a WebSocket that cannot set a header — would write it into
+// the browser's history and the server's access log, and this is the endpoint whose
+// whole subject is keeping credentials out of places they should not be.
+//
+// So the client asks with its header, and the browser is sent to the provider from
+// there. The state is created here either way, so nothing about the flow's safety
+// depends on who performs the navigation.
 func (h *Handler) Connect(c *fiber.Ctx) error {
 	app := strings.TrimSpace(c.Params("app"))
 	if app == "" {
 		return response.Error(c, fiber.StatusBadRequest, "app is required", "invalid_input", nil)
 	}
 
-	auth, err := h.service.BeginAuth(c.UserContext(), scope(c), app, c.Query("return_to"))
+	auth, err := h.service.BeginAuth(c.UserContext(), scope(c), app, h.callbackURI(c), c.Query("return_to"))
 	if err != nil {
 		return h.fail(c, "begin authorization", err)
 	}
 
-	return c.Redirect(auth.URL, fiber.StatusFound)
+	return response.OK(c, "ok", authURLPayload{URL: auth.URL, State: auth.State})
 }
 
 // Callback finishes an authorization flow and returns the person to the app.
@@ -573,6 +598,14 @@ type grantPayload struct {
 
 type grantRequest struct {
 	Permission string `json:"permission"`
+}
+
+type authURLPayload struct {
+	// URL is the provider's consent page, which the browser is sent to.
+	URL string `json:"url"`
+	// State is the value the provider returns, so a client can check that the
+	// callback it receives belongs to the flow it started.
+	State string `json:"state"`
 }
 
 type mcpServerPayload struct {

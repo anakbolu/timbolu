@@ -156,12 +156,21 @@ func TestTheIntegrationEndpointsAnswer(t *testing.T) {
 	require.Equal(t, http.StatusOK, status, body)
 	require.Empty(t, payload["data"].([]any))
 
-	// Starting a flow redirects to the provider rather than answering JSON: a
-	// browser has to follow the consent page.
-	status, _, _ = api.call(t, fiber.MethodGet, "/api/integrations/gmail/connect", "", headers)
-	require.Equal(t, http.StatusFound, status)
+	// Starting a flow answers with the provider's consent URL. It is a request
+	// rather than a redirect because the app authenticates with a header: a plain
+	// navigation would carry no credential, and putting the token in the URL would
+	// write it into the browser's history and the server's log.
+	status, payload, body = api.call(t, fiber.MethodGet, "/api/integrations/gmail/connect", "", headers)
+	require.Equal(t, http.StatusOK, status, body)
 
-	// An application nobody registered is refused before any redirect.
+	auth := payload["data"].(map[string]any)
+	require.Contains(t, auth["url"].(string), "accounts.example.com")
+	require.NotEmpty(t, auth["state"])
+
+	// The consent URL carries the state, so the callback can be matched to it.
+	require.Contains(t, auth["url"].(string), auth["state"].(string))
+
+	// An application nobody registered is refused.
 	status, _, body = api.call(t, fiber.MethodGet, "/api/integrations/notion/connect", "", headers)
 	require.Equal(t, http.StatusBadRequest, status, body)
 
@@ -229,8 +238,8 @@ func TestTheCallbackReportsEveryOutcome(t *testing.T) {
 	headers := withWorkspace(token, workspace)
 
 	// A flow is started, so a genuine state exists.
-	status, _, _ := api.call(t, fiber.MethodGet, "/api/integrations/gmail/connect", "", headers)
-	require.Equal(t, http.StatusFound, status)
+	status, _, body := api.call(t, fiber.MethodGet, "/api/integrations/gmail/connect", "", headers)
+	require.Equal(t, http.StatusOK, status, body)
 
 	// The callback without a state at all is refused and sent back with a reason.
 	status, _, _ = api.call(t, fiber.MethodGet, "/api/integrations/oauth/callback?code=abc", "", nil)

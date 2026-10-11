@@ -125,6 +125,10 @@ func (s *stubOAuth) counts() (int, int) {
 	return s.exchanges, s.refreshes
 }
 
+// testRedirectURI is the address a deployment would register with a provider. It
+// is absolute because a provider has to be able to send a browser to it.
+const testRedirectURI = "https://app.example.com/api/integrations/oauth/callback"
+
 // oauthFixture wires the hub over an onboarded workspace with a stub provider.
 type oauthFixture struct {
 	service     integrationdomain.Service
@@ -198,7 +202,7 @@ func TestAFlowConnectsAnAccount(t *testing.T) {
 	fixture := newOAuthFixture(t, migratedDatabase(t), oauthStubProvider())
 	ctx := t.Context()
 
-	auth, err := fixture.service.BeginAuth(ctx, fixture.scope, "gmail", "/dashboard/integrations")
+	auth, err := fixture.service.BeginAuth(ctx, fixture.scope, "gmail", testRedirectURI, "/dashboard/integrations")
 	require.NoError(t, err)
 	require.Contains(t, auth.URL, "accounts.example.com")
 	require.NotEmpty(t, auth.State)
@@ -233,7 +237,7 @@ func TestAStateIsSpentExactlyOnce(t *testing.T) {
 	fixture := newOAuthFixture(t, migratedDatabase(t), oauthStubProvider())
 	ctx := t.Context()
 
-	auth, err := fixture.service.BeginAuth(ctx, fixture.scope, "gmail", "")
+	auth, err := fixture.service.BeginAuth(ctx, fixture.scope, "gmail", testRedirectURI, "")
 	require.NoError(t, err)
 
 	_, err = fixture.service.CompleteAuth(ctx, integrationdomain.CompleteAuthRequest{
@@ -264,7 +268,7 @@ func TestAStateFromAnotherDeploymentIsRefused(t *testing.T) {
 	// own workspace.
 	other := newOAuthFixtureWithKey(t, dsn, oauthStubProvider(), "a-different-signing-key-of-32-chars")
 
-	auth, err := other.service.BeginAuth(ctx, other.scope, "gmail", "")
+	auth, err := other.service.BeginAuth(ctx, other.scope, "gmail", testRedirectURI, "")
 	require.NoError(t, err)
 
 	_, err = fixture.service.CompleteAuth(ctx, integrationdomain.CompleteAuthRequest{
@@ -281,7 +285,7 @@ func TestAStateFromAnotherDeploymentIsRefused(t *testing.T) {
 	require.ErrorIs(t, err, integrationdomain.ErrInvalidState)
 
 	// And a callback with no code is refused before anything else happens.
-	auth2, err := fixture.service.BeginAuth(ctx, fixture.scope, "gmail", "")
+	auth2, err := fixture.service.BeginAuth(ctx, fixture.scope, "gmail", testRedirectURI, "")
 	require.NoError(t, err)
 	_, err = fixture.service.CompleteAuth(ctx, integrationdomain.CompleteAuthRequest{State: auth2.State})
 	require.ErrorIs(t, err, integrationdomain.ErrInvalidState)
@@ -293,7 +297,7 @@ func TestAProviderThatRefusesTheCodeIsReported(t *testing.T) {
 	fixture := newOAuthFixture(t, migratedDatabase(t), oauthStubProvider())
 	ctx := t.Context()
 
-	auth, err := fixture.service.BeginAuth(ctx, fixture.scope, "gmail", "")
+	auth, err := fixture.service.BeginAuth(ctx, fixture.scope, "gmail", testRedirectURI, "")
 	require.NoError(t, err)
 
 	_, err = fixture.service.CompleteAuth(ctx, integrationdomain.CompleteAuthRequest{
@@ -314,7 +318,7 @@ func TestAnAppWithNoAdapterCannotStartAFlow(t *testing.T) {
 	fixture := newOAuthFixture(t, migratedDatabase(t), oauthStubProvider())
 	ctx := t.Context()
 
-	_, err := fixture.service.BeginAuth(ctx, fixture.scope, "notion", "")
+	_, err := fixture.service.BeginAuth(ctx, fixture.scope, "notion", testRedirectURI, "")
 	require.ErrorIs(t, err, integrationdomain.ErrUnknownAdapter)
 }
 
@@ -432,7 +436,7 @@ func TestAConnectionThatCannotBeRefreshedDoesNotStopTheOthers(t *testing.T) {
 		ExpiresAt:    new(time.Now().Add(time.Hour)),
 	}
 	provider.account = "pribadi@example.com"
-	auth, err := fixture.service.BeginAuth(ctx, fixture.scope, "gmail", "")
+	auth, err := fixture.service.BeginAuth(ctx, fixture.scope, "gmail", testRedirectURI, "")
 	require.NoError(t, err)
 	_, err = fixture.service.CompleteAuth(ctx, integrationdomain.CompleteAuthRequest{
 		Code: "a-good-code", State: auth.State,
@@ -482,20 +486,28 @@ func TestAnAbsoluteReturnToIsRefused(t *testing.T) {
 	fixture := newOAuthFixture(t, migratedDatabase(t), oauthStubProvider())
 	ctx := t.Context()
 
-	auth, err := fixture.service.BeginAuth(ctx, fixture.scope, "gmail", "https://evil.example.com/steal")
+	auth, err := fixture.service.BeginAuth(ctx, fixture.scope, "gmail", testRedirectURI, "https://evil.example.com/steal")
 	require.NoError(t, err)
 
 	// The state is signed, so the value it carries is readable: the return path
 	// was replaced rather than trusted.
 	require.NotContains(t, auth.State, "evil.example.com")
 
-	auth2, err := fixture.service.BeginAuth(ctx, fixture.scope, "gmail", "//evil.example.com")
+	auth2, err := fixture.service.BeginAuth(ctx, fixture.scope, "gmail", testRedirectURI, "//evil.example.com")
 	require.NoError(t, err)
 	require.NotContains(t, auth2.State, "evil.example.com")
 
-	auth3, err := fixture.service.BeginAuth(ctx, fixture.scope, "gmail", "/dashboard/integrations")
+	auth3, err := fixture.service.BeginAuth(ctx, fixture.scope, "gmail", testRedirectURI, "/dashboard/integrations")
 	require.NoError(t, err)
 	require.NotEmpty(t, auth3.State)
+
+	// A redirect the provider cannot resolve is refused rather than sent: the
+	// browser would otherwise be handed a relative address and resolve it against
+	// the provider's own origin.
+	for _, relative := range []string{"", "/api/integrations/oauth/callback", "app.example.com/callback"} {
+		_, err := fixture.service.BeginAuth(ctx, fixture.scope, "gmail", relative, "")
+		require.ErrorIs(t, err, integrationdomain.ErrInvalidInput, relative)
+	}
 }
 
 // connectThroughFlow runs the whole flow once and returns the connection.
@@ -514,7 +526,7 @@ func connectThroughFlow(t *testing.T, fixture *oauthFixture) integrationdomain.I
 func beginState(t *testing.T, fixture *oauthFixture) string {
 	t.Helper()
 
-	auth, err := fixture.service.BeginAuth(t.Context(), fixture.scope, "gmail", "/dashboard/integrations")
+	auth, err := fixture.service.BeginAuth(t.Context(), fixture.scope, "gmail", testRedirectURI, "/dashboard/integrations")
 	require.NoError(t, err)
 	return auth.State
 }

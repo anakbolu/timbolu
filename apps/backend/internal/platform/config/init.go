@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -109,11 +110,38 @@ func loadFromEnv(cfg *Config) error {
 		"S3_ACCESS_KEY":                   &cfg.Storage.AccessKey,
 		"S3_SECRET_KEY":                   &cfg.Storage.SecretKey,
 		"CONTENT_ORIGIN":                  &cfg.Storage.ContentOrigin,
+		"KMS_MASTER_KEY":                  &cfg.Kms.MasterKey,
+		"KMS_MASTER_KEY_ID":               &cfg.Kms.MasterKeyID,
+		"KMS_RETIRED_KEYS":                &cfg.Kms.RetiredKeys,
+		"OAUTH_STATE_KEY":                 &cfg.Integrations.OAuthStateKey,
+		"OAUTH_REDIRECT_BASE":             &cfg.Integrations.OAuthRedirectBase,
+		"INTEGRATION_RATE_LIMITS":         &cfg.Integrations.RateLimits,
+		"GMAIL_CLIENT_ID":                 &cfg.Integrations.GmailClientID,
+		"GMAIL_CLIENT_SECRET":             &cfg.Integrations.GmailClientSecret,
+		"GMAIL_API_BASE":                  &cfg.Integrations.GmailAPIBase,
+		"GMAIL_AUTH_ENDPOINT":             &cfg.Integrations.GmailAuthEndpoint,
+		"GMAIL_TOKEN_ENDPOINT":            &cfg.Integrations.GmailTokenEndpoint,
 	}
 	for key, target := range overrides {
 		if v := os.Getenv(key); v != "" {
 			*target = v
 		}
+	}
+
+	if v := os.Getenv("INTEGRATION_CALLS_PER_MINUTE"); v != "" {
+		perMinute, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse INTEGRATION_CALLS_PER_MINUTE: %w", err)
+		}
+		cfg.Integrations.DefaultCallsPerMinute = perMinute
+	}
+
+	if v := os.Getenv("MCP_TIMEOUT"); v != "" {
+		timeout, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("parse MCP_TIMEOUT: %w", err)
+		}
+		cfg.Integrations.MCPTimeout = timeout
 	}
 
 	if v := os.Getenv("LLM_QUOTA_ENABLED"); v != "" {

@@ -126,8 +126,11 @@ func (c *Container) integrationAdapters(o *options, cfg *config.Config) []integr
 	if strings.TrimSpace(cfg.Integrations.GmailClientID) != "" &&
 		strings.TrimSpace(cfg.Integrations.GmailClientSecret) != "" {
 		gmailAdapter, err := gmail.New(gmail.Config{
-			ClientID:     cfg.Integrations.GmailClientID,
-			ClientSecret: cfg.Integrations.GmailClientSecret,
+			ClientID:      cfg.Integrations.GmailClientID,
+			ClientSecret:  cfg.Integrations.GmailClientSecret,
+			APIBase:       cfg.Integrations.GmailAPIBase,
+			AuthEndpoint:  cfg.Integrations.GmailAuthEndpoint,
+			TokenEndpoint: cfg.Integrations.GmailTokenEndpoint,
 		})
 		if err != nil {
 			// Said rather than fatal: the rest of the hub works without Gmail, and

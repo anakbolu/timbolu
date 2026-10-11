@@ -359,7 +359,12 @@ type Service interface {
 
 	// BeginAuth starts a connection flow for an application, returning where to
 	// send the person and the state the callback will carry back.
-	BeginAuth(ctx context.Context, scope Scope, app, returnTo string) (AuthURL, error)
+	//
+	// The redirect URI is the caller's because only it knows the public origin, and
+	// it must be the same value in both steps: a provider checks that the exchange
+	// names the address the authorization request did, so a path here and an
+	// absolute URL there is a flow that is refused.
+	BeginAuth(ctx context.Context, scope Scope, app, redirectURI, returnTo string) (AuthURL, error)
 	// CompleteAuth finishes a flow. It reads the tenant from the signed state
 	// rather than from a session, because the callback arrives from the
 	// provider's browser redirect and carries no session of its own.

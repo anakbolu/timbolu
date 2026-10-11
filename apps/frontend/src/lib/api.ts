@@ -1138,10 +1138,25 @@ export function listHubAdapters(workspaceId: string): Promise<ApiResult<HubAdapt
   return request<HubAdapter[]>("/integrations/adapters", { workspace: workspaceId });
 }
 
-/** connectURL is where a browser is sent to start an authorization flow. */
-export function connectURL(app: string, returnTo = "/dashboard/integrations"): string {
+/**
+ * startAuthorization asks where to send the browser to connect an application.
+ *
+ * It is a request rather than a link, because the app authenticates with a token
+ * held in memory: a plain navigation would carry no credential and be refused, and
+ * putting the token in the URL would write it into the browser's history and the
+ * server's log. So the consent URL is fetched with the header, and the browser is
+ * sent to the provider from there.
+ */
+export function startAuthorization(
+  workspaceId: string,
+  app: string,
+  returnTo = "/dashboard/integrations",
+): Promise<ApiResult<{ url: string; state: string }>> {
   const query = new URLSearchParams({ return_to: returnTo });
-  return `${API_URL}/api/integrations/${encodeURIComponent(app)}/connect?${query}`;
+  return request<{ url: string; state: string }>(
+    `/integrations/${encodeURIComponent(app)}/connect?${query}`,
+    { workspace: workspaceId },
+  );
 }
 
 /** disconnectIntegration clears a connection's stored tokens. */

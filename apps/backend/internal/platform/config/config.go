@@ -54,6 +54,13 @@ type IntegrationConfig struct {
 	// not registered an application looks like.
 	GmailClientID     string `mapstructure:"GmailClientID" validate:"optional"`
 	GmailClientSecret string `mapstructure:"GmailClientSecret" validate:"optional"`
+	// GmailAPIBase, GmailAuthEndpoint, and GmailTokenEndpoint point the adapter
+	// somewhere other than Google. They exist for the same reason the model
+	// gateway has a base URL: a staging deployment or a smoke test needs to run
+	// the whole path without a real account. Empty means Google.
+	GmailAPIBase       string `mapstructure:"GmailAPIBase" validate:"optional"`
+	GmailAuthEndpoint  string `mapstructure:"GmailAuthEndpoint" validate:"optional"`
+	GmailTokenEndpoint string `mapstructure:"GmailTokenEndpoint" validate:"optional"`
 }
 
 // KmsConfig holds the key-management key that protects the data keys of every

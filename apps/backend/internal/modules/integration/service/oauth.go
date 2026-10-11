@@ -27,10 +27,17 @@ const StateTTL = 10 * time.Minute
 // The state it returns is signed and single-use. Signed so the callback knows
 // which workspace and which person it belongs to without a session; single-use
 // so a replayed callback cannot store a second credential.
-func (s *service) BeginAuth(ctx context.Context, scope domain.Scope, app, returnTo string) (domain.AuthURL, error) {
+func (s *service) BeginAuth(ctx context.Context, scope domain.Scope, app, redirectURI, returnTo string) (domain.AuthURL, error) {
 	trimmed := strings.TrimSpace(app)
 	if trimmed == "" {
 		return domain.AuthURL{}, fmt.Errorf("%w: an app is required", domain.ErrInvalidInput)
+	}
+	// A redirect the provider cannot resolve is a flow that sends the browser
+	// somewhere that is not this deployment, so it is refused here rather than
+	// discovered by a person staring at a provider's error page.
+	redirect := strings.TrimSpace(redirectURI)
+	if redirect == "" || !strings.Contains(redirect, "://") {
+		return domain.AuthURL{}, fmt.Errorf("%w: the redirect URI must be absolute", domain.ErrInvalidInput)
 	}
 	if scope.WorkspaceID == uuid.Nil || scope.UserID == uuid.Nil {
 		return domain.AuthURL{}, fmt.Errorf("%w: a workspace and a person are required", domain.ErrInvalidInput)
@@ -70,7 +77,7 @@ func (s *service) BeginAuth(ctx context.Context, scope domain.Scope, app, return
 	}
 
 	return domain.AuthURL{
-		URL:   adapter.AuthCodeURL(signed, domain.OAuthRedirectURI),
+		URL:   adapter.AuthCodeURL(signed, redirect),
 		State: signed,
 	}, nil
 }

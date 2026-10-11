@@ -34,6 +34,24 @@ x-backend-env: &backend-env
   # the platform offers a workspace that configured none. Leaving the model empty
   # disables the fallback, so every workspace must configure its own.
   SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:-local_dev_secret_key_32_byte_len}
+  # The key ring that seals integration tokens, and the key that signs the value
+  # an authorization flow carries. Empty leaves the hub's writes disabled, which
+  # is what a deployment that has not set them looks like.
+  KMS_MASTER_KEY: ${KMS_MASTER_KEY:-local_dev_master_key_32_byte_len}
+  KMS_MASTER_KEY_ID: ${KMS_MASTER_KEY_ID:-local-v1}
+  KMS_RETIRED_KEYS: ${KMS_RETIRED_KEYS:-}
+  OAUTH_STATE_KEY: ${OAUTH_STATE_KEY:-local_dev_oauth_state_key_32_bytes}
+  INTEGRATION_CALLS_PER_MINUTE: ${INTEGRATION_CALLS_PER_MINUTE:-0}
+  INTEGRATION_RATE_LIMITS: ${INTEGRATION_RATE_LIMITS:-}
+  # Gmail is the integration the MVP is built around. Both credentials empty
+  # disables the adapter rather than offering it and failing at the consent
+  # screen. The endpoint overrides exist so a staging deployment or a smoke test
+  # can run the whole path without a real Google account.
+  GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID:-}
+  GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET:-}
+  GMAIL_API_BASE: ${GMAIL_API_BASE:-}
+  GMAIL_AUTH_ENDPOINT: ${GMAIL_AUTH_ENDPOINT:-}
+  GMAIL_TOKEN_ENDPOINT: ${GMAIL_TOKEN_ENDPOINT:-}
   LLM_DEFAULT_ADAPTER: ${LLM_DEFAULT_ADAPTER:-}
   LLM_DEFAULT_BASE_URL: ${LLM_DEFAULT_BASE_URL:-}
   LLM_DEFAULT_MODEL: ${LLM_DEFAULT_MODEL:-}
