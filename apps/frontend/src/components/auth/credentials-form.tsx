@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Alert, AuthShell, Field, GoogleButton, SubmitButton } from "@/components/auth/auth-shell";
+import { AuthScene } from "@/components/auth/auth-scene";
 import { useSearchParams } from "next/navigation";
 
 import { googleStartURL, login, register } from "@/lib/api";
@@ -68,6 +69,7 @@ export function CredentialsForm({ mode }: { mode: "signup" | "login" }) {
           ? "Satu akun untuk semua usaha dan semua Bolu-mu."
           : "Lanjutkan pekerjaan yang sudah disiapkan Bolu."
       }
+      scene={<AuthScene mode={isRegister ? "signup" : "login"} />}
       footer={
         isRegister ? (
           <>

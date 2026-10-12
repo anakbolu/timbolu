@@ -7,21 +7,29 @@ type BotSvgProps = {
   className?: string;
   /** Extra wrapper styles; `animationDelay` drives bob/blink/glance. */
   style?: CSSProperties;
+  /**
+   * Accessible name. Give one when the bolu carries meaning on its own;
+   * without it the character is decorative and hidden from screen readers.
+   */
+  title?: string;
 };
 
 /**
  * The Keluarga Bolu character: body path + feet + face (cheeks, blinking eyes,
  * glancing pupils, mouth). Ported 1:1 from the design's `mk()` renderer.
- * Decorative — the surrounding copy carries the meaning.
+ * Decorative by default — the surrounding copy carries the meaning.
  */
-export function BotSvg({ bot, className, style }: BotSvgProps) {
+export function BotSvg({ bot, className, style, title }: BotSvgProps) {
   return (
     <div className={className} style={style}>
       <svg
         viewBox="0 0 200 200"
-        aria-hidden="true"
+        role={title ? "img" : undefined}
+        aria-label={title}
+        aria-hidden={title ? undefined : true}
         className="block size-full overflow-visible"
       >
+        {title ? <title>{title}</title> : null}
         {bot.hasFeet ? <path d={bot.feet} fill={bot.feetColor} /> : null}
         <path
           d={bot.d}

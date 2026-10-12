@@ -1,36 +1,49 @@
 "use client";
 
 /**
- * Shared shell for the authentication pages: the card, the heading, the error
- * line, and the primary button. Every page in this flow is a client component,
- * because the access token lives in memory and the forms are interactive.
+ * Shared shell for the authentication pages: the bolu mark, the card, the
+ * heading, the error line, the primary button, and — where a page passes one —
+ * the crew working in the room beside the card. Every page in this flow is a
+ * client component, because the access token lives in memory and the forms are
+ * interactive.
  */
 
 import Link from "next/link";
 import type { ReactNode } from "react";
+
+import { Bolu } from "@/components/bolu/bolu";
+import { LOGO } from "@/lib/crew";
 
 type AuthShellProps = {
   title: string;
   subtitle: string;
   children: ReactNode;
   footer?: ReactNode;
+  /** The crew at work, shown beside the card. Login and register pass one. */
+  scene?: ReactNode;
 };
 
-export function AuthShell({ title, subtitle, children, footer }: AuthShellProps) {
+export function AuthShell({ title, subtitle, children, footer, scene }: AuthShellProps) {
   return (
-    <main className="mx-auto flex w-full max-w-[460px] flex-1 flex-col justify-center px-5 py-12">
-      <Link href="/" className="mb-8 flex items-center gap-2 text-sm font-semibold text-bolu-muted">
-        <span aria-hidden className="inline-block size-3 rounded-full bg-bolu-accent" />
-        Keluarga Bolu
-      </Link>
+    <main className="mx-auto flex w-full max-w-[1120px] flex-1 flex-col justify-center gap-10 px-5 py-12 lg:flex-row lg:items-center lg:justify-center lg:gap-16">
+      <div className="mx-auto flex w-full max-w-[460px] flex-col lg:mx-0 lg:flex-none">
+        <Link href="/" className="mb-8 flex items-center gap-2.5 text-sm font-semibold text-bolu-muted">
+          <span aria-hidden className="inline-flex flex-none items-center justify-center">
+            <Bolu member={LOGO} size={32} />
+          </span>
+          Keluarga Bolu
+        </Link>
 
-      <div className="rounded-3xl border border-bolu-border bg-bolu-surface p-7 shadow-[0_1px_2px_rgb(30_27_46_/_0.04)]">
-        <h1 className="font-display text-2xl font-semibold text-bolu-ink">{title}</h1>
-        <p className="mt-2 text-sm text-bolu-muted">{subtitle}</p>
-        <div className="mt-6">{children}</div>
+        <div className="rounded-3xl border border-bolu-border bg-bolu-surface p-7 shadow-[0_1px_2px_rgb(30_27_46_/_0.04)]">
+          <h1 className="font-display text-2xl font-semibold text-bolu-ink">{title}</h1>
+          <p className="mt-2 text-sm text-bolu-muted">{subtitle}</p>
+          <div className="mt-6">{children}</div>
+        </div>
+
+        {footer ? <div className="mt-6 text-center text-sm text-bolu-muted">{footer}</div> : null}
       </div>
 
-      {footer ? <div className="mt-6 text-center text-sm text-bolu-muted">{footer}</div> : null}
+      {scene ? <div className="w-full lg:min-w-0 lg:flex-1">{scene}</div> : null}
     </main>
   );
 }
@@ -120,8 +133,27 @@ export function GoogleButton({ href }: { href: string }) {
   return (
     <a
       href={href}
-      className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-bolu-border bg-bolu-surface px-4 py-2.5 text-[15px] font-medium text-bolu-ink transition hover:bg-bolu-panel/60"
+      className="mt-3 flex w-full items-center justify-center gap-2.5 rounded-xl border border-bolu-border bg-bolu-surface px-4 py-2.5 text-[15px] font-medium text-bolu-ink transition hover:bg-bolu-panel/60"
     >
+      {/* The four-colour Google "G" mark, inlined so the button needs no icon package. */}
+      <svg viewBox="0 0 48 48" aria-hidden="true" className="size-[18px] flex-none">
+        <path
+          fill="#EA4335"
+          d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+        />
+        <path
+          fill="#4285F4"
+          d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+        />
+        <path
+          fill="#FBBC05"
+          d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+        />
+        <path
+          fill="#34A853"
+          d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+        />
+      </svg>
       Masuk dengan Google
     </a>
   );
