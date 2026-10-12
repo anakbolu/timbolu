@@ -2,7 +2,6 @@ package container
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -229,25 +228,6 @@ func (c workspaceClock) Location(ctx context.Context, workspaceID uuid.UUID) (*t
 		return nil, fmt.Errorf("routine: the workspace timezone %q is not usable: %w", window.Timezone, err)
 	}
 	return location, nil
-}
-
-// WorkingHours implements routinedomain.WorkspaceClock.
-func (c workspaceClock) WorkingHours(ctx context.Context, workspaceID uuid.UUID) (routinedomain.WorkingHours, error) {
-	if c.workspace == nil {
-		return routinedomain.WorkingHours{}, errors.New("routine: the workspace repository is not configured")
-	}
-
-	window, err := c.workspace.WorkingHours(ctx, workspaceID)
-	if err != nil {
-		return routinedomain.WorkingHours{}, err
-	}
-
-	return routinedomain.WorkingHours{
-		Start:    window.Start,
-		End:      window.End,
-		Timezone: window.Timezone,
-		WorkDays: window.Days,
-	}, nil
 }
 
 // RescheduleRoutines re-registers every routine of a workspace.

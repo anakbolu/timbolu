@@ -274,20 +274,13 @@ const (
 	ActionDeleted = "routine.deleted"
 )
 
-// WorkspaceClock reads the zone and the working window a routine is scheduled
-// against.
+// WorkspaceClock reads the zone a routine is scheduled in.
+//
+// It is the zone and nothing else: a routine carries its own hours, and whether it
+// may act outside the workspace's working window is the approval gate's question
+// (Epic 7), not this module's. Asking for the window here would invite a second
+// answer to a question that already has one.
 type WorkspaceClock interface {
 	// Location returns the workspace's timezone.
 	Location(ctx context.Context, workspaceID uuid.UUID) (*time.Location, error)
-	// WorkingHours returns the window and the working days, which is what a routine
-	// with no hours of its own falls back to.
-	WorkingHours(ctx context.Context, workspaceID uuid.UUID) (WorkingHours, error)
-}
-
-// WorkingHours is the workspace's own window.
-type WorkingHours struct {
-	Start    string
-	End      string
-	Timezone string
-	WorkDays []int
 }

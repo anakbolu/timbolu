@@ -226,10 +226,9 @@ func TestTheQueueAdapterPassesTheClaimThrough(t *testing.T) {
 	require.Equal(t, 5, integrations.claimedLimit)
 }
 
-// TestTheWorkspaceClockReadsTheZoneAndWindow is the E11.3 input: the schedule is
-// registered against the workspace's own clock, and a zone name that will not parse
-// falls back to UTC rather than stopping every routine from being scheduled.
-func TestTheWorkspaceClockReadsTheZoneAndWindow(t *testing.T) {
+// TestTheWorkspaceClockReadsTheZone is the E11.3 input: the schedule is registered in
+// the workspace's own zone, which is the only thing this adapter reads it for.
+func TestTheWorkspaceClockReadsTheZone(t *testing.T) {
 	workspace := &recordingWorkspaceRepository{window: workspacerepo.WorkingHours{
 		Start: "08:00", End: "21:00", Timezone: "Asia/Makassar",
 		Days: []int{1, 2, 3, 4, 5, 6},
@@ -239,11 +238,6 @@ func TestTheWorkspaceClockReadsTheZoneAndWindow(t *testing.T) {
 	location, err := clock.Location(context.Background(), uuid.New())
 	require.NoError(t, err)
 	require.Equal(t, "Asia/Makassar", location.String())
-
-	window, err := clock.WorkingHours(context.Background(), uuid.New())
-	require.NoError(t, err)
-	require.Equal(t, "Asia/Makassar", window.Timezone)
-	require.Equal(t, []int{1, 2, 3, 4, 5, 6}, window.WorkDays)
 
 	// A zone this build cannot load is reported, not guessed at: scheduling the
 	// workspace in UTC would fire every routine at a wall-clock time nobody chose
@@ -356,15 +350,12 @@ var (
 	_ routinedomain.WorkQueue = routineQueue{}
 )
 
-// TestTheClockReportsAFailureRatherThanGuessing: a workspace whose window cannot be read
+// TestTheClockReportsAFailureRatherThanGuessing: a workspace whose zone cannot be read
 // is reported, so a reschedule does not schedule routines in a zone nobody verified.
 func TestTheClockReportsAFailureRatherThanGuessing(t *testing.T) {
 	broken := workspaceClock{workspace: &recordingWorkspaceRepository{err: errors.New("no such workspace")}}
 
-	_, err := broken.WorkingHours(context.Background(), uuid.New())
-	require.Error(t, err)
-
-	_, err = broken.Location(context.Background(), uuid.New())
+	_, err := broken.Location(context.Background(), uuid.New())
 	require.Error(t, err)
 }
 

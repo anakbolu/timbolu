@@ -25,6 +25,7 @@ import {
   type Routine,
   type RoutineInput,
   type RoutineRun,
+  type Workspace,
   createRoutine,
   deleteRoutine,
   ensureActiveWorkspace,
@@ -162,15 +163,39 @@ function formatNextRun(iso: string, now: Date, timezone: string): string {
   return `${weekdayLabel(parts.weekday)}, ${parts.day}/${parts.month} ${time}`;
 }
 
-/** emptyForm is the shape the create form starts from. */
-function emptyForm(agentId: string): RoutineInput {
+/** wallClock reads an "HH:MM" setting as the two numbers the form uses. */
+function wallClock(value: string | undefined, fallback: number): { hour: number; minute: number } {
+  const [hour, minute] = (value ?? "").split(":");
+  const parsed = Number(hour);
+  const parsedMinute = Number(minute);
+  if (!Number.isFinite(parsed) || hour === undefined || hour === "") {
+    return { hour: fallback, minute: 0 };
+  }
+  return {
+    hour: parsed,
+    minute: Number.isFinite(parsedMinute) ? parsedMinute : 0,
+  };
+}
+
+/**
+ * emptyForm is the shape the create form starts from.
+ *
+ * Its times are the workspace's working hours rather than a number invented here:
+ * the window is already a setting somebody chose, and a routine that starts at the
+ * opening of the business's day is the common case. The fallback is only for a
+ * workspace whose window is unreadable, which the settings screen does not allow.
+ */
+function emptyForm(agentId: string, workspace?: Workspace | null): RoutineInput {
+  const start = wallClock(workspace?.work_hours_start, 8);
+  const end = wallClock(workspace?.work_hours_end, 21);
+
   return {
     agent_id: agentId,
     name: "",
     kind: "daily",
-    minute: 0,
-    hour_start: 6,
-    hour_end: 21,
+    minute: start.minute,
+    hour_start: start.hour,
+    hour_end: end.hour >= start.hour ? end.hour : 23,
     day_of_week: 1,
     instruction: "",
     enabled: true,
@@ -247,7 +272,7 @@ export function RoutinesView() {
   // that starts with nothing chosen cannot show what it will save. It is derived
   // rather than seeded into state, so a Bolu that arrives after the first render
   // becomes the default without an effect that writes state.
-  const form: RoutineInput | null = agents.length === 0 ? null : (draft ?? emptyForm(agents[0].id));
+  const form: RoutineInput | null = agents.length === 0 ? null : (draft ?? emptyForm(agents[0].id, workspace));
   const setForm = (next: RoutineInput) => setDraft(next);
 
   // A preview of the times the cadence being filled in would fire at. It asks the
@@ -337,9 +362,9 @@ export function RoutinesView() {
     setError(null);
     setNotice(editing ? "Jadwal diperbarui." : "Rutinitas dibuat dan dijadwalkan.");
     setEditing(null);
-    setForm(emptyForm(form.agent_id));
+    setForm(emptyForm(form.agent_id, workspace));
     await load();
-  }, [workspaceID, form, editing, load]);
+  }, [workspaceID, form, editing, load, workspace]);
 
   const toggle = useCallback(
     async (routine: Routine) => {
@@ -374,11 +399,11 @@ export function RoutinesView() {
       setNotice("Rutinitas dihapus. Riwayatnya tetap tersimpan.");
       if (editing === routine.id) {
         setEditing(null);
-        setForm(emptyForm(routine.agent_id));
+        setForm(emptyForm(routine.agent_id, workspace));
       }
       await load();
     },
-    [workspaceID, editing, load],
+    [workspaceID, editing, load, workspace],
   );
 
   // The event a trigger routine watches, taken from what this deployment's
@@ -669,7 +694,7 @@ export function RoutinesView() {
                   type="button"
                   onClick={() => {
                     setEditing(null);
-                    setForm(emptyForm(agents[0]?.id ?? ""));
+                    setForm(emptyForm(agents[0]?.id ?? "", workspace));
                   }}
                   className="min-h-11 rounded-full border border-bolu-border px-5 text-[14px] font-bold text-bolu-ink"
                 >

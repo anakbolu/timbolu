@@ -263,10 +263,6 @@ func (c fixedClock) Location(context.Context, uuid.UUID) (*time.Location, error)
 	return time.LoadLocation(c.zone)
 }
 
-func (c fixedClock) WorkingHours(context.Context, uuid.UUID) (domain.WorkingHours, error) {
-	return domain.WorkingHours{Start: "08:00", End: "21:00", Timezone: c.zone, WorkDays: []int{1, 2, 3, 4, 5, 6}}, nil
-}
-
 // fakeAuditor records the trail.
 type fakeAuditor struct {
 	entries []domain.AuditEntry

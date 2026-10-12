@@ -5,7 +5,6 @@ package mocks
 import (
 	context "context"
 
-	domain "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
 	mock "github.com/stretchr/testify/mock"
 
 	time "time"
@@ -81,63 +80,6 @@ func (_c *WorkspaceClock_Location_Call) Return(_a0 *time.Location, _a1 error) *W
 }
 
 func (_c *WorkspaceClock_Location_Call) RunAndReturn(run func(context.Context, uuid.UUID) (*time.Location, error)) *WorkspaceClock_Location_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// WorkingHours provides a mock function with given fields: ctx, workspaceID
-func (_m *WorkspaceClock) WorkingHours(ctx context.Context, workspaceID uuid.UUID) (domain.WorkingHours, error) {
-	ret := _m.Called(ctx, workspaceID)
-
-	if len(ret) == 0 {
-		panic("no return value specified for WorkingHours")
-	}
-
-	var r0 domain.WorkingHours
-	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, uuid.UUID) (domain.WorkingHours, error)); ok {
-		return rf(ctx, workspaceID)
-	}
-	if rf, ok := ret.Get(0).(func(context.Context, uuid.UUID) domain.WorkingHours); ok {
-		r0 = rf(ctx, workspaceID)
-	} else {
-		r0 = ret.Get(0).(domain.WorkingHours)
-	}
-
-	if rf, ok := ret.Get(1).(func(context.Context, uuid.UUID) error); ok {
-		r1 = rf(ctx, workspaceID)
-	} else {
-		r1 = ret.Error(1)
-	}
-
-	return r0, r1
-}
-
-// WorkspaceClock_WorkingHours_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'WorkingHours'
-type WorkspaceClock_WorkingHours_Call struct {
-	*mock.Call
-}
-
-// WorkingHours is a helper method to define mock.On call
-//   - ctx context.Context
-//   - workspaceID uuid.UUID
-func (_e *WorkspaceClock_Expecter) WorkingHours(ctx interface{}, workspaceID interface{}) *WorkspaceClock_WorkingHours_Call {
-	return &WorkspaceClock_WorkingHours_Call{Call: _e.mock.On("WorkingHours", ctx, workspaceID)}
-}
-
-func (_c *WorkspaceClock_WorkingHours_Call) Run(run func(ctx context.Context, workspaceID uuid.UUID)) *WorkspaceClock_WorkingHours_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(uuid.UUID))
-	})
-	return _c
-}
-
-func (_c *WorkspaceClock_WorkingHours_Call) Return(_a0 domain.WorkingHours, _a1 error) *WorkspaceClock_WorkingHours_Call {
-	_c.Call.Return(_a0, _a1)
-	return _c
-}
-
-func (_c *WorkspaceClock_WorkingHours_Call) RunAndReturn(run func(context.Context, uuid.UUID) (domain.WorkingHours, error)) *WorkspaceClock_WorkingHours_Call {
 	_c.Call.Return(run)
 	return _c
 }
