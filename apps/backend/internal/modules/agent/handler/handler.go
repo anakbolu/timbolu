@@ -422,10 +422,21 @@ func (h *Handler) Integrations(c *fiber.Ctx) error {
 
 // Routes registers the registry endpoints that need an active workspace. The
 // container applies the tenant middleware to this group.
-func Routes(group fiber.Router, h *Handler) {
-	group.Get("/agents", h.List)
+// CatalogRoutes registers the reads that describe the deployment rather than a
+// workspace.
+//
+// The seeded profiles and the tool catalogue are deployment-wide facts: a client
+// asking what it could start from has not necessarily picked a workspace yet, and
+// answering "workspace id is required" to that question is what made the profile
+// picker empty on the screen that offers it.
+func CatalogRoutes(group fiber.Router, h *Handler) {
 	group.Get("/agents/templates", h.Templates)
 	group.Get("/agents/tool-catalog", h.ToolCatalog)
+}
+
+// Routes registers the endpoints every member of the workspace may use.
+func Routes(group fiber.Router, h *Handler) {
+	group.Get("/agents", h.List)
 	group.Get("/agents/integrations", h.Integrations)
 	group.Get("/teams", h.Teams)
 	group.Get("/agents/:agentID", h.Get)

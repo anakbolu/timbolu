@@ -226,18 +226,23 @@ export async function refreshSession(): Promise<ApiResult<Session>> {
  */
 export async function ensureActiveWorkspace(): Promise<string | null> {
   const stored = getActiveWorkspaceId();
-  if (stored) {
-    return stored;
-  }
 
   const session = await refreshSession();
   if (!session.ok) {
     return null;
   }
 
+  // The remembered id is checked against the account's own workspaces, because
+  // it outlives the session: signing in as somebody else in the same browser
+  // otherwise leaves the app asking for a workspace that account is not a member
+  // of, and answering with the API's own words rather than with a workspace.
   const result = await listWorkspaces();
   if (!result.ok || result.data.length === 0) {
-    return null;
+    return stored && stored !== "" ? stored : null;
+  }
+
+  if (stored && result.data.some((workspace) => workspace.id === stored)) {
+    return stored;
   }
 
   const workspace = result.data[0].id;

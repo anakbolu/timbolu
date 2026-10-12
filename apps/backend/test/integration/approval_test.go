@@ -9,7 +9,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	agentrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/repository"
 	approvaldomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/domain"
 	approvalrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/repository"
 	approvalservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/service"
@@ -41,8 +40,7 @@ func newApprovalFixture(t *testing.T, dsn string) *approvalFixture {
 	ctx := t.Context()
 	pool := poolFor(t, dsn)
 
-	agents := agentrepo.New(pool)
-	workspaces := workspacerepo.New(pool, agents)
+	workspaces := workspacerepo.New(pool)
 	approvals := approvalrepo.New(pool)
 	workspaces.SetPolicyProvisioner(approvals)
 

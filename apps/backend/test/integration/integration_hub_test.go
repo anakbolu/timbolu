@@ -10,7 +10,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/container"
-	agentrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/repository"
 	approvalrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/repository"
 	authrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository"
 	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
@@ -56,8 +55,7 @@ func createVerifiedUser(t *testing.T, pool *database.Pool) (uuid.UUID, error) {
 func onboardWorkspace(t *testing.T, pool *database.Pool, userID uuid.UUID) (uuid.UUID, error) {
 	t.Helper()
 
-	agents := agentrepo.New(pool)
-	workspaces := workspacerepo.New(pool, agents)
+	workspaces := workspacerepo.New(pool)
 	workspaces.SetPolicyProvisioner(approvalrepo.New(pool))
 
 	onboarded, err := workspaces.Onboard(t.Context(), userID, workspacedomain.OnboardRequest{

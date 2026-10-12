@@ -40,6 +40,7 @@ cleanup() {
     stop_child "${WORKER_PID:-}"
     stop_child "${API_PID:-}"
     stop_child "${STUB_PID:-}"
+    stop_child "${GMAIL_PID:-}"
     [[ -n "${BIN_DIR:-}" ]] && rm -rf "$BIN_DIR"
     rm -f /tmp/smoke-approval-stub.py
 }
@@ -115,11 +116,15 @@ class Handler(BaseHTTPRequestHandler):
                             "type": "function",
                             "function": {
                                 "name": send,
+                                # Exactly what the tool accepts. An argument the
+                                # tool's schema forbids is refused by the
+                                # validator before anything is sent, which is a
+                                # thing worth testing but not the thing this run
+                                # is about.
                                 "arguments": json.dumps({
                                     "to": "pelanggan@example.com",
                                     "subject": "Tagihan Maret",
                                     "body": "Mohon dibayar ya.",
-                                    "amount": 150000,
                                 }),
                             },
                         }],
@@ -162,6 +167,105 @@ class Handler(BaseHTTPRequestHandler):
 
 HTTPServer(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
 PY
+
+# ------------------------------------------------------------------ gmail stub
+#
+# The approval gate's other half is the executor EPIC 8 added: an approved action
+# is carried out against a real provider. Google is stubbed here so the run proves
+# the send without an account, and the stub records what it received so the smoke
+# can check the message that arrived is the one the card showed.
+cat > /tmp/smoke-approval-gmail.py <<'PY'
+import base64, json, re, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import parse_qs, urlparse
+
+SENT = "/tmp/smoke-approval-gmail-sent.jsonl"
+
+class Handler(BaseHTTPRequestHandler):
+    def _send(self, payload, status=200):
+        data = json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length)
+        path = urlparse(self.path).path
+
+        if path.endswith("/token"):
+            form = parse_qs(body.decode())
+            if form.get("grant_type", [""])[0] == "refresh_token":
+                return self._send({"access_token": "ya29.refreshed", "expires_in": 3600})
+            return self._send({"access_token": "ya29.connected", "refresh_token": "1//refresh",
+                               "expires_in": 3600, "scope": "https://www.googleapis.com/auth/gmail.send"})
+
+        if "/messages/send" in path:
+            # The proof, written where the smoke reads it back.
+            with open(SENT, "a") as log:
+                log.write(body.decode() + "\n")
+            return self._send({"id": "msg-sent", "threadId": "t1"})
+
+        if path.endswith("/drafts"):
+            return self._send({"id": "draft-1", "message": {"id": "m1"}})
+
+        return self._send({"error": "unknown"}, 404)
+
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+
+        # The consent screen: it sends the browser back to the callback with a code
+        # and the same state, which is what a real provider does.
+        if path == "/auth":
+            query = parse_qs(parsed.query)
+            redirect = query.get("redirect_uri", [""])[0]
+            state = query.get("state", [""])[0]
+            self.send_response(302)
+            self.send_header("Location", "{}?code=a-good-code&state={}".format(redirect, state))
+            self.end_headers()
+            return
+
+        if path.endswith("/users/me/profile"):
+            return self._send({"emailAddress": "toko@example.com"})
+        return self._send({"error": "unknown"}, 404)
+
+    def log_message(self, *args):
+        pass
+
+HTTPServer(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
+PY
+
+GMAIL_PORT="${GMAIL_PORT:-11436}"
+
+start_gmail() {
+    lsof -ti ":${GMAIL_PORT}" | xargs -r kill -9 2>/dev/null || true
+    for _ in $(seq 1 20); do
+        lsof -ti ":${GMAIL_PORT}" >/dev/null 2>&1 || break
+        sleep 0.5
+    done
+    lsof -ti ":${GMAIL_PORT}" >/dev/null 2>&1 && fail "port ${GMAIL_PORT} did not free up"
+
+    rm -f /tmp/smoke-approval-gmail-sent.jsonl
+    python3 /tmp/smoke-approval-gmail.py "$GMAIL_PORT" &
+    GMAIL_PID=$!
+
+    for _ in $(seq 1 20); do
+        curl -fsS "http://localhost:${GMAIL_PORT}/users/me/profile" >/dev/null 2>&1 && return 0
+        kill -0 "$GMAIL_PID" 2>/dev/null || fail "the Gmail stub exited on startup"
+        sleep 0.5
+    done
+    fail "the Gmail stub did not answer on :${GMAIL_PORT}"
+}
+
+stop_gmail() {
+    [[ -n "${GMAIL_PID:-}" ]] || return 0
+    kill "$GMAIL_PID" 2>/dev/null || true
+    wait "$GMAIL_PID" 2>/dev/null || true
+    GMAIL_PID=""
+}
 
 # ----------------------------------------------------------------- the binaries
 
@@ -228,6 +332,9 @@ stop_stack() {
     sleep 2
 }
 
+log "starting the Gmail stub on :${GMAIL_PORT}"
+start_gmail
+
 log "starting the stub model provider on :${STUB_PORT}"
 start_stub send
 
@@ -237,12 +344,23 @@ start_stub send
 # the value a later phase set.
 LLM_DEFAULT_ADAPTER=openai
 LLM_DEFAULT_BASE_URL="http://localhost:${STUB_PORT}"
+# The Gmail adapter is registered against the stub, so an approved action reaches
+# the send boundary and goes through it.
+GMAIL_CLIENT_ID=stub-client
+GMAIL_CLIENT_SECRET=stub-secret
+GMAIL_API_BASE="http://localhost:${GMAIL_PORT}"
+GMAIL_AUTH_ENDPOINT="http://localhost:${GMAIL_PORT}/auth"
+GMAIL_TOKEN_ENDPOINT="http://localhost:${GMAIL_PORT}/token"
 LLM_DEFAULT_MODEL=stub
 LLM_DEFAULT_API_KEY=stub-key
 TASK_MAX_STEPS=6
 
 # stack_env prints the environment both processes share, so the API and the worker
 # cannot be started with different settings.
+#
+# It includes the key ring that seals integration tokens and the key that signs the
+# value a connection flow carries. Without both, an account cannot be connected, and
+# the approval this smoke is about has nothing to send through.
 stack_env() {
     printf '%s\n' \
         "ENVIRONMENT=local" \
@@ -252,8 +370,17 @@ stack_env() {
         "LOG_LEVEL=info" \
         "LOG_FORMAT=console" \
         "SECRET_ENCRYPTION_KEY=local_dev_secret_key_32_byte_len" \
+        "KMS_MASTER_KEY=local_dev_master_key_32_byte_len" \
+        "KMS_MASTER_KEY_ID=smoke-v1" \
+        "OAUTH_STATE_KEY=local_dev_oauth_state_key_32_bytes" \
+        "OAUTH_REDIRECT_BASE=http://localhost:${API_PORT}" \
         "LLM_DEFAULT_ADAPTER=${LLM_DEFAULT_ADAPTER}" \
         "LLM_DEFAULT_BASE_URL=${LLM_DEFAULT_BASE_URL}" \
+        "GMAIL_CLIENT_ID=${GMAIL_CLIENT_ID}" \
+        "GMAIL_CLIENT_SECRET=${GMAIL_CLIENT_SECRET}" \
+        "GMAIL_API_BASE=${GMAIL_API_BASE}" \
+        "GMAIL_AUTH_ENDPOINT=${GMAIL_AUTH_ENDPOINT}" \
+        "GMAIL_TOKEN_ENDPOINT=${GMAIL_TOKEN_ENDPOINT}" \
         "LLM_DEFAULT_MODEL=${LLM_DEFAULT_MODEL}" \
         "LLM_DEFAULT_API_KEY=${LLM_DEFAULT_API_KEY}" \
         "STORAGE_DRIVER=local" \
@@ -321,22 +448,42 @@ ONBOARD=$(curl -fsS -X POST "${API}/workspaces/onboard" -H "Authorization: Beare
 WORKSPACE=$(echo "$ONBOARD" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["workspace"]["id"])')
 AUTH=(-H "Authorization: Bearer ${ACCESS}" -H "X-Workspace-Id: ${WORKSPACE}")
 
-AGENT=$(curl -fsS "${API}/agents" "${AUTH[@]}" |
-    python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; print([a for a in d if a["name"]=="Oren"][0]["id"])')
+# A workspace starts with no Bolu, so the smoke makes the one it needs the way a
+# person does: it picks the team onboarding created and adds an agent to it.
+TEAM=$(curl -fsS "${API}/teams" "${AUTH[@]}" |
+    python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; print([t for t in d if t["kind"]=="bolu"][0]["id"])')
 
-# The registry only offers a tool whose integration was granted, and no endpoint
-# connects one yet: OAuth is EPIC 8. The smoke seeds the grant so the filter it
-# exercises is the real one.
-log "seeding a granted send tool for Oren"
-docker exec -i bolu-postgres psql -U employeebot -d employeebot -v ON_ERROR_STOP=1 -q <<SQL
-INSERT INTO integrations (workspace_id, app, account_label, status)
-VALUES ('${WORKSPACE}', 'gmail', 'approval@example.com', 'connected');
+AGENT=$(curl -fsS -X POST "${API}/agents" "${AUTH[@]}" \
+    -H 'Content-Type: application/json' \
+    -d "{\"team_id\":\"${TEAM}\",\"name\":\"Oren\",\"template_key\":\"oren\"}" |
+    python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')
+echo "Oren = ${AGENT}"
 
-INSERT INTO agent_grants (workspace_id, agent_id, integration_id, permission)
-SELECT '${WORKSPACE}', '${AGENT}', i.id, 'read_write'
-FROM integrations i
-WHERE i.workspace_id = '${WORKSPACE}' AND i.app = 'gmail';
-SQL
+# The account is connected the way a person connects one: the flow is started,
+# the provider's consent screen is followed, and the callback stores the sealed
+# token. Seeding the row directly would leave `status = connected` with no token,
+# which is exactly the lie the executor refuses.
+log "connecting a Gmail account through the authorization flow"
+CONSENT_BODY=$(curl -sS "${API}/integrations/gmail/connect?return_to=/dashboard/integrations" "${AUTH[@]}")
+CONSENT=$(echo "$CONSENT_BODY" |
+    python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["url"])' 2>/dev/null) ||
+    fail "the flow could not be started: ${CONSENT_BODY}"
+
+# The stub plays the consent screen: it answers with a redirect to the callback,
+# carrying a code and the state the flow issued.
+CALLBACK=$(curl -sS -o /dev/null -w '%{redirect_url}' "$CONSENT")
+[[ -n "$CALLBACK" ]] || fail "the provider did not redirect back to the callback"
+
+CALLBACK_BODY=$(curl -sS "$CALLBACK" 2>&1) ||
+    fail "the callback did not answer: ${CALLBACK_BODY} at ${CALLBACK}"
+
+CONNECTED=$(curl -fsS "${API}/integrations" "${AUTH[@]}" |
+    python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; print([c["integration_id"] for c in d if c["status"]=="connected"][0] if any(c["status"]=="connected" for c in d) else "")')
+[[ -n "$CONNECTED" ]] || fail "the account was not connected, so the tool filter would be exercised against nothing"
+
+# And the Bolu is granted it, which is what puts the tool in its list.
+curl -fsS -X PUT "${API}/agents/${AGENT}/grants/${CONNECTED}" "${AUTH[@]}" \
+    -H 'Content-Type: application/json' -d '{"permission":"read_write"}' >/dev/null
 
 GRANTED=$(docker exec bolu-postgres psql -U employeebot -d employeebot -tAc \
     "SELECT count(*) FROM agent_grants WHERE workspace_id = '${WORKSPACE}' AND agent_id = '${AGENT}'")
@@ -458,7 +605,7 @@ curl -fsS "${API}/tasks/${PHASE1_TASK}/steps" "${AUTH[@]}" | python3 scripts/pri
 
 # ------------------------------------------------------ phase 3: the approval
 
-log "phase 3: an approval carries the action out, and says so when nothing can"
+log "phase 3: an approved action is carried out against the provider"
 curl -fsS -X POST "${API}/conversations/${CONVERSATION}/messages" "${AUTH[@]}" \
     -H 'Content-Type: application/json' \
     -d '{"text":"Tagih lagi ya, yang tadi.","reply":true}' >/dev/null
@@ -482,27 +629,39 @@ APPROVED=$(draft_status "$SECOND")
 
 SECOND_TASK=$(curl -fsS "${API}/drafts/${SECOND}" "${AUTH[@]}" |
     python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["task_id"])')
-FINAL=$(wait_for_task_status "$SECOND_TASK" "failed")
+FINAL=$(wait_for_task_status "$SECOND_TASK" "succeeded")
 
 log "the decision reached the task"
 curl -fsS "${API}/tasks/${SECOND_TASK}" "${AUTH[@]}" | python3 -m json.tool
 
-# The approved action reaches the send boundary. No integration executor exists
-# yet — EPIC 8 owns it — so the honest outcome is that it stops there and says
-# why, rather than being recorded as sent.
-[[ "$FINAL" == "failed" ]] || fail "expected the task to stop at the missing executor; status is ${FINAL}"
+# The executor EPIC 8 added is what makes this the whole promise: an action a
+# person approved is carried out, and the task succeeds because it actually did.
+[[ "$FINAL" == "succeeded" ]] || fail "the approved action did not go through; status is ${FINAL}"
 
-FINAL_JSON=$(curl -fsS "${API}/tasks/${SECOND_TASK}" "${AUTH[@]}")
-echo "$FINAL_JSON" | python3 -c '
-import json, sys
-task = json.load(sys.stdin)["data"]
-reason = task.get("stopped_reason", "")
-assert "eksekutor" in reason or "executor" in reason, reason
-print("  stopped honestly: " + reason)
-'
+SENT=$(draft_status "$SECOND")
+[[ "$SENT" == "sent" ]] || fail "the approved action was not recorded as sent; status is ${SENT}"
 
-STILL=$(draft_status "$SECOND")
-[[ "$STILL" != "sent" ]] || fail "a draft was marked sent when nothing can send"
+# And the provider received it. The stub writes down what it was asked to send, so
+# the message that arrived can be compared with the card a person approved.
+[[ -s /tmp/smoke-approval-gmail-sent.jsonl ]] ||
+    fail "nothing reached the provider, so the approval proved nothing"
+
+python3 - <<'PY'
+import base64, json
+
+with open("/tmp/smoke-approval-gmail-sent.jsonl") as handle:
+    sent = [json.loads(line) for line in handle if line.strip()]
+
+assert len(sent) == 1, "exactly one message must have been sent, got {}".format(len(sent))
+
+raw = sent[0]["raw"]
+message = base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)).decode()
+
+# The body is the payload the card showed, so what a person approved is what left.
+assert "pelanggan@example.com" in message, message
+assert "Tagihan Maret" in message, message
+print("  the provider received the message the card showed")
+PY
 
 log "the decision is on the audit trail"
 curl -fsS "${API}/audit?limit=10" "${AUTH[@]}" | python3 -c '
@@ -615,6 +774,6 @@ echo
 echo "SMOKE OK"
 echo "  a write_external action became a draft, the task parked, and nothing left;"
 echo "  a revision sent the task back to its agent with the note;"
-echo "  an approval reached the send boundary and stopped there honestly, because"
-echo "  no integration executor exists yet (EPIC 8);"
+echo "  an approved action was carried out, and the provider received exactly the"
+echo "  message the card showed a person;"
 echo "  an approval outside working hours was held, and the task said so."

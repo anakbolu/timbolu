@@ -357,6 +357,52 @@ func TestAnAccountWithAWorkspaceButNoFlagIsHealed(t *testing.T) {
 	require.True(t, data(t, payload)["user"].(map[string]any)["onboarded"].(bool), body)
 }
 
+// TestSigningOutEndsTheSession is the MVP's way out: a person who signs out is
+// signed out on the server, not only in the tab they were using.
+//
+// It is checked by using the credential after the sign-out, because that is the
+// only thing that tells "the button cleared my local state" apart from "the
+// session is gone".
+func TestSigningOutEndsTheSession(t *testing.T) {
+	api := newIdentityAPI(t, migratedDatabase(t))
+
+	const email = "signout@example.com"
+	const password = "a-good-password"
+
+	api.verifyEmail(t, api.register(t, email, password))
+
+	accessToken, refreshCookie := api.login(t, email, password)
+	require.NotEmpty(t, refreshCookie, "the refresh token arrives in a cookie")
+
+	// The session works before the sign-out.
+	status, _, body := api.call(t, fiber.MethodGet, "/api/workspaces", "", bearer(accessToken))
+	require.Equal(t, http.StatusOK, status, body)
+
+	// The refresh cookie is what proves the session, so the sign-out is made with
+	// it: a browser carries the cookie automatically, and a client that uses the
+	// body supplies the same value.
+	status, _, body = api.call(t, fiber.MethodPost, "/api/auth/logout",
+		`{"token":"`+refreshCookie+`"}`, nil)
+	require.Equal(t, http.StatusOK, status, body)
+
+	// The refresh token no longer buys a session, which is the whole point: a
+	// copied cookie must not outlive the sign-out. The endpoint reports a spent
+	// token as invalid input rather than as a missing credential, which is what it
+	// is: the value arrived and was refused.
+	status, _, body = api.call(t, fiber.MethodPost, "/api/auth/refresh", "", map[string]string{
+		fiber.HeaderCookie: authhandler.CookieName + "=" + refreshCookie,
+	})
+	require.Equal(t, http.StatusBadRequest, status, body)
+	require.Contains(t, body, "invalid_token")
+
+	// And the access token stops working too, so signing out is not only a local
+	// state change: a token copied out of the tab before the sign-out is refused
+	// afterwards.
+	status, _, body = api.call(t, fiber.MethodGet, "/api/workspaces", "", bearer(accessToken))
+	require.Equal(t, http.StatusUnauthorized, status, body)
+	require.Contains(t, body, "unauthenticated")
+}
+
 // TestInvitationFlow is the second acceptance gate: a second user is invited,
 // joins with the role they were given, and cannot do more than that role allows.
 func TestInvitationFlow(t *testing.T) {

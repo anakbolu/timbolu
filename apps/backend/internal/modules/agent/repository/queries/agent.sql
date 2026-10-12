@@ -113,15 +113,6 @@ SELECT * FROM agent_templates ORDER BY sort_order;
 -- name: GetAgentTemplate :one
 SELECT * FROM agent_templates WHERE key = $1;
 
--- name: CopyAgentTemplates :execrows
--- The onboarding step: every template becomes a Bolu of the new workspace. The
--- caller runs this inside the onboarding transaction, so a workspace is never
--- left without its team.
-INSERT INTO agents (workspace_id, team_id, name, role, persona, tone, shape, color, tools, template_key, default_model)
-SELECT $1, $2, t.name, t.role, t.persona, t.tone, t.shape, t.color, t.tools, t.key, t.default_model
-FROM agent_templates t
-ORDER BY t.sort_order;
-
 -- ------------------------------------------------------------------- grants
 
 -- name: ListGrants :many

@@ -28,14 +28,6 @@ const (
 	teamHore = "Tim Hore"
 )
 
-// TemplateProvisioner copies the Bolu templates into a new workspace, inside the
-// onboarding transaction. It is declared here rather than in the domain because
-// its signature carries a transaction handle, which is an infrastructure type;
-// the container hands over the agent module's repository.
-type TemplateProvisioner interface {
-	Provision(ctx context.Context, tx pgx.Tx, workspaceID, teamID uuid.UUID) error
-}
-
 // PolicyProvisioner gives a new workspace the conservative approval policies it
 // starts with, inside the onboarding transaction.
 //
@@ -70,10 +62,6 @@ type WorkingHours struct {
 // Repository is the Postgres-backed implementation of domain.Repository.
 type Repository struct {
 	pool *database.Pool
-	// provisioner copies the Bolu templates inside the onboarding transaction.
-	// It is the agent module's repository, handed over by the container so this
-	// module never imports it.
-	provisioner TemplateProvisioner
 	// policies seeds the approval policies inside the same transaction, so a
 	// workspace never exists without one for every action that reaches outside it.
 	policies PolicyProvisioner
@@ -98,10 +86,9 @@ func (r *Repository) SetOnboardedMarker(marker OnboardedMarker) {
 	}
 }
 
-// New builds the repository. A nil provisioner leaves a new workspace without
-// its Bolu, which is what a deployment without the agent module looks like.
-func New(pool *database.Pool, provisioner TemplateProvisioner) *Repository {
-	return &Repository{pool: pool, provisioner: provisioner}
+// New builds the repository.
+func New(pool *database.Pool) *Repository {
+	return &Repository{pool: pool}
 }
 
 // Onboard creates the workspace, its owner membership and the two default teams
@@ -171,8 +158,13 @@ func (r *Repository) Onboard(ctx context.Context, userID uuid.UUID, req domain.O
 			return fmt.Errorf("workspace: create owner membership: %w", err)
 		}
 
+		// The two teams are created, because a Bolu has to belong to one and a
+		// person should not have to invent a team before inventing a colleague.
+		// What is deliberately not created is a Bolu: the workspace starts empty,
+		// and the first one is made by a person on the screen that says so. A team
+		// full of strangers somebody did not ask for is harder to understand than
+		// an empty one.
 		teams := make([]sqlcgen.Team, 0, 2)
-		var boluTeamID uuid.UUID
 		for _, team := range []struct {
 			name string
 			kind string
@@ -188,18 +180,7 @@ func (r *Repository) Onboard(ctx context.Context, userID uuid.UUID, req domain.O
 			if err != nil {
 				return fmt.Errorf("workspace: create team %s: %w", team.name, err)
 			}
-			if team.kind == "bolu" {
-				boluTeamID = createdTeam.ID
-			}
 			teams = append(teams, createdTeam)
-		}
-
-		// The Bolu templates are copied inside this transaction, so a workspace
-		// never exists without its team.
-		if r.provisioner != nil {
-			if err := r.provisioner.Provision(ctx, tx, created.ID, boluTeamID); err != nil {
-				return err
-			}
 		}
 
 		// And the conservative approval policies, so no action kind reaches the

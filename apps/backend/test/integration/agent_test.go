@@ -32,7 +32,7 @@ func newAgentFixture(t *testing.T, dsn string) *agentFixture {
 
 	pool := poolFor(t, dsn)
 	agents := agentrepo.New(pool)
-	workspaces := workspacerepo.New(pool, agents)
+	workspaces := workspacerepo.New(pool)
 
 	user, err := authrepo.New(pool.PgxPool()).CreateUser(t.Context(), uuid.NewString()+"@example.com", "$argon2id$hash")
 	require.NoError(t, err)
@@ -86,27 +86,88 @@ func TestTemplatesAreSeeded(t *testing.T) {
 	}
 }
 
-// TestOnboardingCopiesTheTemplates is the E3.2 gate: a new workspace always has
-// exactly six Bolu, named after the templates.
-func TestOnboardingCopiesTheTemplates(t *testing.T) {
+// TestANewWorkspaceStartsEmpty is the MVP's shape: onboarding creates the two
+// teams and no Bolu. A team full of strangers somebody did not ask for is harder
+// to understand than an empty one, and the screen that says it is empty is where
+// the first one is made.
+func TestANewWorkspaceStartsEmpty(t *testing.T) {
 	fixture := newAgentFixture(t, appDatabase(t))
 	ctx := t.Context()
 
 	agents, err := fixture.service.List(ctx, fixture.scope)
 	require.NoError(t, err)
-	require.Len(t, agents, 6, "a new workspace gets one Bolu per template")
+	require.Empty(t, agents, "a new workspace starts with no Bolu")
+
+	// The teams exist, because a Bolu has to belong to one and a person should
+	// not have to invent a team before inventing a colleague.
+	teams, err := fixture.service.Teams(ctx, fixture.scope)
+	require.NoError(t, err)
+	require.Len(t, teams, 2)
+
+	kinds := map[string]string{}
+	for _, team := range teams {
+		kinds[team.Kind] = team.Name
+	}
+	require.Equal(t, "Tim Bolu", kinds["bolu"])
+	require.Equal(t, "Tim Hore", kinds["hore"])
+
+	// And a Bolu can be created immediately, which is what the empty screen
+	// offers.
+	created, err := fixture.service.Create(ctx, fixture.scope, agentdomain.CreateRequest{
+		TeamID: teams[0].ID,
+		Name:   "Oren",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "Oren", created.Name)
+	require.Equal(t, "Tim Bolu", created.TeamName)
+	require.Equal(t, agentdomain.StoredActive, created.Status)
+
+	agents, err = fixture.service.List(ctx, fixture.scope)
+	require.NoError(t, err)
+	require.Len(t, agents, 1)
+}
+
+// TestTheTemplatesAreStillSeeded keeps the profiles a person can start from: the
+// workspace is empty, but "create one like this" still has something to offer.
+func TestTheTemplatesAreStillSeeded(t *testing.T) {
+	fixture := newAgentFixture(t, appDatabase(t))
+	ctx := t.Context()
+
+	templates, err := fixture.service.Templates(ctx)
+	require.NoError(t, err)
+	require.Len(t, templates, 6)
 
 	names := map[string]bool{}
-	for _, agent := range agents {
-		names[agent.Name] = true
-		require.Equal(t, "Tim Bolu", agent.TeamName, "the copies land in Tim Bolu")
-		require.Equal(t, "bolu", agent.TeamKind)
-		require.Equal(t, agentdomain.StoredActive, agent.Status)
-		require.NotEmpty(t, agent.TemplateKey)
+	for _, template := range templates {
+		names[template.Name] = true
 	}
 	for _, want := range []string{"Oren", "Biru", "Lila", "Ijo", "Pinky", "Kunyit"} {
-		require.True(t, names[want], "%s must be present", want)
+		require.True(t, names[want], "%s must be offered as a starting point", want)
 	}
+
+	// Starting from one copies it, so editing the result leaves the template
+	// alone.
+	teams, err := fixture.service.Teams(ctx, fixture.scope)
+	require.NoError(t, err)
+
+	copied, err := fixture.service.Create(ctx, fixture.scope, agentdomain.CreateRequest{
+		TeamID:      teams[0].ID,
+		TemplateKey: "oren",
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, copied.TemplateKey)
+
+	updated, err := fixture.service.Update(ctx, fixture.scope, copied.ID, agentdomain.UpdateRequest{
+		Name:    "Oren Punya Toko Sinar",
+		Persona: "Persona khusus workspace ini.",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "Oren Punya Toko Sinar", updated.Name)
+
+	template, err := fixture.repo.Template(ctx, copied.TemplateKey)
+	require.NoError(t, err)
+	require.NotEqual(t, "Oren Punya Toko Sinar", template.Name, "the template is a starting point, not a shared row")
+	require.NotEqual(t, "Persona khusus workspace ini.", template.Persona)
 }
 
 // TestEditingOneWorkspaceDoesNotTouchAnother is the isolation half of the E3.2
@@ -117,10 +178,17 @@ func TestEditingOneWorkspaceDoesNotTouchAnother(t *testing.T) {
 	second := newAgentFixture(t, dsn)
 	ctx := t.Context()
 
+	// Each workspace makes its own Bolu, which is what a person does on the empty
+	// screen. Two workspaces creating one is the isolation this checks.
+	firstCreated := seedAgents(t, first.pool, first.workspace.ID, "Oren")
+	seedAgents(t, second.pool, second.workspace.ID, "Oren")
+
 	firstAgents, err := first.service.List(ctx, first.scope)
 	require.NoError(t, err)
+	require.Len(t, firstAgents, 1)
 
 	target := firstAgents[0]
+	require.Equal(t, firstCreated[0].ID, target.ID)
 	updated, err := first.service.Update(ctx, first.scope, target.ID, agentdomain.UpdateRequest{
 		Name:    "Oren Punya Toko Sinar",
 		Persona: "Persona khusus workspace pertama.",
@@ -131,17 +199,15 @@ func TestEditingOneWorkspaceDoesNotTouchAnother(t *testing.T) {
 	// The other workspace is untouched.
 	secondAgents, err := second.service.List(ctx, second.scope)
 	require.NoError(t, err)
+	require.Len(t, secondAgents, 1)
 	for _, agent := range secondAgents {
 		require.NotEqual(t, "Oren Punya Toko Sinar", agent.Name, "another workspace must not see the rename")
 		require.NotEqual(t, "Persona khusus workspace pertama.", agent.Persona)
 	}
 
-	// And the template itself is unchanged, so the next workspace still starts
-	// from the original profile.
-	template, err := first.repo.Template(ctx, target.TemplateKey)
-	require.NoError(t, err)
-	require.NotEqual(t, "Oren Punya Toko Sinar", template.Name)
-	require.NotEqual(t, "Persona khusus workspace pertama.", template.Persona)
+	// That a Bolu made from a template leaves the template alone is checked where
+	// the templates are, in TestTheTemplatesAreStillSeeded. What this test is
+	// about is the boundary between two workspaces.
 }
 
 // TestRegistryIsTenantScoped proves the registry cannot be read across
@@ -151,6 +217,9 @@ func TestRegistryIsTenantScoped(t *testing.T) {
 	first := newAgentFixture(t, dsn)
 	second := newAgentFixture(t, dsn)
 	ctx := t.Context()
+
+	seedTemplateAgents(t, first.pool, first.workspace.ID)
+	seedTemplateAgents(t, second.pool, second.workspace.ID)
 
 	firstAgents, err := first.service.List(ctx, first.scope)
 	require.NoError(t, err)
@@ -171,6 +240,7 @@ func TestRegistryIsTenantScoped(t *testing.T) {
 func TestCreateAndDeleteBolu(t *testing.T) {
 	fixture := newAgentFixture(t, appDatabase(t))
 	ctx := t.Context()
+	seedTemplateAgents(t, fixture.pool, fixture.workspace.ID)
 
 	teams, err := fixture.service.Teams(ctx, fixture.scope)
 	require.NoError(t, err)
@@ -233,6 +303,7 @@ func TestCreateAndDeleteBolu(t *testing.T) {
 func TestRestingBoluTakesNoNewWork(t *testing.T) {
 	fixture := newAgentFixture(t, appDatabase(t))
 	ctx := t.Context()
+	seedTemplateAgents(t, fixture.pool, fixture.workspace.ID)
 
 	agents, err := fixture.service.List(ctx, fixture.scope)
 	require.NoError(t, err)
@@ -258,6 +329,8 @@ func TestGrantsDecideTheToolList(t *testing.T) {
 	fixture := newAgentFixture(t, appDatabase(t))
 	ctx := t.Context()
 	pool := fixture.pool
+
+	seedTemplateAgents(t, pool, fixture.workspace.ID)
 
 	agents, err := fixture.service.List(ctx, fixture.scope)
 	require.NoError(t, err)
@@ -393,22 +466,3 @@ func TestAgentRepositoryWithoutAPool(t *testing.T) {
 
 // TestProvisionerNeedsSeededTemplates keeps a missing seed an explicit failure
 // rather than a workspace with no Bolu.
-func TestProvisionerNeedsSeededTemplates(t *testing.T) {
-	pool := poolFor(t, appDatabase(t))
-	ctx := t.Context()
-
-	// Emptying the template table must make the copy fail loudly.
-	_, err := pool.PgxPool().Exec(ctx, "DELETE FROM agent_templates")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_, _ = pool.PgxPool().Exec(context.Background(),
-			"INSERT INTO agent_templates (key, name, role, persona) VALUES ('oren', 'Oren', 'Penjualan', 'x')")
-	})
-
-	user, err := authrepo.New(pool.PgxPool()).CreateUser(ctx, uuid.NewString()+"@example.com", "$argon2id$hash")
-	require.NoError(t, err)
-
-	workspaces := workspacerepo.New(pool, agentrepo.New(pool))
-	_, err = workspaces.Onboard(ctx, user.ID, workspacedomain.OnboardRequest{Name: "Toko", Timezone: "Asia/Jakarta"})
-	require.ErrorContains(t, err, "no templates are seeded")
-}

@@ -137,29 +137,6 @@ func (q *Queries) AllowedToolsForAgent(ctx context.Context, arg AllowedToolsForA
 	return items, nil
 }
 
-const copyAgentTemplates = `-- name: CopyAgentTemplates :execrows
-INSERT INTO agents (workspace_id, team_id, name, role, persona, tone, shape, color, tools, template_key, default_model)
-SELECT $1, $2, t.name, t.role, t.persona, t.tone, t.shape, t.color, t.tools, t.key, t.default_model
-FROM agent_templates t
-ORDER BY t.sort_order
-`
-
-type CopyAgentTemplatesParams struct {
-	WorkspaceID uuid.UUID
-	TeamID      uuid.UUID
-}
-
-// The onboarding step: every template becomes a Bolu of the new workspace. The
-// caller runs this inside the onboarding transaction, so a workspace is never
-// left without its team.
-func (q *Queries) CopyAgentTemplates(ctx context.Context, arg CopyAgentTemplatesParams) (int64, error) {
-	result, err := q.db.Exec(ctx, copyAgentTemplates, arg.WorkspaceID, arg.TeamID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const countLiveAgents = `-- name: CountLiveAgents :one
 SELECT count(*)::bigint FROM agents
 WHERE workspace_id = $1 AND deleted_at IS NULL
