@@ -1,8 +1,15 @@
 # Testing and quality gates
 
 Everything in this document is enforced by `make ci` locally and by
-`.github/workflows/ci.yml` on every pull request. A failing gate blocks the
-merge.
+`.github/workflows/ci.yml` on every pull request.
+
+**The workflow does not currently run.** Every CI run since the first commit has
+failed in about three seconds without producing a step log, which is the shape of
+an account that cannot execute workflows rather than of a failing gate — nothing
+in this document can fail that fast. The red check on a pull request therefore says
+nothing about the change, and the merge button is not blocked by it. Until that is
+resolved, **run `make ci` locally and say so in the pull request**, because the
+automated gates are not enforcing anything.
 
 ## The gates
 
