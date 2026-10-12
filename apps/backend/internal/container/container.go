@@ -12,6 +12,7 @@ package container
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"go.uber.org/zap"
@@ -93,7 +94,11 @@ type options struct {
 	// reaching the provider.
 	adapters    []integrationdomain.Adapter
 	adaptersSet bool
-	buildApp    bool
+	// clock pins the approval gate's sense of the time. A test supplies one because
+	// the working-hours window is read from it: without pinning, whether an
+	// approved action leaves or is held depends on when the suite runs.
+	clock    func() time.Time
+	buildApp bool
 }
 
 // Option customises container assembly.
@@ -166,6 +171,16 @@ func WithIntegrationAdapters(adapters ...integrationdomain.Adapter) Option {
 		o.adapters = adapters
 		o.adaptersSet = true
 	}
+}
+
+// WithApprovalClock pins the time the approval gate reads.
+//
+// The working-hours rule asks the clock whether the workspace is open, so a test
+// that drives an approved action through the gate would otherwise pass during
+// Jakarta's working day and fail outside it. Pinning it in the test is what makes
+// the assertion about the executor rather than about the hour the suite ran.
+func WithApprovalClock(clock func() time.Time) Option {
+	return func(o *options) { o.clock = clock }
 }
 
 // WithoutHTTP skips building the Fiber app. The worker binaries use it so they
@@ -245,7 +260,7 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Container, e
 	// The approval gate comes before the task runtime: the runtime asks it whether
 	// an action may leave, and a task that could not ask would have nothing
 	// stopping it from sending.
-	if err := c.openApproval(ctx, cfg); err != nil {
+	if err := c.openApproval(ctx, cfg, o); err != nil {
 		c.Close()
 		return nil, err
 	}

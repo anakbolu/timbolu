@@ -169,14 +169,25 @@ func TestWorkspaceRepositoryOnboarding(t *testing.T) {
 	})
 
 	t.Run("updates the profile", func(t *testing.T) {
+		// Every column the Pengaturan screen edits travels together: the endpoint
+		// replaces the profile, so a request that left the window out would write a
+		// workspace whose outbound window starts at 00:00 — or, because the column
+		// is NOT NULL, fail rather than do that quietly.
 		updated, err := fixture.repo.UpdateWorkspace(ctx, fixture.scope, workspacedomain.UpdateRequest{
-			Name:          "Toko Sinar Jaya",
-			BusinessField: "Retail dan Grosir",
-			Timezone:      "Asia/Makassar",
+			Name:           "Toko Sinar Jaya",
+			BusinessField:  "Retail dan Grosir",
+			Timezone:       "Asia/Makassar",
+			Language:       "id",
+			WorkHoursStart: "09:00",
+			WorkHoursEnd:   "18:00",
+			WorkDays:       []int{1, 2, 3, 4, 5},
 		})
 		require.NoError(t, err)
 		require.Equal(t, "Toko Sinar Jaya", updated.Name)
 		require.Equal(t, "Asia/Makassar", updated.Timezone)
+		require.Equal(t, "09:00", updated.WorkHoursStart, "the window the gate reads is the one that was written")
+		require.Equal(t, "18:00", updated.WorkHoursEnd)
+		require.Equal(t, []int{1, 2, 3, 4, 5}, updated.WorkDays)
 	})
 }
 

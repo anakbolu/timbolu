@@ -185,7 +185,7 @@ func (s *memoryStore) History(_ context.Context, _ chatdomain.Scope, conversatio
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	all := s.messagesOf(conversationID)
+	all := s.messagesOfLocked(conversationID)
 
 	limit := cursor.Limit
 	if limit <= 0 {
@@ -227,7 +227,7 @@ func (s *memoryStore) LatestMessages(_ context.Context, _ chatdomain.Scope, conv
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	all := s.messagesOf(conversationID)
+	all := s.messagesOfLocked(conversationID)
 	if limit > 0 && len(all) > limit {
 		all = all[len(all)-limit:]
 	}
@@ -294,7 +294,22 @@ func (s *memoryStore) LatestEvents(_ context.Context, workspaceID uuid.UUID, lim
 }
 
 // messagesOf returns a conversation's messages, oldest first.
+//
+// It takes the lock because a test calls it while the service's own reply
+// goroutine is still writing: an in-process reply runs in the background, so a
+// reader that skipped the lock would race the reply it is waiting to observe.
 func (s *memoryStore) messagesOf(conversationID uuid.UUID) []chatdomain.Message {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.messagesOfLocked(conversationID)
+}
+
+// messagesOfLocked is messagesOf for a caller that already holds the lock, which
+// is what the two repository methods below are. The split is what keeps a
+// test-facing read and an already-locked read from needing different names at the
+// call site.
+func (s *memoryStore) messagesOfLocked(conversationID uuid.UUID) []chatdomain.Message {
 	messages := make([]chatdomain.Message, 0, len(s.messages))
 	for _, message := range s.messages {
 		if message.ConversationID == conversationID {
