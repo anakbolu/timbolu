@@ -77,8 +77,11 @@ must be a UUID, and the caller must be a member, otherwise the answer is `403`.
 
 ## Agent registry (EPIC 3)
 
-Every workspace starts with the six Bolu copied from the seeded templates, in
-**Tim Bolu**. Tim Hore starts empty and is filled by the user.
+Every workspace starts with **no Bolu**: onboarding creates Tim Bolu and Tim Hore
+and nothing else. The first Bolu is made by a person on the screen that says the
+team is empty, which is also where the six seeded profiles are offered as starting
+points. A team full of strangers somebody did not ask for is harder to understand
+than an empty one.
 
 | Endpoint | Auth | Role | Notes |
 | --- | --- | --- | --- |

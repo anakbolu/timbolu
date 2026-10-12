@@ -194,13 +194,20 @@ func TestTheGrantEndpointsAnswer(t *testing.T) {
 	token, workspace := signedIn(t, api)
 	headers := withWorkspace(token, workspace)
 
-	// The Bolu the workspace was created with.
-	status, payload, body := api.call(t, fiber.MethodGet, "/api/agents", "", headers)
+	// A Bolu to grant to. A workspace starts empty, so this makes one the way a
+	// person does, through the same endpoint the screen uses.
+	status, payload, body := api.call(t, fiber.MethodGet, "/api/teams", "", headers)
 	require.Equal(t, http.StatusOK, status, body)
 
-	agents := payload["data"].([]any)
-	require.NotEmpty(t, agents)
-	agentID := agents[0].(map[string]any)["id"].(string)
+	teams := payload["data"].([]any)
+	require.NotEmpty(t, teams)
+	teamID := teams[0].(map[string]any)["id"].(string)
+
+	status, payload, body = api.call(t, fiber.MethodPost, "/api/agents",
+		`{"team_id":"`+teamID+`","name":"Oren"}`, headers)
+	require.Equal(t, http.StatusCreated, status, body)
+
+	agentID := payload["data"].(map[string]any)["id"].(string)
 
 	// A Bolu with no grants yet.
 	status, payload, body = api.call(t, fiber.MethodGet, "/api/agents/"+agentID+"/grants", "", headers)

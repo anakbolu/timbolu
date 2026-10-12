@@ -124,6 +124,14 @@ func (c *Container) registerRoutes() {
 	user := api.Group("", c.requireUser())
 	authhandler.ProtectedRoutes(user, c.Handlers.Auth)
 
+	// The reads that describe the deployment rather than a workspace live here:
+	// the profiles a Bolu can be created from and the catalogue of tools. Asking
+	// for a workspace to answer them is what left the profile picker empty on the
+	// screen that offers it.
+	if c.Handlers.Agent != nil {
+		agenthandler.CatalogRoutes(user, c.Handlers.Agent)
+	}
+
 	if c.Handlers.Workspace == nil {
 		user.All("/workspaces*", unavailable("workspaces are not configured", "workspace_not_configured"))
 		return

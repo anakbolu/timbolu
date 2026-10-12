@@ -56,6 +56,10 @@ func newTestApp(t *testing.T, service domain.Service, id identity) *fiber.App {
 		return c.Next()
 	})
 
+	// The catalog routes come first, which is the order the container wires them
+	// in: `/agents/templates` has to be registered before `/agents/:agentID`, or
+	// the parameter route answers for it.
+	CatalogRoutes(group, handler)
 	Routes(group, handler)
 	ManagerRoutes(group, handler)
 
@@ -315,7 +319,7 @@ func TestTemplatesHandler(t *testing.T) {
 	app := newTestApp(t, service, identity{userID: uuid.New()})
 	resp := do(t, app, fiber.MethodGet, "/api/agents/templates", "")
 
-	require.Equal(t, fiber.StatusOK, resp.Code)
+	require.Equal(t, fiber.StatusOK, resp.Code, resp.Body.String())
 	require.Contains(t, resp.Body.String(), "oren")
 }
 

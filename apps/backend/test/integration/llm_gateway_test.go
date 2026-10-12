@@ -11,7 +11,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	agentrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/repository"
 	authrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository"
 	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 	llmrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/repository"
@@ -45,8 +44,7 @@ func newGatewayFixture(t *testing.T, dsn string) *gatewayFixture {
 	box, err := crypto.NewFromString(testEncryptionKey)
 	require.NoError(t, err)
 
-	agents := agentrepo.New(pool)
-	workspaces := workspacerepo.New(pool, agents)
+	workspaces := workspacerepo.New(pool)
 	repo := llmrepo.New(pool)
 
 	user, err := authrepo.New(pool.PgxPool()).CreateUser(ctx, uuid.NewString()+"@example.com", "$argon2id$hash")
@@ -339,17 +337,23 @@ func TestTheBoluOverrideLeadsTheChain(t *testing.T) {
 	require.Equal(t, "gpt-4o", rows[0].Model)
 }
 
-// firstAgentID returns one Bolu of the fixture workspace.
+// firstAgentID returns one Bolu of the fixture workspace, creating it when the
+// workspace is empty, which is how a workspace starts.
 func (f *gatewayFixture) firstAgentID(t *testing.T) uuid.UUID {
 	t.Helper()
 
 	var id uuid.UUID
-	require.NoError(t, f.pool.InScopeRead(t.Context(), database.Scope{WorkspaceID: f.workspace}, func(tx pgx.Tx) error {
+	err := f.pool.InScopeRead(t.Context(), database.Scope{WorkspaceID: f.workspace}, func(tx pgx.Tx) error {
 		return tx.QueryRow(t.Context(),
 			"SELECT id FROM agents WHERE workspace_id = $1 AND deleted_at IS NULL ORDER BY created_at LIMIT 1",
 			f.workspace).Scan(&id)
-	}))
-	return id
+	})
+	if err == nil {
+		return id
+	}
+	require.ErrorIs(t, err, pgx.ErrNoRows)
+
+	return seedAgent(t, f.pool, f.workspace)
 }
 
 // TestNoProviderIsAnActionableError: a workspace with nothing configured gets a

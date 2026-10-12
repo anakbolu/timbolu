@@ -58,10 +58,9 @@ func newRepositories(pool *database.Pool) *Repositories {
 		// wrapper rather than the raw connection.
 		repositories.Agent = agentrepo.New(pool)
 
-		// The workspace repository is handed the agent repository as its
-		// provisioner: onboarding copies the Bolu templates inside its own
-		// transaction, and this is the only place that knows both modules.
-		repositories.Workspace = workspacerepo.New(pool, repositories.Agent)
+		// A new workspace is created empty: its two teams, and no Bolu. The first
+		// one is made by a person on the screen that says the team is empty.
+		repositories.Workspace = workspacerepo.New(pool)
 
 		// And the auth repository as its onboarding marker, for the same reason:
 		// owning a workspace and the account's session believing it must be one

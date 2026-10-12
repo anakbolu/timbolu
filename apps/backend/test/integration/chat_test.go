@@ -9,7 +9,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	agentrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/repository"
 	authrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository"
 	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
 	chatrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/repository"
@@ -34,8 +33,7 @@ func newChatFixture(t *testing.T, dsn string) *chatFixture {
 	ctx := t.Context()
 	pool := poolFor(t, dsn)
 
-	agents := agentrepo.New(pool)
-	workspaces := workspacerepo.New(pool, agents)
+	workspaces := workspacerepo.New(pool)
 
 	user, err := authrepo.New(pool.PgxPool()).CreateUser(ctx, uuid.NewString()+"@example.com", "$argon2id$hash")
 	require.NoError(t, err)
@@ -59,17 +57,62 @@ func newChatFixture(t *testing.T, dsn string) *chatFixture {
 	}
 }
 
-// firstAgentOf returns one Bolu of a workspace.
+// twoAgentsOf returns two Bolu of a workspace, creating them if the workspace has
+// fewer.
+//
+// A group needs two participants and a sidebar order needs two threads, and a
+// workspace starts empty, so a fixture that needs two makes them.
+func twoAgentsOf(t *testing.T, pool *database.Pool, workspaceID uuid.UUID) [2]uuid.UUID {
+	t.Helper()
+
+	seedAgents(t, pool, workspaceID, "Oren", "Biru")
+
+	ids := [2]uuid.UUID{}
+	require.NoError(t, pool.InScopeRead(t.Context(), database.Scope{WorkspaceID: workspaceID}, func(tx pgx.Tx) error {
+		rows, err := tx.Query(t.Context(),
+			"SELECT id FROM agents WHERE workspace_id = $1 AND deleted_at IS NULL ORDER BY created_at LIMIT 2",
+			workspaceID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+
+		for index := 0; rows.Next() && index < 2; index++ {
+			if err := rows.Scan(&ids[index]); err != nil {
+				return err
+			}
+		}
+		return rows.Err()
+	}))
+
+	require.NotEqual(t, uuid.Nil, ids[0])
+	require.NotEqual(t, uuid.Nil, ids[1])
+	return ids
+}
+
+// firstAgentOf returns one Bolu of a workspace, creating it if the workspace has
+// none.
+//
+// A workspace starts empty, so a fixture that needs a Bolu to point something at
+// makes one the way a person does rather than reading one that onboarding used to
+// leave behind.
 func firstAgentOf(t *testing.T, pool *database.Pool, workspaceID uuid.UUID) uuid.UUID {
 	t.Helper()
 
 	var id uuid.UUID
-	require.NoError(t, pool.InScopeRead(t.Context(), database.Scope{WorkspaceID: workspaceID}, func(tx pgx.Tx) error {
+	err := pool.InScopeRead(t.Context(), database.Scope{WorkspaceID: workspaceID}, func(tx pgx.Tx) error {
 		return tx.QueryRow(t.Context(),
 			"SELECT id FROM agents WHERE workspace_id = $1 AND deleted_at IS NULL ORDER BY created_at LIMIT 1",
 			workspaceID).Scan(&id)
-	}))
-	return id
+	})
+	if err == nil {
+		return id
+	}
+	// An empty workspace is the normal case now, so "no rows" is what sends this
+	// helper to make one rather than what fails it.
+	require.ErrorIs(t, err, pgx.ErrNoRows)
+
+	return seedAgent(t, pool, workspaceID)
 }
 
 // directConversation opens the 1:1 thread with a Bolu.
@@ -260,20 +303,19 @@ func TestDirectConversationIsReused(t *testing.T) {
 func TestGroupsKeepTheirParticipants(t *testing.T) {
 	fixture := newChatFixture(t, appDatabase(t))
 
-	// The workspace has six seeded Bolu; the group takes two of them.
-	agents := fixture.agentIDs(t)
-	require.GreaterOrEqual(t, len(agents), 2)
-	second := agents[1]
+	// A group takes two Bolu, and a workspace starts empty, so the fixture makes
+	// them.
+	pair := twoAgentsOf(t, fixture.pool, fixture.workspace)
 
 	group, err := fixture.repo.Create(t.Context(), fixture.scope, chatdomain.KindGroup, "Grup operasional",
-		[]uuid.UUID{fixture.agentID, second}, []uuid.UUID{fixture.userID})
+		[]uuid.UUID{pair[0], pair[1]}, []uuid.UUID{fixture.userID})
 	require.NoError(t, err)
 	require.Equal(t, chatdomain.KindGroup, group.Kind)
 	require.Len(t, group.Participants, 3)
 
 	// Adding a participant twice is not an error and does not duplicate the row.
 	require.NoError(t, fixture.repo.AddParticipants(t.Context(), fixture.scope, group.ID,
-		[]uuid.UUID{second}, []uuid.UUID{fixture.userID}))
+		[]uuid.UUID{pair[1]}, []uuid.UUID{fixture.userID}))
 
 	reloaded, err := fixture.repo.GetConversation(t.Context(), fixture.scope, group.ID)
 	require.NoError(t, err)
@@ -518,12 +560,13 @@ func TestAttachmentStorageKeysAreUnique(t *testing.T) {
 // TestConversationOrderFollowsActivity keeps the sidebar order meaningful.
 func TestConversationOrderFollowsActivity(t *testing.T) {
 	fixture := newChatFixture(t, appDatabase(t))
-	agents := fixture.agentIDs(t)
-	require.GreaterOrEqual(t, len(agents), 2)
 
-	first, err := fixture.repo.Direct(t.Context(), fixture.scope, agents[0])
+	// Two threads are what makes an order meaningful, so the fixture makes two Bolu.
+	pair := twoAgentsOf(t, fixture.pool, fixture.workspace)
+
+	first, err := fixture.repo.Direct(t.Context(), fixture.scope, pair[0])
 	require.NoError(t, err)
-	second, err := fixture.repo.Direct(t.Context(), fixture.scope, agents[1])
+	second, err := fixture.repo.Direct(t.Context(), fixture.scope, pair[1])
 	require.NoError(t, err)
 
 	// Writing in the older thread moves it to the top.

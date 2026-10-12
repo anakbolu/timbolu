@@ -345,8 +345,15 @@ ONBOARD=$(curl -fsS -X POST "${API}/workspaces/onboard" -H "Authorization: Beare
 WORKSPACE=$(echo "$ONBOARD" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["workspace"]["id"])')
 AUTH=(-H "Authorization: Bearer ${ACCESS}" -H "X-Workspace-Id: ${WORKSPACE}")
 
-AGENT=$(curl -fsS "${API}/agents" "${AUTH[@]}" \
-    | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; print([a for a in d if a["name"]=="Oren"][0]["id"])')
+# A workspace starts with no Bolu, so the smoke makes the one it needs the way a
+# person does: it picks the team onboarding created and adds an agent to it.
+TEAM=$(curl -fsS "${API}/teams" "${AUTH[@]}" |
+    python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; print([t for t in d if t["kind"]=="bolu"][0]["id"])')
+
+AGENT=$(curl -fsS -X POST "${API}/agents" "${AUTH[@]}" \
+    -H 'Content-Type: application/json' \
+    -d "{\"team_id\":\"${TEAM}\",\"name\":\"Oren\",\"template_key\":\"oren\"}" |
+    python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')
 echo "Oren = ${AGENT}"
 
 # A Bolu is only offered the tools whose integration it was granted, and no

@@ -663,20 +663,6 @@ func (r *Repository) Integrations(ctx context.Context, scope domain.Scope) ([]do
 
 // Provision copies every template into the workspace. It satisfies
 // database.TemplateProvisioner and runs inside the onboarding transaction.
-func (r *Repository) Provision(ctx context.Context, tx pgx.Tx, workspaceID, teamID uuid.UUID) error {
-	created, err := sqlcgen.New(tx).CopyAgentTemplates(ctx, sqlcgen.CopyAgentTemplatesParams{
-		WorkspaceID: workspaceID,
-		TeamID:      teamID,
-	})
-	if err != nil {
-		return fmt.Errorf("agent: copy templates: %w", err)
-	}
-	if created == 0 {
-		return fmt.Errorf("agent: copy templates: no templates are seeded")
-	}
-	return nil
-}
-
 func (r *Repository) integration(ctx context.Context, queries *sqlcgen.Queries, scope domain.Scope, integrationID uuid.UUID) (string, string, string, error) {
 	rows, err := queries.ListIntegrations(ctx, scope.WorkspaceID)
 	if err != nil {
@@ -824,9 +810,5 @@ func unmarshalModel(raw []byte) (map[string]any, error) {
 	return model, nil
 }
 
-// Compile-time checks: the repository is both the registry store and the
-// onboarding provisioner.
-var (
-	_ domain.Repository            = (*Repository)(nil)
-	_ database.TemplateProvisioner = (*Repository)(nil)
-)
+// Compile-time check: the repository is the registry store.
+var _ domain.Repository = (*Repository)(nil)

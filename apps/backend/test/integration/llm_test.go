@@ -11,8 +11,6 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 
-	agentdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
-	agentrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/repository"
 	authrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository"
 	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 	llmrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/repository"
@@ -98,8 +96,7 @@ func newLLMFixture(t *testing.T, dsn string) *llmFixture {
 	box, err := crypto.NewFromString(testEncryptionKey)
 	require.NoError(t, err)
 
-	agents := agentrepo.New(pool)
-	workspaces := workspacerepo.New(pool, agents)
+	workspaces := workspacerepo.New(pool)
 	repo := llmrepo.New(pool)
 
 	user, err := authrepo.New(pool.PgxPool()).CreateUser(ctx, uuid.NewString()+"@example.com", "$argon2id$hash")
@@ -112,14 +109,12 @@ func newLLMFixture(t *testing.T, dsn string) *llmFixture {
 	})
 	require.NoError(t, err)
 
-	// The onboarding step copies the six Bolu templates, so the workspace has
-	// agents an override can point at.
-	stored, err := agents.List(ctx, agentdomain.Scope{UserID: user.ID, WorkspaceID: onboarded.Workspace.ID})
-	require.NoError(t, err)
-	require.NotEmpty(t, stored)
+	// A workspace starts empty, so the Bolu an override points at are created the
+	// way a person creates them.
+	seeded := seedAgents(t, pool, onboarded.Workspace.ID, "Oren", "Biru")
 
-	agentIDs := make([]uuid.UUID, 0, len(stored))
-	for _, agent := range stored {
+	agentIDs := make([]uuid.UUID, 0, len(seeded))
+	for _, agent := range seeded {
 		agentIDs = append(agentIDs, agent.ID)
 	}
 

@@ -8,7 +8,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	agentrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/repository"
 	authrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository"
 	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
@@ -33,7 +32,7 @@ func newWorkspaceFixture(t *testing.T, dsn string) *workspaceFixture {
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 
-	repo := workspacerepo.New(pool, agentrepo.New(pool))
+	repo := workspacerepo.New(pool)
 
 	user, err := authrepo.New(pool.PgxPool()).CreateUser(t.Context(), uuid.NewString()+"@example.com", "$argon2id$hash")
 	require.NoError(t, err)
@@ -435,7 +434,7 @@ func TestWorkspaceRepositoryTenantIsolation(t *testing.T) {
 // TestWorkspaceRepositoryWithoutAPool keeps the unconfigured state an error.
 func TestWorkspaceRepositoryWithoutAPool(t *testing.T) {
 	ctx := t.Context()
-	repo := workspacerepo.New(nil, nil)
+	repo := workspacerepo.New(nil)
 	scope := workspacedomain.Scope{UserID: uuid.New(), WorkspaceID: uuid.New()}
 
 	_, err := repo.Onboard(ctx, uuid.New(), workspacedomain.OnboardRequest{Name: "Toko"})
