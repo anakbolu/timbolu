@@ -177,6 +177,17 @@ What they prove:
   number, so a second tenant linking it is refused with this module's own error
   rather than a constraint violation, because Row Level Security hides the row that
   would have said so.
+- `TestTheRowKnowsWhatAPersonChangedAndWhatTheGatewaySaw` — the number's own
+  bookkeeping: the fields a person edits are written together and keep the ones they
+  do not name, a status carries the reason, the heartbeat moves `last_seen_at` forward
+  only (a late report from a replaced gateway cannot walk "is it alive" backwards), and
+  `TestAcceptingTheWarningTwiceKeepsTheFirstMoment` is the risk's timestamp: the first
+  acceptance stands.
+- `TestAMessageIsFoundByWhatsappsOwnIdAndKeepsItsTask` — WhatsApp's id is the lookup
+  key a redelivery reads, and the task a message opened stays on the row. Attaching a
+  task to a message that is not there, or is another workspace's, is answered as "not
+  found" rather than as done: the statement updates nothing in that case, and the
+  first version answered success, which a test caught.
 - `TestTheDirectoryIsReadWithoutATenant` — the one unscoped read in the codebase,
   and the test says what justifies it: it carries the tenant to scope under and
   nothing else.
@@ -225,6 +236,32 @@ function call, in `gateway_test.go`. It is the only place the QR could leak: the
 gateway speaks for every tenant it serves, so a caller without a token is refused,
 and a call without a workspace is refused — an operation that did not know whose
 number it acts on would act on anybody's.
+
+The gateway's device store is the one part of it with a fixed interface it does not
+own, so every method is exercised in `store_roundtrip_test.go`: identities,
+sessions, pre-keys, sender keys, app-state keys, versions and mutations, contacts and
+chat settings, message secrets, privacy tokens, the event buffer, and the LID
+mappings. A method that answers wrongly there is a handshake that fails or a message
+that cannot be read, and the only symptom is "the number does not work". Two of those
+methods are also where a real defect was found and fixed: the phone matching behind a
+delete and a migration was a prefix match, so deleting or migrating `628999` took
+`6289990`'s sessions with it; and the PN→LID migration re-keyed sessions by the JID
+rather than by its signal address, so the sessions it moved were never found again —
+the address is `<user>_<agent>:<device>`, where the agent carries the domain and a
+LID's is `_1`. Both are stated in the test rather than in a comment elsewhere,
+because the correct form is exactly what the previous version got wrong.
+
+The pairing flow's own order is tested in `pairing_test.go`, because that order is the
+part that cannot be recovered afterwards: the session is written *before* the workspace
+is told, so a crash in between leaves a number the fleet can serve rather than one that
+claims to be linked with nothing behind it. Each way a pairing can end — an expired
+code, an outdated client, a phone without linked devices, a refusal with and without
+words, a passkey prompt, a channel that closes without a verdict — is checked to leave
+a reason a person can act on, and a paired attempt is checked not to be turned back
+into a refusal by a late error event. `engine_flow_test.go` covers the fleet around it:
+what is kept when the directory cannot be read, when a lease is taken over, and when a
+renewal cannot be answered; the handler's routing of a message, a connect, a disconnect
+and a refusal; and the drain's retry-versus-park decision.
 
 Phase 3 needs the extraction workflow to be registered under the name the schedule
 starts it with, which is a contract no compiler checks. The workflow's own test

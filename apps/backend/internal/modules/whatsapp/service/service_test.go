@@ -1084,3 +1084,120 @@ func TestTheActivityIsBestEffort(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, created)
 }
+
+// TestWhatTheBoluIsToldIsTheWholeMessage: the task runs out of process with an agent,
+// a title, and this text, so everything the Bolu can know about the customer's message
+// has to be in it — the sender, what kind of thing arrived, whether its attachment
+// made it, and what to do about it.
+//
+// Each shape is stated because each is a different situation for the reader: a picture
+// whose bytes are still coming cannot be read yet, one whose download failed is a dead
+// end the Bolu must not pretend to see, and a message that is not text at all is not an
+// empty one.
+func TestWhatTheBoluIsToldIsTheWholeMessage(t *testing.T) {
+	cases := []struct {
+		name    string
+		message domain.Inbound
+		wants   []string
+		refuses []string
+	}{
+		{
+			name: "a picture nobody can read yet",
+			message: domain.Inbound{
+				Kind: domain.KindImage, Media: domain.Media{Status: domain.MediaPending},
+			},
+			wants:   []string{"Pelanggan mengirim sebuah image", "sedang diunduh"},
+			refuses: []string{"bisa dibaca lewat alat"},
+		},
+		{
+			name: "a picture that arrived, with a caption",
+			message: domain.Inbound{
+				Kind: domain.KindImage, Text: "ini nota bulan ini",
+				Media: domain.Media{Status: domain.MediaReady},
+			},
+			wants: []string{"ini nota bulan ini", "sudah tersimpan"},
+		},
+		{
+			name: "a document whose download failed",
+			message: domain.Inbound{
+				Kind: domain.KindDocument, Media: domain.Media{Status: domain.MediaFailed, Error: "unduhan putus"},
+			},
+			wants:   []string{"Pelanggan mengirim sebuah document", "gagal diunduh: unduhan putus"},
+			refuses: []string{"sedang diunduh"},
+		},
+		{
+			name:    "something this product does not read",
+			message: domain.Inbound{Kind: domain.KindOther},
+			wants:   []string{"bukan teks"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+
+			h.store.EXPECT().Get(mock.Anything, mock.Anything, h.numberID).Return(h.number(), nil).Once()
+			h.store.EXPECT().Record(mock.Anything, mock.Anything, mock.Anything).
+				Return(domain.Inbound{
+					ID: uuid.New(), NumberID: h.numberID, WaMessageID: "msg-1",
+					ChatJID: "628999@s.whatsapp.net", SenderName: "Bu Sari",
+					Kind: tc.message.Kind, Text: tc.message.Text, Media: tc.message.Media,
+				}, true, nil).Once()
+			h.watchers.EXPECT().Fire(mock.Anything, mock.Anything, mock.Anything).Return(0, nil).Once()
+			h.replies.EXPECT().Answer(mock.Anything, mock.Anything, mock.MatchedBy(func(request domain.AnswerRequest) bool {
+				// The reply address is the sender, and the title names the person
+				// rather than the number when WhatsApp gave a name.
+				require.Contains(t, request.Prompt, "Nomor pengirim: +628999@s.whatsapp.net")
+				require.Contains(t, request.Prompt, "Nama yang dipakai pengirim: Bu Sari")
+				require.Contains(t, request.Prompt, "menulis ke nomor WhatsApp ••••••••6789")
+				require.Equal(t, "Pesan WhatsApp dari Bu Sari", request.Title)
+
+				for _, want := range tc.wants {
+					require.Contains(t, request.Prompt, want)
+				}
+				for _, refuse := range tc.refuses {
+					require.NotContains(t, request.Prompt, refuse)
+				}
+				return true
+			})).Return(uuid.New(), nil).Once()
+			h.store.EXPECT().AttachTask(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+			h.activity.EXPECT().Emit(mock.Anything, mock.Anything).Return(nil).Once()
+
+			_, created, err := h.service.Receive(t.Context(), h.scope, h.numberID, domain.Inbound{
+				WaMessageID: "msg-1",
+				ChatJID:     "628999@s.whatsapp.net",
+				SenderName:  "Bu Sari",
+				Kind:        tc.message.Kind,
+				Text:        tc.message.Text,
+				Media:       tc.message.Media,
+				ReceivedAt:  h.clock.at,
+			})
+			require.NoError(t, err)
+			require.True(t, created)
+		})
+	}
+
+	// A message with no name from WhatsApp is titled by the number instead, because a
+	// title is what a person reads in the task list.
+	h := newHarness(t)
+	h.store.EXPECT().Get(mock.Anything, mock.Anything, h.numberID).Return(h.number(), nil).Once()
+	h.store.EXPECT().Record(mock.Anything, mock.Anything, mock.Anything).
+		Return(domain.Inbound{
+			ID: uuid.New(), NumberID: h.numberID, WaMessageID: "msg-2",
+			ChatJID: "628999@s.whatsapp.net", Kind: domain.KindText, Text: "halo",
+		}, true, nil).Once()
+	h.watchers.EXPECT().Fire(mock.Anything, mock.Anything, mock.Anything).Return(0, nil).Once()
+	h.replies.EXPECT().Answer(mock.Anything, mock.Anything, mock.MatchedBy(func(request domain.AnswerRequest) bool {
+		require.Equal(t, "Pesan WhatsApp dari ••••••••6789", request.Title)
+		require.NotContains(t, request.Prompt, "Nama yang dipakai pengirim")
+		return true
+	})).Return(uuid.New(), nil).Once()
+	h.store.EXPECT().AttachTask(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+	h.activity.EXPECT().Emit(mock.Anything, mock.Anything).Return(nil).Once()
+
+	_, created, err := h.service.Receive(t.Context(), h.scope, h.numberID, domain.Inbound{
+		WaMessageID: "msg-2", ChatJID: "628999@s.whatsapp.net", Kind: domain.KindText, Text: "halo",
+	})
+	require.NoError(t, err)
+	require.True(t, created)
+}

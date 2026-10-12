@@ -475,3 +475,118 @@ func TestANumberWhatsappDoesNotKnowIsSaidInItsOwnWords(t *testing.T) {
 	require.Contains(t, resp.Body.String(), "6789")
 	require.NotContains(t, resp.Body.String(), "tidak ada di workspace ini")
 }
+
+// TestCancellingALinkIsItsOwnCall: a person closing the panel is a different intent
+// from the attempt ending by itself, so it has its own route — and it answers with
+// nothing to show rather than a state a screen would have to interpret.
+func TestCancellingALinkIsItsOwnCall(t *testing.T) {
+	svc := mocks.NewService(t)
+	app := newTestApp(t, svc, uuid.New())
+
+	svc.EXPECT().CancelLink(mock.Anything, mock.Anything, "link-1").Return(nil).Once()
+
+	resp := do(t, app, fiber.MethodDelete, "/api/whatsapp/links/link-1", "")
+	require.Equal(t, fiber.StatusOK, resp.Code)
+	require.Contains(t, resp.Body.String(), "link cancelled")
+
+	// A deployment with no gateway says so in the deployment's own words rather than
+	// the gateway's, because a person cannot act on "the gateway refused".
+	svc.EXPECT().CancelLink(mock.Anything, mock.Anything, "link-2").
+		Return(domain.ErrNotConfigured).Once()
+
+	resp = do(t, app, fiber.MethodDelete, "/api/whatsapp/links/link-2", "")
+	require.Equal(t, fiber.StatusServiceUnavailable, resp.Code)
+	require.Contains(t, resp.Body.String(), "belum dikonfigurasi")
+}
+
+// TestTheOtherFieldsOfANumberChangeOnTheirOwn: the same rule as the ceiling, stated
+// for the label and the Bolu, because all three go through one route and each is a
+// separate call.
+func TestTheOtherFieldsOfANumberChangeOnTheirOwn(t *testing.T) {
+	svc := mocks.NewService(t)
+	app := newTestApp(t, svc, uuid.New())
+	numberID := uuid.New()
+	agentID := uuid.New()
+
+	svc.EXPECT().Number(mock.Anything, mock.Anything, numberID).Return(fixture(), nil).Once()
+	svc.EXPECT().SetLabel(mock.Anything, mock.Anything, numberID, "Kasir").Return(fixture(), nil).Once()
+
+	resp := do(t, app, fiber.MethodPatch, "/api/whatsapp/numbers/"+numberID.String(), `{"label":"Kasir"}`)
+	require.Equal(t, fiber.StatusOK, resp.Code)
+
+	svc.EXPECT().Number(mock.Anything, mock.Anything, numberID).Return(fixture(), nil).Once()
+	svc.EXPECT().AssignAgent(mock.Anything, mock.Anything, numberID, agentID).Return(fixture(), nil).Once()
+
+	resp = do(t, app, fiber.MethodPatch, "/api/whatsapp/numbers/"+numberID.String(), `{"agent_id":"`+agentID.String()+`"}`)
+	require.Equal(t, fiber.StatusOK, resp.Code)
+
+	// A Bolu that is not a uuid is the caller's error and is said so before anything
+	// is written.
+	svc.EXPECT().Number(mock.Anything, mock.Anything, numberID).Return(fixture(), nil).Once()
+
+	resp = do(t, app, fiber.MethodPatch, "/api/whatsapp/numbers/"+numberID.String(), `{"agent_id":"kasir"}`)
+	require.Equal(t, fiber.StatusBadRequest, resp.Code)
+
+	// A number this workspace does not have is refused before any field is written,
+	// so a rename cannot land on a row the caller cannot see.
+	svc.EXPECT().Number(mock.Anything, mock.Anything, numberID).Return(domain.Number{}, domain.ErrNotFound).Once()
+
+	resp = do(t, app, fiber.MethodPatch, "/api/whatsapp/numbers/"+numberID.String(), `{"label":"Kasir"}`)
+	require.Equal(t, fiber.StatusNotFound, resp.Code)
+}
+
+// TestReadingOneNumberSaysWhenItIsNotThere: the same refusal the list never has to
+// give, and the one a screen opening a number it lost needs.
+func TestReadingOneNumberSaysWhenItIsNotThere(t *testing.T) {
+	svc := mocks.NewService(t)
+	app := newTestApp(t, svc, uuid.New())
+	numberID := uuid.New()
+
+	svc.EXPECT().Number(mock.Anything, mock.Anything, numberID).Return(domain.Number{}, domain.ErrNotFound).Once()
+
+	resp := do(t, app, fiber.MethodGet, "/api/whatsapp/numbers/"+numberID.String(), "")
+	require.Equal(t, fiber.StatusNotFound, resp.Code)
+
+	// Accepting the warning twice is the same answer as accepting it once: the row
+	// keeps the first moment, so a second call is not an error.
+	svc.EXPECT().AcceptTerms(mock.Anything, mock.Anything, numberID).Return(fixture(), nil).Once()
+
+	resp = do(t, app, fiber.MethodPost, "/api/whatsapp/numbers/"+numberID.String()+"/terms", "{}")
+	require.Equal(t, fiber.StatusOK, resp.Code)
+
+	// And a number that is gone cannot have its warning accepted.
+	svc.EXPECT().AcceptTerms(mock.Anything, mock.Anything, numberID).Return(domain.Number{}, domain.ErrNotFound).Once()
+
+	resp = do(t, app, fiber.MethodPost, "/api/whatsapp/numbers/"+numberID.String()+"/terms", "{}")
+	require.Equal(t, fiber.StatusNotFound, resp.Code)
+}
+
+// TestTheQrSocketRefusesAPlainRequest: the endpoint speaks one protocol, and a
+// request that did not ask to upgrade would otherwise be answered as if it had.
+func TestTheQrSocketRefusesAPlainRequest(t *testing.T) {
+	svc := mocks.NewService(t)
+	workspaceID := uuid.New()
+
+	app := fiber.New(fiber.Config{
+		DisableStartupMessage: true,
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			var fiberErr *fiber.Error
+			code := fiber.StatusInternalServerError
+			if errors.As(err, &fiberErr) {
+				code = fiberErr.Code
+			}
+			return response.Error(c, code, err.Error(), "http_error", nil)
+		},
+	})
+	group := app.Group("/api", func(c *fiber.Ctx) error {
+		userID := uuid.New()
+		middleware.SetIdentity(c, userID, "owner@example.com")
+		middleware.SetScope(c, database.Scope{UserID: userID, WorkspaceID: workspaceID})
+		return c.Next()
+	})
+	LinkStreamRoutes(group, New(svc, zap.NewNop()))
+
+	resp := do(t, app, fiber.MethodGet, "/api/whatsapp/links/link-1/socket", "")
+	require.Equal(t, fiber.StatusUpgradeRequired, resp.Code)
+	require.Contains(t, resp.Body.String(), "upgrade_required")
+}

@@ -543,14 +543,23 @@ func (r *Repository) SetMedia(ctx context.Context, scope domain.Scope, id uuid.U
 }
 
 // AttachTask records the task a message opened.
+//
+// A message that is not there — or is another workspace's — is refused rather than
+// reported as linked. The statement updates nothing in that case, and answering
+// success would leave a screen showing a message with no task while the caller
+// believes it wrote one.
 func (r *Repository) AttachTask(ctx context.Context, scope domain.Scope, id, taskID uuid.UUID) error {
 	return r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
-		if _, err := queries.AttachWhatsAppMessageTask(ctx, sqlcgen.AttachWhatsAppMessageTaskParams{
+		rows, err := queries.AttachWhatsAppMessageTask(ctx, sqlcgen.AttachWhatsAppMessageTaskParams{
 			ID:          id,
 			WorkspaceID: scope.WorkspaceID,
 			TaskID:      optionalID(taskID),
-		}); err != nil {
+		})
+		if err != nil {
 			return translate(err, "attach message task")
+		}
+		if rows == 0 {
+			return fmt.Errorf("%w: attach message task", domain.ErrNotFound)
 		}
 		return nil
 	})

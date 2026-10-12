@@ -676,13 +676,35 @@ func (d *deviceStore) DeleteSession(_ context.Context, address string) error {
 }
 
 // MigratePNToLID implements store.SessionStore.
+//
+// WhatsApp is moving accounts from phone numbers to LIDs, and a session stored
+// under the old user has to move with it or every later message from that
+// account is unreadable.
+//
+// The new key is the LID's signal address, which is not its JID: whatsmeow looks
+// a session up as `<user>_<agent>:<device>`, and the agent carries the domain —
+// a LID is `_1`, a phone number has none. A key built from the JID
+// (`123456789:12`) would never be found again, and carrying the old suffix
+// (`123456789_128:12`) would be the wrong domain, which is the same defect with
+// a different spelling.
 func (d *deviceStore) MigratePNToLID(_ context.Context, pn, lid types.JID) error {
+	destination := lid.SignalAddressUser()
+
 	d.mu.Lock()
 	for address, session := range d.sessions {
-		if ownsAddress(address, pn.User) {
-			delete(d.sessions, address)
-			d.sessions[lid.String()+":"+deviceSuffix(address)] = session
+		if !ownsAddress(address, pn.User) {
+			continue
 		}
+
+		_, _, device := splitAddress(address)
+
+		key := destination
+		if device != "" {
+			key += ":" + device
+		}
+
+		delete(d.sessions, address)
+		d.sessions[key] = session
 	}
 	d.markDirty()
 	d.mu.Unlock()
@@ -1334,25 +1356,26 @@ func randomUint32() uint32 {
 	return binary.BigEndian.Uint32(raw[:])
 }
 
-// ownsAddress reports whether a signal address belongs to a phone number. The
-// address is `user.device@server`, and the user part is what a delete by phone
-// matches.
-func ownsAddress(address, phone string) bool {
-	user, _, found := strings.Cut(address, ":")
-	if !found {
-		user = address
-	}
-	return strings.HasPrefix(user, phone)
+// splitAddress separates a signal address into its parts. whatsmeow builds the
+// address as `<user>_<agent>:<device>`; the agent is the account's domain — a LID
+// is `_1`, a phone number has none — and the device is the linked device.
+func splitAddress(address string) (user, agent, device string) {
+	user, device, _ = strings.Cut(address, ":")
+	user, agent, _ = strings.Cut(user, "_")
+
+	return user, agent, device
 }
 
-// deviceSuffix returns the part of a signal address after the user, so a
-// migration keeps a device number attached to its new user.
-func deviceSuffix(address string) string {
-	_, after, found := strings.Cut(address, ":")
-	if !found {
-		return ""
-	}
-	return after
+// ownsAddress reports whether a signal address belongs to a phone number, which
+// is what a delete by phone matches.
+//
+// The user part is compared whole rather than as a prefix: another account whose
+// number merely starts with these digits is a different account, and matching it
+// would move or delete that account's sessions.
+func ownsAddress(address, phone string) bool {
+	user, _, _ := splitAddress(address)
+
+	return user == phone
 }
 
 // secretKey is the map key for one message secret.

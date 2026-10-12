@@ -873,3 +873,184 @@ func newWhatsAppContainer(t *testing.T, dsn string) *container.Container {
 
 	return app
 }
+
+// TestTheRowKnowsWhatAPersonChangedAndWhatTheGatewaySaw is the number's own
+// bookkeeping, and each part of it is a claim a mock would only restate:
+//
+//   - the fields a person edits are written together and keep the ones they do not
+//     name, so a rename cannot silently reset a ceiling;
+//   - a status carries the reason a person has to read;
+//   - the heartbeat moves `last_seen_at` forward only, so a late report from the
+//     old gateway cannot walk "is it alive" backwards;
+//   - accepting the warning twice keeps the first moment, because that is when the
+//     risk was taken.
+func TestTheRowKnowsWhatAPersonChangedAndWhatTheGatewaySaw(t *testing.T) {
+	fixture := newWhatsAppFixture(t, appDatabase(t))
+	ctx := t.Context()
+
+	// The fields a person edits: the label and the ceiling change, the Bolu does not.
+	renamed, err := fixture.repository.Update(ctx, fixture.scope, whatsappdomain.Number{
+		ID:          fixture.number.ID,
+		Label:       "Kasir",
+		AgentID:     fixture.number.AgentID,
+		HourlyLimit: 12,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "Kasir", renamed.Label)
+	require.Equal(t, 12, renamed.HourlyLimit)
+	require.Equal(t, fixture.number.AgentID, renamed.AgentID)
+	require.Equal(t, fixture.number.Phone, renamed.Phone, "the number WhatsApp reports is not a field a person edits")
+
+	// A number in another workspace is not updated, and the caller is told the row
+	// is not there rather than that the write failed.
+	their := newWhatsAppFixture(t, appDatabase(t))
+	_, err = their.repository.Update(ctx, their.scope, whatsappdomain.Number{
+		ID: fixture.number.ID, Label: "bukan milikku", AgentID: fixture.number.AgentID, HourlyLimit: 3,
+	})
+	require.ErrorIs(t, err, whatsappdomain.ErrNotFound)
+
+	still, err := fixture.repository.Get(ctx, fixture.scope, fixture.number.ID)
+	require.NoError(t, err)
+	require.Equal(t, "Kasir", still.Label, "and the row it named is untouched")
+
+	// A status carries why, because a person acts on the reason rather than on the
+	// status word.
+	reported, err := fixture.repository.SetStatus(ctx, fixture.scope, fixture.number.ID,
+		whatsappdomain.StatusNeedsRelink, "sesi ditolak WhatsApp")
+	require.NoError(t, err)
+	require.Equal(t, whatsappdomain.StatusNeedsRelink, reported.Status)
+	require.Equal(t, "sesi ditolak WhatsApp", reported.StatusReason)
+
+	// And the next report replaces it, which is what makes the later observer's word
+	// the one that holds.
+	reported, err = fixture.repository.SetStatus(ctx, fixture.scope, fixture.number.ID,
+		whatsappdomain.StatusConnected, "")
+	require.NoError(t, err)
+	require.Equal(t, whatsappdomain.StatusConnected, reported.Status)
+	require.Empty(t, reported.StatusReason, "the reason travels with the status it belonged to")
+
+	// The heartbeat: a report from now moves it, and a report from before does not
+	// move it back.
+	now := time.Now()
+	require.NoError(t, fixture.repository.Touch(ctx, fixture.scope, fixture.number.ID, now))
+
+	touched, err := fixture.repository.Get(ctx, fixture.scope, fixture.number.ID)
+	require.NoError(t, err)
+	require.NotNil(t, touched.LastSeenAt)
+	require.WithinDuration(t, now, *touched.LastSeenAt, 2*time.Second)
+
+	require.NoError(t, fixture.repository.Touch(ctx, fixture.scope, fixture.number.ID, now.Add(-time.Hour)))
+
+	touched, err = fixture.repository.Get(ctx, fixture.scope, fixture.number.ID)
+	require.NoError(t, err)
+	require.WithinDuration(t, now, *touched.LastSeenAt, 2*time.Second,
+		"a late report cannot walk last_seen_at backwards")
+}
+
+// TestAcceptingTheWarningTwiceKeepsTheFirstMoment: the moment is when the risk was
+// taken, and it is what the screen shows. A second acceptance from the same person, or
+// from a page reload, must not move it.
+func TestAcceptingTheWarningTwiceKeepsTheFirstMoment(t *testing.T) {
+	fixture := newWhatsAppFixture(t, appDatabase(t))
+	ctx := t.Context()
+
+	// A number nobody has accepted the warning for yet.
+	fresh, err := fixture.repository.Create(ctx, fixture.scope, whatsappdomain.Number{
+		IntegrationID: fixture.createConnection(t),
+		Phone:         "628" + uuid.NewString()[:9],
+		Label:         "belum disetujui",
+		AgentID:       fixture.agentID,
+		Status:        whatsappdomain.StatusUnlinked,
+		HourlyLimit:   40,
+	})
+	require.NoError(t, err)
+	require.Nil(t, fresh.TOSAcceptedAt, "a number starts without the warning accepted")
+
+	first, err := fixture.repository.AcceptTerms(ctx, fixture.scope, fresh.ID)
+	require.NoError(t, err)
+	require.NotNil(t, first.TOSAcceptedAt)
+
+	time.Sleep(time.Millisecond)
+	second, err := fixture.repository.AcceptTerms(ctx, fixture.scope, fresh.ID)
+	require.NoError(t, err)
+	require.NotNil(t, second.TOSAcceptedAt)
+	require.Equal(t, *first.TOSAcceptedAt, *second.TOSAcceptedAt, "the first moment stands")
+
+	// Accepting for a number in another workspace is a row that is not there.
+	their := newWhatsAppFixture(t, appDatabase(t))
+	_, err = their.repository.AcceptTerms(ctx, their.scope, fresh.ID)
+	require.ErrorIs(t, err, whatsappdomain.ErrNotFound)
+}
+
+// TestAMessageIsFoundByWhatsappsOwnIdAndKeepsItsTask is what a redelivery and the
+// task list both read: WhatsApp's id is the lookup key, and the task a message opened
+// stays on the row so a person can follow the answer back to the question.
+func TestAMessageIsFoundByWhatsappsOwnIdAndKeepsItsTask(t *testing.T) {
+	fixture := newWhatsAppFixture(t, appDatabase(t))
+	ctx := t.Context()
+
+	stored, created, err := fixture.repository.Record(ctx, fixture.scope, fixture.inbound("msg-by-id"))
+	require.NoError(t, err)
+	require.True(t, created)
+
+	found, err := fixture.repository.ByWaID(ctx, fixture.scope, "msg-by-id")
+	require.NoError(t, err)
+	require.Equal(t, stored.ID, found.ID)
+	require.Equal(t, stored.Text, found.Text)
+	require.Equal(t, stored.ChatJID, found.ChatJID)
+
+	// A message WhatsApp has not delivered is not there, which is what a caller
+	// checking a redelivery reads.
+	_, err = fixture.repository.ByWaID(ctx, fixture.scope, "msg-never-sent")
+	require.ErrorIs(t, err, whatsappdomain.ErrNotFound)
+
+	// The task a message opened is written onto it, and it is what the screen shows
+	// next to the message.
+	taskID := fixture.createTask(t)
+	require.NoError(t, fixture.repository.AttachTask(ctx, fixture.scope, stored.ID, taskID))
+
+	attached, err := fixture.repository.MessageByID(ctx, fixture.scope, stored.ID)
+	require.NoError(t, err)
+	require.Equal(t, taskID, attached.TaskID)
+
+	// A task that does not exist cannot be named: the row points at the runtime's own
+	// table, so a task id nobody created is refused by the database rather than
+	// recorded as an answer to a question that was never asked. The refusal is left
+	// as the constraint's own, because the only caller attaches the id the reply
+	// just returned and there is no product sentence to write for it.
+	require.Error(t, fixture.repository.AttachTask(ctx, fixture.scope, stored.ID, uuid.New()))
+
+	// Another workspace cannot attach a task to this message, however it names it —
+	// and it is told the row is not there rather than answered as done.
+	their := newWhatsAppFixture(t, appDatabase(t))
+	require.ErrorIs(t, their.repository.AttachTask(ctx, their.scope, stored.ID, their.createTask(t)),
+		whatsappdomain.ErrNotFound)
+
+	// A message that does not exist is refused the same way.
+	require.ErrorIs(t, fixture.repository.AttachTask(ctx, fixture.scope, uuid.New(), taskID),
+		whatsappdomain.ErrNotFound)
+
+	untouched, err := fixture.repository.MessageByID(ctx, fixture.scope, stored.ID)
+	require.NoError(t, err)
+	require.Equal(t, taskID, untouched.TaskID, "and the row it named is untouched")
+}
+
+// createTask inserts the task a message may point at, which the runtime owns and this
+// epic only references.
+func (f *whatsappFixture) createTask(t *testing.T) uuid.UUID {
+	t.Helper()
+
+	var taskID uuid.UUID
+	require.NoError(t, f.pool.InScope(t.Context(), database.Scope{
+		UserID:      f.userID,
+		WorkspaceID: f.workspace,
+	}, func(tx pgx.Tx) error {
+		return tx.QueryRow(t.Context(),
+			`INSERT INTO tasks (workspace_id, agent_id, trigger, title)
+			 VALUES ($1, $2, 'chat', 'Jawab pesanan WhatsApp')
+			 RETURNING id`,
+			f.workspace, f.agentID).Scan(&taskID)
+	}))
+
+	return taskID
+}
