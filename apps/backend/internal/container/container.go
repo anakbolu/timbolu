@@ -24,9 +24,11 @@ import (
 	routineactivity "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/activity"
 	routinedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
 	taskactivity "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/activity"
+	whatsappdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/authn"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
+	"github.com/robzlabz/employeebot/apps/backend/internal/platform/kms"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/logger"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/mail"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/oauth/google"
@@ -71,6 +73,14 @@ type Container struct {
 	Routine routinedomain.Service
 	// RoutineTasks is the routine activity set, registered by the agent worker.
 	RoutineTasks *routineactivity.Activities
+	// WhatsApp is the module: the numbers a workspace linked and who answers them.
+	// It is kept on the container because the gateway process hands it its own
+	// runtime, and because the integration adapter reaches it.
+	WhatsApp whatsappdomain.Service
+	// Keys is the key ring that wraps a workspace's data key. It is kept here
+	// because two modules seal credentials with it: the hub seals tokens, and this
+	// one seals a WhatsApp session.
+	Keys *kms.Local
 
 	Repositories *Repositories
 	Services     *Services
@@ -292,6 +302,14 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Container, e
 	// Routines come after the task runtime, because a run's work becomes a task, and
 	// before the conversations, because a chat message may start one.
 	if err := c.openRoutine(ctx, cfg); err != nil {
+		c.Close()
+		return nil, err
+	}
+
+	// WhatsApp comes after the integrations, the task runtime, and the routines:
+	// a linked number is a connection the hub shows, an inbound message opens a
+	// task, and a routine may be watching the message event.
+	if err := c.openWhatsApp(ctx, cfg); err != nil {
 		c.Close()
 		return nil, err
 	}

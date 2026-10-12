@@ -1,5 +1,5 @@
 # Local development stack: Postgres (with pgvector), Redis, Temporal and its UI,
-# the migration step, and the three backend processes.
+# the migration step, and the four backend processes.
 #
 # Migrations run as their own one-shot service before the API starts, which is
 # the same order the deployment pipeline uses.
@@ -52,6 +52,17 @@ x-backend-env: &backend-env
   GMAIL_API_BASE: ${GMAIL_API_BASE:-}
   GMAIL_AUTH_ENDPOINT: ${GMAIL_AUTH_ENDPOINT:-}
   GMAIL_TOKEN_ENDPOINT: ${GMAIL_TOKEN_ENDPOINT:-}
+  # WhatsApp: the API reaches the gateway process over the compose network, and
+  # the gateway authenticates with a shared secret. Both empty leaves numbers
+  # readable and unlinkable, which is what a deployment with no gateway is.
+  WA_GATEWAY_URL: ${WA_GATEWAY_URL:-http://wa-gateway:8090}
+  WA_GATEWAY_TOKEN: ${WA_GATEWAY_TOKEN:-local_dev_wa_gateway_token}
+  # The gateway's own listen address, and the default hourly send ceiling.
+  WA_ADDRESS: ${WA_ADDRESS:-:8090}
+  WA_OWNER: ${WA_OWNER:-}
+  WA_HOURLY_LIMIT: ${WA_HOURLY_LIMIT:-0}
+  # whatsmeow's own protocol log writes a line per decrypted message.
+  WA_LOG_WHATSMEOW: ${WA_LOG_WHATSMEOW:-false}
   LLM_DEFAULT_ADAPTER: ${LLM_DEFAULT_ADAPTER:-}
   LLM_DEFAULT_BASE_URL: ${LLM_DEFAULT_BASE_URL:-}
   LLM_DEFAULT_MODEL: ${LLM_DEFAULT_MODEL:-}
@@ -203,6 +214,32 @@ services:
       redis:
         condition: service_healthy
       temporal:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # The process that owns the WhatsApp connections. It is separate from the API
+  # because a session is a socket that stays open: an API that is replaced loses
+  # nothing, and a number whose socket died with it is a number that is offline.
+  wa-gateway:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+      args:
+        BINARY: wa-gateway
+    container_name: bolu-wa-gateway
+    restart: unless-stopped
+    environment: *backend-env
+    volumes:
+      # The same directory the API writes to: an attachment the gateway downloads
+      # is read back by the API that serves it.
+      - storage_data:/data/storage
+    # No published port. The gateway speaks for every tenant it serves, so it is
+    # reached only from inside the stack.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully

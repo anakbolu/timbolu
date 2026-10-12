@@ -154,6 +154,32 @@ What they prove:
 - `TestDeletingARoutineKeepsItsHistory` — E11.1's second gate: the schedule goes, the
   runs stay, and a run whose routine is gone still reads as a line because the name
   was snapshotted.
+- `TestASessionBelongsToOneWorkspace`, `TestANumberIsInvisibleToAnotherWorkspace` — E9.1's
+  gate against Postgres: one workspace's number, messages, queue, and sealed session
+  are invisible from another, and the policy refuses a write from outside rather
+  than the query's filter being careful.
+- `TestASessionIsSealedWithItsWorkspacesOwnKey` — the confidentiality half, with the
+  real key ring: the same bytes sealed for one workspace do not open for another,
+  and a byte changed in the ciphertext is refused. `TestForgettingASessionKeepsTheNumber`
+  is the other side: ending a session keeps the number and what customers wrote.
+- `TestOneWhatsappMessageIsOneRow` — E9.4: a redelivery of the same WhatsApp message
+  is one row and answers with the row it already has, which is what stops a second
+  task for one customer question. `TestAMessageWithoutAnAttachmentIsNotPendingMedia`
+  is the receive path's other half: a message is recorded before its bytes are
+  fetched, and a failed download is recorded rather than left pending forever.
+- `TestOneMessageGoesToOneSender` — E9.5: the read and the claim are one statement, so
+  a second worker of the same fleet finds nothing. `TestAMessageADeadGatewayLeftIsReturned`
+  is what a takeover does with the rows a replaced gateway left in flight.
+- `TestTheCeilingIsCountedFromWhatLeft`, `TestAHeldMessageKeepsItsPlace` — E9.6: the
+  hourly ceiling is counted from the messages that actually left, and reaching it
+  pushes the queue to later rather than parking it as failed.
+- `TestAPhoneNumberBelongsToOneWorkspace` — one WhatsApp session belongs to the
+  number, so a second tenant linking it is refused with this module's own error
+  rather than a constraint violation, because Row Level Security hides the row that
+  would have said so.
+- `TestTheDirectoryIsReadWithoutATenant` — the one unscoped read in the codebase,
+  and the test says what justifies it: it carries the tenant to scope under and
+  nothing else.
 - `TestEveryTriggerIsStoredWithItsOwnStatus`, `TestHandoffChainIsStoredWithItsDepthAndParent`,
   `TestStepsAreRecordedInOrder`, `TestTaskRuntimeIsTenantScoped` — the task
   schema, the handoff chain, and tenant isolation, against a real Postgres.
@@ -184,6 +210,21 @@ stack up — but it is what proves the wiring that unit tests script away:
 task back to its agent with the note; an approval reaches the send boundary and
 stops there honestly, because no integration executor exists yet (EPIC 8); and an
 approval outside working hours is held with a reason the user can read.
+
+EPIC 9 has no workflow of its own: the gateway is a process, not a workflow. What it
+does have is a **lease**, and that is tested against a real Redis in
+`internal/platform/whatsapp/lease_test.go` rather than a fake, because the property
+is "the value expires on its own" — a fake would only restate the test. The five
+cases are: one instance holds a number and a second is refused, a lease whose owner
+stops renewing is taken over without anybody cleaning up, a clean shutdown hands over
+immediately, a predecessor's late release cannot delete its successor's lease, and
+two numbers do not share one.
+
+The seam between the API and the gateway is tested as HTTP rather than as a
+function call, in `gateway_test.go`. It is the only place the QR could leak: the
+gateway speaks for every tenant it serves, so a caller without a token is refused,
+and a call without a workspace is refused — an operation that did not know whose
+number it acts on would act on anybody's.
 
 Phase 3 needs the extraction workflow to be registered under the name the schedule
 starts it with, which is a contract no compiler checks. The workflow's own test

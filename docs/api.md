@@ -569,6 +569,102 @@ task's own reason ("model gagal menjawab…") rather than a step count. A run th
 could not open a task at all is `failed` with the reason recorded, and the schedule
 keeps firing — one bad run must not stop a routine forever.
 
+## WhatsApp (EPIC 9)
+
+A **number** is a WhatsApp line this workspace linked by scanning a code. It is a
+connection like any other — it appears in the hub, a Bolu is granted it, and an
+action on it passes through the approval gate — with one difference: there is no
+token. The session lives in the `wa-gateway` process, which is the only thing that
+stays connected to WhatsApp.
+
+| Endpoint | Auth | Role | Notes |
+| --- | --- | --- | --- |
+| `GET /whatsapp/numbers` | bearer + tenant | any | The workspace's numbers, with their state and how many messages an hour they may send |
+| `POST /whatsapp/numbers` | bearer + tenant | any | `{phone, label?, agent_id}`; records the number and who answers it. Links nothing yet |
+| `GET /whatsapp/numbers/:id` | bearer + tenant | any | One number |
+| `PATCH /whatsapp/numbers/:id` | bearer + tenant | any | `{label?, agent_id?, hourly_limit?}`; each field is its own statement |
+| `DELETE /whatsapp/numbers/:id` | bearer + tenant | any | Ends the session, keeps the message history |
+| `POST /whatsapp/numbers/:id/terms` | bearer + tenant | any | Records that the warning was accepted. Required before a link |
+| `POST /whatsapp/numbers/:id/link` | bearer + tenant | any | Starts a pairing; answers the first state to show |
+| `GET /whatsapp/links/:linkID` | bearer + tenant | any | One attempt, for a screen that reloaded |
+| `GET /whatsapp/links/:linkID/socket` | token + tenant in query | any | The QR, over a WebSocket. See below |
+| `POST /whatsapp/links/:linkID/pair-code` | bearer + tenant | any | `{phone}`; the alternative for a phone that cannot scan |
+| `DELETE /whatsapp/links/:linkID` | bearer + tenant | any | Abandons an attempt |
+| `GET /whatsapp/numbers/:id/messages` | bearer + tenant | any | `?chat=&limit=`; what customers wrote, newest first |
+| `GET /whatsapp/numbers/:id/outbox` | bearer + tenant | any | `?status=&limit=`; what this workspace asked to send |
+| `GET /whatsapp/messages/:id/media` | bearer + tenant | any | One attachment's bytes, `inline` with its own content type |
+
+### The five states a number is in
+
+| `status` | `linked` | Meaning |
+| --- | --- | --- |
+| `unlinked` | false | A row somebody created and did not finish. It is where every number starts |
+| `linking` | false | An attempt is in progress |
+| `connected` | true | A live session |
+| `disconnected` | true | A session that exists and is offline. It reconnects on its own when it can |
+| `needs_relink` | true | WhatsApp refused the session. Waiting does not fix it, and the owners are emailed |
+
+### Why the QR travels on its own socket
+
+A QR is a **capability**: whoever scans it links the number. The workspace event
+stream is delivered to every member, so a code sent there would let a colleague
+link a number into somebody else's workspace. The attempt therefore has its own
+socket, authenticated as the person who started it, and it closes the moment the
+attempt ends.
+
+The polling read (`GET /whatsapp/links/:linkID`) stays as the way a screen
+recovers after a reload or a dropped connection. The frame carries the QR as a
+**matrix** — rows of `"1"` and `"0"` — rather than as an image, because the browser
+has no QR encoder and an `<img>` cannot send an `Authorization` header.
+
+### What leaves, and how fast
+
+Nothing in this module decides that a message should go out. A message arrives
+through the hub: the model calls `whatsapp.send_message`, the approval gate holds
+it as a draft, and an approval queues it through the integration executor.
+
+What the module does decide is the pace, and it is a pace rather than a limit:
+
+- messages wait at least a few seconds, drawn at random, before the first of a
+  batch leaves — a batch that leaves in the instant it was approved reads as a
+  machine posting;
+- the typing indicator is shown before each send, not only the first;
+- an hourly ceiling per number, counted from the messages that actually left
+  rather than from a counter that can drift. A number that reaches it **keeps its
+  queue**: the messages are pushed to later rather than parked as failed, and the
+  owners are told they are paced rather than lost.
+
+### One number, one owner
+
+A WhatsApp session driven by two processes sends every message twice, which is how
+a number gets restricted. A gateway instance therefore holds a **lease** on a
+number in Redis before it connects one, renews it on an interval, and stands down
+immediately when a renewal fails — because a failed renewal means a successor is
+already connecting. A clean shutdown releases its leases, so a rolling restart
+hands over in milliseconds rather than waiting out the TTL.
+
+The fleet finds its numbers through `whatsapp_directory`, which is the one table in
+this codebase without Row Level Security. The migration says why: the gateway is a
+fleet worker rather than a tenant, and it has to discover which tenants have a
+number before it can open any workspace's scope at all. What makes that safe is
+what the table holds and how the rest is read — it is a routing pair and nothing
+else, and every session blob it leads to is sealed with its own workspace's key and
+bound to that workspace id as associated data, so a directory row naming the wrong
+tenant produces an unopenable blob rather than another tenant's session.
+
+### The session is sealed, and the cache is not
+
+The device state — the noise key, the identity key, the signed pre-key, the signal
+sessions, the pre-keys, and the app-state keys — is held in memory and persisted as
+one document sealed with the workspace's own data key, the same key ring the hub
+seals tokens with. A blob cannot be opened under another tenant's key, and cannot
+be replayed against another tenant even if the row is copied.
+
+What is deliberately **not** persisted is the cache: contacts, chat settings,
+message secrets, privacy tokens, and the outgoing-event buffer. WhatsApp re-sends
+those when a connection comes up, and keeping them would grow the sealed blob with
+data nothing here reads.
+
 ## Error codes
 
 | Code | Status | Meaning |
@@ -635,3 +731,11 @@ keeps firing — one bad run must not stop a routine forever.
 | `memory_unavailable` | 503 | No provider can embed, so nothing can be stored |
 | `routine_not_found` | 404 | No such routine in this workspace |
 | `routine_unavailable` | 503 | No scheduler is reachable, so nothing can be registered then fired |
+| `whatsapp_not_found` | 404 | No such number or message in this workspace |
+| `terms_not_accepted` | 409 | The warning about an unsupported route was not accepted yet |
+| `already_linked` | 409 | This phone number is already linked, here or in another workspace |
+| `no_agent` | 409 | The number has no Bolu assigned, so an inbound message has no reader |
+| `not_connected` | 409 | The number is not linked, or is offline |
+| `link_expired` | 410 | The pairing ran out of time; ask for a new code |
+| `whatsapp_unavailable` | 503 | No gateway is configured for this deployment |
+| `media_not_found` | 404 | The message carries no attachment, or its bytes are not stored |

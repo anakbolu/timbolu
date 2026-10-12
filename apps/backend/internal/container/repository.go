@@ -13,6 +13,7 @@ import (
 	memoryrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/repository"
 	routinerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/repository"
 	taskrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/repository"
+	whatsapprepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/repository"
 	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
 )
@@ -46,6 +47,9 @@ type Repositories struct {
 	// Routine holds the routines and the runs they produced. The schedule id on a
 	// routine is the link to the engine; the row is what the product owns.
 	Routine *routinerepo.Repository
+	// WhatsApp holds the linked numbers, their sealed sessions, the messages they
+	// carried, the outbox that paces them, and the fleet directory.
+	WhatsApp *whatsapprepo.Repository
 }
 
 // newRepositories builds every repository. When there is no pool the
@@ -93,6 +97,12 @@ func newRepositories(pool *database.Pool) *Repositories {
 		// Routines keep the cadence and the run history. The schedules themselves
 		// live in the engine, which is why a routine carries the engine's id.
 		repositories.Routine = routinerepo.New(pool)
+
+		// WhatsApp keeps the linked numbers, their sealed sessions, the messages
+		// they carried, and the outbox that paces them. It also answers the one
+		// unscoped read in the codebase — the fleet directory — which the
+		// migration explains.
+		repositories.WhatsApp = whatsapprepo.New(pool)
 
 		// The task runtime implements two ports — tasks and steps — over the
 		// same connection and the same tenant scope.

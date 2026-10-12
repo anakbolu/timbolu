@@ -57,6 +57,7 @@ make smoke-task      # the task runtime end to end against the compose stack
 | `approval` | `/api/drafts*`, `/api/approval-policies`, `/api/audit` | The outbound gate: the draft a Bolu proposes, the policy that decides whether a person is asked, and the trail |
 | `memory` | `/api/memories*`, `/api/knowledge*` | What a Bolu remembers and what it knows: two memory layers, the knowledge base, the retrieval that reaches a prompt, and the extraction that reads a quiet conversation |
 | `routine` | `/api/routines*`, `/api/routine-runs` | Work a Bolu runs on its own: the four cadences, the Temporal Schedule behind each one, the run history, and the cheap check that skips a model call |
+| `whatsapp` | `/api/whatsapp/*` | The number the shop answers on: the link flow, who answers it, what customers wrote, and the queue that paces what leaves. The connection itself lives in the `wa-gateway` process |
 
 ### Authentication
 
@@ -371,6 +372,78 @@ read back inside the transaction that creates it.
 - **A schedule change is visible immediately.** Create, update, pause, and resume
   answer with the routine *and* its next run times, read from the same write that
   changed them, so a form cannot show a stale time beside a cadence it just saved.
+
+### WhatsApp (EPIC 9)
+
+- **The connection is a separate process, and that is not a preference.** A WhatsApp
+  session is a socket that stays open. The API serves requests and is replaced at
+  any moment; a number whose socket died with the request that touched it is a
+  number that is never online. `cmd/wa-gateway` owns the sockets, and the API
+  reaches it over an internal address it is not publicly reachable at.
+- **One number has one owner, and the owner has a deadline.** Two processes on one
+  session send every message twice, which is how a number gets restricted. A lease
+  in Redis decides, it is renewed on an interval, and a failed renewal makes the
+  holder stand down *immediately* — because a failed renewal means a successor is
+  already connecting. Redis rather than Postgres because the value is liveness: a
+  lease that survived the process holding it is exactly the bug this prevents.
+- **The session is sealed with the workspace's own key, and bound to it.** The
+  device state is persisted as one document sealed through the same key ring the hub
+  seals tokens with, with the workspace id as associated data. A blob cannot be
+  opened under another tenant's key, and cannot be replayed against another tenant
+  even if the row is copied. The cache — contacts, chat settings, message secrets,
+  privacy tokens — is deliberately *not* persisted: WhatsApp re-sends it, and keeping
+  it would grow the sealed blob with data nothing here reads.
+- **The fleet reads one table without a tenant, and the migration says why.** The
+  gateway is a fleet worker rather than a tenant, and it has to discover which
+  tenants have a number before it can open any workspace's scope at all. What makes
+  it safe is what it holds — a routing pair and nothing else — plus the seal above,
+  which is what turns a directory row naming the wrong tenant into an unopenable
+  blob rather than another tenant's session.
+- **A QR is a capability, so it travels on its own socket.** The workspace event
+  stream reaches every member; a code sent there would let a colleague link a number
+  into somebody else's workspace. The attempt has its own socket, authenticated as
+  the person who started it, and it closes the moment the attempt ends. The code is
+  drawn from a matrix the server rendered rather than from an image, because the
+  browser has no QR encoder and an `<img>` cannot send a header.
+- **The warning is what unblocks the link, and nothing else does.** Linking over an
+  unsupported route is a risk somebody takes, so it is accepted explicitly and before
+  an attempt starts. The product's answer to that risk is the pace below, not a
+  disclaimer.
+- **A message is recorded before it is acted on.** The row is what makes a
+  redelivery harmless — WhatsApp retries when an acknowledgement is slow — and it is
+  what a person reads when they ask what a customer said. Only a message this call
+  created opens anything, so a retry cannot become a second task.
+- **A routine watching the event owns the work.** An inbound message is announced as
+  `whatsapp.message_received` first, and the Bolu assigned to the number answers only
+  when nothing is watching. A routine names the Bolu that should act, which is a
+  better answer than a rule invented in the module.
+- **A group is not a customer.** A group message and a message this number sent are
+  both recorded — what was said is what a person reads — and neither opens work.
+- **The ceiling is a pace, not a refusal.** A number that spent its hour keeps its
+  queue: the messages are pushed to later rather than parked as failed, and the
+  owners are told they are paced rather than lost. The count is of messages that
+  actually left, so a counter cannot drift away from reality. A hold gives the
+  attempt back; a real failure keeps it, which is how a message that keeps failing is
+  eventually parked rather than retried forever.
+- **Media is fetched after the message is recorded.** A 40 MB video must not hold up
+  the listener, so the receive path records a message with a pending attachment and a
+  media pass fetches it. A download that fails is recorded with its reason rather
+  than left pending forever, and the message itself is already in front of a person.
+- **The adapter declares that it needs no token, and the executor honours it.** A
+  linked number is paired by a phone, so there is nothing for the hub's token columns
+  to hold. Sealing an empty string to look like a token would make the row read as a
+  connection with a credential it never had, and the next person to debug it would
+  hunt for a token that was never issued. `Credentialled` is how an adapter says so,
+  and the default — an adapter that says nothing — still needs one.
+- **The WhatsApp tools are offered only when a gateway is reachable.** The adapter
+  resolves the module when it is called rather than when it is installed, because the
+  hub is assembled before the module — a linked number is a connection the hub shows
+  — and an adapter holding a nil service would offer tools nobody could run, which
+  teaches the model to call them.
+- **The official Business Platform slots in behind the same interface.** Everything
+  WhatsApp-specific is behind `domain.Transport`, which two things already implement
+  — the whatsmeow engine and the HTTP client — so the third is a third
+  implementation rather than a second design.
 
 ## Configuration
 

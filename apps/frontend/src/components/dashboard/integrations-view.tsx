@@ -27,6 +27,7 @@ import {
 } from "@/lib/api";
 import { crewFor, expressionOf, stateOf } from "@/lib/dashboard-view";
 
+import { WhatsAppPanel } from "./whatsapp-panel";
 import { useWorkspace } from "./workspace-data";
 
 const CARD = "rounded-[26px] border border-bolu-border bg-white";
@@ -282,6 +283,12 @@ export function IntegrationsPanel() {
           {shown}
         </p>
       ) : null}
+
+      {/* WhatsApp is not behind an OAuth consent screen like the other
+          applications, so it gets its own card rather than a tile in the grid: a
+          number is linked by scanning, and the step that matters — reading the
+          warning — has to be read before anything starts. */}
+      <WhatsAppPanel />
 
       <div className="flex flex-wrap gap-2">
         {categories.map((item) => (

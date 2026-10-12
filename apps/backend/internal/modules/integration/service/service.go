@@ -358,10 +358,17 @@ func (s *service) Execute(ctx context.Context, scope domain.Scope, integrationID
 		}
 	}
 
-	// Opened here, used immediately, and never stored on the result.
-	token, err := s.Token(ctx, scope, integrationID)
-	if err != nil {
-		return domain.Result{}, err
+	// Opened here, used immediately, and never stored on the result. An adapter
+	// that declares it needs no token is called without one: it carries its own
+	// credential, and refusing the call because the token columns are empty would
+	// make a linked number permanently unusable.
+	var token domain.Token
+	if needsToken(adapter) {
+		opened, err := s.Token(ctx, scope, integrationID)
+		if err != nil {
+			return domain.Result{}, err
+		}
+		token = opened
 	}
 
 	result, err := adapter.Execute(ctx, domain.Call{

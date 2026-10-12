@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
 #
-# One Dockerfile builds the three backend images (api, agent-worker,
-# integration-worker). The BINARY build argument selects which cmd/ package is
-# compiled, so every image carries only the binary it runs.
+# One Dockerfile builds the four backend images (api, agent-worker,
+# integration-worker, wa-gateway). The BINARY build argument selects which cmd/
+# package is compiled, so every image carries only the binary it runs.
 
 FROM golang:1.26-alpine AS builder
 
@@ -43,6 +43,9 @@ ENV ENVIRONMENT=production
 
 USER bolu
 
-EXPOSE 8080
+# The API and both workers listen on 8080; the WhatsApp gateway listens on 8090,
+# which is also what it is told through WA_ADDRESS. Exposing both is what lets one
+# Dockerfile serve every binary.
+EXPOSE 8080 8090
 
 CMD ["./app"]
