@@ -1,36 +1,49 @@
 "use client";
 
 /**
- * Shared shell for the authentication pages: the card, the heading, the error
- * line, and the primary button. Every page in this flow is a client component,
- * because the access token lives in memory and the forms are interactive.
+ * Shared shell for the authentication pages: the bolu mark, the card, the
+ * heading, the error line, the primary button, and — where a page passes one —
+ * the crew working in the room beside the card. Every page in this flow is a
+ * client component, because the access token lives in memory and the forms are
+ * interactive.
  */
 
 import Link from "next/link";
 import type { ReactNode } from "react";
+
+import { Bolu } from "@/components/bolu/bolu";
+import { LOGO } from "@/lib/crew";
 
 type AuthShellProps = {
   title: string;
   subtitle: string;
   children: ReactNode;
   footer?: ReactNode;
+  /** The crew at work, shown beside the card. Login and register pass one. */
+  scene?: ReactNode;
 };
 
-export function AuthShell({ title, subtitle, children, footer }: AuthShellProps) {
+export function AuthShell({ title, subtitle, children, footer, scene }: AuthShellProps) {
   return (
-    <main className="mx-auto flex w-full max-w-[460px] flex-1 flex-col justify-center px-5 py-12">
-      <Link href="/" className="mb-8 flex items-center gap-2 text-sm font-semibold text-bolu-muted">
-        <span aria-hidden className="inline-block size-3 rounded-full bg-bolu-accent" />
-        Keluarga Bolu
-      </Link>
+    <main className="mx-auto flex w-full max-w-[1120px] flex-1 flex-col justify-center gap-10 px-5 py-12 lg:flex-row lg:items-center lg:justify-center lg:gap-16">
+      <div className="mx-auto flex w-full max-w-[460px] flex-col lg:mx-0 lg:flex-none">
+        <Link href="/" className="mb-8 flex items-center gap-2.5 text-sm font-semibold text-bolu-muted">
+          <span aria-hidden className="inline-flex flex-none items-center justify-center">
+            <Bolu member={LOGO} size={32} />
+          </span>
+          Keluarga Bolu
+        </Link>
 
-      <div className="rounded-3xl border border-bolu-border bg-bolu-surface p-7 shadow-[0_1px_2px_rgb(30_27_46_/_0.04)]">
-        <h1 className="font-display text-2xl font-semibold text-bolu-ink">{title}</h1>
-        <p className="mt-2 text-sm text-bolu-muted">{subtitle}</p>
-        <div className="mt-6">{children}</div>
+        <div className="rounded-3xl border border-bolu-border bg-bolu-surface p-7 shadow-[0_1px_2px_rgb(30_27_46_/_0.04)]">
+          <h1 className="font-display text-2xl font-semibold text-bolu-ink">{title}</h1>
+          <p className="mt-2 text-sm text-bolu-muted">{subtitle}</p>
+          <div className="mt-6">{children}</div>
+        </div>
+
+        {footer ? <div className="mt-6 text-center text-sm text-bolu-muted">{footer}</div> : null}
       </div>
 
-      {footer ? <div className="mt-6 text-center text-sm text-bolu-muted">{footer}</div> : null}
+      {scene ? <div className="w-full lg:min-w-0 lg:flex-1">{scene}</div> : null}
     </main>
   );
 }
