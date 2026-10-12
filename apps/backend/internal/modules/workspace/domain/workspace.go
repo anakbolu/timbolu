@@ -43,8 +43,15 @@ type Workspace struct {
 	BusinessField string
 	Timezone      string
 	Language      string
-	Role          string
-	CreatedAt     time.Time
+	// WorkHoursStart and WorkHoursEnd are "HH:MM" in the workspace's own
+	// timezone. The approval gate holds an action outside them.
+	WorkHoursStart string
+	WorkHoursEnd   string
+	// WorkDays is the ISO weekdays the window applies to (1 = Monday). A window
+	// that opens on a day the business is closed is not a window.
+	WorkDays  []int
+	Role      string
+	CreatedAt time.Time
 }
 
 // Team groups the Bolu of one workspace. A new workspace always gets Tim Bolu
@@ -91,10 +98,19 @@ type OnboardResult struct {
 }
 
 // UpdateRequest changes the workspace profile.
+//
+// It carries every field the Pengaturan screen edits, not only the ones a form
+// happened to submit: the screen saves a field at a time, and a partial update
+// that dropped the working hours would change when the approval gate lets an
+// action leave.
 type UpdateRequest struct {
-	Name          string
-	BusinessField string
-	Timezone      string
+	Name           string
+	BusinessField  string
+	Timezone       string
+	Language       string
+	WorkHoursStart string
+	WorkHoursEnd   string
+	WorkDays       []int
 }
 
 // Repository is the persistence contract. Methods take the caller's scope so

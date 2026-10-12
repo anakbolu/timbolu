@@ -12,11 +12,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { BotSvg } from "@/components/bolu/bot-svg";
+import { Bolu } from "@/components/bolu/bolu";
+import { useWorkspace } from "@/components/dashboard/workspace-data";
 import type { AgentStatePayload, Agent, ActivityEvent } from "@/lib/api";
-import { ensureActiveWorkspace, listAgentTeams, refreshSession } from "@/lib/api";
-import { bot, type BotShape } from "@/lib/crew";
-import { connect, type RealtimeStatus } from "@/lib/realtime";
+import { crewFor, expressionOf, stateOf } from "@/lib/dashboard-view";
 
 import { BEAN, FURN, HOME, PLACE, QUEUE, SOFA, ST } from "@/components/dashboard/office";
 
@@ -53,64 +52,29 @@ type Placed = {
 };
 
 export function OfficeView() {
-  const [agents, setAgents] = useState<Agent[]>([]);
+  const store = useWorkspace();
   const [states, setStates] = useState<Record<string, AgentStatePayload>>({});
-  const [status, setStatus] = useState<RealtimeStatus>("connecting");
-  const [error, setError] = useState<string | null>(null);
-  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
 
-  useEffect(() => {
-    void (async () => {
-      const session = await refreshSession();
-      if (!session.ok) {
-        setError("Sesi berakhir. Masuk lagi.");
-        return;
-      }
+  // The roster and the live connection come from the workspace store: opening a
+  // second socket here would deliver every frame twice and leave the two last-event
+  // ids disagreeing about what a reconnect still needs.
+  const { agents, ready, status } = store;
+  const { subscribe } = store;
 
-      const active = await ensureActiveWorkspace();
-      setWorkspaceId(active);
-      if (!active) {
-        setError("Pilih workspace dulu.");
-        return;
-      }
-
-      const result = await listAgentTeams(active);
-      if (!result.ok) {
-        setError(result.message);
-        return;
-      }
-      setAgents(result.data.flatMap((team) => team.agents));
-    })();
-  }, []);
-
-  // The office is a view of the same stream as the chat and the feed. The id comes
-  // from the load above rather than from storage, so a tab that had none stored
-  // still opens its stream once the workspace is known.
-  useEffect(() => {
-    if (!workspaceId) {
-      return;
-    }
-
-    const handle = connect(
-      workspaceId,
-      {
-        onEvent: (event: ActivityEvent) => {
-          if (event.type !== "agent.state") {
-            return;
-          }
-          const payload = readState(event);
-          if (!payload) {
-            return;
-          }
-          setStates((previous) => ({ ...previous, [payload.agent_id]: payload }));
-        },
-        onStatus: setStatus,
-      },
-      0,
-    );
-
-    return () => handle.close();
-  }, [workspaceId]);
+  useEffect(
+    () =>
+      subscribe((event: ActivityEvent) => {
+        if (event.type !== "agent.state") {
+          return;
+        }
+        const payload = readState(event);
+        if (!payload) {
+          return;
+        }
+        setStates((previous) => ({ ...previous, [payload.agent_id]: payload }));
+      }),
+    [subscribe],
+  );
 
   const placed = useMemo(() => place(agents, states), [agents, states]);
 
@@ -138,9 +102,10 @@ export function OfficeView() {
         </div>
       </div>
 
-      {error ? (
-        <p role="alert" className="rounded-xl border border-bolu-belum/30 bg-bolu-belum/8 px-3 py-2 text-sm text-bolu-belum">
-          {error}
+      {ready && agents.length === 0 ? (
+        <p className="rounded-2xl border border-bolu-border bg-white px-4 py-3 text-[15px] text-bolu-muted">
+          Kantornya masih kosong. Buat Bolu pertama di halaman Tim, lalu kantornya terisi sendiri dari
+          status mereka.
         </p>
       ) : null}
 
@@ -176,9 +141,15 @@ export function OfficeView() {
               className="absolute z-10 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center transition-all duration-700 ease-out"
               style={{ left: `${x}%`, top: `${y}%` }}
             >
-              <BotSvg
-                bot={bot(agent.name) as BotShape}
-                className="size-[54px] drop-shadow max-[760px]:size-[40px]"
+              {/* The face comes from the registry row, so a Bolu this workspace made
+                  is drawn as the character it was given rather than looked up by name
+                  in the fixed crew table, which threw for any other name. */}
+              <Bolu
+                member={crewFor(agent)}
+                expression={expressionOf(stateOf(agent))}
+                color={agent.color || undefined}
+                size={54}
+                className="drop-shadow"
               />
               <span className="mt-0.5 whitespace-nowrap rounded-full bg-white/85 px-2 py-0.5 text-[11px] font-semibold text-[#3E3B52]">
                 {agent.name} · {STATE_LABEL[state] ?? state}

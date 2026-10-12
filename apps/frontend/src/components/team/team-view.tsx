@@ -27,7 +27,6 @@ import {
   listIntegrations,
   listAgentTeams,
   listTemplates,
-  refreshSession,
   setAgentStatus,
   setAgentGrant,
   updateAgent,
@@ -61,14 +60,10 @@ export function TeamView() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const session = await refreshSession();
-    if (!session.ok) {
-      setError("Sesi berakhir. Masuk lagi.");
-      return;
-    }
-
-    // Resolved from the session rather than only read from storage, so an account
-    // that owns a workspace is not told to pick one it cannot see.
+    // The workspace is resolved through `ensureActiveWorkspace`, which refreshes
+    // the session itself. Refreshing first and then resolving was two uses of one
+    // single-use refresh cookie, so the second call raced the first and the screen
+    // could be told the session had ended while it was still valid.
     const active = await ensureActiveWorkspace();
     setWorkspaceId(active);
     if (!active) {

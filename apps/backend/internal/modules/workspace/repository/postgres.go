@@ -57,6 +57,8 @@ type WorkingHours struct {
 	Start    string
 	End      string
 	Timezone string
+	// Days is the ISO weekdays the window applies to (1 = Monday).
+	Days []int
 }
 
 // Repository is the Postgres-backed implementation of domain.Repository.
@@ -246,6 +248,7 @@ func (r *Repository) WorkingHours(ctx context.Context, workspaceID uuid.UUID) (W
 			Start:    formatClock(row.WorkHoursStart),
 			End:      formatClock(row.WorkHoursEnd),
 			Timezone: row.Timezone,
+			Days:     toIntDays(row.WorkDays),
 		}
 		return nil
 	})
@@ -327,10 +330,14 @@ func (r *Repository) UpdateWorkspace(ctx context.Context, scope domain.Scope, re
 
 	err := r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
 		row, err := queries.UpdateWorkspace(ctx, sqlcgen.UpdateWorkspaceParams{
-			ID:            scope.WorkspaceID,
-			Name:          req.Name,
-			BusinessField: req.BusinessField,
-			Timezone:      req.Timezone,
+			ID:             scope.WorkspaceID,
+			Name:           req.Name,
+			BusinessField:  req.BusinessField,
+			Timezone:       req.Timezone,
+			Language:       req.Language,
+			WorkHoursStart: parseClock(req.WorkHoursStart),
+			WorkHoursEnd:   parseClock(req.WorkHoursEnd),
+			WorkDays:       toInt32(req.WorkDays),
 		})
 		if err != nil {
 			return mapNotFound(err, "update workspace")
@@ -343,6 +350,46 @@ func (r *Repository) UpdateWorkspace(ctx context.Context, scope domain.Scope, re
 	}
 
 	return workspace, nil
+}
+
+// parseClock turns the "HH:MM" a form submits into the `time` column's value.
+//
+// An empty string is not valid and is left invalid rather than sent as midnight:
+// the column is NOT NULL, so a caller that dropped the field gets a database
+// error rather than a workspace whose window silently starts at 00:00.
+func parseClock(value string) pgtype.Time {
+	if value == "" {
+		return pgtype.Time{}
+	}
+
+	var hour, minute int
+	if _, err := fmt.Sscanf(value, "%d:%d", &hour, &minute); err != nil {
+		return pgtype.Time{}
+	}
+
+	return pgtype.Time{
+		Microseconds: int64(hour)*3_600_000_000 + int64(minute)*60_000_000,
+		Valid:        true,
+	}
+}
+
+// toInt32 widens the day numbers for the driver, which reads an INTEGER[] as
+// int32 rather than int.
+func toInt32(days []int) []int32 {
+	out := make([]int32, 0, len(days))
+	for _, day := range days {
+		out = append(out, int32(day))
+	}
+	return out
+}
+
+// toIntDays narrows them back for the domain.
+func toIntDays(days []int32) []int {
+	out := make([]int, 0, len(days))
+	for _, day := range days {
+		out = append(out, int(day))
+	}
+	return out
 }
 
 // Teams lists the teams of the active workspace.
@@ -692,13 +739,16 @@ func toDatabaseScope(scope domain.Scope) database.Scope {
 
 func toWorkspace(row sqlcgen.Workspace, role string) domain.Workspace {
 	return domain.Workspace{
-		ID:            row.ID,
-		Name:          row.Name,
-		BusinessField: row.BusinessField,
-		Timezone:      row.Timezone,
-		Language:      row.Language,
-		Role:          role,
-		CreatedAt:     row.CreatedAt,
+		ID:             row.ID,
+		Name:           row.Name,
+		BusinessField:  row.BusinessField,
+		Timezone:       row.Timezone,
+		Language:       row.Language,
+		WorkHoursStart: formatClock(row.WorkHoursStart),
+		WorkHoursEnd:   formatClock(row.WorkHoursEnd),
+		WorkDays:       toIntDays(row.WorkDays),
+		Role:           role,
+		CreatedAt:      row.CreatedAt,
 	}
 }
 

@@ -48,6 +48,11 @@ export type Workspace = {
   timezone: string;
   language: string;
   role?: string;
+  /** The window outbound actions may leave in, as "HH:MM" in `timezone`. */
+  work_hours_start: string;
+  work_hours_end: string;
+  /** The ISO weekdays the window applies to, 1 = Monday. */
+  work_days: number[];
   created_at: string;
 };
 
@@ -300,7 +305,15 @@ export function currentWorkspace(workspaceId: string): Promise<ApiResult<Workspa
 /** updateWorkspace changes the workspace profile (owner only). */
 export function updateWorkspace(
   workspaceId: string,
-  input: { name: string; business_field: string; timezone: string },
+  input: {
+    name: string;
+    business_field: string;
+    timezone: string;
+    language?: string;
+    work_hours_start?: string;
+    work_hours_end?: string;
+    work_days?: number[];
+  },
 ): Promise<ApiResult<Workspace>> {
   return request<Workspace>("/workspaces/current", { method: "PATCH", body: input, workspace: workspaceId });
 }
@@ -1011,6 +1024,49 @@ export type AuditEntry = {
   metadata: Record<string, unknown>;
   created_at: string;
 };
+
+/**
+ * A task is one unit of work a Bolu was given. `health` is derived from the
+ * heartbeat, so a task whose worker died reads different from a working one even
+ * though both store `running`.
+ */
+export type Task = {
+  task_id: string;
+  agent_id: string;
+  parent_task_id?: string;
+  conversation_id?: string;
+  trigger: "chat" | "routine" | "webhook" | "handoff";
+  title: string;
+  status: string;
+  health: "running" | "waiting" | "stuck" | "done";
+  depth: number;
+  summary?: string;
+  stopped_reason?: string;
+  waiting_reason?: string;
+  waiting_draft_id?: string;
+  workflow_id?: string;
+  step_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_micros: number;
+  started_at?: string;
+  finished_at?: string;
+  heartbeat_at?: string;
+  created_at: string;
+};
+
+/** listTasks returns the workspace's task history, newest first. */
+export function listTasks(
+  workspaceId: string,
+  filter: { status?: string; live?: boolean; agent_id?: string; limit?: number } = {},
+): Promise<ApiResult<Task[]>> {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(filter)) {
+    if (value !== undefined && value !== "" && value !== false) query.set(key, String(value));
+  }
+  const suffix = query.toString() ? `?${query}` : "";
+  return request<Task[]>(`/tasks${suffix}`, { workspace: workspaceId });
+}
 
 /** listDrafts returns the workspace's drafts, newest first. */
 export function listDrafts(

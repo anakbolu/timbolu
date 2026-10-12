@@ -36,6 +36,11 @@ type updateWorkspaceRequest struct {
 	Name          string `json:"name"`
 	BusinessField string `json:"business_field"`
 	Timezone      string `json:"timezone"`
+	Language      string `json:"language"`
+	// The window outbound actions may leave in, as "HH:MM" and ISO weekdays.
+	WorkHoursStart string `json:"work_hours_start"`
+	WorkHoursEnd   string `json:"work_hours_end"`
+	WorkDays       []int  `json:"work_days"`
 }
 
 type setRoleRequest struct {
@@ -58,7 +63,12 @@ type workspacePayload struct {
 	Timezone      string `json:"timezone"`
 	Language      string `json:"language"`
 	Role          string `json:"role,omitempty"`
-	CreatedAt     string `json:"created_at"`
+	// The window outbound actions may leave in. The Pengaturan screen edits it and
+	// the approval gate reads it, so the screen shows the value the gate uses.
+	WorkHoursStart string `json:"work_hours_start"`
+	WorkHoursEnd   string `json:"work_hours_end"`
+	WorkDays       []int  `json:"work_days"`
+	CreatedAt      string `json:"created_at"`
 }
 
 type teamPayload struct {
@@ -144,9 +154,13 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 	}
 
 	workspace, err := h.service.Update(c.UserContext(), scope(c), middleware.Role(c), domain.UpdateRequest{
-		Name:          req.Name,
-		BusinessField: req.BusinessField,
-		Timezone:      req.Timezone,
+		Name:           req.Name,
+		BusinessField:  req.BusinessField,
+		Timezone:       req.Timezone,
+		Language:       req.Language,
+		WorkHoursStart: req.WorkHoursStart,
+		WorkHoursEnd:   req.WorkHoursEnd,
+		WorkDays:       req.WorkDays,
 	})
 	if err != nil {
 		return h.fail(c, "update workspace", err)
@@ -387,13 +401,16 @@ func (h *Handler) fail(c *fiber.Ctx, operation string, err error) error {
 
 func toWorkspacePayload(workspace domain.Workspace) workspacePayload {
 	return workspacePayload{
-		ID:            workspace.ID.String(),
-		Name:          workspace.Name,
-		BusinessField: workspace.BusinessField,
-		Timezone:      workspace.Timezone,
-		Language:      workspace.Language,
-		Role:          workspace.Role,
-		CreatedAt:     workspace.CreatedAt.UTC().Format(time.RFC3339),
+		ID:             workspace.ID.String(),
+		Name:           workspace.Name,
+		BusinessField:  workspace.BusinessField,
+		Timezone:       workspace.Timezone,
+		Language:       workspace.Language,
+		Role:           workspace.Role,
+		WorkHoursStart: workspace.WorkHoursStart,
+		WorkHoursEnd:   workspace.WorkHoursEnd,
+		WorkDays:       workspace.WorkDays,
+		CreatedAt:      workspace.CreatedAt.UTC().Format(time.RFC3339),
 	}
 }
 

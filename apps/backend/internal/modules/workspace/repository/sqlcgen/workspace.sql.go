@@ -160,7 +160,7 @@ func (q *Queries) CreateTeam(ctx context.Context, arg CreateTeamParams) (Team, e
 const createWorkspace = `-- name: CreateWorkspace :one
 INSERT INTO workspaces (name, business_field, timezone, owner_user_id)
 VALUES ($1, $2, $3, $4)
-RETURNING id, name, business_field, timezone, language, work_hours_start, work_hours_end, created_at, updated_at, owner_user_id
+RETURNING id, name, business_field, timezone, language, work_hours_start, work_hours_end, created_at, updated_at, owner_user_id, work_days
 `
 
 type CreateWorkspaceParams struct {
@@ -191,6 +191,7 @@ func (q *Queries) CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OwnerUserID,
+		&i.WorkDays,
 	)
 	return i, err
 }
@@ -339,7 +340,7 @@ func (q *Queries) GetMembership(ctx context.Context, arg GetMembershipParams) (M
 }
 
 const getOwnedWorkspaceForUser = `-- name: GetOwnedWorkspaceForUser :one
-SELECT id, name, business_field, timezone, language, work_hours_start, work_hours_end, created_at, updated_at, owner_user_id FROM workspaces
+SELECT id, name, business_field, timezone, language, work_hours_start, work_hours_end, created_at, updated_at, owner_user_id, work_days FROM workspaces
 WHERE owner_user_id = $1
 ORDER BY created_at
 LIMIT 1
@@ -360,12 +361,13 @@ func (q *Queries) GetOwnedWorkspaceForUser(ctx context.Context, ownerUserID *uui
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OwnerUserID,
+		&i.WorkDays,
 	)
 	return i, err
 }
 
 const getWorkspace = `-- name: GetWorkspace :one
-SELECT id, name, business_field, timezone, language, work_hours_start, work_hours_end, created_at, updated_at, owner_user_id FROM workspaces WHERE id = $1
+SELECT id, name, business_field, timezone, language, work_hours_start, work_hours_end, created_at, updated_at, owner_user_id, work_days FROM workspaces WHERE id = $1
 `
 
 func (q *Queries) GetWorkspace(ctx context.Context, id uuid.UUID) (Workspace, error) {
@@ -382,12 +384,13 @@ func (q *Queries) GetWorkspace(ctx context.Context, id uuid.UUID) (Workspace, er
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OwnerUserID,
+		&i.WorkDays,
 	)
 	return i, err
 }
 
 const getWorkspaceHours = `-- name: GetWorkspaceHours :one
-SELECT timezone, work_hours_start, work_hours_end
+SELECT timezone, work_hours_start, work_hours_end, work_days
 FROM workspaces WHERE id = $1
 `
 
@@ -395,15 +398,21 @@ type GetWorkspaceHoursRow struct {
 	Timezone       string
 	WorkHoursStart pgtype.Time
 	WorkHoursEnd   pgtype.Time
+	WorkDays       []int32
 }
 
 // The window a workspace lets actions leave in. It is read on its own rather than
 // through GetWorkspace because the approval runtime asks for it on every send and
-// only needs the three columns the rule is about.
+// only needs the columns the rule is about.
 func (q *Queries) GetWorkspaceHours(ctx context.Context, id uuid.UUID) (GetWorkspaceHoursRow, error) {
 	row := q.db.QueryRow(ctx, getWorkspaceHours, id)
 	var i GetWorkspaceHoursRow
-	err := row.Scan(&i.Timezone, &i.WorkHoursStart, &i.WorkHoursEnd)
+	err := row.Scan(
+		&i.Timezone,
+		&i.WorkHoursStart,
+		&i.WorkHoursEnd,
+		&i.WorkDays,
+	)
 	return i, err
 }
 
@@ -524,7 +533,7 @@ func (q *Queries) ListTeams(ctx context.Context, workspaceID uuid.UUID) ([]Team,
 }
 
 const listWorkspacesForUser = `-- name: ListWorkspacesForUser :many
-SELECT w.id, w.name, w.business_field, w.timezone, w.language, w.work_hours_start, w.work_hours_end, w.created_at, w.updated_at, w.owner_user_id, m.role
+SELECT w.id, w.name, w.business_field, w.timezone, w.language, w.work_hours_start, w.work_hours_end, w.created_at, w.updated_at, w.owner_user_id, w.work_days, m.role
 FROM workspaces w
 JOIN members m ON m.workspace_id = w.id
 WHERE m.user_id = $1
@@ -542,6 +551,7 @@ type ListWorkspacesForUserRow struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	OwnerUserID    *uuid.UUID
+	WorkDays       []int32
 	Role           string
 }
 
@@ -567,6 +577,7 @@ func (q *Queries) ListWorkspacesForUser(ctx context.Context, userID uuid.UUID) (
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.OwnerUserID,
+			&i.WorkDays,
 			&i.Role,
 		); err != nil {
 			return nil, err
@@ -608,24 +619,42 @@ func (q *Queries) UpdateMemberRole(ctx context.Context, arg UpdateMemberRolePara
 
 const updateWorkspace = `-- name: UpdateWorkspace :one
 UPDATE workspaces
-SET name = $2, business_field = $3, timezone = $4, updated_at = now()
+SET name = $2,
+    business_field = $3,
+    timezone = $4,
+    language = $5,
+    work_hours_start = $6,
+    work_hours_end = $7,
+    work_days = $8,
+    updated_at = now()
 WHERE id = $1
-RETURNING id, name, business_field, timezone, language, work_hours_start, work_hours_end, created_at, updated_at, owner_user_id
+RETURNING id, name, business_field, timezone, language, work_hours_start, work_hours_end, created_at, updated_at, owner_user_id, work_days
 `
 
 type UpdateWorkspaceParams struct {
-	ID            uuid.UUID
-	Name          string
-	BusinessField string
-	Timezone      string
+	ID             uuid.UUID
+	Name           string
+	BusinessField  string
+	Timezone       string
+	Language       string
+	WorkHoursStart pgtype.Time
+	WorkHoursEnd   pgtype.Time
+	WorkDays       []int32
 }
 
+// Every column the Pengaturan screen edits, in one statement: the screen saves a
+// field at a time and a half-written profile would let the approval gate hold an
+// action against a window that never existed.
 func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams) (Workspace, error) {
 	row := q.db.QueryRow(ctx, updateWorkspace,
 		arg.ID,
 		arg.Name,
 		arg.BusinessField,
 		arg.Timezone,
+		arg.Language,
+		arg.WorkHoursStart,
+		arg.WorkHoursEnd,
+		arg.WorkDays,
 	)
 	var i Workspace
 	err := row.Scan(
@@ -639,6 +668,7 @@ func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OwnerUserID,
+		&i.WorkDays,
 	)
 	return i, err
 }

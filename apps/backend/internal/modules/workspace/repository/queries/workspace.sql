@@ -11,13 +11,23 @@ SELECT * FROM workspaces WHERE id = $1;
 -- name: GetWorkspaceHours :one
 -- The window a workspace lets actions leave in. It is read on its own rather than
 -- through GetWorkspace because the approval runtime asks for it on every send and
--- only needs the three columns the rule is about.
-SELECT timezone, work_hours_start, work_hours_end
+-- only needs the columns the rule is about.
+SELECT timezone, work_hours_start, work_hours_end, work_days
 FROM workspaces WHERE id = $1;
 
 -- name: UpdateWorkspace :one
+-- Every column the Pengaturan screen edits, in one statement: the screen saves a
+-- field at a time and a half-written profile would let the approval gate hold an
+-- action against a window that never existed.
 UPDATE workspaces
-SET name = $2, business_field = $3, timezone = $4, updated_at = now()
+SET name = $2,
+    business_field = $3,
+    timezone = $4,
+    language = $5,
+    work_hours_start = $6,
+    work_hours_end = $7,
+    work_days = $8,
+    updated_at = now()
 WHERE id = $1
 RETURNING *;
 
