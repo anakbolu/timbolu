@@ -273,6 +273,8 @@
 .still .sway,
 .still .steam,
 .still .note,
+.still .bolu-anim,
+.still .bolu-anim *,
 .still .dots span {
   animation: none;
 }
@@ -288,6 +290,8 @@
   .steam,
   .note,
   .pulse,
+  .bolu-anim,
+  .bolu-anim *,
   .dots span {
     animation: none;
   }
@@ -298,4 +302,286 @@
   background-color: var(--color-bolu-panel);
   background-image: radial-gradient(var(--color-bolu-panel-dot) 1.4px, transparent 1.6px);
   background-size: 22px 22px;
+}
+
+/* -------------------------------------------------------- bolu character --
+   Ported from the "Bolu — karakter blob ekspresif" reference. The body and the
+   face group are drawn by characters.tsx; these are its lines, moods and face
+   props. Keyframes are namespaced so they never clash with the dashboard's. */
+
+.bolu-ln {
+  fill: none;
+  stroke: var(--bolu-ink);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.bolu-anim {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+.bolu-eye {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+
+/* Expressions the reference marks as blinking get one slow blink every few
+   seconds; the flag lives per expression in characters.tsx. */
+.bolu-blink {
+  animation: bolu-blink 4.2s infinite;
+}
+
+@keyframes bolu-blink {
+  0%,
+  93%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.08);
+  }
+}
+
+.bolu-wave {
+  transform-box: view-box;
+  transform-origin: 132px 110px;
+  animation: bolu-wave 1.3s ease-in-out infinite;
+}
+
+.a-calm {
+  animation: bolu-breathe 3.2s ease-in-out infinite;
+}
+
+.a-bounce {
+  animation: bolu-hop 0.9s cubic-bezier(0.3, 0.6, 0.4, 1) infinite;
+}
+
+.a-shake {
+  animation: bolu-shake 0.32s linear infinite;
+}
+
+.a-sag {
+  animation: bolu-sag 4.6s ease-in-out infinite;
+}
+
+.a-sway {
+  animation: bolu-sway 4s ease-in-out infinite;
+}
+
+.a-jump {
+  animation:
+    bolu-jump 0.55s cubic-bezier(0.2, 0.8, 0.3, 1.4) 1,
+    bolu-breathe 3.2s ease-in-out 0.55s infinite;
+}
+
+.a-love {
+  animation: bolu-love 1.6s ease-in-out infinite;
+}
+
+.a-wiggle {
+  animation: bolu-wiggle 1.4s ease-in-out infinite;
+}
+
+@keyframes bolu-wave {
+  0%,
+  100% {
+    transform: rotate(-10deg);
+  }
+  50% {
+    transform: rotate(16deg);
+  }
+}
+
+@keyframes bolu-breathe {
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+  50% {
+    transform: scale(1.015, 1.035);
+  }
+}
+
+@keyframes bolu-hop {
+  0%,
+  100% {
+    transform: translateY(0) scale(1.04, 0.96);
+  }
+  35% {
+    transform: translateY(-12px) scale(0.97, 1.04);
+  }
+  70% {
+    transform: translateY(0) scale(1.03, 0.97);
+  }
+}
+
+@keyframes bolu-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-2.5px) rotate(-1deg);
+  }
+  75% {
+    transform: translateX(2.5px) rotate(1deg);
+  }
+}
+
+@keyframes bolu-sag {
+  0%,
+  100% {
+    transform: scale(1.03, 0.96);
+  }
+  50% {
+    transform: scale(1.06, 0.92);
+  }
+}
+
+@keyframes bolu-sway {
+  0%,
+  100% {
+    transform: rotate(-3deg);
+  }
+  50% {
+    transform: rotate(3deg);
+  }
+}
+
+@keyframes bolu-jump {
+  0% {
+    transform: scale(1.1, 0.85);
+  }
+  40% {
+    transform: translateY(-22px) scale(0.92, 1.1);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes bolu-love {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  15% {
+    transform: scale(1.05, 1.03);
+  }
+  30% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.04, 1.02);
+  }
+}
+
+@keyframes bolu-wiggle {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  25% {
+    transform: rotate(-4deg);
+  }
+  75% {
+    transform: rotate(4deg);
+  }
+}
+
+.bolu-dot {
+  animation: bolu-think 1.5s ease-in-out infinite;
+  opacity: 0.2;
+}
+
+.bolu-d2 {
+  animation-delay: 0.25s;
+}
+
+.bolu-d3 {
+  animation-delay: 0.5s;
+}
+
+@keyframes bolu-think {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+.bolu-tear {
+  animation: bolu-tear 1.8s ease-in infinite;
+  transform-box: fill-box;
+}
+
+.bolu-t2 {
+  animation-delay: 0.9s;
+}
+
+@keyframes bolu-tear {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+}
+
+.bolu-sweat {
+  animation: bolu-sweat 2.4s ease-in-out infinite;
+}
+
+@keyframes bolu-sweat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(4px);
+  }
+}
+
+.bolu-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: bolu-pulse 0.6s ease-in-out infinite;
+}
+
+@keyframes bolu-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.22);
+  }
+}
+
+.bolu-float {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: bolu-float 2s ease-in-out infinite;
+}
+
+@keyframes bolu-float {
+  0% {
+    transform: translateY(4px) scale(0.6);
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-14px) scale(1);
+    opacity: 0;
+  }
 }

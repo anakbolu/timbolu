@@ -131,6 +131,8 @@ export type BotShape = {
 export type CrewMember = {
   name: string;
   role: string;
+  /** Body shape; every name here also exists in `BOLU_SHAPES`. */
+  shape: ShapeName;
   /** Card background tint. */
   tint: string;
   bio: string;
@@ -152,13 +154,19 @@ type BotSeed = {
   acts: string[];
 };
 
+/** Two flat ellipse feet, placed just under the shape's baseline. */
+function feetFor(shape: ShapeDef): string {
+  const y = shape.foot - 3;
+  return `M70 ${y} a12 8 0 1 0 24 0 a12 8 0 1 0 -24 0 Z M106 ${y} a12 8 0 1 0 24 0 a12 8 0 1 0 -24 0 Z`;
+}
+
 function mk(seed: BotSeed): CrewMember {
   const shape = SHAPES[seed.shape];
   const mouth = MOUTHS[seed.mouth];
-  const y = shape.foot - 3;
   return {
     name: seed.name,
     role: seed.role,
+    shape: seed.shape,
     color: seed.color,
     feetColor: seed.feetColor,
     tint: seed.tint,
@@ -168,7 +176,7 @@ function mk(seed: BotSeed): CrewMember {
     sw: shape.sw,
     face: shape.face,
     hasFeet: shape.foot > 0,
-    feet: `M70 ${y} a12 8 0 1 0 24 0 a12 8 0 1 0 -24 0 Z M106 ${y} a12 8 0 1 0 24 0 a12 8 0 1 0 -24 0 Z`,
+    feet: feetFor(shape),
     mouth: mouth.d,
     mouthFill: mouth.fill,
     mouthSw: mouth.sw,
