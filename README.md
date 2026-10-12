@@ -104,7 +104,16 @@ Temporal Cloud vs self-host and the data region are recorded in
   `api`, `agent-worker`, `integration-worker`, `frontend`).
 
 Frontend routes today: `/` (hero + 8 bot), `/pricing` (tier placeholder, catatan
-billing transfer bank), `/dashboard` (UI mock tanpa auth: lima view — dasbor,
-rutinitas, kantor, integrasi, pengaturan — plus chat bot dan grup). Belum ada
-auth, integrasi pembayaran, atau koneksi backend — dikerjakan lewat epic di
-GitHub issues.
+billing transfer bank), and the signed-in workspace under `apps/frontend/src/app/(workspace)`:
+`/dashboard` (the front door — the roster, the live activity feed, the drafts waiting,
+and the week's finished work), `/dashboard/routines`, `/office` (the room, where each
+Bolu stands by its derived state), `/dashboard/integrations` (the hub: connected
+accounts, grants per Bolu, MCP servers), `/settings` (workspace profile, working
+hours, approval policies), `/settings/team`, `/settings/model`, `/chat`, and
+`/groups`. Every one of them reads the workspace through
+`components/dashboard/workspace-data.tsx`, which holds one copy of the roster,
+the conversations, the drafts and the tasks and keeps them current from the event
+stream. The Dashboard artboard is `design/keluarga-bolu-dashboard.html`; when a
+port and the reference disagree, the reference wins. Rutinitas lists the runs that
+happened but cannot schedule one: the scheduler is EPIC 11. Belum ada integrasi
+pembayaran; auth, workspace, agent, approval dan LLM sudah tersambung ke backend.

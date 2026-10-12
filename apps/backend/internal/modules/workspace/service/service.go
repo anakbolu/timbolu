@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net/mail"
+	"sort"
 	"strings"
 	"time"
 
@@ -110,6 +111,10 @@ func (s *service) Current(ctx context.Context, scope domain.Scope) (domain.Works
 }
 
 // Update changes the workspace profile. Only an owner may do it.
+//
+// Every field is validated here rather than in the handler, because the same
+// values decide when the approval gate lets an action leave: a window that is
+// malformed, or a week with no working day in it, would park every draft forever.
 func (s *service) Update(ctx context.Context, scope domain.Scope, actorRole string, req domain.UpdateRequest) (domain.Workspace, error) {
 	if !domain.CanAdminister(actorRole) {
 		return domain.Workspace{}, domain.ErrForbidden
@@ -128,11 +133,90 @@ func (s *service) Update(ctx context.Context, scope domain.Scope, actorRole stri
 		return domain.Workspace{}, fmt.Errorf("%w: unknown timezone %q", domain.ErrInvalidInput, timezone)
 	}
 
+	language := strings.TrimSpace(req.Language)
+	if language == "" {
+		language = languageIndonesian
+	}
+	if !validLanguages[language] {
+		return domain.Workspace{}, fmt.Errorf("%w: unknown reply language %q", domain.ErrInvalidInput, language)
+	}
+
+	start, err := normaliseClock(req.WorkHoursStart)
+	if err != nil {
+		return domain.Workspace{}, err
+	}
+	end, err := normaliseClock(req.WorkHoursEnd)
+	if err != nil {
+		return domain.Workspace{}, err
+	}
+	if start == end {
+		return domain.Workspace{}, fmt.Errorf("%w: working hours start and end are the same", domain.ErrInvalidInput)
+	}
+
+	days, err := normaliseDays(req.WorkDays)
+	if err != nil {
+		return domain.Workspace{}, err
+	}
+
 	return s.deps.UpdateWorkspace(ctx, scope, domain.UpdateRequest{
-		Name:          name,
-		BusinessField: strings.TrimSpace(req.BusinessField),
-		Timezone:      timezone,
+		Name:           name,
+		BusinessField:  strings.TrimSpace(req.BusinessField),
+		Timezone:       timezone,
+		Language:       language,
+		WorkHoursStart: start,
+		WorkHoursEnd:   end,
+		WorkDays:       days,
 	})
+}
+
+// The reply languages a workspace may choose.
+const languageIndonesian = "id"
+
+var validLanguages = map[string]bool{languageIndonesian: true, "en": true, "both": true}
+
+// normaliseClock validates a "HH:MM" time of day and returns it zero-padded.
+//
+// The database column is `time`, so the string is checked here instead of being
+// handed to the driver: a value it would refuse surfaces as a 500 rather than as
+// the 400 the form deserves.
+func normaliseClock(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	var hour, minute int
+	if _, err := fmt.Sscanf(trimmed, "%d:%d", &hour, &minute); err != nil {
+		return "", fmt.Errorf("%w: working hours must be HH:MM", domain.ErrInvalidInput)
+	}
+	if hour < 0 || hour > 23 || minute < 0 || minute > 59 {
+		return "", fmt.Errorf("%w: %q is not a time of day", domain.ErrInvalidInput, trimmed)
+	}
+
+	return fmt.Sprintf("%02d:%02d", hour, minute), nil
+}
+
+// normaliseDays validates the working week and returns it sorted and deduplicated.
+//
+// An empty week is refused rather than treated as "every day": a workspace that
+// closed every day would hold every outbound action forever, and saying so at the
+// form is the only place that is fixable.
+func normaliseDays(days []int) ([]int, error) {
+	if len(days) == 0 {
+		return nil, fmt.Errorf("%w: pick at least one working day", domain.ErrInvalidInput)
+	}
+
+	seen := make(map[int]bool, len(days))
+	out := make([]int, 0, len(days))
+	for _, day := range days {
+		if day < 1 || day > 7 {
+			return nil, fmt.Errorf("%w: %d is not a weekday", domain.ErrInvalidInput, day)
+		}
+		if seen[day] {
+			continue
+		}
+		seen[day] = true
+		out = append(out, day)
+	}
+	sort.Ints(out)
+
+	return out, nil
 }
 
 // Teams lists the teams of the active workspace.

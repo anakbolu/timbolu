@@ -15,6 +15,11 @@ export type ShapeName =
   | "daun";
 export type MouthName = "open" | "smile" | "focus" | "w" | "o" | "sleep" | "chill";
 
+/** The expressions the bolu generator draws; re-exported so callers name one. */
+import type { BoluExpressionName } from "@/components/bolu/characters";
+
+export type { BoluExpressionName };
+
 type ShapeDef = {
   /** Body outline path, in the 200×200 viewBox. */
   d: string;
@@ -393,6 +398,20 @@ export function allBot(name: string): CrewMember {
   if (!found) throw new Error(`Unknown crew member: ${name}`);
   return found;
 }
+
+/**
+ * BoluFace is what the <Bolu /> generator needs to draw a registry agent: the
+ * body shape and colour the API stores, plus the expression to pose it with.
+ *
+ * Both fields are optional on the wire — an agent created before the shape was
+ * recorded has neither — so `facesFrom` resolves a missing one from the seeded
+ * crew member of the same name, and only then falls back.
+ */
+export type BoluFace = {
+  shape?: string;
+  color?: string;
+  expression?: BoluExpressionName;
+};
 
 export const FEED = [
   "Oren mengirim INV-0041",

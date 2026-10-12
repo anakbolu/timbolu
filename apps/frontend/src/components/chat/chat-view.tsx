@@ -8,11 +8,14 @@
  * final event replaces it with the canonical body.
  */
 
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { BotSvg } from "@/components/bolu/bot-svg";
-import type { ChatConversation, ChatMessage } from "@/lib/api";
-import { ALL_BOTS, allBot, bot, withFace, type BotShape } from "@/lib/crew";
+import { Bolu } from "@/components/bolu/bolu";
+import { useWorkspace } from "@/components/dashboard/workspace-data";
+import type { Agent, ChatConversation, ChatMessage } from "@/lib/api";
+import { allBot, type CrewMember } from "@/lib/crew";
+import { crewFor, expressionOf, relativeAge, stateOf } from "@/lib/dashboard-view";
 
 import { Block } from "./blocks";
 import { describeResult, isBusy, useChat } from "./use-chat";
@@ -31,11 +34,33 @@ const STATUS_CLASS: Record<string, string> = {
   closed: "bg-bolu-belum/12 text-bolu-belum",
 };
 
+/**
+ * ChatScreen opens the conversation the query names.
+ *
+ * The sidebar roster links to `?agent=<id>`, which is what makes clicking a Bolu
+ * open its thread: the id travels in the URL rather than through shared state, so
+ * a link to one Bolu works from anywhere.
+ */
+export function ChatScreen() {
+  const params = useSearchParams();
+  return <ChatView agentId={params.get("agent") ?? undefined} />;
+}
+
 /** ChatView is the whole screen: thread list, one thread, and the composer. */
 export function ChatView({ agentId }: { agentId?: string }) {
   const chat = useChat();
+  const { agents } = useWorkspace();
   const [draft, setDraft] = useState("");
   const opened = useRef<string | null>(null);
+  const thread = useRef<HTMLDivElement | null>(null);
+
+  // The newest message is what a person came to read, so the thread follows it: on
+  // open, when a message is added, and as a streamed reply grows.
+  const newest = chat.messages.at(-1);
+  useEffect(() => {
+    const box = thread.current;
+    if (box) box.scrollTop = box.scrollHeight;
+  }, [chat.active?.id, newest?.message_id, newest?.blocks]);
 
   // Opening by Bolu is what a click in the sidebar or the office does.
   useEffect(() => {
@@ -59,6 +84,15 @@ export function ChatView({ agentId }: { agentId?: string }) {
     return agent?.name ?? "Obrolan";
   }, [chat.active]);
 
+  // The header shows the one Bolu a direct thread is with: its face, its role, and
+  // what it is doing right now.
+  const partner = useMemo(() => {
+    if (!chat.active) return null;
+    const participant = chat.active.participants.find((item) => item.is_agent);
+    if (!participant) return null;
+    return agents.find((agent) => agent.id === participant.agent_id) ?? null;
+  }, [chat.active, agents]);
+
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = draft.trim();
@@ -70,16 +104,27 @@ export function ChatView({ agentId }: { agentId?: string }) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <header className="flex flex-wrap items-center gap-3 border-b border-bolu-border bg-bolu-surface px-6 py-3">
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      <header className="flex flex-wrap items-center gap-3 border-b border-bolu-border bg-white px-6 py-3">
+        {partner ? (
+          <Bolu
+            member={crewFor(partner)}
+            expression={expressionOf(stateOf(partner))}
+            color={partner.color || undefined}
+            size={44}
+            className="flex-none"
+          />
+        ) : null}
         <div className="min-w-0 flex-1">
-          <h1 className="truncate font-display text-lg font-semibold">{title}</h1>
-          <p className="truncate text-sm text-bolu-muted">
-            {chat.active
-              ? chat.active.participants
-                  .map((participant) => `${participant.name} · ${participant.role}`)
-                  .join("  ·  ")
-              : "Pilih Bolu di kiri untuk mulai."}
+          <h1 className="truncate font-display text-[22px] font-semibold">{title}</h1>
+          <p className="truncate text-[14px] text-bolu-muted">
+            {partner
+              ? `${partner.role || "Bolu"} · ${partner.display_status === "working" ? "sedang bekerja" : partner.display_status === "waiting" ? "menunggu kamu" : "santai"}`
+              : chat.active
+                ? chat.active.participants
+                    .map((participant) => `${participant.name} · ${participant.role}`)
+                    .join("  ·  ")
+                : "Pilih Bolu di kiri untuk mulai."}
           </p>
         </div>
         <span
@@ -92,30 +137,55 @@ export function ChatView({ agentId }: { agentId?: string }) {
       </header>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[260px_1fr]">
-        <aside className="hidden min-h-0 overflow-y-auto border-r border-bolu-border bg-bolu-surface px-3 py-3 lg:block">
-          <p className="px-1 pb-2 text-xs uppercase tracking-wide text-bolu-muted">Obrolan</p>
+        <aside className="hidden min-h-0 overflow-y-auto border-r border-bolu-border bg-white px-3 py-3 lg:block">
+          <p className="px-1 pb-2 text-[13px] font-bold uppercase tracking-wide text-bolu-muted">
+            Obrolan
+          </p>
           {chat.conversations.length === 0 ? (
-            <p className="px-1 text-sm text-bolu-muted">Belum ada obrolan.</p>
+            <p className="px-1 text-[14px] text-bolu-muted">
+              Belum ada obrolan. Klik salah satu Bolu di kiri.
+            </p>
           ) : (
-            <ul className="space-y-1">
-              {chat.conversations.map((conversation) => (
-                <li key={conversation.id}>
-                  <button
-                    type="button"
-                    onClick={() => chat.open(conversation)}
-                    className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm transition hover:bg-bolu-panel/60 ${
-                      chat.active?.id === conversation.id ? "bg-bolu-panel/70" : ""
-                    }`}
-                  >
-                    <span className="min-w-0 flex-1 truncate">
-                      {conversation.title ||
-                        conversation.participants.find((participant) => participant.is_agent)?.name ||
-                        "Obrolan"}
-                    </span>
-                    <span className="shrink-0 text-xs text-bolu-muted">{conversation.message_count}</span>
-                  </button>
-                </li>
-              ))}
+            <ul className="flex flex-col gap-1">
+              {chat.conversations.map((conversation) => {
+                const participant = conversation.participants.find((item) => item.is_agent);
+                const agent = agents.find((item) => item.id === participant?.agent_id);
+                return (
+                  <li key={conversation.id}>
+                    <button
+                      type="button"
+                      onClick={() => chat.open(conversation)}
+                      className={`flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-[14px] ${
+                        chat.active?.id === conversation.id ? "bg-bolu-panel/70" : ""
+                      }`}
+                    >
+                      {agent ? (
+                        <Bolu
+                          member={crewFor(agent)}
+                          expression={expressionOf(stateOf(agent))}
+                          color={agent.color || undefined}
+                          size={32}
+                          className="flex-none"
+                        />
+                      ) : null}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-semibold">
+                          {conversation.title || participant?.name || "Obrolan"}
+                        </span>
+                        <span className="block truncate text-[12px] text-bolu-muted">
+                          {conversation.kind === "group"
+                            ? `${conversation.participants.filter((item) => item.is_agent).length} Bolu`
+                            : participant?.role || "langsung"}{" "}
+                          · {relativeAge(conversation.last_activity_at)}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-[12px] text-bolu-muted">
+                        {conversation.message_count}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </aside>
@@ -127,21 +197,23 @@ export function ChatView({ agentId }: { agentId?: string }) {
             </p>
           ) : null}
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+          <div ref={thread} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
             {chat.hasMore ? (
               <button
                 type="button"
                 onClick={() => void chat.loadOlder()}
                 disabled={chat.loadingOlder}
-                className="mx-auto mb-3 block rounded-full border border-bolu-border px-3 py-1 text-sm text-bolu-muted transition hover:bg-bolu-panel/60 disabled:opacity-50"
+                className="mx-auto mb-3 block cursor-pointer rounded-full border border-bolu-border px-3 py-1 text-sm text-bolu-muted transition hover:bg-bolu-panel/60 disabled:opacity-50"
               >
                 {chat.loadingOlder ? "Memuat…" : "Muat pesan lama"}
               </button>
             ) : null}
 
             {chat.messages.length === 0 && !chat.loading ? (
-              <p className="mt-8 text-center text-sm text-bolu-muted">
-                Belum ada pesan. Tulis sesuatu untuk mulai.
+              <p className="mt-8 text-center text-[15px] text-bolu-muted">
+                {chat.active
+                  ? `Belum ada pesan dengan ${title}. Tulis sesuatu untuk mulai.`
+                  : "Pilih Bolu di kiri untuk mulai."}
               </p>
             ) : null}
 
@@ -151,13 +223,13 @@ export function ChatView({ agentId }: { agentId?: string }) {
                   key={message.message_id}
                   message={message}
                   name={nameOf(chat.active, message)}
-                  face={faceOf(chat.active, message)}
+                  face={authorFace(chat.active, message, agents)}
                 />
               ))}
 
               {chat.responder ? (
                 <div className="flex items-center gap-2 text-sm text-bolu-muted">
-                  <span className="inline-flex gap-1">
+                  <span className="dots inline-flex gap-1">
                     <Dot />
                     <Dot delay="150ms" />
                     <Dot delay="300ms" />
@@ -175,30 +247,34 @@ export function ChatView({ agentId }: { agentId?: string }) {
             </div>
           </div>
 
-          <form onSubmit={submit} className="border-t border-bolu-border bg-bolu-surface px-4 py-3">
-            <div className="mx-auto flex max-w-[760px] items-end gap-2">
-              <textarea
+          <form onSubmit={submit} className="bg-bolu-bg px-4 py-3">
+            <div className="mx-auto flex max-w-[760px] items-center gap-2 rounded-full border border-bolu-border bg-white py-1.5 pl-4 pr-1.5">
+              <input
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={(event) => {
-                  // Enter sends, Shift+Enter makes a new line: the shape everyone
-                  // expects from a chat.
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
                     event.currentTarget.form?.requestSubmit();
                   }
                 }}
-                rows={1}
-                placeholder={chat.active ? "Tulis pesan…" : "Pilih obrolan dulu"}
+                placeholder={chat.active ? "Suruh atau tanya apa saja…" : "Pilih obrolan dulu"}
                 disabled={!chat.active}
-                className="max-h-40 min-h-11 flex-1 resize-y rounded-xl border border-bolu-border bg-bolu-surface px-3 py-2.5 text-[15px] disabled:opacity-60"
+                className="min-h-9 min-w-0 flex-1 border-0 bg-transparent text-[15px] outline-none disabled:opacity-60"
               />
               <button
                 type="submit"
+                aria-label="Kirim"
                 disabled={!chat.active || chat.sending || draft.trim() === ""}
-                className="h-11 shrink-0 rounded-xl bg-bolu-accent px-4 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+                className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-bolu-accent text-white disabled:opacity-50"
               >
-                {chat.sending ? "Mengirim…" : "Kirim"}
+                {chat.sending ? (
+                  "…"
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M12 19V5M5 12l7-7 7 7" />
+                  </svg>
+                )}
               </button>
             </div>
           </form>
@@ -227,60 +303,50 @@ function nameOf(conversation: ChatConversation | null, message: ChatMessage): st
 }
 
 /**
- * faceOf is the avatar of a message's author.
+ * authorFace is the avatar of a message's author.
  *
- * Only a Bolu gets one: the crew table is keyed by the seeded names, and asking
- * it for anything else throws, so a user message — or a Bolu renamed in the
- * registry — falls back to the generic face rather than breaking the thread.
+ * The face comes from the registry row — the shape and colour the workspace gave
+ * that Bolu — so a Bolu created here looks the same in the thread, the sidebar and
+ * the office, rather than borrowing a seeded character's body.
  */
-function faceOf(conversation: ChatConversation | null, message: ChatMessage): BotShape | null {
+function authorFace(
+  conversation: ChatConversation | null,
+  message: ChatMessage,
+  agents: Agent[],
+): CrewMember | null {
   if (!message.agent_id) {
     return null;
   }
-  return botOrFallback(nameOf(conversation, message));
-}
-
-/**
- * botOrFallback returns the crew face for a name.
- *
- * A Bolu renamed in the registry is not in the seeded table, so the fallback
- * picks a member by a hash of the name: the same Bolu keeps the same face across
- * reloads and two Bolu do not look alike, without inventing a name field the
- * shape does not have.
- */
-function botOrFallback(name: string): BotShape {
-  try {
-    return bot(name);
-  } catch {
-    let hash = 0;
-    for (let index = 0; index < name.length; index++) {
-      hash = (hash * 31 + name.charCodeAt(index)) % 1000003;
-    }
-
-    const roster = ALL_BOTS;
-    const member = roster[hash % roster.length] ?? allBot("Oren");
-    return withFace(member, {});
+  const agent = agents.find((candidate) => candidate.id === message.agent_id);
+  if (agent) {
+    return crewFor(agent);
   }
+  // A message from a Bolu that has since been deleted still names its author, so
+  // the thread draws the crew member its name maps to rather than dropping the
+  // author entirely.
+  return allBot("Oren");
 }
 
 /** MessageRow renders one message, from the user or from a Bolu. */
-function MessageRow({ message, name, face }: { message: ChatMessage; name: string; face: BotShape | null }) {
+function MessageRow({ message, name, face }: { message: ChatMessage; name: string; face: CrewMember | null }) {
   const fromAgent = Boolean(message.agent_id);
   const notice = describeResult(message);
 
   return (
     <article className={fromAgent ? "flex items-start gap-2.5" : "flex justify-end"}>
-      {fromAgent && face ? <BotSvg bot={face} className="mt-0.5 size-9 flex-none" /> : null}
+      {fromAgent && face ? (
+        <Bolu member={face} expression="senang" size={36} className="mt-0.5 flex-none" />
+      ) : null}
 
       <div className={fromAgent ? "min-w-0 max-w-[560px]" : "max-w-[78%]"}>
-        {fromAgent ? (
-          <p className="mb-1 text-[13px] font-semibold text-bolu-body">{name}</p>
-        ) : null}
+        <p className={fromAgent ? "mb-1 text-[13px] font-semibold text-bolu-body" : "mb-1 text-right text-[13px] font-semibold text-bolu-body"}>
+          {fromAgent ? name : "Kamu"}
+        </p>
 
         <div
           className={
             fromAgent
-              ? "rounded-[6px_20px_20px_20px] border border-bolu-border bg-bolu-surface px-4 py-2.5"
+              ? "rounded-[6px_20px_20px_20px] border border-bolu-border bg-white px-4 py-2.5"
               : "rounded-[20px_20px_6px_20px] bg-bolu-ink px-4 py-2.5 text-[15px] text-white"
           }
         >

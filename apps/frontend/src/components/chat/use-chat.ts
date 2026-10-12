@@ -1,31 +1,32 @@
 "use client";
 
 /**
- * The chat state: conversations, one open thread, and the event stream that
+ * The chat state: which conversation is open, its messages, and the stream that
  * keeps it current.
  *
  * The rule the whole hook follows is that the server owns the message. A reply
  * is written by the backend whether or not a tab is open, so the client never
  * assembles one: it renders what the stream tells it, and a message it already
  * has is replaced by the version the server sends.
+ *
+ * The conversation list, the workspace and the connection all come from the
+ * workspace store rather than from a second copy: two sockets in one tab would
+ * deliver every frame twice and the last id they resume from would disagree.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useWorkspace } from "@/components/dashboard/workspace-data";
 import {
   ApiResult,
   ActivityEvent,
   ChatConversation,
   ChatMessage,
   MessageEventPayload,
-  ensureActiveWorkspace,
-  listConversations,
   listMessages,
   openDirectConversation,
-  refreshSession,
   sendMessage,
 } from "@/lib/api";
-import { connect, type RealtimeConnection, type RealtimeStatus } from "@/lib/realtime";
 
 /** The events the chat renders. Everything else is another view's business. */
 const CHAT_EVENTS: Record<string, true> = {
@@ -49,7 +50,7 @@ export type ChatState = {
   sending: boolean;
   loadingOlder: boolean;
   hasMore: boolean;
-  status: RealtimeStatus;
+  status: string;
   error: string | null;
   /** The Bolu that will answer the message being composed, once known. */
   responder: { agentId: string; name: string } | null;
@@ -62,93 +63,64 @@ export type ChatState = {
 };
 
 export function useChat(): ChatState {
-  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
-  const [conversations, setConversations] = useState<ChatConversation[]>([]);
+  const store = useWorkspace();
+  const workspaceId = store.workspaceID;
+  // The store's object identity changes on every load, so the stable callbacks
+  // are taken out of it: an effect depending on the store itself would resubscribe
+  // on every event.
+  const { reloadConversations, subscribe } = store;
+
   const [active, setActive] = useState<ChatConversation | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasMore, setHasMore] = useState(false);
-  const [status, setStatus] = useState<RealtimeStatus>("connecting");
   const [error, setError] = useState<string | null>(null);
   const [responder, setResponder] = useState<{ agentId: string; name: string } | null>(null);
   const [routerNotice, setRouterNotice] = useState<RouterNotice | null>(null);
 
   const cursor = useRef<string | undefined>(undefined);
-  const connection = useRef<RealtimeConnection | null>(null);
   // The open conversation is read inside the event handler, which is registered
   // once: a ref keeps the handler from being torn down on every switch.
   const activeID = useRef<string | null>(null);
 
-  // The ref follows the open conversation from an effect, not from the render
-  // body: writing a ref while rendering is what the rule forbids, and the event
-  // handler only reads it after a commit anyway.
   useEffect(() => {
     activeID.current = active?.id ?? null;
   }, [active]);
 
   const refresh = useCallback(async () => {
-    // The workspace is resolved before it is read: an account that owns one but
-    // has none stored — a second device, a private window — would otherwise be
-    // told to pick a workspace it has no way to pick.
-    const workspace = await ensureActiveWorkspace();
-    setWorkspaceId(workspace);
-    if (!workspace) {
-      setLoading(false);
-      setError("Pilih workspace dulu.");
-      return;
-    }
+    await reloadConversations();
+  }, [reloadConversations]);
 
-    const session = await refreshSession();
-    if (!session.ok) {
-      setLoading(false);
-      setError("Sesi berakhir. Masuk lagi.");
-      return;
-    }
+  const open = useCallback(
+    (conversation: ChatConversation) => {
+      setActive(conversation);
+      setMessages([]);
+      setRouterNotice(null);
+      setResponder(null);
+      cursor.current = undefined;
+      setHasMore(false);
 
-    const result = await listConversations(workspace);
-    setLoading(false);
-    if (!result.ok) {
-      setError(result.message);
-      return;
-    }
-    setConversations(result.data);
-    setError(null);
-  }, []);
-
-  useEffect(() => {
-    void (async () => {
-      await refresh();
-    })();
-  }, [refresh]);
-
-  const open = useCallback((conversation: ChatConversation) => {
-    setActive(conversation);
-    setMessages([]);
-    setRouterNotice(null);
-    setResponder(null);
-    cursor.current = undefined;
-    setHasMore(false);
-
-    if (!workspaceId) {
-      return;
-    }
-
-    void (async () => {
-      const result = await listMessages(workspaceId, conversation.id, undefined, 40);
-      if (!result.ok) {
-        setError(result.message);
+      if (!workspaceId) {
         return;
       }
-      // The API returns newest first for the cursor; the thread reads oldest
-      // first, so the page is reversed here rather than at every render.
-      setMessages([...result.data.messages].reverse());
-      cursor.current = result.data.next_cursor;
-      setHasMore(result.data.has_more);
-      setError(null);
-    })();
-  }, [workspaceId]);
+
+      void (async () => {
+        const result = await listMessages(workspaceId, conversation.id, undefined, 40);
+        if (!result.ok) {
+          setError(result.message);
+          return;
+        }
+        // The API returns newest first for the cursor; the thread reads oldest
+        // first, so the page is reversed here rather than at every render.
+        setMessages([...result.data.messages].reverse());
+        cursor.current = result.data.next_cursor;
+        setHasMore(result.data.has_more);
+        setError(null);
+      })();
+    },
+    [workspaceId],
+  );
 
   const openByAgent = useCallback(
     async (agentId: string) => {
@@ -162,12 +134,9 @@ export function useChat(): ChatState {
         return;
       }
       open(result.data);
-      setConversations((previous) => {
-        const others = previous.filter((item) => item.id !== result.data.id);
-        return [result.data, ...others];
-      });
+      await reloadConversations();
     },
-    [workspaceId, open],
+    [workspaceId, open, reloadConversations],
   );
 
   const loadOlder = useCallback(async () => {
@@ -213,67 +182,56 @@ export function useChat(): ChatState {
       setMessages((previous) => append(previous, result.data.message));
 
       if (result.data.responder) {
-        setResponder({ agentId: result.data.responder.agent_id ?? "", name: result.data.responder.name });
+        setResponder({
+          agentId: result.data.responder.agent_id ?? "",
+          name: result.data.responder.name,
+        });
       }
 
       // The reply placeholder is not added here: it arrives on the stream, which
       // is what makes a second tab show the same conversation.
-      setConversations((previous) =>
-        previous.map((item) =>
-          item.id === active.id
-            ? { ...item, message_count: item.message_count + 1, last_activity_at: result.data.message.created_at }
-            : item,
-        ),
-      );
+      await reloadConversations();
     },
-    [workspaceId, active],
+    [workspaceId, active, reloadConversations],
   );
 
-  // The stream: one connection per tab, opened once per workspace.
+  // The stream: the store's connection, filtered to this conversation.
   useEffect(() => {
-    if (!workspaceId) {
-      return;
-    }
+    const unsubscribe = subscribe((event: ActivityEvent) => {
+      if (CHAT_EVENTS[event.type] !== true) {
+        return;
+      }
+      if (event.conversation_id && event.conversation_id !== activeID.current) {
+        // Another thread: the list is refreshed, the open thread is left alone so
+        // a reply cannot appear in the wrong conversation.
+        void reloadConversations();
+        return;
+      }
+      applyEvent(event, setMessages, setRouterNotice, setResponder);
+    });
 
-    const handle = connect(
-      workspaceId,
-      {
-        onEvent: (event) => {
-          if (CHAT_EVENTS[event.type] !== true) {
-            return;
-          }
-          if (event.conversation_id && event.conversation_id !== activeID.current) {
-            // Another thread: the list is refreshed, the open thread is left
-            // alone so a reply cannot appear in the wrong conversation.
-            void refresh();
-            return;
-          }
-          applyEvent(event, setMessages, setRouterNotice, setResponder);
-        },
-        onStatus: setStatus,
-      },
-      0,
-    );
+    return unsubscribe;
+  }, [subscribe, reloadConversations]);
 
-    connection.current = handle;
-
-    return () => {
-      handle.close();
-      connection.current = null;
-    };
-  }, [workspaceId, refresh]);
+  // The open thread is kept in step with the list the store owns: a conversation
+  // renamed or a participant added elsewhere must not leave a stale header.
+  const tracked = active
+    ? store.conversations.find((conversation) => conversation.id === active.id) ?? active
+    : null;
 
   return {
     workspaceId,
-    conversations,
-    active,
+    conversations: store.conversations,
+    active: tracked,
     messages,
-    loading,
+    // The thread list arrives with the store, so "still loading" is exactly "the
+    // store has not finished its first read".
+    loading: !store.ready,
     sending,
     loadingOlder,
     hasMore,
-    status,
-    error,
+    status: store.status,
+    error: error ?? store.error,
     responder,
     routerNotice,
     open,

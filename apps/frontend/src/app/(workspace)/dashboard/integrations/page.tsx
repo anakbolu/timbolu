@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { IntegrationsPanel } from "@/components/dashboard/integrations-panel";
+import { IntegrationsPanel } from "@/components/dashboard/integrations-view";
 
 export const metadata: Metadata = {
   title: "Integrasi",

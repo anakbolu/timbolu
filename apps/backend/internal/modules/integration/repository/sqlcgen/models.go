@@ -520,6 +520,7 @@ type Workspace struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	OwnerUserID    *uuid.UUID
+	WorkDays       []int32
 }
 
 type WorkspaceKey struct {

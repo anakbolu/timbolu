@@ -372,10 +372,19 @@ func TestUpdateWorkspace(t *testing.T) {
 			RunAndReturn(func(_ context.Context, _ domain.Scope, req domain.UpdateRequest) (domain.Workspace, error) {
 				require.Equal(t, "Toko Baru", req.Name)
 				require.Equal(t, "Asia/Jakarta", req.Timezone)
+				require.Equal(t, "id", req.Language)
+				require.Equal(t, "08:00", req.WorkHoursStart)
+				require.Equal(t, "21:00", req.WorkHoursEnd)
+				require.Equal(t, []int{1, 2, 3, 4, 5}, req.WorkDays)
 				return domain.Workspace{ID: uuid.New(), Name: req.Name, Timezone: req.Timezone}, nil
 			}).Once()
 
-		workspace, err := h.service.Update(context.Background(), scope(), domain.RoleOwner, domain.UpdateRequest{Name: "Toko Baru"})
+		workspace, err := h.service.Update(context.Background(), scope(), domain.RoleOwner, domain.UpdateRequest{
+			Name:           "Toko Baru",
+			WorkHoursStart: "08:00",
+			WorkHoursEnd:   "21:00",
+			WorkDays:       []int{1, 2, 3, 4, 5},
+		})
 		require.NoError(t, err)
 		require.Equal(t, "Toko Baru", workspace.Name)
 	})
@@ -385,5 +394,76 @@ func TestUpdateWorkspace(t *testing.T) {
 
 		_, err := h.service.Update(context.Background(), scope(), domain.RoleOwner, domain.UpdateRequest{Name: ""})
 		require.Error(t, err)
+	})
+
+	// The working window is what the approval gate reads before it lets an action
+	// leave, so a value it could not parse, or a week with no working day in it,
+	// would park every outbound action instead of reaching the caller as a refusal.
+	t.Run("rejects an unparseable working window", func(t *testing.T) {
+		h := newHarness(t)
+
+		_, err := h.service.Update(context.Background(), scope(), domain.RoleOwner, domain.UpdateRequest{
+			Name:           "Toko Baru",
+			WorkHoursStart: "pagi",
+			WorkHoursEnd:   "21:00",
+			WorkDays:       []int{1},
+		})
+		require.ErrorIs(t, err, domain.ErrInvalidInput)
+	})
+
+	t.Run("rejects a week with no working day", func(t *testing.T) {
+		h := newHarness(t)
+
+		_, err := h.service.Update(context.Background(), scope(), domain.RoleOwner, domain.UpdateRequest{
+			Name:           "Toko Baru",
+			WorkHoursStart: "08:00",
+			WorkHoursEnd:   "21:00",
+			WorkDays:       nil,
+		})
+		require.ErrorIs(t, err, domain.ErrInvalidInput)
+	})
+
+	t.Run("rejects a day that is not a weekday", func(t *testing.T) {
+		h := newHarness(t)
+
+		_, err := h.service.Update(context.Background(), scope(), domain.RoleOwner, domain.UpdateRequest{
+			Name:           "Toko Baru",
+			WorkHoursStart: "08:00",
+			WorkHoursEnd:   "21:00",
+			WorkDays:       []int{8},
+		})
+		require.ErrorIs(t, err, domain.ErrInvalidInput)
+	})
+
+	t.Run("rejects a window that never opens", func(t *testing.T) {
+		h := newHarness(t)
+
+		_, err := h.service.Update(context.Background(), scope(), domain.RoleOwner, domain.UpdateRequest{
+			Name:           "Toko Baru",
+			WorkHoursStart: "08:00",
+			WorkHoursEnd:   "08:00",
+			WorkDays:       []int{1},
+		})
+		require.ErrorIs(t, err, domain.ErrInvalidInput)
+	})
+
+	// A day list that repeats is stored once, sorted, so the rule that reads it
+	// cannot see the same day twice.
+	t.Run("normalises the working week", func(t *testing.T) {
+		h := newHarness(t)
+
+		h.repo.EXPECT().UpdateWorkspace(mock.Anything, mock.Anything, mock.Anything).
+			RunAndReturn(func(_ context.Context, _ domain.Scope, req domain.UpdateRequest) (domain.Workspace, error) {
+				require.Equal(t, []int{1, 2, 5}, req.WorkDays)
+				return domain.Workspace{Name: req.Name}, nil
+			}).Once()
+
+		_, err := h.service.Update(context.Background(), scope(), domain.RoleOwner, domain.UpdateRequest{
+			Name:           "Toko Baru",
+			WorkHoursStart: "7:5",
+			WorkHoursEnd:   "21:00",
+			WorkDays:       []int{5, 1, 2, 1},
+		})
+		require.NoError(t, err)
 	})
 }

@@ -10,9 +10,21 @@ markup. When a port and a reference disagree, the reference wins.
 | File | What it is | Ported into |
 | --- | --- | --- |
 | `keluarga-bolu-landing.html` | Landing page | `apps/frontend/src/components/bolu/*` |
-| `keluarga-bolu-dashboard.html` | Dashboard | `apps/frontend/src/components/chat/*`, `components/dashboard/*` |
-| `dashboard-logic.js` | Dashboard artboard logic | the state in the dashboard components |
+| `keluarga-bolu-dashboard.html` | Dashboard: five views (Dasbor, Rutinitas, Kantor Tim Bolu, Integrasi, Pengaturan) plus the chat thread | `apps/frontend/src/components/dashboard/*`, `components/chat/*` |
 | `dashboard-README.md` | Notes on the dashboard export | — |
+
+`keluarga-bolu-dashboard.html` is a Design Component: an `<x-dc>` template plus a
+small logic class, rendered by `support.js` with React from `vendor/`. Serve the
+folder (`python3 -m http.server`) and open it; some browsers block the scripts over
+`file://`. Its inline `style="…"` attributes and its `<helmet><style>` block are
+where the design's values live, so a port is checked against those rather than
+against the shape of the markup — the artboard draws everything into one column of
+`div`s, and the app keeps each screen on its own route.
+
+The five views are switched by the sidebar; there is no separate URL per view in
+the artboard, while the app gives each screen its own route. The artboard's own
+logic class — the crew shapes, the application tiles and the draft copy — is inline
+in the file, which is where the port reads it from.
 
 ## `refs/`
 

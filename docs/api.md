@@ -47,13 +47,23 @@ accounts.
 `X-Workspace-Id` (or `?workspace_id=`) selects the active workspace. The value
 must be a UUID, and the caller must be a member, otherwise the answer is `403`.
 
+The workspace profile is more than a name: `language` (`id`, `en`, or `both`),
+`work_hours_start` and `work_hours_end` (`HH:MM` in the workspace's `timezone`),
+and `work_days` (ISO weekday numbers, 1 = Monday) are the values the approval
+gate reads when it decides whether an approved action may leave now. `PATCH`
+replaces the whole profile, so a caller that omits a field omits it from the
+workspace — the Pengaturan screen therefore sends every field on every save. A
+window that cannot be parsed, a start equal to its end, and a week with no
+working day in it are all refused with `invalid_input`, because the gate would
+otherwise hold every outbound action forever.
+
 | Endpoint | Auth | Role | Notes |
 | --- | --- | --- | --- |
 | `GET /workspaces` | bearer | any | Every workspace the account belongs to, with its role |
 | `POST /workspaces/onboard` | bearer + verified | any | Creates workspace + owner + Tim Bolu + Tim Hore; **idempotent** |
 | `POST /invitations/accept` | bearer + verified | any | Joins the invited workspace; the signed-in email must match |
 | `GET /workspaces/current` | bearer + tenant | any | The active workspace |
-| `PATCH /workspaces/current` | bearer + tenant | owner | Name, business field, timezone |
+| `PATCH /workspaces/current` | bearer + tenant | owner | Name, business field, timezone, language, working hours and days |
 | `GET /workspaces/current/teams` | bearer + tenant | any | Tim Bolu and Tim Hore |
 | `GET /workspaces/current/members` | bearer + tenant | any | Members with roles |
 | `PATCH /workspaces/current/members/:userID` | bearer + tenant | owner, admin | Change a role |
