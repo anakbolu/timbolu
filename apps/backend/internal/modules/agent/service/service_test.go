@@ -511,6 +511,28 @@ type harness struct {
 	repo    *mocks.Repository
 }
 
+// TestSetMemoryExtractionFlipsTheSwitch is the E10.5 switch at the service level:
+// the column is written here, the memory module reads it, and the answer carries
+// the value that landed.
+func TestSetMemoryExtractionFlipsTheSwitch(t *testing.T) {
+	h := newHarness(t)
+	s := scope()
+	agent := agentFixture(func(a *domain.Agent) { a.MemoryExtraction = false })
+
+	h.repo.EXPECT().SetMemoryExtraction(mock.Anything, s, agent.ID, false).Return(agent, nil).Once()
+	h.repo.EXPECT().ActivityFor(mock.Anything, s, agent.ID).Return(domain.Activity{}, nil).Once()
+
+	updated, err := h.service.SetMemoryExtraction(context.Background(), s, agent.ID, false)
+	require.NoError(t, err)
+	require.False(t, updated.MemoryExtraction)
+	require.Equal(t, domain.DisplayIdle, updated.Display, "the derived status is still computed")
+
+	// A write with no workspace is refused rather than run against whatever
+	// tenant the connection happens to carry.
+	_, err = h.service.SetMemoryExtraction(context.Background(), domain.Scope{}, agent.ID, true)
+	require.ErrorIs(t, err, domain.ErrInvalidInput)
+}
+
 func newHarness(t *testing.T, opts ...func(*Deps)) *harness {
 	t.Helper()
 

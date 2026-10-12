@@ -187,6 +187,64 @@ func (_c *Gateway_Delete_Call) RunAndReturn(run func(context.Context, domain.Sco
 	return _c
 }
 
+// Embed provides a mock function with given fields: ctx, scope, req
+func (_m *Gateway) Embed(ctx context.Context, scope domain.Scope, req domain.EmbedRequest) (domain.EmbedResponse, error) {
+	ret := _m.Called(ctx, scope, req)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Embed")
+	}
+
+	var r0 domain.EmbedResponse
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, domain.EmbedRequest) (domain.EmbedResponse, error)); ok {
+		return rf(ctx, scope, req)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, domain.EmbedRequest) domain.EmbedResponse); ok {
+		r0 = rf(ctx, scope, req)
+	} else {
+		r0 = ret.Get(0).(domain.EmbedResponse)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, domain.Scope, domain.EmbedRequest) error); ok {
+		r1 = rf(ctx, scope, req)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// Gateway_Embed_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Embed'
+type Gateway_Embed_Call struct {
+	*mock.Call
+}
+
+// Embed is a helper method to define mock.On call
+//   - ctx context.Context
+//   - scope domain.Scope
+//   - req domain.EmbedRequest
+func (_e *Gateway_Expecter) Embed(ctx interface{}, scope interface{}, req interface{}) *Gateway_Embed_Call {
+	return &Gateway_Embed_Call{Call: _e.mock.On("Embed", ctx, scope, req)}
+}
+
+func (_c *Gateway_Embed_Call) Run(run func(ctx context.Context, scope domain.Scope, req domain.EmbedRequest)) *Gateway_Embed_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(domain.Scope), args[2].(domain.EmbedRequest))
+	})
+	return _c
+}
+
+func (_c *Gateway_Embed_Call) Return(_a0 domain.EmbedResponse, _a1 error) *Gateway_Embed_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *Gateway_Embed_Call) RunAndReturn(run func(context.Context, domain.Scope, domain.EmbedRequest) (domain.EmbedResponse, error)) *Gateway_Embed_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Providers provides a mock function with given fields: ctx, scope
 func (_m *Gateway) Providers(ctx context.Context, scope domain.Scope) ([]domain.Redacted, error) {
 	ret := _m.Called(ctx, scope)

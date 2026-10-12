@@ -68,6 +68,7 @@ func (c *Container) openTask(_ context.Context, cfg *config.Config) error {
 		Tools:    c.toolRegistry(),
 		Executor: c.toolExecutor(),
 		Drafts:   c.draftGate(),
+		Memory:   c.memoryRecallForTask(),
 		Gateway:  c.Services.LLM,
 		Costs:    c.costTable(),
 		Budget:   c.budget(),

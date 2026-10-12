@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -405,6 +406,21 @@ type scriptedGateway struct {
 	// chatAnswer is what a non-streaming call answers, which the group router
 	// makes. Empty means the call is refused.
 	chatAnswer string
+	// embedFn answers an embedding call. Unset means the provider has none, which
+	// is what a deployment without one looks like from the responder's side.
+	embedFn func(llmdomain.EmbedRequest) (llmdomain.EmbedResponse, error)
+}
+
+// Embed implements the embedding half of the gateway. A test that does not
+// script it gets the refusal a deployment without an embedding provider gets.
+func (g *scriptedGateway) Embed(_ context.Context, _ llmdomain.Scope, req llmdomain.EmbedRequest) (llmdomain.EmbedResponse, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if g.embedFn == nil {
+		return llmdomain.EmbedResponse{}, errors.New("the gateway has no embedding provider")
+	}
+	return g.embedFn(req)
 }
 
 func (g *scriptedGateway) Stream(_ context.Context, _ llmdomain.Scope, req llmdomain.ChatRequest) (<-chan llmdomain.StreamEvent, error) {

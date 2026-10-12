@@ -165,7 +165,7 @@ func (q *Queries) CountRunningTasksForAgent(ctx context.Context, agentID uuid.UU
 const createAgent = `-- name: CreateAgent :one
 INSERT INTO agents (workspace_id, team_id, name, role, persona, tone, shape, color, tools, template_key, default_model)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-RETURNING id, workspace_id, team_id, name, role, persona, tone, shape, color, status, template_key, default_model, created_at, updated_at, deleted_at, tools
+RETURNING id, workspace_id, team_id, name, role, persona, tone, shape, color, status, template_key, default_model, created_at, updated_at, deleted_at, tools, memory_extraction_enabled
 `
 
 type CreateAgentParams struct {
@@ -214,6 +214,7 @@ func (q *Queries) CreateAgent(ctx context.Context, arg CreateAgentParams) (Agent
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.Tools,
+		&i.MemoryExtractionEnabled,
 	)
 	return i, err
 }
@@ -238,7 +239,7 @@ func (q *Queries) DeleteGrant(ctx context.Context, arg DeleteGrantParams) (int64
 }
 
 const getAgent = `-- name: GetAgent :one
-SELECT a.id, a.workspace_id, a.team_id, a.name, a.role, a.persona, a.tone, a.shape, a.color, a.status, a.template_key, a.default_model, a.created_at, a.updated_at, a.deleted_at, a.tools, t.name AS team_name, t.kind AS team_kind
+SELECT a.id, a.workspace_id, a.team_id, a.name, a.role, a.persona, a.tone, a.shape, a.color, a.status, a.template_key, a.default_model, a.created_at, a.updated_at, a.deleted_at, a.tools, a.memory_extraction_enabled, t.name AS team_name, t.kind AS team_kind
 FROM agents a
 JOIN teams t ON t.id = a.team_id
 WHERE a.id = $1 AND a.workspace_id = $2 AND a.deleted_at IS NULL
@@ -250,24 +251,25 @@ type GetAgentParams struct {
 }
 
 type GetAgentRow struct {
-	ID           uuid.UUID
-	WorkspaceID  uuid.UUID
-	TeamID       uuid.UUID
-	Name         string
-	Role         string
-	Persona      string
-	Tone         string
-	Shape        string
-	Color        string
-	Status       string
-	TemplateKey  string
-	DefaultModel []byte
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	DeletedAt    *time.Time
-	Tools        []byte
-	TeamName     string
-	TeamKind     string
+	ID                      uuid.UUID
+	WorkspaceID             uuid.UUID
+	TeamID                  uuid.UUID
+	Name                    string
+	Role                    string
+	Persona                 string
+	Tone                    string
+	Shape                   string
+	Color                   string
+	Status                  string
+	TemplateKey             string
+	DefaultModel            []byte
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
+	DeletedAt               *time.Time
+	Tools                   []byte
+	MemoryExtractionEnabled bool
+	TeamName                string
+	TeamKind                string
 }
 
 func (q *Queries) GetAgent(ctx context.Context, arg GetAgentParams) (GetAgentRow, error) {
@@ -290,6 +292,7 @@ func (q *Queries) GetAgent(ctx context.Context, arg GetAgentParams) (GetAgentRow
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.Tools,
+		&i.MemoryExtractionEnabled,
 		&i.TeamName,
 		&i.TeamKind,
 	)
@@ -412,7 +415,7 @@ func (q *Queries) ListAgentTemplates(ctx context.Context) ([]AgentTemplate, erro
 }
 
 const listAgents = `-- name: ListAgents :many
-SELECT a.id, a.workspace_id, a.team_id, a.name, a.role, a.persona, a.tone, a.shape, a.color, a.status, a.template_key, a.default_model, a.created_at, a.updated_at, a.deleted_at, a.tools, t.name AS team_name, t.kind AS team_kind
+SELECT a.id, a.workspace_id, a.team_id, a.name, a.role, a.persona, a.tone, a.shape, a.color, a.status, a.template_key, a.default_model, a.created_at, a.updated_at, a.deleted_at, a.tools, a.memory_extraction_enabled, t.name AS team_name, t.kind AS team_kind
 FROM agents a
 JOIN teams t ON t.id = a.team_id
 WHERE a.workspace_id = $1 AND a.deleted_at IS NULL
@@ -420,24 +423,25 @@ ORDER BY t.name, a.created_at
 `
 
 type ListAgentsRow struct {
-	ID           uuid.UUID
-	WorkspaceID  uuid.UUID
-	TeamID       uuid.UUID
-	Name         string
-	Role         string
-	Persona      string
-	Tone         string
-	Shape        string
-	Color        string
-	Status       string
-	TemplateKey  string
-	DefaultModel []byte
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	DeletedAt    *time.Time
-	Tools        []byte
-	TeamName     string
-	TeamKind     string
+	ID                      uuid.UUID
+	WorkspaceID             uuid.UUID
+	TeamID                  uuid.UUID
+	Name                    string
+	Role                    string
+	Persona                 string
+	Tone                    string
+	Shape                   string
+	Color                   string
+	Status                  string
+	TemplateKey             string
+	DefaultModel            []byte
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
+	DeletedAt               *time.Time
+	Tools                   []byte
+	MemoryExtractionEnabled bool
+	TeamName                string
+	TeamKind                string
 }
 
 // The registry. Soft-deleted Bolu are invisible, and the team is joined so the
@@ -468,6 +472,7 @@ func (q *Queries) ListAgents(ctx context.Context, workspaceID uuid.UUID) ([]List
 			&i.UpdatedAt,
 			&i.DeletedAt,
 			&i.Tools,
+			&i.MemoryExtractionEnabled,
 			&i.TeamName,
 			&i.TeamKind,
 		); err != nil {
@@ -644,7 +649,7 @@ const moveAgentToTeam = `-- name: MoveAgentToTeam :one
 UPDATE agents
 SET team_id = $3, updated_at = now()
 WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL
-RETURNING id, workspace_id, team_id, name, role, persona, tone, shape, color, status, template_key, default_model, created_at, updated_at, deleted_at, tools
+RETURNING id, workspace_id, team_id, name, role, persona, tone, shape, color, status, template_key, default_model, created_at, updated_at, deleted_at, tools, memory_extraction_enabled
 `
 
 type MoveAgentToTeamParams struct {
@@ -673,6 +678,7 @@ func (q *Queries) MoveAgentToTeam(ctx context.Context, arg MoveAgentToTeamParams
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.Tools,
+		&i.MemoryExtractionEnabled,
 	)
 	return i, err
 }
@@ -681,7 +687,7 @@ const setAgentStatus = `-- name: SetAgentStatus :one
 UPDATE agents
 SET status = $3, updated_at = now()
 WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL
-RETURNING id, workspace_id, team_id, name, role, persona, tone, shape, color, status, template_key, default_model, created_at, updated_at, deleted_at, tools
+RETURNING id, workspace_id, team_id, name, role, persona, tone, shape, color, status, template_key, default_model, created_at, updated_at, deleted_at, tools, memory_extraction_enabled
 `
 
 type SetAgentStatusParams struct {
@@ -711,6 +717,48 @@ func (q *Queries) SetAgentStatus(ctx context.Context, arg SetAgentStatusParams) 
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.Tools,
+		&i.MemoryExtractionEnabled,
+	)
+	return i, err
+}
+
+const setMemoryExtraction = `-- name: SetMemoryExtraction :one
+UPDATE agents
+SET memory_extraction_enabled = $3, updated_at = now()
+WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL
+RETURNING id, workspace_id, team_id, name, role, persona, tone, shape, color, status, template_key, default_model, created_at, updated_at, deleted_at, tools, memory_extraction_enabled
+`
+
+type SetMemoryExtractionParams struct {
+	ID                      uuid.UUID
+	WorkspaceID             uuid.UUID
+	MemoryExtractionEnabled bool
+}
+
+// The switch that decides whether a quiet conversation is read into memory. It
+// lives here because the column belongs to this table; the memory module reads it
+// and the memory screen writes it through this endpoint.
+func (q *Queries) SetMemoryExtraction(ctx context.Context, arg SetMemoryExtractionParams) (Agent, error) {
+	row := q.db.QueryRow(ctx, setMemoryExtraction, arg.ID, arg.WorkspaceID, arg.MemoryExtractionEnabled)
+	var i Agent
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.TeamID,
+		&i.Name,
+		&i.Role,
+		&i.Persona,
+		&i.Tone,
+		&i.Shape,
+		&i.Color,
+		&i.Status,
+		&i.TemplateKey,
+		&i.DefaultModel,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.Tools,
+		&i.MemoryExtractionEnabled,
 	)
 	return i, err
 }
@@ -746,7 +794,7 @@ SET name = $3,
     default_model = $10,
     updated_at = now()
 WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL
-RETURNING id, workspace_id, team_id, name, role, persona, tone, shape, color, status, template_key, default_model, created_at, updated_at, deleted_at, tools
+RETURNING id, workspace_id, team_id, name, role, persona, tone, shape, color, status, template_key, default_model, created_at, updated_at, deleted_at, tools, memory_extraction_enabled
 `
 
 type UpdateAgentParams struct {
@@ -795,6 +843,7 @@ func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Agent
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.Tools,
+		&i.MemoryExtractionEnabled,
 	)
 	return i, err
 }

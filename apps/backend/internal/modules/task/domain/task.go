@@ -531,6 +531,37 @@ type ToolResult struct {
 	IsError bool
 }
 
+// MemoryRecall hands one round the memory a Bolu answers with, and records what
+// it used.
+//
+// It is a port rather than a direct call because the memory module owns what a
+// memory is: the task runtime asks for a prompt section and receives text, which
+// is what keeps this module from learning about embeddings, layers, and layers'
+// rules.
+type MemoryRecall interface {
+	Recall(ctx context.Context, scope Scope, request RecallRequest) (Recall, error)
+}
+
+// RecallRequest is what one round asks the memory module for.
+type RecallRequest struct {
+	AgentID uuid.UUID
+	TaskID  uuid.UUID
+	// Query is the task at hand, which is what the search runs against.
+	Query string
+}
+
+// Recall is the memory one round is given.
+//
+// Stable is the workspace-wide memory: it goes into the prefix a provider caches
+// along with the persona and the instructions. Retrieved is what the search
+// found for this question — the Bolu's private memory and the document chunks —
+// and it is already wrapped in the marker that says it is data.
+type Recall struct {
+	Stable    string
+	Retrieved string
+	Used      int
+}
+
 // DraftGate turns an action that touches the outside world into a draft a human
 // decides on.
 //

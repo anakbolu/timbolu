@@ -72,6 +72,11 @@ type Deps struct {
 	// Tasks opens the durable task a message belongs to. Optional: without it a
 	// reply is still produced and recorded, it just has no task behind it.
 	Tasks chatdomain.TaskStarter
+	// Memory stores what a message asks to be remembered, and schedules the
+	// conversation for extraction once it goes quiet. Optional: without it a
+	// memory request is answered by the model like any other message, and nothing
+	// is remembered automatically.
+	Memory chatdomain.Memory
 	// Storage holds attachment bytes. Optional: without it the attachment
 	// endpoints report that storage is not configured.
 	Storage chatdomain.ObjectStore

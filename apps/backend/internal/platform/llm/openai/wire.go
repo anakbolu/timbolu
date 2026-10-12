@@ -114,9 +114,19 @@ func (e *wireError) err() error {
 func (c *Client) encodeRequest(req domain.ChatRequest, stream bool) ([]byte, error) {
 	messages := make([]map[string]any, 0, len(req.Messages)+1)
 
-	// [OI] carries the system prompt as the first message.
-	if req.System != "" {
-		messages = append(messages, map[string]any{"role": "system", "content": req.System})
+	// [OI] carries the system prompt as the first message. The retrieved block is
+	// appended to it rather than sent as a second system message: some compatible
+	// gateways accept only one, and the order — instructions first, then data — is
+	// what matters for the model.
+	system := req.System
+	if req.Retrieved != "" {
+		if system != "" {
+			system += "\n\n"
+		}
+		system += req.Retrieved
+	}
+	if system != "" {
+		messages = append(messages, map[string]any{"role": "system", "content": system})
 	}
 
 	for _, message := range req.Messages {

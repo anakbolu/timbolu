@@ -10,12 +10,15 @@
 # proven is that the message survives the request, the workflow runs out of
 # process, the rounds are recorded, and the answer lands where it was asked for.
 #
-# Two phases run, because the two things that can only be wrong in the wiring are
-# the happy path and the bound:
+# Three phases run, because the things that can only be wrong in the wiring are
+# the happy path, the bound, and the memory pipeline:
 #
 #   1. a message is answered, and the answer appears in its own thread;
 #   2. with a one-step allowance, the task stops with a reason the user can read
-#      rather than looping or hanging.
+#      rather than looping or hanging;
+#   3. a memory request is stored and confirmed, a later task is given what was
+#      remembered, a quiet conversation is extracted, a corrected fact replaces
+#      its predecessor, and a delete takes the row out of the search.
 #
 # Usage: scripts/smoke-task.sh
 set -euo pipefail
@@ -75,13 +78,47 @@ done
 # ------------------------------------------------------------- stub provider
 
 cat > /tmp/smoke-llm-stub.py <<'PY'
-import json, os, re, sys
+import hashlib, json, math, os, re, sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-# The stub has two modes. In "echo" it answers the prompt's own instruction, so a
-# test can assert the answer travelled all the way back. In "tool" it always asks
-# for a tool call, which is what makes the runtime loop until a bound stops it.
+# The stub has three modes:
+#
+#   echo    answers the prompt's own "stub-echo:" instruction, so a test can
+#           assert the answer travelled all the way back;
+#   tool    always asks for a tool call, which is what makes the runtime loop
+#           until a bound stops it;
+#   memory  answers the extraction question with a JSON candidate list, and
+#           answers anything else with the workspace memory it was given — which
+#           is what proves the memory reached the provider as part of the prompt.
+#
+# It also serves /v1/embeddings, so the memory pipeline can be driven end to end
+# without a real provider: the vectors come from a word-hash, which makes two
+# texts that share words measurably closer than two that do not.
 MODE = os.environ.get("STUB_MODE", "echo")
+DIMENSIONS = 1536
+
+# NEEDLE is the text the memory phase plants and then looks for in the prompt.
+NEEDLE = os.environ.get("STUB_NEEDLE", "")
+
+def embed(text):
+    """embed turns text into a unit vector by hashing its words."""
+    vector = [0.0] * DIMENSIONS
+    for word in re.findall(r"[\w.]+", text.lower()):
+        digest = hashlib.sha256(word.encode()).digest()
+        vector[int.from_bytes(digest[:4], "big") % DIMENSIONS] += 1.0
+
+    norm = math.sqrt(sum(value * value for value in vector)) or 1.0
+    return [value / norm for value in vector]
+
+def flatten(messages):
+    """flatten renders every message's text, so a needle can be searched for."""
+    parts = []
+    for message in messages:
+        content = message.get("content") or ""
+        if isinstance(content, list):
+            content = " ".join(part.get("text", "") for part in content)
+        parts.append(content)
+    return "\n".join(parts)
 
 class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
@@ -89,13 +126,108 @@ class Handler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(length) or b"{}")
         model = body.get("model", "stub")
 
+        if self.path.endswith("/embeddings"):
+            inputs = body.get("input") or []
+            if isinstance(inputs, str):
+                inputs = [inputs]
+            payload = {
+                "object": "list",
+                "model": model,
+                "data": [{"object": "embedding", "index": i, "embedding": embed(text)}
+                         for i, text in enumerate(inputs)],
+                "usage": {"prompt_tokens": 12, "total_tokens": 12},
+            }
+            return self.answer(payload)
+
+        prompt = flatten(body.get("messages", []))
+
         offered = [
             t["function"]["name"]
             for t in body.get("tools", [])
             if t.get("function", {}).get("name") and t["function"]["name"] != "handoff"
         ]
 
-        if MODE == "tool" and offered:
+        if MODE != "memory" and "Balas HANYA JSON" in prompt:
+            # A phase that does not drive the memory pipeline still ends up with an
+            # extraction, because every conversation is read once it goes quiet. It
+            # proposes nothing, so the pass is a no-op rather than a parse failure.
+            payload = {
+                "id": "chatcmpl-smoke",
+                "object": "chat.completion",
+                "model": model,
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": '{"memories":[]}'},
+                    "finish_reason": "stop",
+                }],
+                "usage": {"prompt_tokens": 200, "completion_tokens": 4, "total_tokens": 204},
+            }
+
+        elif MODE == "memory" and "Balas HANYA JSON" in prompt:
+            # The extraction question. The candidate is read out of the transcript
+            # rather than invented, and a transcript that states no fact yields
+            # none: a stub that made one up would plant the same memory in every
+            # conversation, and the assertions about which fact came from where
+            # would then pass for the wrong reason.
+            #
+            # The *newest* statement wins, which is what a reader of the thread would
+            # do and what makes a correction observable: the transcript is oldest
+            # first, so a fact mentioned twice with different numbers has to answer
+            # with the later one or a corrected value can never be seen to replace
+            # the old.
+            #
+            # The small talk rides along whenever a fact is found, so the pipeline's
+            # own filter is what has to drop it.
+            matches = re.findall(r"ongkir[^\n]*bandung[^\n]*?(\d+)\s*ribu", prompt, re.I)
+
+            candidates = []
+            if matches:
+                candidates = [
+                    {"content": f"Ongkir Bandung {matches[-1]} ribu", "kind": "fact", "layer": "main"},
+                    {"content": "oke", "kind": "fact", "layer": "main"},
+                ]
+
+            payload = {
+                "id": "chatcmpl-smoke",
+                "object": "chat.completion",
+                "model": model,
+                "choices": [{
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": json.dumps({"memories": candidates}),
+                    },
+                    "finish_reason": "stop",
+                }],
+                "usage": {"prompt_tokens": 300, "completion_tokens": 40, "total_tokens": 340},
+            }
+        elif MODE == "memory" and NEEDLE and NEEDLE in prompt:
+            # The memory reached the provider as part of the prompt, and the
+            # answer says so: this is the assertion the phase reads.
+            payload = {
+                "id": "chatcmpl-smoke",
+                "object": "chat.completion",
+                "model": model,
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "Aku ingat: " + NEEDLE},
+                    "finish_reason": "stop",
+                }],
+                "usage": {"prompt_tokens": 200, "completion_tokens": 20, "total_tokens": 220},
+            }
+        elif MODE == "memory":
+            payload = {
+                "id": "chatcmpl-smoke",
+                "object": "chat.completion",
+                "model": model,
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "tidak ada memori di prompt"},
+                    "finish_reason": "stop",
+                }],
+                "usage": {"prompt_tokens": 120, "completion_tokens": 40, "total_tokens": 160},
+            }
+        elif MODE == "tool" and offered:
             payload = {
                 "id": "chatcmpl-smoke",
                 "object": "chat.completion",
@@ -132,6 +264,9 @@ class Handler(BaseHTTPRequestHandler):
                 "usage": {"prompt_tokens": 120, "completion_tokens": 40, "total_tokens": 160},
             }
 
+        self.answer(payload)
+
+    def answer(self, payload):
         data = json.dumps(payload).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -174,7 +309,7 @@ start_stub() {
     done
     lsof -ti ":${STUB_PORT}" >/dev/null 2>&1 && fail "port ${STUB_PORT} did not free up"
 
-    STUB_MODE="$mode" python3 /tmp/smoke-llm-stub.py "$STUB_PORT" &
+    STUB_MODE="$mode" STUB_NEEDLE="${NEEDLE:-}" python3 /tmp/smoke-llm-stub.py "$STUB_PORT" &
     STUB_PID=$!
 
     # The stub must be serving before the API is asked anything, or the first
@@ -230,7 +365,9 @@ stack_env() {
         "STORAGE_DRIVER=local" \
         "STORAGE_LOCAL_ROOT=.storage" \
         "TASK_MAX_STEPS=${TASK_MAX_STEPS:-12}" \
-        "TASK_MAX_TOKENS=${TASK_MAX_TOKENS:-120000}"
+        "TASK_MAX_TOKENS=${TASK_MAX_TOKENS:-120000}" \
+        "MEMORY_QUIET_SECONDS=${MEMORY_QUIET_SECONDS:-}" \
+        "MEMORY_SIMILARITY=${MEMORY_SIMILARITY:-}"
 }
 
 # run_with_env runs one command with the shared environment plus extra pairs.
@@ -274,6 +411,8 @@ start_stack() {
     STORAGE_DRIVER=local STORAGE_LOCAL_ROOT=.storage \
     CONTENT_ORIGIN="http://localhost:${API_PORT}" \
     TASK_MAX_STEPS="${TASK_MAX_STEPS:-12}" TASK_MAX_TOKENS="${TASK_MAX_TOKENS:-120000}" \
+    MEMORY_QUIET_SECONDS="${MEMORY_QUIET_SECONDS:-}" \
+    MEMORY_SIMILARITY="${MEMORY_SIMILARITY:-}" \
         "${BIN_DIR}/api" > /tmp/smoke-api.log 2>&1 &
     API_PID=$!
 
@@ -287,6 +426,8 @@ start_stack() {
     LLM_DEFAULT_API_KEY="$LLM_DEFAULT_API_KEY" \
     STORAGE_DRIVER=local STORAGE_LOCAL_ROOT=.storage \
     TASK_MAX_STEPS="${TASK_MAX_STEPS:-12}" TASK_MAX_TOKENS="${TASK_MAX_TOKENS:-120000}" \
+    MEMORY_QUIET_SECONDS="${MEMORY_QUIET_SECONDS:-}" \
+    MEMORY_SIMILARITY="${MEMORY_SIMILARITY:-}" \
         "${BIN_DIR}/agent-worker" > /tmp/smoke-worker.log 2>&1 &
     WORKER_PID=$!
 
@@ -468,7 +609,275 @@ if "tool_call" not in kinds:
     raise SystemExit(f"the stub never asked for a tool, so this phase proved nothing: {kinds}")
 PY
 
+# --------------------------------------------------------------- phase 3: memory
+
+# The memory pipeline is the one thing that only exists in the wiring: a message
+# asks for something to be remembered, a later task is given it, a quiet
+# conversation is read, a corrected fact replaces its predecessor, and a delete
+# takes the row out of the search.
+#
+# The stub is in "memory" mode for all of it: it answers the extraction question
+# with a candidate list, and answers anything else by naming the needle it found in
+# its own prompt — which is how the phase proves the memory reached the provider
+# rather than only the database.
+
+NEEDLE="Jam buka 08.00-21.00"
+
+log "restarting with a short quiet period and a low similarity floor"
+stop_stack
+TASK_MAX_STEPS=12
+# Five seconds is long enough to prove the wait is a wait and short enough to
+# watch; the similarity floor is lowered because the stub's vectors come from word
+# hashes, and two versions of one fact share most of their words rather than all
+# of them.
+# Empty means the configuration file's own value applies, which is the one the
+# phases that do not assert an extraction should run with.
+MEMORY_QUIET_SECONDS=5
+MEMORY_SIMILARITY=0.6
+start_stub memory
+start_stack
+
+MEMORY_AUTH=(-H "Authorization: Bearer ${ACCESS}" -H "X-Workspace-Id: ${WORKSPACE}")
+
+log "asking Oren to remember something, in the chat"
+MEMORY_REPLY=$(curl -fsS -X POST "${API}/conversations/${CONVERSATION}/messages" "${MEMORY_AUTH[@]}" \
+    -H 'Content-Type: application/json' \
+    -d "{\"text\":\"ingat ya, ${NEEDLE}\",\"reply\":true}")
+
+python3 - "$MEMORY_REPLY" <<'PY'
+import json, sys
+result = json.loads(sys.argv[1])
+if not result.get("success"):
+    raise SystemExit(f"the memory request was refused: {result}")
+data = result["data"]
+if not data.get("reply_message_id"):
+    raise SystemExit("the request produced no reply, so nothing was confirmed")
+PY
+
+# The confirmation is written by the memory module itself, so it names the row
+# that exists rather than what a model guessed.
+sleep 2
+THREAD=$(curl -fsS "${API}/conversations/${CONVERSATION}/messages" "${MEMORY_AUTH[@]}")
+python3 - "$THREAD" "$NEEDLE" <<'PY'
+import json, sys
+messages = json.loads(sys.argv[1])["data"]["messages"]
+needle = sys.argv[2]
+text = json.dumps(messages)
+if "aku ingat" not in text.lower():
+    raise SystemExit("no confirmation was written into the thread")
+if needle not in text:
+    raise SystemExit(f"the confirmation does not name what was stored: {needle!r} is absent")
+PY
+
+log "the memory that was stored"
+STORED=$(curl -fsS "${API}/memories?layer=main" "${MEMORY_AUTH[@]}")
+echo "$STORED" | python3 -m json.tool
+python3 - "$STORED" "$NEEDLE" <<'PY'
+import json, sys
+memories = json.loads(sys.argv[1])["data"]
+needle = sys.argv[2]
+matching = [m for m in memories if needle in m["content"]]
+if not matching:
+    raise SystemExit(f"the memory is not in the list: {needle!r}")
+if matching[0]["created_by"] != "user":
+    raise SystemExit(f"a direct request must be recorded as the user's own: {matching[0]['created_by']!r}")
+if matching[0].get("layer") != "main":
+    raise SystemExit(f"a request with no addressee belongs to the main memory: {matching[0].get('layer')!r}")
+if "superseded_by" in matching[0]:
+    raise SystemExit("a memory nothing replaced must carry no replacement id")
+PY
+
+log "a later task must answer with what was remembered"
+curl -fsS -X POST "${API}/conversations/${CONVERSATION}/messages" "${MEMORY_AUTH[@]}" \
+    -H 'Content-Type: application/json' \
+    -d '{"text":"jam buka toko jam berapa?","reply":true}' >/dev/null
+
+MEMORY_TASK=$(curl -fsS "${API}/tasks?limit=1" "${MEMORY_AUTH[@]}" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"][0]["task_id"])')
+MEMORY_STATUS=$(wait_for_task "$MEMORY_TASK")
+[[ "$MEMORY_STATUS" == "succeeded" ]] || fail "the task that should use the memory did not succeed: ${MEMORY_STATUS}"
+
+RECALLED=$(curl -fsS "${API}/conversations/${CONVERSATION}/messages" "${MEMORY_AUTH[@]}")
+python3 - "$RECALLED" "$NEEDLE" <<'PY'
+import json, sys
+messages = json.loads(sys.argv[1])["data"]["messages"]
+needle = sys.argv[2]
+
+# The page is newest-first, so picking "the last answer" by position would read the
+# oldest one. The newest answer is chosen by its own timestamp instead, which is
+# what makes the assertion about this task rather than about a page order.
+answers = [m for m in messages if m.get("agent_id")]
+if not answers:
+    raise SystemExit("the task wrote no answer into the thread")
+newest = max(answers, key=lambda m: m.get("created_at", ""))
+
+if f"Aku ingat: {needle}" not in json.dumps(newest):
+    raise SystemExit(f"the answer does not show the memory reached the model: {json.dumps(newest)[:300]}")
+PY
+
+log "a quiet conversation is extracted into a memory"
+# A second conversation, so the extraction is about this thread rather than the one
+# above. Two turns are enough: one message is not a conversation.
+EXTRACTION_CONVERSATION=$(curl -fsS -X POST "${API}/conversations/direct" "${MEMORY_AUTH[@]}" \
+    -H 'Content-Type: application/json' -d "{\"agent_id\":\"${AGENT}\"}" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')
+
+for text in "ongkir ke Bandung sekarang 18 ribu ya" "oke siap"; do
+    curl -fsS -X POST "${API}/conversations/${EXTRACTION_CONVERSATION}/messages" "${MEMORY_AUTH[@]}" \
+        -H 'Content-Type: application/json' \
+        -d "{\"text\":\"${text}\",\"reply\":true}" >/dev/null
+done
+
+# The quiet period is five seconds; the wait gives the timer, the extraction
+# workflow, and the embedding three times that.
+EXTRACTED=""
+for _ in $(seq 1 12); do
+    EXTRACTED=$(curl -fsS "${API}/memories?layer=main" "${MEMORY_AUTH[@]}" \
+        | python3 -c "import json,sys; print(sum(1 for m in json.load(sys.stdin)['data'] if m['created_by']=='extraction'))" || echo 0)
+    [[ "$EXTRACTED" -gt 0 ]] && break
+    sleep 5
+done
+[[ "$EXTRACTED" -gt 0 ]] || fail "the quiet conversation was never extracted"
+
+log "the small talk was dropped and the fact was kept"
+EXTRACTED_ROWS=$(curl -fsS "${API}/memories?layer=main" "${MEMORY_AUTH[@]}")
+python3 - "$EXTRACTED_ROWS" <<'PY'
+import json, sys
+memories = json.loads(sys.argv[1])["data"]
+extracted = [m for m in memories if m["created_by"] == "extraction"]
+if not any("Bandung" in m["content"] for m in extracted):
+    raise SystemExit(f"the extracted fact is missing: {[m['content'] for m in extracted]}")
+# "oke" is twelve characters of nothing, and the pipeline's floor is what catches
+# it when the model proposes it anyway.
+if any(m["content"].strip(".").lower() == "oke" for m in extracted):
+    raise SystemExit(f"small talk was stored as a memory: {[m['content'] for m in extracted]}")
+PY
+
+log "a corrected fact replaces its predecessor"
+# The same fact, said again with a new value, in a fresh quiet conversation.
+CORRECTION_CONVERSATION=$(curl -fsS -X POST "${API}/conversations/direct" "${MEMORY_AUTH[@]}" \
+    -H 'Content-Type: application/json' -d "{\"agent_id\":\"${AGENT}\"}" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')
+
+for text in "ongkir Bandung naik jadi 21 ribu" "terima kasih"; do
+    curl -fsS -X POST "${API}/conversations/${CORRECTION_CONVERSATION}/messages" "${MEMORY_AUTH[@]}" \
+        -H 'Content-Type: application/json' \
+        -d "{\"text\":\"${text}\",\"reply\":true}" >/dev/null
+done
+
+# The second conversation states a new number for the same fact, and the stub reads
+# it out of the transcript: the pipeline must replace the older memory rather than
+# keep two versions of one fact.
+#
+# The wait is on the settled state rather than on a fixed sleep, and it is on the
+# invariant itself rather than on the first sight of the new value: a memory is
+# written and its predecessor superseded in two statements, so a read that lands
+# between them sees both versions active and would otherwise report a race as a
+# violation.
+HISTORY=""
+for _ in $(seq 1 12); do
+    HISTORY=$(curl -fsS "${API}/memories?layer=main&history=true" "${MEMORY_AUTH[@]}")
+    if echo "$HISTORY" | python3 -c '
+import json, sys
+memories = json.load(sys.stdin)["data"]
+bandung = [m for m in memories if "Bandung" in m["content"] and "ribu" in m["content"]]
+active = [m for m in bandung if not m.get("superseded_by")]
+if len(active) == 1 and "21 ribu" in active[0]["content"]:
+    raise SystemExit(0)
+raise SystemExit(1)
+'; then
+        break
+    fi
+    sleep 5
+done
+
+echo "$HISTORY" | python3 -m json.tool
+python3 - "$HISTORY" <<'PY'
+import json, sys
+memories = json.loads(sys.argv[1])["data"]
+bandung = [m for m in memories if "Bandung" in m["content"] and "ribu" in m["content"]]
+
+active = [m for m in bandung if not m.get("superseded_by")]
+replaced = [m for m in bandung if m.get("superseded_by")]
+
+if len(active) != 1:
+    raise SystemExit(f"exactly one version must be active, not {len(active)}: {[m['content'] for m in bandung]}")
+if "21 ribu" not in active[0]["content"]:
+    raise SystemExit(f"the active version is not the newest one: {active[0]['content']!r}")
+if len(replaced) != 1:
+    raise SystemExit(f"exactly one version must be history: {[m['content'] for m in replaced]}")
+if "18 ribu" not in replaced[0]["content"]:
+    raise SystemExit(f"the history is not the older version: {replaced[0]['content']!r}")
+PY
+
+log "a memory that asks for a secret is refused"
+# No -f here: a refusal is the answer this phase is reading, so curl must not turn
+# it into an exit code before the body can be inspected.
+REFUSED=$(curl -sS -w '\n%{http_code}' -X POST "${API}/memories" "${MEMORY_AUTH[@]}" \
+    -H 'Content-Type: application/json' \
+    -d '{"content":"kartu pelanggan 4111 1111 1111 1111"}')
+python3 - "$REFUSED" <<'PY'
+import json, sys
+body, _, status = sys.argv[1].rpartition("\n")
+if status.strip() != "422":
+    raise SystemExit(f"a secret must be refused with 422, not {status.strip()}: {body[:200]}")
+
+result = json.loads(body)
+if result.get("success"):
+    raise SystemExit("a card number was stored as a memory")
+if result["error"]["code"] != "sensitive_content":
+    raise SystemExit(f"the refusal does not name the reason: {result['error']}")
+PY
+
+log "a document is chunked, embedded, and searchable"
+DOCUMENT=$(curl -fsS -X POST "${API}/knowledge" "${MEMORY_AUTH[@]}" \
+    -H 'Content-Type: application/json' \
+    -d '{"source":"ongkir.txt","text":"Katalog ongkir.\n\nBandung 15 ribu di bawah satu kilogram.\n\nSurabaya 25 ribu di bawah satu kilogram."}')
+echo "$DOCUMENT" | python3 -m json.tool
+python3 - "$DOCUMENT" <<'PY'
+import json, sys
+chunks = json.loads(sys.argv[1])["data"]
+if not chunks:
+    raise SystemExit("the document was stored as no chunks")
+for chunk in chunks:
+    if chunk["status"] != "ready":
+        raise SystemExit(f"a chunk was not embedded: {chunk}")
+PY
+
+log "deleting a memory takes it out of the search for good"
+DOOMED=$(curl -fsS -X POST "${API}/memories" "${MEMORY_AUTH[@]}" \
+    -H 'Content-Type: application/json' \
+    -d '{"content":"Catatan sementara yang akan dihapus"}' \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')
+
+curl -fsS -X DELETE "${API}/memories/${DOOMED}" "${MEMORY_AUTH[@]}" >/dev/null
+
+AFTER=$(curl -fsS "${API}/memories?q=Catatan%20sementara" "${MEMORY_AUTH[@]}")
+python3 - "$AFTER" <<'PY'
+import json, sys
+memories = json.loads(sys.argv[1])["data"]
+if memories:
+    raise SystemExit(f"a deleted memory is still listed: {memories}")
+PY
+
+# The row is gone from the table as well, not flagged: the check reads the
+# database the way the delete's own statement would.
+GONE=$(docker exec bolu-postgres psql -U employeebot -d employeebot -tAc \
+    "SELECT count(*) FROM memories WHERE id = '${DOOMED}'")
+[[ "$GONE" == "0" ]] || fail "the delete left the row behind: ${GONE} rows"
+
+log "the extraction switch can be turned off"
+curl -fsS -X PATCH "${API}/agents/${AGENT}/memory-extraction" "${MEMORY_AUTH[@]}" \
+    -H 'Content-Type: application/json' -d '{"enabled":false}' >/dev/null
+
+SWITCH=$(curl -fsS "${API}/agents" "${MEMORY_AUTH[@]}" \
+    | python3 -c "import json,sys; d=json.load(sys.stdin)['data']; print([a for a in d if a['id']=='${AGENT}'][0].get('memory_extraction_enabled'))")
+[[ "$SWITCH" == "False" ]] || fail "the extraction switch did not turn off: ${SWITCH}"
+
 echo
 echo "SMOKE OK"
 echo "  a chat message became a durable task, ran out of process, and answered in its thread;"
-echo "  a task past its step allowance stopped with a reason a person can read."
+echo "  a task past its step allowance stopped with a reason a person can read;"
+echo "  a memory request was stored and confirmed, a later task was given it, a quiet"
+echo "  conversation was extracted, a corrected fact replaced its predecessor, a secret"
+echo "  was refused, a document was indexed, and a delete removed the row for good."

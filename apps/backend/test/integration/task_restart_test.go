@@ -286,6 +286,11 @@ func (g *blockingGateway) Chat(ctx context.Context, _ llmdomain.Scope, _ llmdoma
 // workflow only ever calls Chat. Each method answers "not used" rather than
 // pretending to work.
 
+// Embed is not used here: this gateway scripts a restart, not a memory write.
+func (g *blockingGateway) Embed(context.Context, llmdomain.Scope, llmdomain.EmbedRequest) (llmdomain.EmbedResponse, error) {
+	return llmdomain.EmbedResponse{}, errors.New("not used")
+}
+
 func (g *blockingGateway) Stream(context.Context, llmdomain.Scope, llmdomain.ChatRequest) (<-chan llmdomain.StreamEvent, error) {
 	return nil, errors.New("not used")
 }

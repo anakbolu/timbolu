@@ -172,6 +172,20 @@ func (s *service) SetStatus(ctx context.Context, scope domain.Scope, id uuid.UUI
 	return s.decorate(ctx, scope, updated)
 }
 
+// SetMemoryExtraction flips automatic memory extraction for one Bolu.
+func (s *service) SetMemoryExtraction(ctx context.Context, scope domain.Scope, id uuid.UUID, enabled bool) (domain.Agent, error) {
+	if err := requireScope(scope); err != nil {
+		return domain.Agent{}, err
+	}
+
+	updated, err := s.deps.SetMemoryExtraction(ctx, scope, id, enabled)
+	if err != nil {
+		return domain.Agent{}, err
+	}
+
+	return s.decorate(ctx, scope, updated)
+}
+
 // Delete removes a Bolu from the registry. It refuses while the Bolu is still
 // working, because the task would be left without its agent.
 func (s *service) Delete(ctx context.Context, scope domain.Scope, id uuid.UUID) error {

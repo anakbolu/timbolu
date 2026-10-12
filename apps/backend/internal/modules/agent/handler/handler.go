@@ -54,6 +54,13 @@ type setStatusRequest struct {
 	Status string `json:"status"`
 }
 
+type setMemoryExtractionRequest struct {
+	// Enabled is a pointer so an absent field is a bad request rather than a
+	// silent "turn it off": the switch decides whether a Bolu learns from
+	// conversations, and a body that forgot it must not change it.
+	Enabled *bool `json:"enabled"`
+}
+
 type setGrantRequest struct {
 	IntegrationID string `json:"integration_id"`
 	Permission    string `json:"permission"`
@@ -68,23 +75,25 @@ type reasonPayload struct {
 }
 
 type agentPayload struct {
-	ID          string         `json:"id"`
-	TeamID      string         `json:"team_id"`
-	TeamName    string         `json:"team_name"`
-	TeamKind    string         `json:"team_kind"`
-	Name        string         `json:"name"`
-	Role        string         `json:"role"`
-	Persona     string         `json:"persona"`
-	Tone        string         `json:"tone"`
-	Shape       string         `json:"shape"`
-	Color       string         `json:"color"`
-	Status      string         `json:"status"`
-	Display     string         `json:"display_status"`
-	Reason      *reasonPayload `json:"reason,omitempty"`
-	TemplateKey string         `json:"template_key,omitempty"`
-	Tools       []string       `json:"tools"`
-	Model       map[string]any `json:"default_model"`
-	CreatedAt   string         `json:"created_at"`
+	ID       string `json:"id"`
+	TeamID   string `json:"team_id"`
+	TeamName string `json:"team_name"`
+	TeamKind string `json:"team_kind"`
+	Name     string `json:"name"`
+	Role     string `json:"role"`
+	Persona  string `json:"persona"`
+	Tone     string `json:"tone"`
+	Shape    string `json:"shape"`
+	Color    string `json:"color"`
+	Status   string `json:"status"`
+	Display  string `json:"display_status"`
+	// MemoryExtraction is the switch the memory screen reads and writes.
+	MemoryExtraction bool           `json:"memory_extraction_enabled"`
+	Reason           *reasonPayload `json:"reason,omitempty"`
+	TemplateKey      string         `json:"template_key,omitempty"`
+	Tools            []string       `json:"tools"`
+	Model            map[string]any `json:"default_model"`
+	CreatedAt        string         `json:"created_at"`
 }
 
 type teamPayload struct {
@@ -261,6 +270,29 @@ func (h *Handler) SetStatus(c *fiber.Ctx) error {
 	}
 
 	return response.OK(c, "bolu status updated", toAgentPayload(agent))
+}
+
+// SetMemoryExtraction flips automatic memory extraction for one Bolu.
+func (h *Handler) SetMemoryExtraction(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Params("agentID"))
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "invalid agent id", "invalid_request", nil)
+	}
+
+	var req setMemoryExtractionRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "invalid request body", "invalid_request", nil)
+	}
+	if req.Enabled == nil {
+		return response.Error(c, fiber.StatusBadRequest, "enabled is required", "invalid_request", nil)
+	}
+
+	agent, err := h.service.SetMemoryExtraction(c.UserContext(), scope(c), id, *req.Enabled)
+	if err != nil {
+		return h.fail(c, "set memory extraction", err)
+	}
+
+	return response.OK(c, "memory extraction updated", toAgentPayload(agent))
 }
 
 // Delete removes a Bolu from the registry.
@@ -450,6 +482,7 @@ func ManagerRoutes(group fiber.Router, h *Handler) {
 	group.Post("/agents", h.Create)
 	group.Patch("/agents/:agentID", h.Update)
 	group.Patch("/agents/:agentID/status", h.SetStatus)
+	group.Patch("/agents/:agentID/memory-extraction", h.SetMemoryExtraction)
 	group.Delete("/agents/:agentID", h.Delete)
 	group.Put("/agents/:agentID/grants", h.SetGrant)
 	group.Delete("/agents/:agentID/grants/:integrationID", h.DeleteGrant)
@@ -500,22 +533,23 @@ func parseOptionalID(value, field string) (uuid.UUID, error) {
 
 func toAgentPayload(agent domain.Agent) agentPayload {
 	payload := agentPayload{
-		ID:          agent.ID.String(),
-		TeamID:      agent.TeamID.String(),
-		TeamName:    agent.TeamName,
-		TeamKind:    agent.TeamKind,
-		Name:        agent.Name,
-		Role:        agent.Role,
-		Persona:     agent.Persona,
-		Tone:        agent.Tone,
-		Shape:       agent.Shape,
-		Color:       agent.Color,
-		Status:      agent.Status,
-		Display:     agent.Display,
-		TemplateKey: agent.TemplateKey,
-		Tools:       agent.Tools,
-		Model:       agent.DefaultModel,
-		CreatedAt:   agent.CreatedAt.UTC().Format(time.RFC3339),
+		ID:               agent.ID.String(),
+		TeamID:           agent.TeamID.String(),
+		TeamName:         agent.TeamName,
+		TeamKind:         agent.TeamKind,
+		Name:             agent.Name,
+		Role:             agent.Role,
+		Persona:          agent.Persona,
+		Tone:             agent.Tone,
+		Shape:            agent.Shape,
+		Color:            agent.Color,
+		Status:           agent.Status,
+		Display:          agent.Display,
+		MemoryExtraction: agent.MemoryExtraction,
+		TemplateKey:      agent.TemplateKey,
+		Tools:            agent.Tools,
+		Model:            agent.DefaultModel,
+		CreatedAt:        agent.CreatedAt.UTC().Format(time.RFC3339),
 	}
 	if payload.Tools == nil {
 		payload.Tools = []string{}

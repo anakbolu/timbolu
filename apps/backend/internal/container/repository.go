@@ -10,6 +10,7 @@ import (
 	healthrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/repository"
 	integrationrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/repository"
 	llmrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/repository"
+	memoryrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/repository"
 	taskrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/repository"
 	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
@@ -37,6 +38,10 @@ type Repositories struct {
 	Task *taskrepo.Repository
 	// Approval holds the drafts, the policies, and the audit trail.
 	Approval *approvalrepo.Repository
+	// Memory holds the two memories and the knowledge base. The agent rows and
+	// the audit trail belong to their own modules; this reads and writes only its
+	// own tables.
+	Memory *memoryrepo.Repository
 }
 
 // newRepositories builds every repository. When there is no pool the
@@ -75,6 +80,11 @@ func newRepositories(pool *database.Pool) *Repositories {
 		// attachments, and the event store. They share one connection and one
 		// tenant scope, so they are one struct.
 		repositories.Chat = chatrepo.New(pool)
+
+		// Memory keeps the two layers and the knowledge chunks; it reads the
+		// extraction switch from the agent rows and writes the audit trail through
+		// its own module's repository.
+		repositories.Memory = memoryrepo.New(pool)
 
 		// The task runtime implements two ports — tasks and steps — over the
 		// same connection and the same tenant scope.

@@ -227,6 +227,42 @@ const (
 	TriggerHandoff = "handoff"
 )
 
+// Memory is what the chat module asks of the memory module.
+//
+// Two questions, and both belong to the message rather than to the answer: a
+// message may ask for something to be remembered, and every message is a sign
+// that a conversation is still moving. Neither is the chat module's business, so
+// both are ports.
+type Memory interface {
+	// Remember stores what the message asked to be remembered and hands back the
+	// sentence the Bolu answers with. A false Handled means the message was not a
+	// memory request, and the ordinary reply runs.
+	Remember(ctx context.Context, scope Scope, req RememberRequest) (RememberResult, error)
+	// ConversationActive tells the extractor the thread moved, which pushes its
+	// quiet timer out. A conversation that keeps moving is never read.
+	ConversationActive(ctx context.Context, scope Scope, conversationID, agentID uuid.UUID) error
+}
+
+// RememberRequest is one message that may ask for something to be remembered.
+type RememberRequest struct {
+	Text string
+	// AgentID is the Bolu being addressed, whose private memory a role-specific
+	// fact belongs to.
+	AgentID uuid.UUID
+	// MessageID is the message it came from, so the memory can point back at it.
+	MessageID uuid.UUID
+}
+
+// RememberResult is what the memory module answered.
+type RememberResult struct {
+	// Handled says the message was answered by the memory module.
+	Handled bool
+	// Confirmation is what the Bolu answers. It names exactly what was stored.
+	Confirmation string
+	// Refused says nothing was stored: the content was sensitive.
+	Refused bool
+}
+
 // Responder answers a message with a stream of chunks.
 //
 // It is the seam the agent runtime plugs into: today the implementation answers

@@ -81,6 +81,11 @@ type Agent struct {
 	// Reason explains a working or waiting status.
 	Reason *Reason
 
+	// MemoryExtraction is the switch that decides whether a quiet conversation is
+	// read into memory automatically. A person can still ask for something to be
+	// remembered while it is off: the switch governs the extractor, not the user.
+	MemoryExtraction bool
+
 	TemplateKey  string
 	Tools        []string
 	DefaultModel map[string]any
@@ -197,6 +202,7 @@ type Repository interface {
 	Create(ctx context.Context, scope Scope, agent NewAgent) (Agent, error)
 	Update(ctx context.Context, scope Scope, id uuid.UUID, req UpdateRequest) (Agent, error)
 	SetStatus(ctx context.Context, scope Scope, id uuid.UUID, status string) (Agent, error)
+	SetMemoryExtraction(ctx context.Context, scope Scope, id uuid.UUID, enabled bool) (Agent, error)
 	Delete(ctx context.Context, scope Scope, id uuid.UUID) error
 
 	Activity(ctx context.Context, scope Scope) (map[uuid.UUID]Activity, error)
@@ -270,6 +276,7 @@ type Service interface {
 	Create(ctx context.Context, scope Scope, req CreateRequest) (Agent, error)
 	Update(ctx context.Context, scope Scope, id uuid.UUID, req UpdateRequest) (Agent, error)
 	SetStatus(ctx context.Context, scope Scope, id uuid.UUID, status string) (Agent, error)
+	SetMemoryExtraction(ctx context.Context, scope Scope, id uuid.UUID, enabled bool) (Agent, error)
 	Delete(ctx context.Context, scope Scope, id uuid.UUID) error
 
 	Teams(ctx context.Context, scope Scope) ([]Team, error)

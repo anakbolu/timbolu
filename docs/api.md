@@ -407,6 +407,100 @@ after a decision. The block carries `draft_id`, `action_kind`, `title`,
 `not_before`. The `draft.created` and `draft.decided` events carry the same
 payload on the stream.
 
+## Memory and knowledge (EPIC 10)
+
+Two things are stored and they are not the same thing. A **memory** is something a
+Bolu was told or worked out: short, written by a person or by extraction, and sent
+in the prompt on every call. A **knowledge item** is one chunk of a document the
+workspace owns: long, retrieved by similarity to the task at hand.
+
+| Endpoint | Auth | Role | Notes |
+| --- | --- | --- | --- |
+| `GET /memories` | bearer + tenant | any | `?agent_id=&layer=&q=&history=&limit=`; pinned first |
+| `POST /memories` | bearer + tenant | any | `{content, kind, agent_id?, pinned?}` |
+| `PATCH /memories/:id` | bearer + tenant | any | `{content?, kind?, pinned?, agent_id?, move_to_main?}` |
+| `DELETE /memories/:id` | bearer + tenant | any | Permanent: the row and its vector |
+| `GET /knowledge` | bearer + tenant | any | `?status=&source=&q=&agent_id=`; failed chunks included |
+| `POST /knowledge` | bearer + tenant | any | `{source, text, agent_id?}`; chunks, embeds, stores |
+| `DELETE /knowledge/:id` | bearer + tenant | any | Permanent |
+| `PATCH /agents/:id/memory-extraction` | bearer + tenant | owner, admin | `{enabled}`; automatic extraction for one Bolu |
+
+Every member reads and edits memory, the way every member reads and decides a
+draft: the person who notices a wrong fact is not always the owner. The
+extraction switch needs a managing role because it changes what a Bolu learns on
+its own.
+
+### The two layers
+
+| Layer | `agent_id` | Who uses it |
+| --- | --- | --- |
+| Main memory | `null` | Every Bolu, in every call |
+| Private memory | a Bolu id | That Bolu only |
+
+`layer=main` and `agent_id=main` are both accepted on a read; `"main"` is also
+what a move sends when a memory goes back to the workspace layer.
+
+A search filters by layer as strictly as it filters by workspace: a private
+memory that reached another Bolu's prompt would be as wrong as one that reached
+another workspace. A search that crosses a workspace is refused at the database,
+by the same Row Level Security policy every other tenant table carries.
+
+### What travels in a prompt
+
+The main memory joins the **cached prefix** — persona, instructions, main memory —
+because it is the same text on every round. It is capped by `MainTokens`, pinned
+memories first, and a memory that does not fit is skipped whole rather than cut in
+the middle; if nothing fits, the newest one is truncated, because a Bolu that
+remembers nothing is the worst outcome of the three.
+
+The retrieved half — a Bolu's private memory and the closest document chunks —
+travels separately, because it changes with the question. Each retrieved chunk is
+wrapped in a marker that says it is data:
+
+```
+<data sumber="katalog.pdf">
+Ongkir Bandung 15 ribu
+</data>
+```
+
+The closing sequence is escaped inside the content, so a document that contains
+`</data>` cannot end the block early and have the rest of its text read as the
+workspace's own words.
+
+### What is never stored
+
+Card numbers, passwords, one-time codes, and identity or account numbers are
+refused before the row exists, for all three doors: a direct request, the
+extractor, and a document being ingested. A refusal is a `422` with
+`sensitive_content`, and the memory screen says which pattern was found.
+
+A delete is permanent. There is no soft-delete column, because a memory that
+"forgot" but still sits in the table is not forgotten: the row goes, its vector
+goes with it, and the retrieval record that named it goes too. The audit trail
+records that something was deleted and what layer it was in, and never copies the
+content: a memory is deleted because it should not be there, and writing it into
+another table would keep it.
+
+### Extraction
+
+After a conversation goes quiet for `MEMORY_QUIET_SECONDS`, a small model reads
+the last `MEMORY_EXTRACTION_MESSAGES` turns and proposes what is worth keeping.
+General workspace facts go to the main memory, role-specific ones to the Bolu's
+own. A proposal that is too short (`"oke"`, `"makasih"`) is dropped, one that
+carries a secret is refused, and one that is close enough to an existing memory
+replaces it: the older row is kept as history with `superseded_by` set, so a
+corrected fact has exactly one active version and its old version stays readable.
+
+The switch is per Bolu and defaults on. Turning it off stops the extractor, not
+the feature: a person can still ask for something to be remembered.
+
+### Automatic memory from a conversation
+
+`Send` with `reply: true` is the only message path a memory request goes through.
+The reply to a message that asks to remember is written by the memory module
+itself — the same module that stored the row — so the confirmation cannot name
+something that does not exist. It costs no tokens.
+
 ## Error codes
 
 | Code | Status | Meaning |
@@ -468,3 +562,6 @@ payload on the stream.
 | `file_too_large` | 413 | An attachment exceeds 25 MB |
 | `storage_not_configured` | 503 | Object storage is not configured |
 | `chat_not_configured` | 503 | Module not wired (no database) |
+| `memory_not_found` | 404 | No such memory or chunk in this workspace |
+| `sensitive_content` | 422 | The content is a secret and will not be remembered |
+| `memory_unavailable` | 503 | No provider can embed, so nothing can be stored |

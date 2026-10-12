@@ -28,6 +28,10 @@ func Build(cfg domain.ProviderConfig) (domain.Provider, error) {
 			SupportsTools:     true,
 			SupportsVision:    true,
 			ParallelToolCalls: true,
+			// The format defines an embeddings route; the workspace's key is what
+			// embeds, so memory and knowledge retrieval work without a second
+			// configuration.
+			SupportsEmbeddings: true,
 		})
 
 	case domain.AdapterAnthropic:

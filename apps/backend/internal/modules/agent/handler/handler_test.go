@@ -268,6 +268,44 @@ func TestSetStatusHandler(t *testing.T) {
 	})
 }
 
+func TestSetMemoryExtractionHandler(t *testing.T) {
+	t.Run("200 turns it off and reports the switch", func(t *testing.T) {
+		service := mocks.NewService(t)
+		agent := agentFixture()
+		agent.MemoryExtraction = false
+
+		service.EXPECT().SetMemoryExtraction(mock.Anything, mock.Anything, mock.Anything, false).
+			Return(agent, nil).Once()
+
+		app := newTestApp(t, service, identity{userID: uuid.New(), workspaceID: uuid.New(), role: "owner"})
+		resp := do(t, app, fiber.MethodPatch, "/api/agents/"+agent.ID.String()+"/memory-extraction", `{"enabled":false}`)
+
+		require.Equal(t, fiber.StatusOK, resp.Code)
+		require.Contains(t, resp.Body.String(), `"memory_extraction_enabled":false`)
+	})
+
+	t.Run("400 when the body says nothing", func(t *testing.T) {
+		// An absent field must not be read as "turn it off": the switch decides
+		// whether a Bolu learns from conversations, so a body that forgot it
+		// changes nothing rather than something.
+		service := mocks.NewService(t)
+
+		app := newTestApp(t, service, identity{userID: uuid.New(), workspaceID: uuid.New(), role: "owner"})
+		resp := do(t, app, fiber.MethodPatch, "/api/agents/"+uuid.NewString()+"/memory-extraction", `{}`)
+
+		require.Equal(t, fiber.StatusBadRequest, resp.Code)
+	})
+
+	t.Run("400 for a malformed id", func(t *testing.T) {
+		service := mocks.NewService(t)
+
+		app := newTestApp(t, service, identity{userID: uuid.New(), workspaceID: uuid.New(), role: "owner"})
+		resp := do(t, app, fiber.MethodPatch, "/api/agents/not-a-uuid/memory-extraction", `{"enabled":true}`)
+
+		require.Equal(t, fiber.StatusBadRequest, resp.Code)
+	})
+}
+
 func TestDeleteAgentHandler(t *testing.T) {
 	t.Run("200 when the Bolu is idle", func(t *testing.T) {
 		service := mocks.NewService(t)

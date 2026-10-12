@@ -43,6 +43,14 @@ func SystemPrompt(loaded Context, input TaskInput) string {
 		parts = append(parts, "Tugas ini bagian dari tugas lain; serahkan hasilnya sebagai data yang bisa dipakai.")
 	}
 
+	// The workspace memory is part of the instruction block rather than of the
+	// retrieved one: it is stable across rounds and across tasks, which is what
+	// makes it worth caching. Memory a search found for this question travels in
+	// the retrieved block and is marked there as data.
+	if strings.TrimSpace(loaded.Memory.Stable) != "" {
+		parts = append(parts, strings.TrimSpace(loaded.Memory.Stable))
+	}
+
 	return strings.Join(parts, "\n")
 }
 

@@ -18,6 +18,8 @@ import (
 
 	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
 	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
+	memoryactivity "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/activity"
+	memorydomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain"
 	taskactivity "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/activity"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/authn"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
@@ -53,6 +55,13 @@ type Container struct {
 	// process so the API and the worker share one assembly point, and only the
 	// worker runs it.
 	Tasks *taskactivity.Activities
+	// Memory is the memory service, kept on the container because the chat
+	// service and the extraction schedule both reach it before the handler set is
+	// built.
+	Memory memorydomain.Service
+	// MemoryTasks is the extraction activity set, registered by the agent worker
+	// alongside the task one.
+	MemoryTasks *memoryactivity.Activities
 
 	Repositories *Repositories
 	Services     *Services
@@ -237,6 +246,15 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Container, e
 	// an action may leave, and a task that could not ask would have nothing
 	// stopping it from sending.
 	if err := c.openApproval(ctx, cfg); err != nil {
+		c.Close()
+		return nil, err
+	}
+
+	// Memory comes after the gateway, because a write is embedded before it is
+	// stored, and after the approval repository, because the trail it writes to
+	// lives there. It comes before the task runtime and the conversations, which
+	// both ask it for something.
+	if err := c.openMemory(ctx, cfg); err != nil {
 		c.Close()
 		return nil, err
 	}

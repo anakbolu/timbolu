@@ -411,6 +411,21 @@ export function SettingsView() {
 
       <section className={`${CARD} flex flex-wrap items-center justify-between gap-3.5 p-[22px]`}>
         <div>
+          <h2 className={HEADING}>Memori</h2>
+          <div className="text-bolu-muted">
+            Apa yang diingat seluruh ruang kerja dan apa yang diingat satu Bolu saja.
+          </div>
+        </div>
+        <a
+          href="/settings/memory"
+          className="flex min-h-11 items-center rounded-full border-2 border-bolu-ink px-5 font-bold text-bolu-ink no-underline hover:text-bolu-ink"
+        >
+          Buka memori
+        </a>
+      </section>
+
+      <section className={`${CARD} flex flex-wrap items-center justify-between gap-3.5 p-[22px]`}>
+        <div>
           <h2 className={HEADING}>Paket dan tagihan</h2>
           <div className="text-bolu-muted">
             Belum ada paket berjalan. Penagihan transfer bank dikerjakan setelah billing dibangun.

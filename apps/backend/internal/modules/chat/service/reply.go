@@ -67,6 +67,15 @@ func (s *Service) Send(ctx context.Context, scope chatdomain.Scope, req chatdoma
 	s.emitMessage(ctx, scope, userMessage, conversation.ID, chatdomain.EventMessageNew)
 
 	result := chatdomain.SendResult{Message: userMessage}
+
+	if s.deps.Memory != nil {
+		// The conversation moved, so any extraction waiting on it starts over.
+		// This runs before the reply decision on purpose: a message that does not
+		// ask for an answer is still a message, and a thread that keeps being
+		// written is not one to read yet.
+		s.scheduleExtraction(ctx, scope, conversation, req.AgentID)
+	}
+
 	if !req.Reply {
 		return result, nil
 	}
@@ -77,6 +86,16 @@ func (s *Service) Send(ctx context.Context, scope chatdomain.Scope, req chatdoma
 	}
 	result.Responder = &responder
 	result.Routed = routed
+
+	if s.deps.Memory != nil {
+		// A message that asks for something to be remembered is answered here
+		// instead of by the model: the module that stores it is the module that
+		// names what it stored, so the confirmation cannot describe a row that
+		// does not exist. It also costs no tokens.
+		if handled, err := s.remember(ctx, scope, conversation, responder, userMessage, text, &result); handled {
+			return result, err
+		}
+	}
 
 	// The placeholder is written before the answer starts, so a client can show
 	// the Bolu thinking and follow that one message rather than every message of

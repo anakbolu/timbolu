@@ -55,6 +55,7 @@ make smoke-task      # the task runtime end to end against the compose stack
 | `chat` | `/api/conversations/*`, `/api/events*`, `/content/:ref` | Conversations with block messages, attachments, the activity stream, and the sandboxed content origin |
 | `task` | `/api/tasks*` | The durable agent runtime: the task a Bolu runs, the rounds it recorded, the handoffs, and the cancel |
 | `approval` | `/api/drafts*`, `/api/approval-policies`, `/api/audit` | The outbound gate: the draft a Bolu proposes, the policy that decides whether a person is asked, and the trail |
+| `memory` | `/api/memories*`, `/api/knowledge*` | What a Bolu remembers and what it knows: two memory layers, the knowledge base, the retrieval that reaches a prompt, and the extraction that reads a quiet conversation |
 
 ### Authentication
 
@@ -267,6 +268,59 @@ read back inside the transaction that creates it.
   (EPIC 8 owns it) the action stops at the send boundary and the task fails with
   that reason, rather than recording a send that never happened.
 
+### Memory and knowledge (EPIC 10)
+
+- **A memory and a knowledge chunk are different things.** A memory is short,
+  written by a person or by extraction, and travels in every call. A chunk is one
+  piece of a document, and it is retrieved by similarity to the question. Storing
+  them in one table would make "what must I always send" and "what might be
+  relevant" the same question.
+- **Nothing is stored without a vector.** A memory or a chunk the search can never
+  find is worse than a refused write, because it looks like the Bolu knows
+  something and then never uses it. A write therefore fails when no provider can
+  embed; a *read* degrades instead, because a task must still answer.
+- **A write is filtered before the row exists.** Card numbers, passwords,
+  one-time codes, and identity numbers are refused for all three doors: a direct
+  request, the extractor, and a document. The card check is the Luhn checksum
+  rather than a digit count, so an invoice number is not refused along with a card.
+- **The main memory is capped, and the cap is stated.** Pinned first, then newest;
+  a memory that does not fit is skipped whole rather than cut in the middle,
+  because half a fact read as a fact is worse than a fact that arrives using the
+  write boundary. When nothing fits at all the newest one is truncated, because an
+  empty memory section reads as a Bolu that forgot everything.
+- **The retrieved block is marked as data.** A document chunk travels inside
+  `<data sumber="...">` … `</data>`, and the closing tag is escaped in the content,
+  so a document cannot end the block early and speak as the workspace's own words.
+  That marker is what the prompt test asserts.
+- **The two halves are cached differently.** The persona, the instructions, and the
+  main memory are the stable prefix a provider with prompt caching keeps between
+  calls; the retrieved block changes with the question and is sent as its own
+  block. Joining them would spend a cache write on every task and lose the hits the
+  stable half earns. `ChatRequest.Retrieved` is that seam.
+- **Memory is loaded once per task, not once per round.** The retrieved text is
+  therefore identical across the rounds of one task, which is what lets the second
+  round hit the cache instead of paying for a fresh prefix.
+- **A corrected fact replaces its predecessor.** A new memory within
+  `MEMORY_SIMILARITY` of an old one supersedes it: the old row keeps
+  `superseded_by` and stays readable as history, and the search sees one memory.
+  Two versions of "ongkir Bandung" in one prompt is worse than one.
+- **Extraction is a durable wait, not a sleep.** `SignalWithStart` on every message
+  restarts one workflow's timer, so a thread is read after it stops rather than
+  while it is being written, and the wait survives a deploy. A conversation that
+  never settles ends its run instead of growing one workflow's history without end.
+- **A delete is permanent, and it takes its measurements with it.** There is no
+  soft-delete column; `retrieval_usages` rows cascade, because a record naming a
+  row that no longer exists is a count nobody can interpret. The audit trail says
+  what was deleted and never copies the text.
+- **The audit trail is written through the module that owns it.** The rows live in
+  the approval module's `audit_logs`; the container adapts the two, so neither
+  module reaches into the other.
+- **Embedding is part of the gateway, not a second configuration.** The same
+  fallback chain and the same ledger serve it: one provider call writes one
+  `usage_ledger` row with `purpose = embedding`. A provider that has no embedding
+  route advertises `Embeddings: false` and is skipped rather than asked and
+  refused — which is why Anthropic says so instead of failing at call time.
+
 ## Configuration
 
 Configuration is read from `internal/platform/config/config.yaml` (or
@@ -294,7 +348,11 @@ a zero falls back to the product default. Object storage is `STORAGE_DRIVER`
 (`local` writes to a directory, `s3` speaks the S3 API that MinIO, R2, B2, and
 AWS share) plus
 `STORAGE_LOCAL_ROOT` or `S3_*`, and `CONTENT_ORIGIN` is where sandboxed documents
-are served from — a different origin from the app in every deployment.
+are served from — a different origin from the app in every deployment. Memory is
+bounded by `MEMORY_MAIN_TOKENS` (what travels in every call),
+`MEMORY_RECALL_MEMORIES` and `MEMORY_RECALL_KNOWLEDGE` (what one round retrieves),
+`MEMORY_SIMILARITY` (when a new memory replaces an old one), and
+`MEMORY_QUIET_SECONDS` (how long a conversation must be still before it is read).
 
 Deployment and region decisions: `docs/adr/0001-temporal-dan-region.md`.
 Test strategy and gates: `docs/testing.md`.

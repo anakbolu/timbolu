@@ -55,6 +55,11 @@ func RegisterAgentTasks(w sdkworker.Worker, c *Container) {
 	// the method names mirror: a mismatch here would leave a scheduled activity
 	// with no worker to run it, and the task would stall rather than fail.
 	w.RegisterActivity(c.Tasks)
+
+	// Memory extraction rides on the same worker: it is one small model call on a
+	// timer, and giving it its own queue and process would be a deployment for a
+	// feature that shares every dependency the agent worker already has.
+	RegisterMemoryTasks(w, c)
 }
 
 // RunWorker starts the worker and blocks until ctx is cancelled. Every failure

@@ -327,31 +327,6 @@ func TestGroupsKeepTheirParticipants(t *testing.T) {
 	require.Equal(t, "Grup baru", renamed.Title)
 }
 
-// agentIDs returns the Bolu of the fixture workspace, oldest first.
-func (f *chatFixture) agentIDs(t *testing.T) []uuid.UUID {
-	t.Helper()
-
-	ids := []uuid.UUID{}
-	require.NoError(t, f.pool.InScopeRead(t.Context(), database.Scope{WorkspaceID: f.workspace}, func(tx pgx.Tx) error {
-		rows, err := tx.Query(t.Context(),
-			"SELECT id FROM agents WHERE workspace_id = $1 AND deleted_at IS NULL ORDER BY created_at", f.workspace)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-
-		for rows.Next() {
-			var id uuid.UUID
-			if err := rows.Scan(&id); err != nil {
-				return err
-			}
-			ids = append(ids, id)
-		}
-		return rows.Err()
-	}))
-	return ids
-}
-
 // TestAttachmentMetadataAndIsolation is the E5.1 attachment gate: the bytes are
 // named by a key, the metadata is a row, and another workspace sees neither.
 func TestAttachmentMetadataAndIsolation(t *testing.T) {

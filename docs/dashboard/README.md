@@ -15,6 +15,14 @@ bukan data contoh.
 | `07-grup.png` | Grup: daftar grup dan pembuatannya |
 | `08-mobile.png` | Mobile: bilah atas menggantikan sidebar di bawah 760px |
 | `09-mobile-menu.png` | Mobile: drawer terbuka |
+| `10-memori.png` | Memori: memori utama, memori pribadi tiap Bolu, dan basis pengetahuan |
 
 Diambil 2026-10-12. Angka di layar adalah isi workspace uji, jadi nol di tempat
 yang belum punya pekerjaan — itu memang perilakunya, bukan tampilan kosong.
+
+`10-memori.png` diambil setelah EPIC 10 mendarat, dengan isi yang benar-benar
+tersimpan lewat API: tiga memori utama (satu disematkan), satu memori pribadi
+milik Oren, dan satu dokumen yang sudah dipecah lalu diindeks. Ia memperlihatkan
+susunan yang jadi alasan layarnya ada — memori utama di atas, satu bagian per
+Bolu, basis pengetahuan di bawah — dan bahwa tiap baris menyebut jenis, sumber,
+serta tanggalnya.

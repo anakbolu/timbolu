@@ -45,6 +45,10 @@ type Deps struct {
 	Budget   domain.Budget
 	Events   domain.EventSink
 	Reply    domain.ReplyWriter
+	// Memory is what a Bolu remembers and what a search finds for the task at
+	// hand. Optional: without it a task answers from the conversation alone,
+	// which is what a deployment with no embedding provider gets.
+	Memory domain.MemoryRecall
 	// Namer resolves a Bolu by the name the model knows, which is what a handoff
 	// names.
 	Namer  domain.AgentNamer
@@ -108,7 +112,49 @@ func (a *Activities) LoadTaskContext(ctx context.Context, input workflow.TaskInp
 		loaded.History = history
 	}
 
+	// Memory is loaded once per task rather than per round: the retrieved block
+	// then stays identical across the rounds of one task, which is what lets the
+	// provider's cache hit on the second round instead of every round paying for
+	// a fresh prefix.
+	//
+	// A failure here is logged rather than fatal. A Bolu that answers without its
+	// memory is a worse answer; a Bolu that refuses to answer at all is a broken
+	// product.
+	if a.deps.Memory != nil {
+		recall, err := a.deps.Memory.Recall(ctx, scope, domain.RecallRequest{
+			AgentID: task.AgentID,
+			TaskID:  task.ID,
+			Query:   recallQuery(input, loaded.History),
+		})
+		if err != nil {
+			if a.deps.Logger != nil {
+				a.deps.Logger.Warn("memory could not be loaded for this task; it will answer without it",
+					zap.String("task_id", task.ID.String()),
+					zap.Error(err),
+				)
+			}
+		} else {
+			loaded.Memory = recall
+		}
+	}
+
 	return loaded, nil
+}
+
+// recallQuery is what the memory search runs against: the task's own instruction,
+// or the last thing the user said when the task carries no prompt of its own.
+func recallQuery(input workflow.TaskInput, history []domain.Message) string {
+	if prompt := strings.TrimSpace(input.Prompt); prompt != "" {
+		return prompt
+	}
+
+	for i := len(history) - 1; i >= 0; i-- {
+		if text := strings.TrimSpace(domain.RenderBlocks(history[i].Blocks)); text != "" {
+			return text
+		}
+	}
+
+	return ""
 }
 
 // CallModel performs one model call.
@@ -609,9 +655,10 @@ func (a *Activities) chatRequest(request workflow.ModelRequest, task domain.Task
 	}
 
 	return llmdomain.ChatRequest{
-		System:   request.System,
-		Messages: messages,
-		Tools:    tools,
+		System:    request.System,
+		Retrieved: request.Retrieved,
+		Messages:  messages,
+		Tools:     tools,
 		// The model decides: some tasks are prose, some need a tool.
 		ToolChoice: llmdomain.ToolChoiceAuto,
 		Metadata: llmdomain.RequestMetadata{

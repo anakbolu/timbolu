@@ -9,6 +9,7 @@ import (
 	healthservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/service"
 	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
 	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
+	memorydomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain"
 	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
 	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/redis"
@@ -36,6 +37,8 @@ type Services struct {
 	// Integration is built by openIntegration, which needs the key-management key
 	// that seals every stored token.
 	Integration integrationdomain.Service
+	// Memory is built by openMemory, which needs the model gateway to embed with.
+	Memory memorydomain.Service
 }
 
 // newServices builds every service. Optional dependencies (Redis today) are

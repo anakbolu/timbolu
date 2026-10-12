@@ -124,6 +124,63 @@ func (_c *Provider_Chat_Call) RunAndReturn(run func(context.Context, domain.Chat
 	return _c
 }
 
+// Embed provides a mock function with given fields: ctx, req
+func (_m *Provider) Embed(ctx context.Context, req domain.EmbedRequest) (domain.EmbedResponse, error) {
+	ret := _m.Called(ctx, req)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Embed")
+	}
+
+	var r0 domain.EmbedResponse
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, domain.EmbedRequest) (domain.EmbedResponse, error)); ok {
+		return rf(ctx, req)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, domain.EmbedRequest) domain.EmbedResponse); ok {
+		r0 = rf(ctx, req)
+	} else {
+		r0 = ret.Get(0).(domain.EmbedResponse)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, domain.EmbedRequest) error); ok {
+		r1 = rf(ctx, req)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// Provider_Embed_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Embed'
+type Provider_Embed_Call struct {
+	*mock.Call
+}
+
+// Embed is a helper method to define mock.On call
+//   - ctx context.Context
+//   - req domain.EmbedRequest
+func (_e *Provider_Expecter) Embed(ctx interface{}, req interface{}) *Provider_Embed_Call {
+	return &Provider_Embed_Call{Call: _e.mock.On("Embed", ctx, req)}
+}
+
+func (_c *Provider_Embed_Call) Run(run func(ctx context.Context, req domain.EmbedRequest)) *Provider_Embed_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(domain.EmbedRequest))
+	})
+	return _c
+}
+
+func (_c *Provider_Embed_Call) Return(_a0 domain.EmbedResponse, _a1 error) *Provider_Embed_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *Provider_Embed_Call) RunAndReturn(run func(context.Context, domain.EmbedRequest) (domain.EmbedResponse, error)) *Provider_Embed_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Model provides a mock function with no fields
 func (_m *Provider) Model() string {
 	ret := _m.Called()
