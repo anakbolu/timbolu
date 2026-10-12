@@ -7,7 +7,7 @@ bukan data contoh.
 | Berkas | Layar |
 | --- | --- |
 | `01-dasbor.png` | Dasbor: sambutan, "Suruh Bolu", statistik, aktivitas langsung, tugas terakhir |
-| `02-rutinitas.png` | Rutinitas: run yang benar-benar jalan, dan catatan bahwa penjadwalan belum ada |
+| `02-rutinitas.png` | Rutinitas: form cadence, jadwal tiap Bolu dengan waktu berikutnya, dan riwayat eksekusi |
 | `03-kantor.png` | Kantor: posisi tiap Bolu dari `display_status` |
 | `04-integrasi.png` | Integrasi: pencarian, kategori, kartu aplikasi, izin per Bolu |
 | `05-pengaturan.png` | Pengaturan: profil, jam kerja, kebijakan persetujuan, gaya bahasa |
@@ -19,6 +19,14 @@ bukan data contoh.
 
 Diambil 2026-10-12. Angka di layar adalah isi workspace uji, jadi nol di tempat
 yang belum punya pekerjaan — itu memang perilakunya, bukan tampilan kosong.
+
+`02-rutinitas.png` diambil setelah EPIC 11 mendarat, dengan tiga rutinitas yang
+benar-benar tersimpan lewat API — satu harian, satu tiap jam dalam rentang, dan
+satu berbasis kejadian — beserta dua eksekusi yang sudah tercatat. Ia
+memperlihatkan apa yang jadi alasan layarnya berubah: jenis jadwal dan zona waktu
+dipilih di form, waktu berikutnya dihitung di zona workspace (WITA di sini,
+sementara peramban WIB), dan tiap baris riwayat membawa ringkasan hasil
+eksekusinya.
 
 `10-memori.png` diambil setelah EPIC 10 mendarat, dengan isi yang benar-benar
 tersimpan lewat API: tiga memori utama (satu disematkan), satu memori pribadi

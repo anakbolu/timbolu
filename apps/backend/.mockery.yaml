@@ -56,6 +56,15 @@ packages:
       Auditor:
       Scheduler:
       Completer:
+  github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain:
+    interfaces:
+      Service:
+      Repository:
+      Engine:
+      TaskStarter:
+      WorkQueue:
+      Auditor:
+      WorkspaceClock:
   github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain:
     interfaces:
       Service:

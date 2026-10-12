@@ -56,6 +56,7 @@ make smoke-task      # the task runtime end to end against the compose stack
 | `task` | `/api/tasks*` | The durable agent runtime: the task a Bolu runs, the rounds it recorded, the handoffs, and the cancel |
 | `approval` | `/api/drafts*`, `/api/approval-policies`, `/api/audit` | The outbound gate: the draft a Bolu proposes, the policy that decides whether a person is asked, and the trail |
 | `memory` | `/api/memories*`, `/api/knowledge*` | What a Bolu remembers and what it knows: two memory layers, the knowledge base, the retrieval that reaches a prompt, and the extraction that reads a quiet conversation |
+| `routine` | `/api/routines*`, `/api/routine-runs` | Work a Bolu runs on its own: the four cadences, the Temporal Schedule behind each one, the run history, and the cheap check that skips a model call |
 
 ### Authentication
 
@@ -320,6 +321,56 @@ read back inside the transaction that creates it.
   `usage_ledger` row with `purpose = embedding`. A provider that has no embedding
   route advertises `Embeddings: false` and is skipped rather than asked and
   refused — which is why Anthropic says so instead of failing at call time.
+
+### Routines and scheduling (EPIC 11)
+
+- **A routine that exists always has a schedule — unless it has no clock at all.**
+  Creating one registers its schedule before it is reported as created, so a routine
+  that could not be scheduled is a failed write rather than a silent one that never
+  runs. A trigger routine is the exception that proves it: its cadence is the event
+  that starts it, so it needs no engine, and demanding one would make "setiap ada
+  email masuk" unsavable in a deployment without a scheduler.
+- **One schedule per routine, enforced by the database.** `schedule_id` is derived
+  from the routine's id and carries a unique index, so registering the same routine
+  twice leaves exactly one schedule — not because the service is careful, but
+  because a duplicate cannot be inserted. This is the epic's first gate: a routine
+  must never execute twice for one slot.
+- **The engine fires in the workspace's timezone.** A routine has no zone of its
+  own. Every schedule is registered in `workspace.tz`, which is the whole of E11.3:
+  changing the zone re-registers the schedules and every future run moves, and the
+  times a screen shows are computed from the same place, so a list cannot promise a
+  time the engine never fires. Nothing is cached, so there is nothing to invalidate.
+- **A trigger routine gets no Temporal Schedule at all.** A cron expression for
+  something that happens when it happens would fire on an empty queue and spend
+  tokens on nothing. The delivery starts it instead: the hub hands a queued event to
+  the routines watching it, and the run claims the delivery in the same statement,
+  so two routines watching one event cannot both act on it.
+- **One execution is one `routine_run` and one `task`.** The task is what gives a
+  run a durable workflow and an approval gate, so a run without one is refused
+  rather than recorded as an empty success. A run that could not open its task is
+  `failed` with the reason, and the next tick still fires — one bad run must not
+  stop a routine forever.
+- **The history shows the task's own line, and its own reason when it failed.** The
+  task runs out of process and reports back through the runtime's outcome sink,
+  which is why the sink resolves the routine service when it is called rather than
+  when it is installed: the task runtime is assembled *before* the routines, so a
+  sink captured at assembly time would hold nil forever and every run would stay
+  `running` while its task was already done.
+- **A run that finds nothing to do costs nothing, and the saving is recorded.** A
+  routine watching events reads its queue, and a routine whose Bolu is resting stops
+  there; either way the run is `skipped` with the reason and no model is called. The
+  claim is about cost, so `usage_ledger` is where it is proven: a skipped run adds no
+  row.
+- **Pausing is pausing the schedule, not deleting the routine.** The routine stays
+  listed — a routine somebody turned off is one they still want to see — and a tick
+  that arrives anyway is refused. Resuming brings the same one schedule back.
+- **Deleting a routine keeps its history.** The link is dropped to null and the
+  routine's name was snapshotted onto the run when it ran, so the history still reads
+  as a line. "What did this routine do last month" is exactly the question somebody
+  asks after turning it off, and it is the worst direction to be wrong in.
+- **A schedule change is visible immediately.** Create, update, pause, and resume
+  answer with the routine *and* its next run times, read from the same write that
+  changed them, so a form cannot show a stale time beside a cadence it just saved.
 
 ## Configuration
 

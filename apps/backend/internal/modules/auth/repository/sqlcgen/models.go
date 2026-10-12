@@ -367,17 +367,21 @@ type Routine struct {
 	ScheduleID    string
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+	Minute        int32
+	DayOfWeek     *int32
+	PausedReason  string
 }
 
 type RoutineRun struct {
 	ID          uuid.UUID
 	WorkspaceID uuid.UUID
-	RoutineID   uuid.UUID
+	RoutineID   *uuid.UUID
 	TaskID      *uuid.UUID
 	Status      string
 	Summary     string
 	StartedAt   time.Time
 	FinishedAt  *time.Time
+	RoutineName string
 }
 
 type Session struct {

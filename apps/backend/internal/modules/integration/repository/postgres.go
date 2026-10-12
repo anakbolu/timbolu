@@ -401,6 +401,41 @@ func (r *Repository) Enqueue(ctx context.Context, input domain.EnqueueInput) (do
 }
 
 // Pending returns the oldest unprocessed deliveries of a workspace.
+// ClaimEvents reads and claims the deliveries one event kind is waiting on.
+//
+// It is what a routine watching an event consumes, and it is one statement rather
+// than a read followed by a mark: two routines watching the same event must not both
+// act on one delivery, and the row lock is what makes that true.
+func (r *Repository) ClaimEvents(ctx context.Context, scope domain.Scope, event string, limit int) ([]domain.QueuedEvent, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+
+	var out []domain.QueuedEvent
+
+	err := r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
+		rows, err := queries.ClaimWebhookEvents(ctx, sqlcgen.ClaimWebhookEventsParams{
+			WorkspaceID: scope.WorkspaceID,
+			Event:       event,
+			Limit:       int32(limit),
+		})
+		if err != nil {
+			return fmt.Errorf("integration: claim webhook events: %w", err)
+		}
+
+		out = make([]domain.QueuedEvent, 0, len(rows))
+		for _, row := range rows {
+			out = append(out, toQueuedEvent(row))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return out, nil
+}
+
 func (r *Repository) Pending(ctx context.Context, scope domain.Scope, limit int) ([]domain.QueuedEvent, error) {
 	if limit <= 0 {
 		limit = 50

@@ -21,6 +21,8 @@ import (
 	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 	memoryactivity "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/activity"
 	memorydomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain"
+	routineactivity "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/activity"
+	routinedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
 	taskactivity "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/activity"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/authn"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
@@ -63,6 +65,12 @@ type Container struct {
 	// MemoryTasks is the extraction activity set, registered by the agent worker
 	// alongside the task one.
 	MemoryTasks *memoryactivity.Activities
+	// Routine is the routine service, kept on the container because the task runtime
+	// reports a finished task's outcome back through it and the workspace update
+	// reschedules through it.
+	Routine routinedomain.Service
+	// RoutineTasks is the routine activity set, registered by the agent worker.
+	RoutineTasks *routineactivity.Activities
 
 	Repositories *Repositories
 	Services     *Services
@@ -281,6 +289,13 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Container, e
 		return nil, err
 	}
 
+	// Routines come after the task runtime, because a run's work becomes a task, and
+	// before the conversations, because a chat message may start one.
+	if err := c.openRoutine(ctx, cfg); err != nil {
+		c.Close()
+		return nil, err
+	}
+
 	// Conversations come after the runtime: they answer with the gateway, address
 	// the Bolu the registry owns, and hand a message to the task runtime, so all
 	// three must be assembled first.
@@ -290,6 +305,14 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Container, e
 	}
 
 	c.Handlers = newHandlers(c.Services, c.Logger, cfg)
+
+	// A changed timezone or working window moves every future routine run, so the
+	// engine is told rather than left to fire at the old wall-clock time. Nothing is
+	// cached to invalidate: this re-registers the schedules, it does not recompute a
+	// stored time.
+	if c.Handlers.Workspace != nil && c.Routine != nil {
+		c.Handlers.Workspace = c.Handlers.Workspace.WithClockChange(c.RescheduleRoutines)
+	}
 
 	// A decision is handed to the task waiting on it through Temporal. It is
 	// installed here because the handler is built before the client is known to it,

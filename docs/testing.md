@@ -102,6 +102,11 @@ What they prove:
   Row Level Security, so testing as one would prove nothing.
 - `TestHealthRepositoryPingAgainstPostgres` — the sqlc query runs through the
   repository.
+- `TestMigrationsRunBothWays` runs against its own throwaway database and **drops
+  the whole schema** between its up and its down. Point it at a database you care
+  about — the compose one, say — and its last `up` leaves the schema empty and the
+  data gone. Use `migratedDatabase(t)`'s own scratch containers, or a database you
+  do not mind losing, when running the migration targets by hand.
 - `TestRedisClientAgainstARealServer` — the shared Redis client connects.
 - `TestWorkerRunsAgainstTemporal` — the container connects to Temporal, the
   worker registers a workflow, the workflow executes, and the worker stops
@@ -122,6 +127,33 @@ What they prove:
   worker is killed while a model call is in flight, a second worker takes over,
   and the task finishes with each completed round recorded exactly once. The
   model and the tools are stubs; what is under test is the durable execution.
+- `TestARoutineHasExactlyOneScheduleAndKeepsItAcrossARestart` — E11.1's gate against
+  a real Temporal server and a real Postgres: one routine leaves exactly one
+  schedule, registering it twice still leaves one, and the schedule is there and
+  firing at the same time after the process is rebuilt over the same rows.
+- `TestATriggerRoutineRegistersNoCronSchedule` — E11.2: an event-driven routine gets
+  no schedule at all, and turning it into a daily one registers exactly one.
+- `TestTheNextRunFollowsTheWorkspaceTimezone` — E11.3: moving the workspace from WIB
+  to WITA moves every schedule one hour earlier in absolute time while the cadence
+  still reads "06:00", and the times the API reports agree with the engine's.
+- `TestOneExecutionIsOneRunAndOneTask` — E11.4, driven by a real schedule firing
+  through Temporal: one tick opens exactly one `routine_run` and one `task`, and the
+  task's own outcome reaches the run by itself. The workspace has no model provider,
+  so the task fails — which is the point: the run must end `failed` with the task's
+  own reason rather than staying `running` while its task is already done.
+- `TestARoutineWithNothingToDoNeverCallsAModel` — E11.5: a trigger routine with an
+  empty queue finishes as `skipped`, opens no task, and adds no `usage_ledger` row.
+  The ledger is read because the claim is about cost.
+- `TestAPausedRoutineDoesNotRunAndDoesNotDisappear` — E11.5's other half: the
+  schedule stays and is paused, the routine stays listed, a tick that arrives anyway
+  is refused, and resuming brings the same one schedule back.
+- `TestADeliveryStartsTheRoutineWatchingIt` — the trigger path over the real webhook
+  endpoint: a signed delivery starts the routine watching that event, the run claims
+  the delivery so a second routine cannot act on it, and the run's task is opened
+  with the routine's name.
+- `TestDeletingARoutineKeepsItsHistory` — E11.1's second gate: the schedule goes, the
+  runs stay, and a run whose routine is gone still reads as a line because the name
+  was snapshotted.
 - `TestEveryTriggerIsStoredWithItsOwnStatus`, `TestHandoffChainIsStoredWithItsDepthAndParent`,
   `TestStepsAreRecordedInOrder`, `TestTaskRuntimeIsTenantScoped` — the task
   schema, the handoff chain, and tenant isolation, against a real Postgres.
@@ -158,6 +190,13 @@ starts it with, which is a contract no compiler checks. The workflow's own test
 (`TestTheWorkflowNameIsTheFunctionName`) pins it, because the failure it prevents
 is a silent stall: the run is scheduled, no worker recognises the type, and the
 retries look like a slow conversation.
+
+A routine's run is registered the same way, under the name the scheduler starts it
+with (`routine-<uuid>`), and its own test pins the two together
+(`TestTheWorkflowNameIsTheFunctionName` in the routine workflow package). The
+failure it prevents is the same silent stall, one level out: the schedule fires, no
+worker knows `RoutineRunWorkflow`, and a routine that never runs looks like a
+routine with nothing to do.
 
 The worker-restart guarantee is not covered here: it is
 `TestTaskSurvivesAWorkerRestart` in `test/integration`, which kills a real worker

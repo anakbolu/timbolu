@@ -11,6 +11,7 @@ import (
 	integrationrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/repository"
 	llmrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/repository"
 	memoryrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/repository"
+	routinerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/repository"
 	taskrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/repository"
 	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
@@ -42,6 +43,9 @@ type Repositories struct {
 	// the audit trail belong to their own modules; this reads and writes only its
 	// own tables.
 	Memory *memoryrepo.Repository
+	// Routine holds the routines and the runs they produced. The schedule id on a
+	// routine is the link to the engine; the row is what the product owns.
+	Routine *routinerepo.Repository
 }
 
 // newRepositories builds every repository. When there is no pool the
@@ -85,6 +89,10 @@ func newRepositories(pool *database.Pool) *Repositories {
 		// extraction switch from the agent rows and writes the audit trail through
 		// its own module's repository.
 		repositories.Memory = memoryrepo.New(pool)
+
+		// Routines keep the cadence and the run history. The schedules themselves
+		// live in the engine, which is why a routine carries the engine's id.
+		repositories.Routine = routinerepo.New(pool)
 
 		// The task runtime implements two ports — tasks and steps — over the
 		// same connection and the same tenant scope.

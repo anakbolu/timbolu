@@ -432,6 +432,35 @@ type WriteReply struct {
 	TaskID       uuid.UUID
 }
 
+// OutcomeSink is told how a task ended.
+//
+// It is how a task's result reaches the thing that asked for it when that thing is
+// not a conversation. A routine opens a task and its history shows the task's own
+// one-line summary, so a task a routine opened reports back through this port
+// rather than being polled for; a task opened by chat has no sink entry and says so
+// with ErrOutcomeUnclaimed, which the caller ignores because most tasks in the
+// product were opened by chat.
+type OutcomeSink interface {
+	Report(ctx context.Context, scope Scope, report OutcomeReport) error
+}
+
+// OutcomeReport is one finished task's outcome.
+type OutcomeReport struct {
+	TaskID uuid.UUID
+	// Status is the task's terminal status: succeeded, failed, or canceled.
+	Status string
+	// Summary is the task's own one line, which is what a history reads.
+	Summary string
+	// Reason is why a task stopped without succeeding, in the user's words. It
+	// travels with the outcome because the history of what asked for the task says
+	// why it did not happen, and "0 langkah" is not that answer.
+	Reason string
+}
+
+// ErrOutcomeUnclaimed means nothing was waiting on this task, which is the normal
+// case for a task a person started.
+var ErrOutcomeUnclaimed = errors.New("task: no outcome sink claimed this task")
+
 // Event describes one entry of the activity stream, which is how the feed, the
 // office, and the chat see one truth.
 //

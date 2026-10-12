@@ -56,10 +56,12 @@ func RegisterAgentTasks(w sdkworker.Worker, c *Container) {
 	// with no worker to run it, and the task would stall rather than fail.
 	w.RegisterActivity(c.Tasks)
 
-	// Memory extraction rides on the same worker: it is one small model call on a
-	// timer, and giving it its own queue and process would be a deployment for a
-	// feature that shares every dependency the agent worker already has.
+	// Memory extraction and routine runs ride on the same worker: each is one small
+	// piece of work on a timer, and giving either its own queue and process would be a
+	// deployment for a feature that shares every dependency the agent worker already
+	// has.
 	RegisterMemoryTasks(w, c)
+	RegisterRoutineTasks(w, c)
 }
 
 // RunWorker starts the worker and blocks until ctx is cancelled. Every failure

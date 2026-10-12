@@ -49,6 +49,11 @@ type Deps struct {
 	// hand. Optional: without it a task answers from the conversation alone,
 	// which is what a deployment with no embedding provider gets.
 	Memory domain.MemoryRecall
+	// Outcomes is told how a task ended, for the things that open a task and are
+	// not a conversation: a routine's history shows the task's own summary, so the
+	// task reports back rather than being polled for. Optional, because a deployment
+	// with no routine runtime has nothing to tell.
+	Outcomes domain.OutcomeSink
 	// Namer resolves a Bolu by the name the model knows, which is what a handoff
 	// names.
 	Namer  domain.AgentNamer
@@ -504,6 +509,23 @@ func (a *Activities) CompleteTask(ctx context.Context, request workflow.Complete
 	}
 
 	a.emit(ctx, scope, stored, workflow.EventTaskFinished)
+
+	// Whoever opened this task is told how it ended. A routine's run is finished
+	// with the task's own one-line summary, which is what its history shows; a task
+	// opened by chat has no claimant and that is not a failure.
+	if a.deps.Outcomes != nil {
+		if err := a.deps.Outcomes.Report(ctx, scope, domain.OutcomeReport{
+			TaskID:  stored.ID,
+			Status:  stored.Status,
+			Summary: stored.Summary,
+			Reason:  stored.StoppedReason,
+		}); err != nil && !errors.Is(err, domain.ErrOutcomeUnclaimed) && a.deps.Logger != nil {
+			// A task whose outcome could not be reported is still finished: saying
+			// otherwise would leave it live forever.
+			a.deps.Logger.Warn("could not report the task's outcome",
+				zap.String("task_id", stored.ID.String()), zap.Error(err))
+		}
+	}
 
 	return workflow.TaskOutcome{
 		Status:  stored.Status,

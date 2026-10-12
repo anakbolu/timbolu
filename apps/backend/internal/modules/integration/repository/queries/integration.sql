@@ -151,6 +151,25 @@ WHERE workspace_id = $1 AND processed_at IS NULL
 ORDER BY received_at, id
 LIMIT $2;
 
+-- name: ClaimWebhookEvents :many
+-- One event goes to one routine.
+--
+-- The read and the claim are one statement on purpose: a routine asks for what is
+-- waiting for it and marks it taken in the same step, so two routines watching one
+-- event cannot both act on it — and `SKIP LOCKED` means a second reader skips rows a
+-- first one is claiming rather than waiting for them.
+UPDATE webhook_events SET processed_at = now()
+WHERE id IN (
+    SELECT pending.id FROM webhook_events AS pending
+    WHERE pending.workspace_id = sqlc.arg('workspace_id')
+      AND pending.event = sqlc.arg('event')
+      AND pending.processed_at IS NULL
+    ORDER BY pending.received_at, pending.id
+    LIMIT sqlc.arg('limit')
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING *;
+
 -- name: MarkWebhookEventProcessed :execrows
 UPDATE webhook_events
 SET processed_at = now()

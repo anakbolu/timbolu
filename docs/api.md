@@ -501,6 +501,74 @@ The reply to a message that asks to remember is written by the memory module
 itself — the same module that stored the row — so the confirmation cannot name
 something that does not exist. It costs no tokens.
 
+## Routines and scheduling (EPIC 11)
+
+A **routine** is work a Bolu does on its own. It has a cadence, an instruction, and
+a history of what it did. A **routine run** is one execution: it opens exactly one
+task, and the task's own one-line outcome is what the history shows.
+
+| Endpoint | Auth | Role | Notes |
+| --- | --- | --- | --- |
+| `GET /routines` | bearer + tenant | any | `?agent_id=&enabled=`; each row carries its next run times |
+| `POST /routines` | bearer + tenant | any | `{agent_id, name, kind, minute, hour_start, hour_end, day_of_week, trigger_source, instruction, enabled}`; registers the schedule |
+| `GET /routines/:id` | bearer + tenant | any | One routine, with its next run times |
+| `PATCH /routines/:id` | bearer + tenant | any | Same body; re-registers the schedule |
+| `DELETE /routines/:id` | bearer + tenant | any | Removes the routine and its schedule; the run history stays |
+| `POST /routines/:id/pause` | bearer + tenant | any | Pauses the schedule; the routine stays listed |
+| `POST /routines/:id/resume` | bearer + tenant | any | Resumes the same schedule |
+| `GET /routines/:id/runs` | bearer + tenant | any | `?limit=`; this routine's history, newest first |
+| `GET /routine-runs` | bearer + tenant | any | `?agent_id=&routine_id=&status=&limit=`; the workspace's history |
+| `POST /routines/preview` | bearer + tenant | any | `{kind, minute, hour_start, hour_end, day_of_week}`; the next times, for a form |
+
+Every member reads and edits routines: a routine is the team's work, and the person
+who notices it is running at the wrong hour is not always the owner.
+
+### The four cadences
+
+| `kind` | Uses | Runs |
+| --- | --- | --- |
+| `daily` | `hour_start`, `minute` | Once a day at that wall-clock time |
+| `hourly_range` | `hour_start`, `hour_end`, `minute` | Every hour inside the window, inclusive of both ends |
+| `weekly` | `day_of_week` (ISO 1–7), `hour_start`, `minute` | Once a week on that weekday |
+| `trigger` | `trigger_source` (an event, `app.thing`) | When that event arrives. **No schedule is registered** |
+
+A trigger routine gets no Temporal Schedule at all: a cron expression for something
+that happens when it happens would fire on an empty queue and spend tokens on
+nothing. It is started by the delivery itself — the hub hands the event to the
+routines watching it as soon as it is queued, and the run claims the delivery in
+the same step, so two routines watching one event cannot both act on it.
+
+### One schedule per routine
+
+`schedule_id` is derived from the routine's own id (`routine-<uuid>`), so registering
+a routine twice leaves exactly one schedule — the database enforces it with a unique
+index, not the service's carefulness. Deleting a routine deletes its schedule and
+keeps its runs: `routine_runs.routine_id` is dropped to null and the routine's name
+was snapshotted when the run was written, so the history still reads as a line.
+
+### The workspace's clock, not the routine's
+
+A routine has no timezone of its own. Every schedule is registered in
+`workspace.tz`, so changing the workspace's timezone moves every future run of every
+routine — and the times a screen shows are computed from the same place, so what a
+list promises is what the engine fires. Changing the zone or the working window
+re-registers the schedules rather than recomputing a cached time, because there is
+no cached time.
+
+### What one run costs
+
+Each run performs a cheap check before anything else: a routine watching events
+reads its queue, and a routine whose Bolu is resting stops there. Either way the run
+is recorded as `skipped` with the reason, and **no model is called** — the product's
+largest saving, and one that is counted rather than claimed: `usage_ledger` gains no
+row.
+
+A run's status is `running` while its task is in flight, and the task's own outcome
+finishes it: `succeeded` with the task's one-line summary, or `failed` with the
+task's own reason ("model gagal menjawab…") rather than a step count. A run that
+could not open a task at all is `failed` with the reason recorded, and the schedule
+keeps firing — one bad run must not stop a routine forever.
+
 ## Error codes
 
 | Code | Status | Meaning |
@@ -565,3 +633,5 @@ something that does not exist. It costs no tokens.
 | `memory_not_found` | 404 | No such memory or chunk in this workspace |
 | `sensitive_content` | 422 | The content is a secret and will not be remembered |
 | `memory_unavailable` | 503 | No provider can embed, so nothing can be stored |
+| `routine_not_found` | 404 | No such routine in this workspace |
+| `routine_unavailable` | 503 | No scheduler is reachable, so nothing can be registered then fired |

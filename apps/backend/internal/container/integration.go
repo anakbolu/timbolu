@@ -12,6 +12,7 @@ import (
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/adapters/gmail"
 	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
 	integrationservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/service"
+	routinedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/crypto"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/kms"
@@ -94,9 +95,15 @@ func (c *Container) openIntegration(_ context.Context, cfg *config.Config, o *op
 		// The same codec signs a webhook reference: both values travel outside
 		// the app, and both are bound to a purpose so one cannot be spent as the
 		// other.
-		Refs:    states,
-		Queue:   c.Repositories.Integration,
-		Limiter: limits,
+		Refs:  states,
+		Queue: c.Repositories.Integration,
+		// The routines watching an event are started when the event arrives. The
+		// adapter resolves them when it is called rather than when it is installed,
+		// because the routine runtime is assembled after this module — a delivery
+		// that arrived before the routines existed would otherwise be handed to a
+		// forever-nil runtime.
+		Triggers: integrationTriggers{container: c},
+		Limiter:  limits,
 		// The MCP servers belong to a workspace, so the tools they contribute are
 		// read per scope rather than registered here with the deployment's own
 		// adapters.
@@ -362,3 +369,30 @@ var (
 	_ integrationdomain.TokenCipher = tokenCipher{}
 	_ integrationdomain.KeyManager  = keyManager{}
 )
+
+// integrationTriggers starts the routines watching an event a delivery announced.
+//
+// It adapts the routine runtime to the hub's port. The service is read when the
+// event arrives rather than when this is installed, because the hub is assembled
+// before the routines: a value captured here at build time would hold a nil
+// runtime forever, and "setiap ada email masuk" would quietly never happen.
+type integrationTriggers struct {
+	container *Container
+}
+
+// Fire implements integrationdomain.EventTriggers.
+func (t integrationTriggers) Fire(ctx context.Context, scope integrationdomain.Scope, event string) (int, error) {
+	if t.container == nil || t.container.Routine == nil {
+		// A deployment with no routines has nothing watching this event, and that
+		// is an answer rather than a failure: the delivery is already queued.
+		return 0, nil
+	}
+
+	return t.container.Routine.Fire(ctx, routinedomain.Scope{
+		UserID:      scope.UserID,
+		WorkspaceID: scope.WorkspaceID,
+	}, event)
+}
+
+// Compile-time check that the adapter satisfies the port it is wired to.
+var _ integrationdomain.EventTriggers = integrationTriggers{}

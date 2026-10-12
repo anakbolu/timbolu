@@ -74,6 +74,7 @@ func (c *Container) openTask(_ context.Context, cfg *config.Config) error {
 		Budget:   c.budget(),
 		Events:   c.taskEventSink(),
 		Reply:    c.taskReplyWriter(),
+		Outcomes: taskOutcomeSink{container: c},
 		Namer:    c.taskAgentNamer(),
 		Limits:   taskLimits(cfg),
 		Logger:   c.Logger,

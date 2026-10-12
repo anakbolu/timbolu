@@ -23,19 +23,12 @@ import {
   type ApprovalPolicy,
   type Workspace,
 } from "@/lib/api";
-import { crewFor, expressionOf, stateOf } from "@/lib/dashboard-view";
+import { TIMEZONES, crewFor, expressionOf, stateOf } from "@/lib/dashboard-view";
 
 import { useWorkspace } from "./workspace-data";
 
 const CARD = "rounded-[26px] border border-bolu-border bg-white";
 const HEADING = "font-display text-[22px] font-semibold";
-
-/** The zones the app offers, with the label the design uses. */
-const TIMEZONES = [
-  { value: "Asia/Jakarta", label: "WIB (GMT+7)" },
-  { value: "Asia/Makassar", label: "WITA (GMT+8)" },
-  { value: "Asia/Jayapura", label: "WIT (GMT+9)" },
-];
 
 const LANGUAGES = [
   { value: "id", label: "Bahasa Indonesia" },
