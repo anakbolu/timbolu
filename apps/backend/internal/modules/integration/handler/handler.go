@@ -510,6 +510,11 @@ func (h *Handler) fail(c *fiber.Ctx, action string, err error) error {
 	case errors.Is(err, domain.ErrNoToken):
 		return response.Error(c, fiber.StatusConflict,
 			"the connection has no usable token; reconnect it", "integration_needs_relogin", nil)
+	case errors.Is(err, domain.ErrPlanLimit):
+		// 409 rather than 403: the answer is to buy a bigger package, not to ask somebody
+		// else. The message names the package's own number, which the service put in it.
+		return response.Error(c, fiber.StatusConflict,
+			planLimitMessage(err, domain.ErrPlanLimit), "plan_limit_reached", nil)
 	case errors.Is(err, domain.ErrInvalidInput),
 		errors.Is(err, domain.ErrUnknownPermission),
 		errors.Is(err, domain.ErrUnknownStatus),
@@ -520,6 +525,16 @@ func (h *Handler) fail(c *fiber.Ctx, action string, err error) error {
 		h.log.Error(action+" failed", zap.Error(err))
 		return response.Error(c, fiber.StatusInternalServerError, "internal server error", "internal_error", nil)
 	}
+}
+
+// planLimitMessage is the service's own sentence, with this module's prefix removed, so
+// what a person reads is about the package rather than about which module noticed.
+func planLimitMessage(err error, prefix error) string {
+	message := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(err.Error(), prefix.Error()), ":"))
+	if message == "" {
+		return prefix.Error()
+	}
+	return message
 }
 
 // scope reads the tenant from the request, the same way every other module does.

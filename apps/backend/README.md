@@ -58,6 +58,7 @@ make smoke-task      # the task runtime end to end against the compose stack
 | `memory` | `/api/memories*`, `/api/knowledge*` | What a Bolu remembers and what it knows: two memory layers, the knowledge base, the retrieval that reaches a prompt, and the extraction that reads a quiet conversation |
 | `routine` | `/api/routines*`, `/api/routine-runs` | Work a Bolu runs on its own: the four cadences, the Temporal Schedule behind each one, the run history, and the cheap check that skips a model call |
 | `whatsapp` | `/api/whatsapp/*` | The number the shop answers on: the link flow, who answers it, what customers wrote, and the queue that paces what leaves. The connection itself lives in the `wa-gateway` process |
+| `billing` | `/api/billing/*` | The package a workspace is on, the allowance it grants, the tokens it bought on top, and what it owes. Payments go through Duitku; the quota is what gates every model call |
 
 ### Authentication
 
@@ -123,10 +124,58 @@ read back inside the transaction that creates it.
   provider has already billed it.
 - **The quota hook runs before the provider is called.** The live counter is
   Redis; when Redis is unavailable the check sums the ledger instead, so an
-  outage cannot hand out a second allowance. `LLM_QUOTA_ENABLED=false` turns the
+  outage cannot hand out a second allowance. When the billing module is wired, the
+  allowance and the day's ceiling come from the workspace's *package* rather than
+  the deployment's configured value; `LLM_QUOTA_ENABLED=false` still turns the
   check off for local development without touching the adapters.
 - Streaming falls back **only before the first byte**: once a fragment reached
   the caller, restarting on another provider would duplicate the answer.
+
+### Billing, packages, and quota
+
+- **What a workspace may spend is derived, never remembered.** The package grants
+  tokens per period plus what was bought on top; what is used is the live Redis
+  counter reconciled with `usage_ledger`, and **the larger of the two wins**. That
+  direction is the point: a Redis that lost its keys must not hand a workspace its
+  month again. A stored "remaining" would be a number that can be wrong.
+- **A workspace always has exactly one live subscription.** The trial package is
+  created inside the onboarding transaction, by the workspace repository acting as
+  this module's `SubscriptionProvisioner`, so a workspace cannot exist without a
+  package. The migration backfilled every workspace that already existed.
+- **Two bounds, asked at two boundaries.** The period's token allowance and the
+  package's daily cost ceiling are asked by the gateway before every call and by the
+  task runtime at a clean round boundary, so a task stops with a reason rather than
+  halfway through a call. The refusal names what was used and what the package
+  grants.
+- **80% and 100% are reported once per period each**, and a period that jumps past
+  both reports both in order: the 80% message is the one that gives somebody time to
+  act. The marks live on `quota_periods` because the state itself is derived.
+- **Past the grace window a workspace is read-only, and the way out is always
+  open.** Reads and exports keep working and nothing is deleted; writes and new work
+  are refused with `402`. The billing endpoints are exempt, because a workspace that
+  cannot pay would be read-only forever if the call that fixes it were refused too.
+- **One invoice per period, however often it is asked for.** A partial unique index
+  where the status is `pending` is what makes a repeated sweep and a screen write one
+  row between them, and the statement is `ON CONFLICT DO NOTHING` so the recovery
+  read runs in a transaction that was never aborted. It is partial so that an
+  **expired** invoice is re-issuable.
+- **Two signatures, in Duitku's own two orders.** The inquiry signs
+  `merchantCode + merchantOrderId + paymentAmount`; the callback signs
+  `merchantCode + amount + merchantOrderId`. The callback's recomputation is the
+  whole security of that route, so it is compared in constant time and a failure is
+  answered **400** rather than 500 — a provider told "internal error" would keep
+  redelivering a body that can never verify.
+- **The reference recorded is the merchant order id, not Duitku's own reference**,
+  because the callback names the order id. Recording the other would leave every
+  payment unmatched and every period unextended, with a callback that arrived and was
+  accepted for an invoice nothing could find.
+- **A payment is applied once**, by a statement guarded on `status = 'pending'`, so a
+  replayed webhook buys nothing twice. A payment smaller than the invoice does not buy
+  it.
+- **Changing a package is deferred to the next period** when the current one was
+  already paid for: a bigger package mid-month would either be free or need a
+  proration nobody asked for. A trial has nothing to protect, so a change there
+  applies at once.
 
 ### Conversations
 

@@ -22,7 +22,64 @@ type Config struct {
 	Memory       MemoryConfig
 	Storage      StorageConfig
 	WhatsApp     WhatsAppConfig
+	Billing      BillingConfig
 	Logging      LoggingConfig
+}
+
+// BillingConfig holds what taking money online needs.
+//
+// Empty Duitku credentials leave the module usable and its payment path closed:
+// invoices are still written, the package and its quota still decide what a
+// workspace may spend, and the screen says to transfer and have it confirmed. That
+// is a real deployment — the product's first customers are paid by hand — and it is
+// the same shape as the WhatsApp gateway's missing URL.
+type BillingConfig struct {
+	// Provider names the payment gateway this deployment speaks. Empty means none,
+	// and no webhook route is registered at all.
+	Provider string `mapstructure:"Provider" validate:"optional"`
+	// GraceDays is how long a workspace keeps working after its period ends. Zero
+	// takes the product default of a week.
+	GraceDays int `mapstructure:"GraceDays" validate:"optional"`
+	// SyncInterval is how often one workspace is reconciled into the durable
+	// mirror the screens read.
+	SyncInterval time.Duration `mapstructure:"SyncInterval" validate:"optional"`
+	// SweepInterval is how often the reconciliation pass itself runs. Zero disables
+	// it, which local development may want.
+	SweepInterval time.Duration `mapstructure:"SweepInterval" validate:"optional"`
+	// SweepLimit bounds one pass.
+	SweepLimit int `mapstructure:"SweepLimit" validate:"optional"`
+	// Duitku holds the provider's own settings, which only mean anything when
+	// Provider is "duitku".
+	Duitku DuitkuConfig
+}
+
+// DuitkuConfig is the Duitku adapter's settings.
+//
+// Duitku authenticates both directions with one key and one primitive — HMAC-SHA256 over
+// a documented string — so the key is the whole security of the callback as well as the
+// authentication of the inquiry.
+type DuitkuConfig struct {
+	// MerchantCode identifies the project at Duitku.
+	MerchantCode string `mapstructure:"MerchantCode" validate:"optional"`
+	// APIKey signs the inquiry and verifies the callback.
+	APIKey string `mapstructure:"APIKey" validate:"optional"`
+	// Sandbox selects Duitku's sandbox host. It is explicit because a sandbox key
+	// against the production host is a charge on somebody's card.
+	Sandbox bool `mapstructure:"Sandbox" validate:"optional"`
+	// PaymentMethod is which Duitku payment channel a person is offered, as Duitku's
+	// own two-letter code. Empty takes a bank virtual account.
+	PaymentMethod string `mapstructure:"PaymentMethod" validate:"optional"`
+	// ExpiryMinutes is how long a payment stays payable. Zero takes a day.
+	ExpiryMinutes int `mapstructure:"ExpiryMinutes" validate:"optional"`
+	// CallbackURL is where Duitku posts the payment notification. It must be an
+	// absolute address this deployment serves: Duitku reaches it from outside, and
+	// without it a payment could be made that nothing ever hears about.
+	CallbackURL string `mapstructure:"CallbackURL" validate:"optional"`
+	// ReturnURL is where a person lands after the payment page.
+	ReturnURL string `mapstructure:"ReturnURL" validate:"optional"`
+	// BaseURL overrides Duitku's host. It is what points a sandbox run — or a
+	// deployment verifying its own wiring — at a stand-in.
+	BaseURL string `mapstructure:"BaseURL" validate:"optional"`
 }
 
 // WhatsAppConfig holds what the WhatsApp gateway needs.
@@ -281,7 +338,7 @@ type PlanConfig struct {
 	// allowance: the period stops a workspace from spending a month's tokens,
 	// and this stops one runaway task from spending a month in an afternoon.
 	// EPIC 12 (#97) replaces the configured value with the subscription's
-	// package.
+	// package, and this is what a deployment without billing runs with.
 	DailyCostMicros int64 `mapstructure:"DailyCostMicros" validate:"optional"`
 }
 
@@ -301,8 +358,9 @@ type LlmConfig struct {
 	// with it off, so a fresh workspace can call a model before any package
 	// exists.
 	QuotaEnabled bool `mapstructure:"QuotaEnabled"`
-	// TokensPerPeriod is the monthly token allowance of a workspace. Zero means
-	// unlimited. EPIC 12 (#97) replaces this with the subscription's package.
+	// TokensPerPeriod is the monthly token allowance of a workspace when no
+	// subscription is wired — a deployment without billing at all. Zero means
+	// unlimited. A wired subscription replaces it with its package's allowance.
 	TokensPerPeriod int64 `mapstructure:"TokensPerPeriod"`
 	// ChainLimit is how many providers one request tries before giving up.
 	ChainLimit int `mapstructure:"ChainLimit"`

@@ -628,6 +628,11 @@ func (h *Handler) fail(c *fiber.Ctx, operation string, err error) error {
 		return response.Error(c, fiber.StatusBadRequest, "that Bolu is not in this conversation", "agent_not_in_conversation", nil)
 	case errors.Is(err, chatdomain.ErrNoResponder):
 		return response.Error(c, fiber.StatusConflict, err.Error(), "no_responder", nil)
+	case errors.Is(err, chatdomain.ErrNoBudget):
+		// 402 rather than 403: nothing is forbidden about who is asking, and a screen
+		// that showed "ask an admin" would send somebody to the wrong place. What fixes
+		// this is a payment.
+		return response.Error(c, fiber.StatusPaymentRequired, err.Error(), "no_budget", nil)
 	case errors.Is(err, chatdomain.ErrInvalidBlock):
 		return response.Error(c, fiber.StatusBadRequest, err.Error(), "invalid_block", nil)
 	case errors.Is(err, chatdomain.ErrBlockTooLarge):

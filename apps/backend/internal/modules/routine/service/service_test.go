@@ -304,6 +304,11 @@ func newHarness(t *testing.T, mutate ...func(*service.Deps)) *harness {
 		Queue:      queue,
 		Auditor:    auditor,
 		Clock:      fixedClock{zone: "Asia/Jakarta"},
+		// The time source is pinned, so what a preview answers is about the zone rather
+		// than about the hour the suite runs at: a cadence at 06:00 means "already past"
+		// for one zone and "in a few minutes" for another, and a test that read the wall
+		// clock passed in the afternoon and failed at dawn.
+		Now: func() time.Time { return time.Date(2026, 10, 13, 1, 0, 0, 0, time.UTC) },
 	}
 	for _, change := range mutate {
 		change(&deps)

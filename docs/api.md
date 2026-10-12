@@ -739,3 +739,140 @@ data nothing here reads.
 | `link_expired` | 410 | The pairing ran out of time; ask for a new code |
 | `whatsapp_unavailable` | 503 | No gateway is configured for this deployment |
 | `media_not_found` | 404 | The message carries no attachment, or its bytes are not stored |
+| `billing_not_found` | 404 | No such plan, pack, invoice, or subscription in this workspace |
+| `no_budget` | 402 | The workspace's package does not allow the reply to be opened |
+| `invoice_settled` | 409 | The invoice already has an outcome; the first stands |
+| `unverifiable_payment` | 400 | A payment notification that cannot be trusted; retrying cannot help |
+| `billing_unavailable` | 503 | No payment provider is configured for this deployment |
+| `billing_not_configured` | 503 | Module not wired (no database) |
+
+## Billing, packages, and quota (EPIC 12)
+
+```
+GET    /api/billing/subscription          the package, the usage, what is owed
+GET    /api/billing/plans                 the packages this deployment sells
+POST   /api/billing/subscription          choose another package
+GET    /api/billing/invoices              the invoice history (?status=, ?limit=)
+POST   /api/billing/invoices/:id/pay      ask the provider for a way to pay
+POST   /api/billing/topups                buy tokens inside the current period
+POST   /api/billing/webhooks/:provider    the provider's payment notification (public)
+```
+
+Every member reads and every member pays. That is deliberate: the person who notices the
+workspace has gone read-only is not always the owner, and the money arriving is what fixes
+it.
+
+### What a workspace may spend is derived, never remembered
+
+The package grants tokens per period, plus what the workspace bought on top. What is *used*
+is the live counter in Redis, reconciled with `usage_ledger` — and when the two disagree, the
+larger one wins. That direction is the point: a Redis that lost its keys must not hand a
+workspace its month again, and a ledger write that has not landed must not either.
+
+A stored "remaining" would be a number that can be wrong, and a wrong allowance is either a
+workspace billed for tokens it never used or one served for free. So `entitlement` is
+computed from the subscription's own times on every read, and the screen reads that rather
+than computing one of its own.
+
+### Two bounds, asked at two boundaries
+
+The period's token allowance stops a workspace from spending a month's tokens; a package's
+daily cost ceiling stops one runaway task from spending a month in an afternoon. Both are
+asked by the model gateway before every call *and* by the task runtime at a clean round
+boundary, so a task stops with a reason rather than halfway through a call.
+
+`kuota token habis` refuses a model call and a new task; the task already running finishes.
+The message names what was used and what the package grants, because "out of quota" alone
+tells nobody whether they are one token over or a month over.
+
+### Thresholds are reported once per period
+
+At 80% and at 100% of the allowance the workspace is told — by a line in its event stream
+and by email. A period that jumps from 70% to 105% between two passes reports **both**, in
+order: the 80% message is the one that gives somebody time to buy a top-up, and sending only
+the last threshold would announce a workspace that has already stopped.
+
+The marks are in `quota_periods` (`warning_80_sent_at`, `warning_100_sent_at`) because the
+state itself is derived: without a marker the sweep would repeat the same sentence every
+pass.
+
+### The way out is always open
+
+Past the period and past the grace window, the workspace is **read-only**: reads and exports
+keep working, and writes and new work are refused with `402 no_budget`. Nothing is deleted
+and nothing is hidden.
+
+The billing endpoints are exempt from that guard, and the exemption is not a detail. A
+workspace that cannot pay would be read-only forever if the one call that fixes it were
+refused too — which is a trap rather than a policy. So the guard is registered on each route
+group rather than inside each service, and the billing routes are outside it.
+
+### One invoice per period, however often it is asked for
+
+The invoice for the next period is issued when the current one ends, and a partial unique
+index on `(subscription_id, period_start, kind)` where the status is `pending` is what makes
+a repeated pass, a screen, and a retried sweep write one row between them. The statement is
+`ON CONFLICT DO NOTHING` rather than raising: the answer a second writer wants is the invoice
+that exists, and a failed statement would abort the transaction the recovery read runs in.
+
+It is partial on `pending` so that an **expired** invoice is re-issuable: a workspace whose
+payment window closed must be able to be sent a new one, and a total index would refuse it a
+row for a month it still owes. What was expired stays as history.
+
+### The provider's reference and the merchant order id
+
+Duitku posts its notification as a urlencoded form naming `merchantOrderId`, so that is what
+an invoice records as its provider reference — **not** Duitku's own internal `reference`. The
+order id is derived from the invoice rather than random, so a transaction whose response was
+lost is the same transaction when it is tried again: Duitku refuses a repeated order id,
+which turns a lost response into a readable refusal instead of a second payment.
+
+The callback is verified with Duitku's own HMAC-SHA256 over
+`merchantCode + amount + merchantOrderId`. That recomputation is the whole security of the
+route, so it is compared in constant time, and a delivery that fails it is answered **400**
+rather than 500 — a provider told "internal error" would keep redelivering a body that can
+never verify.
+
+Both directions carry a signature over different strings, which is Duitku's own asymmetry:
+the inquiry signs `merchantCode + merchantOrderId + paymentAmount` and the callback signs
+`merchantCode + amount + merchantOrderId`.
+
+### A payment is applied once
+
+The settlement is written by a statement guarded on `status = 'pending'`, so a replayed
+webhook updates nothing and the caller is answered with the invoice as it already stands.
+Providers deliver a notification until somebody acknowledges it, so this has to be the
+statement's own guard rather than the caller's memory.
+
+A payment smaller than the invoice does not buy it: the invoice stays outstanding and the
+mismatch is recorded, rather than extending a package for less money than it costs.
+
+When a subscription payment lands, the invoice that was just paid is settled and any *other*
+outstanding subscription invoice is closed — a period that ended while one was outstanding
+can be issued a second one, and somebody who has paid must not be shown an amount for a month
+they are now inside. A top-up is never withdrawn: what was bought on top of a package is not
+affected by paying for the package.
+
+### A workspace always has exactly one live subscription
+
+The trial package is created **inside the onboarding transaction**, by the workspace module's
+repository acting as the billing module's `SubscriptionProvisioner`. A workspace therefore
+cannot exist without a package, and "exactly one live subscription" is a fact about the data
+rather than a rule every read has to remember. The migration backfilled every workspace that
+already existed.
+
+### Changing a package is deferred, and the package bounds real things
+
+A package's caps — Bolu, connections, members — are enforced through a small port in each
+module (`agentdomain.PlanLimits`, `integrationdomain.PlanLimits`, `workspacedomain.PlanLimits`),
+answered by this module. Unwired means the deployment sells no packages, and nothing is
+capped.
+
+The member cap counts **open invitations too**: an invitation is a seat somebody will take,
+and counting only the members would let a workspace invite ten people into a package that
+allows three — with the last seven failing at acceptance, after being told to expect access.
+
+Changing a package inside a period that was already paid for is **deferred to the next one**.
+Taking a bigger package mid-month would either hand out the bigger allowance for free or
+charge a proration nobody asked for. A workspace on its trial has nothing to protect — no
+money changed hands for the period it is in — so the change applies immediately.

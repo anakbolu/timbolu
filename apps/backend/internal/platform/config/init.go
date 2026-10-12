@@ -210,6 +210,83 @@ func loadFromEnv(cfg *Config) error {
 		cfg.Llm.Default.ContextTokens = tokens
 	}
 
+	if v := os.Getenv("BILLING_PROVIDER"); v != "" {
+		cfg.Billing.Provider = strings.TrimSpace(v)
+	}
+
+	if v := os.Getenv("DUITKU_MERCHANT_CODE"); v != "" {
+		cfg.Billing.Duitku.MerchantCode = strings.TrimSpace(v)
+		// The merchant code is what decides whether the provider is spoken at all, so
+		// naming it here is what keeps the two settings from disagreeing: a deployment
+		// that supplies a code meant to take payment.
+		if strings.TrimSpace(cfg.Billing.Provider) == "" {
+			cfg.Billing.Provider = "duitku"
+		}
+	}
+
+	if v := os.Getenv("DUITKU_API_KEY"); v != "" {
+		cfg.Billing.Duitku.APIKey = strings.TrimSpace(v)
+		if strings.TrimSpace(cfg.Billing.Provider) == "" {
+			cfg.Billing.Provider = "duitku"
+		}
+	}
+
+	if v := os.Getenv("DUITKU_SANDBOX"); v != "" {
+		sandbox, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("parse DUITKU_SANDBOX: %w", err)
+		}
+		cfg.Billing.Duitku.Sandbox = sandbox
+	}
+
+	if v := os.Getenv("DUITKU_PAYMENT_METHOD"); v != "" {
+		cfg.Billing.Duitku.PaymentMethod = strings.TrimSpace(v)
+	}
+
+	if v := os.Getenv("DUITKU_EXPIRY_MINUTES"); v != "" {
+		minutes, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse DUITKU_EXPIRY_MINUTES: %w", err)
+		}
+		cfg.Billing.Duitku.ExpiryMinutes = minutes
+	}
+
+	if v := os.Getenv("DUITKU_CALLBACK_URL"); v != "" {
+		cfg.Billing.Duitku.CallbackURL = strings.TrimSpace(v)
+	}
+
+	if v := os.Getenv("DUITKU_RETURN_URL"); v != "" {
+		cfg.Billing.Duitku.ReturnURL = strings.TrimSpace(v)
+	}
+
+	if v := os.Getenv("DUITKU_BASE_URL"); v != "" {
+		cfg.Billing.Duitku.BaseURL = strings.TrimSpace(v)
+	}
+
+	if v := os.Getenv("BILLING_GRACE_DAYS"); v != "" {
+		days, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse BILLING_GRACE_DAYS: %w", err)
+		}
+		cfg.Billing.GraceDays = days
+	}
+
+	if v := os.Getenv("BILLING_SYNC_INTERVAL"); v != "" {
+		interval, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("parse BILLING_SYNC_INTERVAL: %w", err)
+		}
+		cfg.Billing.SyncInterval = interval
+	}
+
+	if v := os.Getenv("BILLING_SWEEP_INTERVAL"); v != "" {
+		interval, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("parse BILLING_SWEEP_INTERVAL: %w", err)
+		}
+		cfg.Billing.SweepInterval = interval
+	}
+
 	if v := os.Getenv("PLAN_DAILY_COST_MICROS"); v != "" {
 		micros, err := strconv.ParseInt(v, 10, 64)
 		if err != nil {

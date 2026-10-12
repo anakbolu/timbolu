@@ -23,6 +23,10 @@ func clearOverrides(t *testing.T) {
 		"LLM_DEFAULT_MODEL", "LLM_DEFAULT_API_KEY", "LLM_DEFAULT_MAX_TOKENS",
 		"LLM_DEFAULT_CONTEXT_TOKENS", "LLM_QUOTA_ENABLED", "LLM_TOKENS_PER_PERIOD",
 		"LLM_CHAIN_LIMIT",
+		"BILLING_PROVIDER", "DUITKU_MERCHANT_CODE", "DUITKU_API_KEY", "DUITKU_SANDBOX",
+		"DUITKU_PAYMENT_METHOD", "DUITKU_EXPIRY_MINUTES", "DUITKU_CALLBACK_URL",
+		"DUITKU_RETURN_URL", "DUITKU_BASE_URL",
+		"BILLING_GRACE_DAYS", "BILLING_SYNC_INTERVAL", "BILLING_SWEEP_INTERVAL",
 	} {
 		t.Setenv(key, "")
 	}
@@ -294,4 +298,73 @@ func TestLoadDotEnv(t *testing.T) {
 		require.Equal(t, "from-file", os.Getenv("BOLU_DOTENV_TEST_FILE"))
 		require.Equal(t, "from-env", os.Getenv("BOLU_DOTENV_TEST_BOTH"))
 	})
+}
+
+// TestLoadReadsTheBillingSettings is the E12 configuration gate: every value the billing
+// module reads can be set from the environment, and a mistyped one is an error rather than
+// a silent default.
+//
+// The provider is the interesting one. Naming a merchant code or an API key is what turns
+// online payment on, so a deployment that supplies one and forgets the other must find out
+// while it is starting rather than when the first customer tries to pay.
+func TestLoadReadsTheBillingSettings(t *testing.T) {
+	clearOverrides(t)
+	t.Setenv("ENVIRONMENT", "local")
+
+	t.Setenv("DUITKU_MERCHANT_CODE", "D1234")
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, "duitku", cfg.Billing.Provider, "naming a merchant code is what takes payment")
+
+	t.Setenv("BILLING_PROVIDER", "duitku")
+	t.Setenv("DUITKU_API_KEY", "an-api-key")
+	t.Setenv("DUITKU_SANDBOX", "false")
+	t.Setenv("DUITKU_PAYMENT_METHOD", "SP")
+	t.Setenv("DUITKU_EXPIRY_MINUTES", "90")
+	t.Setenv("DUITKU_CALLBACK_URL", "https://api.example.com/api/billing/webhooks/duitku")
+	t.Setenv("DUITKU_RETURN_URL", "https://app.example.com/settings/subscription")
+	t.Setenv("DUITKU_BASE_URL", "http://127.0.0.1:9098")
+	t.Setenv("BILLING_GRACE_DAYS", "3")
+	t.Setenv("BILLING_SYNC_INTERVAL", "5m")
+	t.Setenv("BILLING_SWEEP_INTERVAL", "1h")
+
+	cfg, err = Load()
+	require.NoError(t, err)
+
+	require.Equal(t, "duitku", cfg.Billing.Provider)
+	require.Equal(t, "D1234", cfg.Billing.Duitku.MerchantCode)
+	require.Equal(t, "an-api-key", cfg.Billing.Duitku.APIKey)
+	require.False(t, cfg.Billing.Duitku.Sandbox, "the host is chosen by configuration, never by the key's shape")
+	require.Equal(t, "SP", cfg.Billing.Duitku.PaymentMethod)
+	require.Equal(t, 90, cfg.Billing.Duitku.ExpiryMinutes)
+	require.Equal(t, "https://api.example.com/api/billing/webhooks/duitku", cfg.Billing.Duitku.CallbackURL)
+	require.Equal(t, "https://app.example.com/settings/subscription", cfg.Billing.Duitku.ReturnURL)
+	require.Equal(t, "http://127.0.0.1:9098", cfg.Billing.Duitku.BaseURL)
+	require.Equal(t, 3, cfg.Billing.GraceDays)
+	require.Equal(t, 5*time.Minute, cfg.Billing.SyncInterval)
+	require.Equal(t, time.Hour, cfg.Billing.SweepInterval)
+}
+
+// TestLoadRejectsAMalformedBillingSetting: a bound that reads as its default because a typo
+// fell back to zero is only discovered on an invoice.
+func TestLoadRejectsAMalformedBillingSetting(t *testing.T) {
+	cases := map[string]string{
+		"DUITKU_SANDBOX":         "mungkin",
+		"DUITKU_EXPIRY_MINUTES":  "sejam",
+		"BILLING_GRACE_DAYS":     "seminggu",
+		"BILLING_SYNC_INTERVAL":  "sering",
+		"BILLING_SWEEP_INTERVAL": "jarang",
+	}
+
+	for key, value := range cases {
+		t.Run(key, func(t *testing.T) {
+			clearOverrides(t)
+			t.Setenv("ENVIRONMENT", "local")
+			t.Setenv(key, value)
+
+			_, err := Load()
+			require.Error(t, err)
+			require.Contains(t, err.Error(), key)
+		})
+	}
 }

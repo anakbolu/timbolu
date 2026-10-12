@@ -152,6 +152,31 @@ WhatsApp:
   MaxMediaBytes: 0
   LogWhatsmeow: false
 
+# Billing: every secret comes from the environment. The Duitku credentials are the ones
+# that decides whether online payment is taken at all; without it an invoice is
+# written and the screen says how to pay it by hand.
+Billing:
+  Provider: ""
+  GraceDays: 0
+  SyncInterval: "15m"
+  SweepInterval: "15m"
+  SweepLimit: 0
+  Duitku:
+    # Every value comes from the environment in staging and production.
+    MerchantCode: ""
+    APIKey: ""
+    # Explicit rather than derived from the key's shape: a sandbox key against the
+    # production host is a charge on somebody's card.
+    Sandbox: true
+    PaymentMethod: ""
+    ExpiryMinutes: 0
+    # Required: Duitku posts the payment notification to this address, so without it a
+    # payment could be made that nothing ever hears about — and the adapter refuses to
+    # start rather than accept one.
+    CallbackURL: ""
+    ReturnURL: ""
+    BaseURL: ""
+
 Logging:
   Level: "info"
   Format: "json"

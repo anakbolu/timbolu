@@ -6,6 +6,7 @@ import (
 	agentrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/repository"
 	approvalrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/repository"
 	authrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository"
+	billingrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/repository"
 	chatrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/repository"
 	healthrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/repository"
 	integrationrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/repository"
@@ -50,6 +51,10 @@ type Repositories struct {
 	// WhatsApp holds the linked numbers, their sealed sessions, the messages they
 	// carried, the outbox that paces them, and the fleet directory.
 	WhatsApp *whatsapprepo.Repository
+	// Billing holds the packages sold, the subscription a workspace is on, the
+	// invoices it owes, the periods its allowance is counted over, and the sweep
+	// queue. It is filled in by openBilling.
+	Billing *billingrepo.Repository
 }
 
 // newRepositories builds every repository. When there is no pool the

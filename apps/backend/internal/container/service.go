@@ -4,6 +4,7 @@ import (
 	agentdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
 	approvaldomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/domain"
 	authdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain"
+	billingdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/domain"
 	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
 	healthdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/domain"
 	healthservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/service"
@@ -47,6 +48,10 @@ type Services struct {
 	// WhatsApp is the linked numbers and who answers them. The API reaches it
 	// through the gateway; the gateway process serves it from the same module.
 	WhatsApp whatsappdomain.Service
+	// Billing is the package a workspace is on, its allowance, and what it owes. It
+	// is built before the model gateway, because the gateway's quota policy is this
+	// module's answer.
+	Billing billingdomain.Service
 }
 
 // newServices builds every service. Optional dependencies (Redis today) are

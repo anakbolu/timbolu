@@ -42,5 +42,14 @@ type Tokens interface {
 	Generate() (raw string, hash string, err error)
 }
 
+// PlanLimits reports how many members a workspace's package allows.
+//
+// It is a port for the reason the other plan ports are: this module does not know
+// what a subscription is, and the container hands it the module that does. Unwired
+// means the deployment sells no packages, and nothing is capped.
+type PlanLimits interface {
+	MaxMembers(ctx context.Context, workspaceID uuid.UUID) (int, error)
+}
+
 // Clock reports the current time, so expiry rules can be tested.
 type Clock func() time.Time

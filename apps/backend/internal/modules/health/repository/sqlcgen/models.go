@@ -94,19 +94,39 @@ type AuditLog struct {
 	CreatedAt    time.Time
 }
 
+type BillingDirectory struct {
+	WorkspaceID uuid.UUID
+	NextSyncAt  time.Time
+	UpdatedAt   time.Time
+}
+
 type BillingInvoice struct {
-	ID                uuid.UUID
-	WorkspaceID       uuid.UUID
-	SubscriptionID    *uuid.UUID
-	Provider          string
-	ProviderReference string
-	AmountIdr         int64
-	Status            string
-	PeriodStart       time.Time
-	PeriodEnd         time.Time
-	PaidAt            *time.Time
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	ID                  uuid.UUID
+	WorkspaceID         uuid.UUID
+	SubscriptionID      *uuid.UUID
+	Provider            string
+	ProviderReference   string
+	AmountIdr           int64
+	Status              string
+	PeriodStart         time.Time
+	PeriodEnd           time.Time
+	PaidAt              *time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	Kind                string
+	TokenAmount         int64
+	PaymentInstructions string
+	Attempts            int32
+	LastError           string
+	ExpiresAt           *time.Time
+}
+
+type BillingPaymentReference struct {
+	Provider    string
+	Reference   string
+	WorkspaceID uuid.UUID
+	InvoiceID   uuid.UUID
+	CreatedAt   time.Time
 }
 
 type Conversation struct {
@@ -326,6 +346,8 @@ type Plan struct {
 	IsTrial         bool
 	SortOrder       int32
 	CreatedAt       time.Time
+	DailyCostMicros int64
+	PeriodDays      int32
 }
 
 type QuotaPeriod struct {
@@ -339,6 +361,7 @@ type QuotaPeriod struct {
 	Warning100SentAt *time.Time
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	TokensToppedUp   int64
 }
 
 type RetrievalUsage struct {
@@ -406,6 +429,11 @@ type Subscription struct {
 	GraceUntil         *time.Time
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+	CanceledAt         *time.Time
+	PastDueSince       *time.Time
+	PendingPlanID      *uuid.UUID
+	PastDueNotifiedAt  *time.Time
+	ReadOnlyNotifiedAt *time.Time
 }
 
 type Task struct {
@@ -467,6 +495,17 @@ type ToolCatalog struct {
 	Label          string
 	Description    string
 	CreatedAt      time.Time
+}
+
+type TopupPackage struct {
+	ID          uuid.UUID
+	Key         string
+	Name        string
+	TokenAmount int64
+	PriceIdr    int64
+	SortOrder   int32
+	Active      bool
+	CreatedAt   time.Time
 }
 
 // Daily usage totals per workspace, provider, model, and purpose. Days follow Asia/Jakarta, which is where the customers are.

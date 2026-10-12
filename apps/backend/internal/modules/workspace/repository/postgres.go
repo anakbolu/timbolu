@@ -39,6 +39,18 @@ type PolicyProvisioner interface {
 	SeedPolicies(ctx context.Context, tx pgx.Tx, workspaceID uuid.UUID) error
 }
 
+// SubscriptionProvisioner gives a new workspace the package it starts on, inside the
+// onboarding transaction.
+//
+// It is declared here for the same reason the two above are: its signature carries a
+// transaction handle, which is an infrastructure type, and the container hands over
+// the billing repository so neither module imports the other. Starting the trial here
+// is what makes "a workspace always has exactly one live subscription" a fact about
+// the data rather than a rule every read has to remember.
+type SubscriptionProvisioner interface {
+	StartTrial(ctx context.Context, tx pgx.Tx, workspaceID uuid.UUID) error
+}
+
 // OnboardedMarker records that an account finished onboarding, inside the same
 // transaction that creates its workspace.
 //
@@ -70,6 +82,9 @@ type Repository struct {
 	// onboarded marks the account finished, inside the same transaction, so owning
 	// a workspace and the session believing it are one fact rather than two.
 	onboarded OnboardedMarker
+	// subscriptions gives the new workspace its trial package, inside the same
+	// transaction, so no workspace exists without an allowance.
+	subscriptions SubscriptionProvisioner
 }
 
 // SetPolicyProvisioner installs the approval repository as the second
@@ -77,6 +92,14 @@ type Repository struct {
 func (r *Repository) SetPolicyProvisioner(provisioner PolicyProvisioner) {
 	if r != nil {
 		r.policies = provisioner
+	}
+}
+
+// SetSubscriptionProvisioner installs the billing repository as the trial
+// provisioner. The container calls it after both are built.
+func (r *Repository) SetSubscriptionProvisioner(provisioner SubscriptionProvisioner) {
+	if r != nil {
+		r.subscriptions = provisioner
 	}
 }
 
@@ -189,6 +212,14 @@ func (r *Repository) Onboard(ctx context.Context, userID uuid.UUID, req domain.O
 		// outside world without a row the workspace can see and change.
 		if r.policies != nil {
 			if err := r.policies.SeedPolicies(ctx, tx, created.ID); err != nil {
+				return err
+			}
+		}
+
+		// And the trial package, so the new workspace has an allowance before it can
+		// spend anything. A deployment without billing skips it and runs unlimited.
+		if r.subscriptions != nil {
+			if err := r.subscriptions.StartTrial(ctx, tx, created.ID); err != nil {
 				return err
 			}
 		}
