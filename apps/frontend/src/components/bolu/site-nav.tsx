@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BotSvg } from "@/components/bolu/bot-svg";
 import { StartLink } from "@/components/bolu/start-link";
+import { SiteNavMenu } from "@/components/bolu/site-nav-menu";
 import { LOGO } from "@/lib/crew";
 
 const LINKS = [
@@ -24,7 +25,7 @@ export function SiteNav() {
 
       <nav
         aria-label="Navigasi utama"
-        className="flex flex-wrap items-center gap-x-7 gap-y-2 font-medium"
+        className="flex flex-wrap items-center gap-x-7 gap-y-2 font-medium max-[760px]:hidden"
       >
         {LINKS.map((link) => (
           <Link key={link.href} href={link.href} className="text-bolu-ink no-underline">
@@ -35,6 +36,8 @@ export function SiteNav() {
           Coba gratis
         </StartLink>
       </nav>
+
+      <SiteNavMenu links={LINKS} />
     </div>
   );
 }
