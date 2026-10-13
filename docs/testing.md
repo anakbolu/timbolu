@@ -409,6 +409,50 @@ against those rows (`scripts/check-usage.py`).
   things a mock cannot: no row anywhere, no object under either prefix, and the workspace row gone
   rather than flagged — plus the record still readable afterwards with its name.
 
+### The order module (EPIC 14)
+
+Six layers, and each exists for something the others cannot see:
+
+- `internal/modules/order/domain/order_test.go` — the arithmetic a price is read through, which is
+  what a careless refactor changes silently: micro-rupiah to rupiah and back, a fractional price
+  keeping its sen, and `Rupiah` written the way a person writes it (no decimals on a whole amount, a
+  fraction that rounds up carrying into the whole, a rounding artifact below a sen not written at
+  all). Plus the message a model reads when it asks for something the catalogue does not sell — which
+  is the whole of what it gets, so the test asserts it names what was asked for, what the catalogue
+  has **with the price**, and what to do next.
+- `internal/modules/order/service/service_test.go` — the decisions the service itself makes, with
+  mockery mocks: `Lookup` marking an exact name or sku (case-folded) and leaving `Found` nil for a
+  fuzzy-only answer while still returning the candidates; `Record` refusing an empty item list, a
+  blank product name, and a non-positive quantity **before** the repository is called; the trimming;
+  `DeleteProduct` on an absent id; and the filter limits.
+- `internal/modules/order/adapter/adapter_test.go` — the tool contract, with a hand-written fake
+  (the point is the JSON, not the mockery): the three tools are `app.action` with the right labels
+  and schema-shaped arguments, an unknown tool is `ErrUnknownTool`, arguments that are not JSON are
+  `ErrSchemaViolation` for all three, `find_product` answers a **success** for a product that does not
+  exist (never an error — a model that receives a failure retries with a name it invents), and
+  `record_order` forwards the scope's `AgentID`/`TaskID` and returns the port's error unresolved when
+  the service refuses.
+- `internal/modules/order/handler/handler_test.go` — the wire: prices travel in rupiah and are stored
+  in micro-rupiah (`15000` in, `15_000_000_000` inside, `15000` back out), an edit sends only the
+  fields it names with the rest nil, the status mapping a screen branches on (`duplicate_product`
+  409, `not_found` 404, `invalid_input` 400), the identifiers omitted on the wire when they are zero,
+  and the tenant of the request reaching the service rather than a zero value.
+- `internal/container/order_wiring_test.go` — the dispatch rules, which are the product's rather than
+  the module's: a `write_external` call refused at the executor even when the Bolu holds the grant (the
+  second lock on the approval gate's door), a tool the Bolu was not offered refused even though the
+  model asked for it, a `Connectionless` tool running with no connection and **without consulting the
+  hub for a grant or a connection**, a connected tool resolving exactly the granted connection, the
+  scope carrying `AgentID`/`TaskID` so a recorded order can be attributed, a failed tool answered as
+  an `IsError` result rather than as a Go error that would end the task, and a catalogue row no adapter
+  claims being dropped from the list the model is offered.
+- `test/integration/order_test.go` — the claims only a real Postgres can answer: the catalogue is
+  tenant-isolated by policy rather than by a filter; a recorded line carries the **catalogue's** price,
+  name, and unit, with the generated line total and the order total agreeing; a later price change does
+  not rewrite it; an unknown product rolls back **everything**, including the customer upsert; two
+  orders from the same phone leave one customer; `Lookup` is case-folded and returns candidates; and
+  the three `order.*` rows in `tool_catalog` agree with what the adapter declares — the agreement the
+  code comments promise, and the one thing that needs both a database read and a Go read to check.
+
 ### The end-to-end smoke
 
 `make smoke-task` runs the API and the agent worker on the host against the
