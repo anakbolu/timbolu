@@ -148,7 +148,7 @@ func TestDispatchWithoutAnEngineLeavesTheTaskQueued(t *testing.T) {
 }
 
 // TestHistoryFiltersByStatusAndAgent covers the history endpoint's filters, which
-// is what the office and the task list read.
+// is what the task list reads.
 func TestHistoryFiltersByStatusAndAgent(t *testing.T) {
 	service, tasks, scope := newService(t, &recordingStarter{}, nil, nil)
 	agentA, agentB := uuid.New(), uuid.New()
@@ -245,7 +245,7 @@ func TestCancelRefusesAFinishedTask(t *testing.T) {
 	require.Equal(t, domain.StatusSucceeded, stored.Status)
 }
 
-// TestChildrenReturnsTheHandoffChain covers the read the office uses to follow a
+// TestChildrenReturnsTheHandoffChain covers the read the task list uses to follow a
 // handoff from its root.
 func TestChildrenReturnsTheHandoffChain(t *testing.T) {
 	service, tasks, scope := newService(t, &recordingStarter{}, nil, nil)
@@ -270,8 +270,8 @@ func TestChildrenReturnsTheHandoffChain(t *testing.T) {
 	require.Equal(t, child.ID, children[0].ID)
 }
 
-// TestHealthSeparatesWorkingFromStuck is the derived status the office shows: a
-// task whose worker died reads `running` in the store, and only the heartbeat
+// TestHealthSeparatesWorkingFromStuck is the derived status the dashboard shows:
+// a task whose worker died reads `running` in the store, and only the heartbeat
 // tells the two apart.
 func TestHealthSeparatesWorkingFromStuck(t *testing.T) {
 	service, tasks, scope := newService(t, &recordingStarter{}, nil, nil)

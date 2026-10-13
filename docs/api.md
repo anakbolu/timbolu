@@ -315,8 +315,8 @@ cursor, so a reconnect cannot duplicate a message.
 
 `agent.state` carries `{agent_id, state, reason?, task_id?, draft_id?}` where
 `state` is `working`, `thinking`, `waiting`, `idle`, or `resting`. **No
-coordinate is stored anywhere**: the office view computes a position from the
-state.
+coordinate is stored anywhere**: a client that draws the crew derives a position
+from the state.
 
 ### The content origin
 

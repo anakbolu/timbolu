@@ -43,7 +43,6 @@ export const config = {
   matcher: [
     "/dashboard/:path*",
     "/chat/:path*",
-    "/office/:path*",
     "/groups/:path*",
     "/settings/:path*",
     "/tasks/:path*",

@@ -621,7 +621,7 @@ func TestRunToolReportsAMissingExecutor(t *testing.T) {
 
 // TestRequestDraftParksTheTask is the product's central guardrail: an action that
 // reaches outside Bolu becomes a draft, the task is parked with the reason, and
-// the office learns about it from the event.
+// the feed learns about it from the event.
 func TestRequestDraftParksTheTask(t *testing.T) {
 	h := newHarness(t, domain.DefaultLimits)
 
@@ -1242,7 +1242,7 @@ func TestRunToolReportsAFailingExecutor(t *testing.T) {
 }
 
 // TestDraftTitleFallsBackToTheSubject covers the naming of a draft, which is what
-// the office shows while the task waits.
+// the feed shows while the task waits.
 func TestDraftTitleFallsBackToTheSubject(t *testing.T) {
 	h := newHarness(t, domain.DefaultLimits)
 

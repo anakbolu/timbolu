@@ -55,12 +55,6 @@ const NAV = [
     // person reads one task — the history is where they came from.
     matches: (pathname: string) => pathname === "/tasks" || pathname.startsWith("/tasks/"),
   },
-  {
-    href: "/office",
-    label: "Kantor",
-    icon: "M3 10.5 12 4l9 6.5M5 10v10h14V10M10 20v-5h4v5",
-    matches: (pathname: string) => pathname.startsWith("/office"),
-  },
 ];
 
 /** One sidebar row for a Bolu: it opens that Bolu's chat. */

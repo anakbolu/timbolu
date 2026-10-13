@@ -74,7 +74,7 @@ func WireID(id uuid.UUID) string {
 	return id.String()
 }
 
-// WireState renders a Bolu's state for the office.
+// WireState renders a Bolu's derived state for the wire.
 func WireState(agentID uuid.UUID, state, reason string, taskID, draftID uuid.UUID) AgentStatePayload {
 	return AgentStatePayload{
 		AgentID: WireID(agentID),

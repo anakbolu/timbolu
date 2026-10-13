@@ -266,7 +266,7 @@ func TestEmitWithoutAPublisherIsFine(t *testing.T) {
 	require.Len(t, h.store.eventsOfType(chatdomain.EventAgentState), 1)
 }
 
-// TestAgentStateEventsArePublished is what the office view reads: a Bolu's state
+// TestAgentStateEventsArePublished is what the dashboard reads: a Bolu's state
 // is an event, and no coordinate is stored anywhere.
 func TestAgentStateEventsArePublished(t *testing.T) {
 	h := newHarness(t)
@@ -284,7 +284,7 @@ func TestAgentStateEventsArePublished(t *testing.T) {
 	h.waitForMessage(t, result.ReplyMessageID, settled)
 
 	states := h.store.eventsOfType(chatdomain.EventAgentState)
-	require.NotEmpty(t, states, "the office is built from these")
+	require.NotEmpty(t, states, "the dashboard is built from these")
 
 	seen := map[string]bool{}
 	for _, event := range states {

@@ -120,7 +120,7 @@ func TestWireMessageToleratesAnEmptyBody(t *testing.T) {
 	require.NotNil(t, payload.Attachments)
 }
 
-// TestAgentStateOmitsTheAbsentWork keeps the office from reading a zero id as a
+// TestAgentStateOmitsTheAbsentWork keeps a client from reading a zero id as a
 // task it can point at.
 func TestAgentStateOmitsTheAbsentWork(t *testing.T) {
 	payload := AgentStatePayload{AgentID: uuid.NewString(), State: StateIdle, Reason: "santai"}

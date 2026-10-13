@@ -623,7 +623,7 @@ type ParkTaskParams struct {
 }
 
 // A task waiting for a human has not stopped; it is parked, and the reason is
-// what the office and the task endpoint show.
+// what the task endpoint shows.
 func (q *Queries) ParkTask(ctx context.Context, arg ParkTaskParams) (Task, error) {
 	row := q.db.QueryRow(ctx, parkTask,
 		arg.ID,

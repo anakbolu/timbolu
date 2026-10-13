@@ -464,7 +464,7 @@ func TestRepositoryRefusesAnUnknownTaskAndScope(t *testing.T) {
 	require.ErrorIs(t, err, taskdomain.ErrTaskNotFound)
 }
 
-// TestListFiltersNarrowTheHistory is the read the task list and the office make:
+// TestListFiltersNarrowTheHistory is the read the task list makes:
 // each filter is applied by the statement rather than by the caller, so a page is
 // a page of the right rows.
 func TestListFiltersNarrowTheHistory(t *testing.T) {

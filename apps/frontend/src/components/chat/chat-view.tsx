@@ -63,7 +63,7 @@ export function ChatView({ agentId }: { agentId?: string }) {
     if (box) box.scrollTop = box.scrollHeight;
   }, [chat.active?.id, newest?.message_id, newest?.blocks]);
 
-  // Opening by Bolu is what a click in the sidebar or the office does.
+  // Opening by Bolu is what a click in the sidebar does.
   useEffect(() => {
     if (!agentId || opened.current === agentId) {
       return;
@@ -307,8 +307,7 @@ function nameOf(conversation: ChatConversation | null, message: ChatMessage): st
  * authorFace is the avatar of a message's author.
  *
  * The face comes from the registry row — the shape and colour the workspace gave
- * that Bolu — so a Bolu created here looks the same in the thread, the sidebar and
- * the office, rather than borrowing a seeded character's body.
+ * that Bolu — so a Bolu created here looks the same in the thread and the sidebar,
  */
 function authorFace(
   conversation: ChatConversation | null,

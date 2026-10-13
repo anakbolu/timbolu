@@ -750,8 +750,8 @@ API contract: `docs/api.md`.
 
 The web app routes are English: `/signup`, `/login`, `/verify`,
 `/forgot-password`, `/join`, `/onboarding`, `/settings/team`, `/settings/model`,
-`/chat`, `/groups`, `/office`.
+`/chat`, `/groups`.
 
-The chat page is one thread at a time with a thread list, the group page manages
-groups and shows who is in them, and the office draws each Bolu at a place
-computed from its `agent.state` — the backend stores no coordinate.
+The chat page is one thread at a time with a thread list, and the group page
+manages groups and shows who is in them. A Bolu's `agent.state` — derived from
+its work — keeps the roster current; the backend stores no coordinate.

@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 };
 
 /**
- * Which Bolu is open travels in the query, so a link from the sidebar or the office
+ * Which Bolu is open travels in the query, so a link from the sidebar
  * opens that thread. Reading a query string is a client-side read, which is what the
  * Suspense boundary keeps out of the prerender — the same shape the auth pages use.
  */
