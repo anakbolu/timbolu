@@ -185,7 +185,7 @@ export function UsageView() {
   }, [report]);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 p-[24px_28px_48px] max-[760px]:p-[18px_14px_36px]">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className={HEADING}>Pemakaian</h1>
