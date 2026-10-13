@@ -55,6 +55,10 @@ type Deps struct {
 	// Queue is where a verified delivery waits to be acted on. Optional, for the
 	// same reason as Refs.
 	Queue domain.Queue
+	// Triggers starts the routines watching an event a delivery announced.
+	// Optional: without it a delivery is queued and nothing sooner acts on it, so
+	// the routines a workspace set up for "when an email arrives" would never run.
+	Triggers domain.EventTriggers
 	// Limiter paces the calls a workspace makes on one integration. Optional:
 	// without one nothing is paced, which is what a deployment with no Redis is.
 	Limiter domain.CallLimiter

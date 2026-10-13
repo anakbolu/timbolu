@@ -132,6 +132,7 @@ func sign(body []byte) string {
 
 // webhookFixture is the running API with a stub provider that pushes events.
 type webhookFixture struct {
+	container *container.Container
 	app       *fiber.App
 	service   integrationdomain.Service
 	provider  *webhookAdapter
@@ -191,6 +192,7 @@ func newWebhookFixture(t *testing.T, dsn string) *webhookFixture {
 	require.NoError(t, err)
 
 	return &webhookFixture{
+		container:   app,
 		app:         app.App(),
 		service:     app.Services.Integration,
 		provider:    provider,

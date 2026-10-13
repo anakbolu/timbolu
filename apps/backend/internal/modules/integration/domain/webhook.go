@@ -112,6 +112,10 @@ type Queue interface {
 	Enqueue(ctx context.Context, input EnqueueInput) (QueuedEvent, error)
 	// Pending returns the oldest unprocessed deliveries of a workspace.
 	Pending(ctx context.Context, scope Scope, limit int) ([]QueuedEvent, error)
+	// ClaimEvents reads the deliveries of one event kind and marks them taken in
+	// the same step, so two consumers watching one event cannot both act on one
+	// delivery.
+	ClaimEvents(ctx context.Context, scope Scope, event string, limit int) ([]QueuedEvent, error)
 	// Processed marks a delivery as acted on.
 	Processed(ctx context.Context, scope Scope, id uuid.UUID) error
 	// Failed records an attempt that did not work, so a delivery that keeps

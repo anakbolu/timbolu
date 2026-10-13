@@ -3,6 +3,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -19,11 +20,22 @@ import (
 type Handler struct {
 	service domain.Service
 	log     *zap.Logger
+	// afterClockChange runs when an update moved the workspace's timezone or working
+	// window. It is a plain callback rather than a port because the workspace module
+	// has no business knowing what depends on its clock: the container is the only
+	// place that knows, and it is the one that wires this.
+	afterClockChange func(ctx context.Context, workspaceID uuid.UUID)
 }
 
 // New builds the handler.
 func New(service domain.Service, log *zap.Logger) *Handler {
 	return &Handler{service: service, log: log}
+}
+
+// WithClockChange installs the callback that runs after the workspace's clock moves.
+func (h *Handler) WithClockChange(fn func(ctx context.Context, workspaceID uuid.UUID)) *Handler {
+	h.afterClockChange = fn
+	return h
 }
 
 type onboardRequest struct {
@@ -153,6 +165,10 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 		return response.Error(c, fiber.StatusBadRequest, "invalid request body", "invalid_request", nil)
 	}
 
+	// The window that was in force before the write, so a rename does not reschedule
+	// every routine of the workspace. Only a moved clock does, which is E11.3.
+	before, beforeErr := h.service.Current(c.UserContext(), scope(c))
+
 	workspace, err := h.service.Update(c.UserContext(), scope(c), middleware.Role(c), domain.UpdateRequest{
 		Name:           req.Name,
 		BusinessField:  req.BusinessField,
@@ -167,7 +183,34 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 	}
 	workspace.Role = middleware.Role(c)
 
+	if beforeErr == nil && h.afterClockChange != nil && clockMoved(before, workspace) {
+		h.afterClockChange(c.UserContext(), workspace.ID)
+	}
+
 	return response.OK(c, "workspace updated", toWorkspacePayload(workspace))
+}
+
+// clockMoved reports whether an update changed what a scheduled time means.
+//
+// Only these fields move a routine: the zone the wall-clock times are read in, and
+// the window itself. A rename must not touch the engine at all — re-registering every
+// schedule of a workspace because somebody fixed a typo is work nobody asked for.
+func clockMoved(before, after domain.Workspace) bool {
+	if before.Timezone != after.Timezone {
+		return true
+	}
+	if before.WorkHoursStart != after.WorkHoursStart || before.WorkHoursEnd != after.WorkHoursEnd {
+		return true
+	}
+	if len(before.WorkDays) != len(after.WorkDays) {
+		return true
+	}
+	for i := range before.WorkDays {
+		if before.WorkDays[i] != after.WorkDays[i] {
+			return true
+		}
+	}
+	return false
 }
 
 // Teams lists the teams of the active workspace.

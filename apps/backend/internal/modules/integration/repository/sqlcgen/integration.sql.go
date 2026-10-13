@@ -12,6 +12,64 @@ import (
 	"github.com/google/uuid"
 )
 
+const claimWebhookEvents = `-- name: ClaimWebhookEvents :many
+UPDATE webhook_events SET processed_at = now()
+WHERE id IN (
+    SELECT pending.id FROM webhook_events AS pending
+    WHERE pending.workspace_id = $1
+      AND pending.event = $2
+      AND pending.processed_at IS NULL
+    ORDER BY pending.received_at, pending.id
+    LIMIT $3
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING id, workspace_id, integration_id, app, delivery_id, event, payload, received_at, processed_at, attempts, last_error
+`
+
+type ClaimWebhookEventsParams struct {
+	WorkspaceID uuid.UUID
+	Event       string
+	Limit       int32
+}
+
+// One event goes to one routine.
+//
+// The read and the claim are one statement on purpose: a routine asks for what is
+// waiting for it and marks it taken in the same step, so two routines watching one
+// event cannot both act on it — and `SKIP LOCKED` means a second reader skips rows a
+// first one is claiming rather than waiting for them.
+func (q *Queries) ClaimWebhookEvents(ctx context.Context, arg ClaimWebhookEventsParams) ([]WebhookEvent, error) {
+	rows, err := q.db.Query(ctx, claimWebhookEvents, arg.WorkspaceID, arg.Event, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WebhookEvent{}
+	for rows.Next() {
+		var i WebhookEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.IntegrationID,
+			&i.App,
+			&i.DeliveryID,
+			&i.Event,
+			&i.Payload,
+			&i.ReceivedAt,
+			&i.ProcessedAt,
+			&i.Attempts,
+			&i.LastError,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const consumeOAuthState = `-- name: ConsumeOAuthState :one
 UPDATE oauth_states
 SET consumed_at = now()

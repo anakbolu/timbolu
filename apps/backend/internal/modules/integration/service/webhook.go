@@ -93,6 +93,9 @@ func (s *service) ReceiveWebhook(ctx context.Context, app string, request domain
 	// One delivery may carry several events. Each is deduplicated on its own key
 	// rather than the batch colliding on one.
 	accepted := 0
+	// fired is the event kinds this delivery actually added, deduplicated: one
+	// delivery carrying the same kind twice starts the routines watching it once.
+	fired := map[string]bool{}
 
 	for index, event := range events {
 		stored, err := s.deps.Queue.Enqueue(ctx, domain.EnqueueInput{
@@ -117,9 +120,40 @@ func (s *service) ReceiveWebhook(ctx context.Context, app string, request domain
 		}
 		_ = stored
 		accepted++
+		fired[event.Event] = true
 	}
 
+	// The routines a workspace set up for "when this happens" are started here,
+	// because this is the moment the event arrived: a trigger routine has no
+	// schedule, so nothing else would ever start it.
+	//
+	// A routine that could not be started does not fail the delivery. The provider
+	// is waiting on a 200 and its event is already queued; the delivery stays
+	// unclaimed, and the next one of the same kind finds both — which is what makes
+	// this self-healing rather than lossy.
+	s.startTriggers(ctx, domain.Scope{WorkspaceID: ref.WorkspaceID}, fired)
+
 	return accepted, nil
+}
+
+// startTriggers hands each newly queued event kind to the routines watching it.
+func (s *service) startTriggers(ctx context.Context, scope domain.Scope, events map[string]bool) {
+	if s.deps.Triggers == nil {
+		return
+	}
+
+	for event := range events {
+		started, err := s.deps.Triggers.Fire(ctx, scope, event)
+		if err != nil {
+			s.deps.Logger.Warn("could not start the routines watching a delivery",
+				zap.String("event", event), zap.Error(err))
+			continue
+		}
+		if started > 0 {
+			s.deps.Logger.Info("a delivery started the routines watching it",
+				zap.String("event", event), zap.Int("routines", started))
+		}
+	}
 }
 
 // deliveryID is the key a delivery is deduplicated on.
@@ -147,6 +181,22 @@ func (s *service) PendingWebhooks(ctx context.Context, scope domain.Scope, limit
 		return nil, fmt.Errorf("%w: webhooks are not configured", domain.ErrInvalidInput)
 	}
 	return s.deps.Queue.Pending(ctx, scope, limit)
+}
+
+// ClaimPendingEvents reads and claims the deliveries of one event kind.
+//
+// It is what a routine watching that event consumes, and the claim happens in the
+// same step as the read: two routines watching one event must not both act on one
+// delivery.
+func (s *service) ClaimPendingEvents(ctx context.Context, scope domain.Scope, event string, limit int) ([]domain.QueuedEvent, error) {
+	if s.deps.Queue == nil {
+		return nil, fmt.Errorf("%w: webhooks are not configured", domain.ErrInvalidInput)
+	}
+	if strings.TrimSpace(event) == "" {
+		return nil, fmt.Errorf("%w: an event name is required", domain.ErrInvalidInput)
+	}
+
+	return s.deps.Queue.ClaimEvents(ctx, scope, strings.TrimSpace(event), limit)
 }
 
 // WebhookProcessed marks a delivery as acted on.

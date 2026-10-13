@@ -1420,3 +1420,124 @@ export function refreshMCPServer(workspaceId: string, id: string): Promise<ApiRe
 export function removeMCPServer(workspaceId: string, id: string): Promise<ApiResult<null>> {
   return request<null>(`/mcp/servers/${id}`, { method: "DELETE", workspace: workspaceId });
 }
+
+/**
+ * A routine is work a Bolu runs on its own.
+ *
+ * `kind` is the cadence: `daily` at a fixed time, `hourly_range` every hour inside
+ * a window, `weekly` on one weekday, and `trigger` when an event arrives. `schedule`
+ * is the cadence in words and `next_runs` are the next times it fires, computed in
+ * the workspace's own timezone — they travel with the routine rather than in a
+ * second request per row.
+ */
+export type Routine = {
+  id: string;
+  agent_id: string;
+  name: string;
+  kind: "daily" | "hourly_range" | "weekly" | "trigger";
+  minute: number;
+  hour_start: number;
+  hour_end: number;
+  day_of_week?: number;
+  trigger_source?: string;
+  instruction: string;
+  enabled: boolean;
+  paused_reason?: string;
+  schedule: string;
+  scheduled: boolean;
+  next_runs: string[];
+  created_at: string;
+};
+
+/** RoutineInput is one routine to store. */
+export type RoutineInput = {
+  agent_id: string;
+  name: string;
+  kind: Routine["kind"];
+  minute?: number;
+  hour_start?: number;
+  hour_end?: number;
+  day_of_week?: number;
+  trigger_source?: string;
+  instruction: string;
+  enabled?: boolean;
+};
+
+/** A routine run is one execution and what it produced. */
+export type RoutineRun = {
+  run_id: string;
+  routine_id?: string;
+  routine_name: string;
+  task_id?: string;
+  status: "running" | "succeeded" | "failed" | "skipped";
+  summary: string;
+  started_at: string;
+  finished_at?: string;
+};
+
+/** listRoutines returns the workspace's routines, each with its next run times. */
+export function listRoutines(
+  workspaceId: string,
+  filter: { agent_id?: string; enabled?: boolean } = {},
+): Promise<ApiResult<Routine[]>> {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(filter)) {
+    if (value !== undefined && value !== "") query.set(key, String(value));
+  }
+  const suffix = query.toString() ? `?${query}` : "";
+  return request<Routine[]>(`/routines${suffix}`, { workspace: workspaceId });
+}
+
+/** createRoutine stores a routine and registers its schedule. */
+export function createRoutine(workspaceId: string, input: RoutineInput): Promise<ApiResult<Routine>> {
+  return request<Routine>("/routines", { method: "POST", body: input, workspace: workspaceId });
+}
+
+/** updateRoutine changes a routine and re-registers its schedule. */
+export function updateRoutine(
+  workspaceId: string,
+  routineId: string,
+  input: RoutineInput,
+): Promise<ApiResult<Routine>> {
+  return request<Routine>(`/routines/${routineId}`, { method: "PATCH", body: input, workspace: workspaceId });
+}
+
+/** deleteRoutine removes a routine and its schedule; its history stays. */
+export function deleteRoutine(workspaceId: string, routineId: string): Promise<ApiResult<null>> {
+  return request<null>(`/routines/${routineId}`, { method: "DELETE", workspace: workspaceId });
+}
+
+/** pauseRoutine pauses a routine's schedule without losing its history. */
+export function pauseRoutine(workspaceId: string, routineId: string): Promise<ApiResult<Routine>> {
+  return request<Routine>(`/routines/${routineId}/pause`, { method: "POST", workspace: workspaceId });
+}
+
+/** resumeRoutine resumes a paused routine's schedule. */
+export function resumeRoutine(workspaceId: string, routineId: string): Promise<ApiResult<Routine>> {
+  return request<Routine>(`/routines/${routineId}/resume`, { method: "POST", workspace: workspaceId });
+}
+
+/** listRoutineRuns returns the workspace's run history, newest first. */
+export function listRoutineRuns(
+  workspaceId: string,
+  filter: { routine_id?: string; agent_id?: string; status?: string; limit?: number } = {},
+): Promise<ApiResult<RoutineRun[]>> {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(filter)) {
+    if (value !== undefined && value !== "" && value !== 0) query.set(key, String(value));
+  }
+  const suffix = query.toString() ? `?${query}` : "";
+  return request<RoutineRun[]>(`/routine-runs${suffix}`, { workspace: workspaceId });
+}
+
+/** previewRoutine answers the next run times for a cadence that is not saved yet. */
+export function previewRoutine(
+  workspaceId: string,
+  input: { kind: Routine["kind"]; minute?: number; hour_start?: number; hour_end?: number; day_of_week?: number },
+): Promise<ApiResult<{ next_runs: string[] }>> {
+  return request<{ next_runs: string[] }>("/routines/preview", {
+    method: "POST",
+    body: input,
+    workspace: workspaceId,
+  });
+}

@@ -10,6 +10,19 @@
 import type { ActivityEvent, Agent, Draft, Task } from "@/lib/api";
 import { ALL_BOTS, type BoluExpressionName, type CrewMember } from "@/lib/crew";
 
+/**
+ * TIMEZONES are the zones a workspace may be set to.
+ *
+ * Scheduled work is registered in the workspace's own zone, so this list is what
+ * both the settings screen and a routine's form offer: one list, so the zone a
+ * routine reads beside its times is one a person can actually choose.
+ */
+export const TIMEZONES = [
+  { value: "Asia/Jakarta", label: "WIB (GMT+7)" },
+  { value: "Asia/Makassar", label: "WITA (GMT+8)" },
+  { value: "Asia/Jayapura", label: "WIT (GMT+9)" },
+];
+
 /** ACCENT is the primary blue: the "today" bar and the primary buttons. */
 export const ACCENT = "#1F7FD6";
 

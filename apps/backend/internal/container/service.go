@@ -10,6 +10,7 @@ import (
 	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
 	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 	memorydomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain"
+	routinedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
 	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
 	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/redis"
@@ -39,6 +40,9 @@ type Services struct {
 	Integration integrationdomain.Service
 	// Memory is built by openMemory, which needs the model gateway to embed with.
 	Memory memorydomain.Service
+	// Routine is built by openRoutine, which needs the task runtime to hand a run's
+	// work to and the engine to schedule it with.
+	Routine routinedomain.Service
 }
 
 // newServices builds every service. Optional dependencies (Redis today) are

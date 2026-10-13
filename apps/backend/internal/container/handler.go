@@ -14,6 +14,7 @@ import (
 	integrationhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/handler"
 	llmhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/handler"
 	memoryhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/handler"
+	routinehandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/handler"
 	taskhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/handler"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	workspacehandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/handler"
@@ -37,6 +38,8 @@ type Handlers struct {
 	Integration *integrationhandler.Handler
 	// Memory serves the two layers and the knowledge base.
 	Memory *memoryhandler.Handler
+	// Routine serves the routines, their schedules, and their run history.
+	Routine *routinehandler.Handler
 }
 
 // newHandlers builds every handler from the service set. Handlers receive the
@@ -80,6 +83,10 @@ func newHandlers(services *Services, log *zap.Logger, cfg *config.Config) *Handl
 
 	if services.Memory != nil {
 		handlers.Memory = memoryhandler.New(services.Memory, log)
+	}
+
+	if services.Routine != nil {
+		handlers.Routine = routinehandler.New(services.Routine, log)
 	}
 
 	if services.Integration != nil {
@@ -196,6 +203,15 @@ func (c *Container) registerRoutes() {
 		memoryhandler.Routes(tenant, c.Handlers.Memory)
 	}
 
+	// Routines: the work the team runs on its own. Every member reads and edits them,
+	// for the same reason memory is open: the person who notices a routine firing at
+	// the wrong hour is not always the owner.
+	if c.Handlers.Routine == nil {
+		registerRoutineFallback(tenant)
+	} else {
+		routinehandler.Routes(tenant, c.Handlers.Routine)
+	}
+
 	// Approvals: every member reads the drafts and decides on them, because the
 	// person who notices a wrong invoice is not always the owner. Changing what
 	// the workspace allows unattended needs a managing role, the way the provider
@@ -296,6 +312,9 @@ func (c *Container) registerUnavailableModules(api fiber.Router) {
 	if c.Handlers.Memory == nil {
 		registerMemoryFallback(api)
 	}
+	if c.Handlers.Routine == nil {
+		registerRoutineFallback(api)
+	}
 	if c.Handlers.Approval == nil {
 		registerApprovalFallback(api)
 	}
@@ -367,6 +386,13 @@ func registerMemoryFallback(router fiber.Router) {
 	message := "memory is not configured"
 	router.All("/memories*", unavailable(message, "memory_not_configured"))
 	router.All("/knowledge*", unavailable(message, "memory_not_configured"))
+}
+
+// registerRoutineFallback answers 503 for the routine routes.
+func registerRoutineFallback(router fiber.Router) {
+	message := "routines are not configured"
+	router.All("/routines*", unavailable(message, "routine_not_configured"))
+	router.All("/routine-runs*", unavailable(message, "routine_not_configured"))
 }
 
 // registerModelFallback answers 503 for the model configuration routes.

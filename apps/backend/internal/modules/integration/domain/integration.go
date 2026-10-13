@@ -387,6 +387,10 @@ type Service interface {
 	ReceiveWebhook(ctx context.Context, app string, request WebhookRequest) (int, error)
 	// PendingWebhooks returns the oldest deliveries a workspace has not acted on.
 	PendingWebhooks(ctx context.Context, scope Scope, limit int) ([]QueuedEvent, error)
+	// ClaimPendingEvents reads and claims the deliveries of one event kind, which is
+	// what a routine watching that event consumes. Claiming in the same step is what
+	// stops two routines from acting on one delivery.
+	ClaimPendingEvents(ctx context.Context, scope Scope, event string, limit int) ([]QueuedEvent, error)
 	// WebhookProcessed marks a delivery as acted on.
 	WebhookProcessed(ctx context.Context, scope Scope, id uuid.UUID) error
 	// WebhookFailed records an attempt that did not work.
@@ -405,4 +409,16 @@ type Service interface {
 	// MCPTools lists the tools the workspace's servers contribute, read from what
 	// they last reported rather than by reaching them.
 	MCPTools(ctx context.Context, scope Scope) ([]ToolSpec, error)
+}
+
+// EventTriggers starts the routines watching an event.
+//
+// It is a port rather than a call into the routine module because the routine
+// module is the one that knows what a routine is: the hub delivers an event and
+// says which event it was, and who acts on it is not the hub's business. A
+// deployment with no routines is wired with nothing here, and its deliveries are
+// simply queued for the consumer that will exist.
+type EventTriggers interface {
+	// Fire starts the routines watching one event, and reports how many started.
+	Fire(ctx context.Context, scope Scope, event string) (int, error)
 }
