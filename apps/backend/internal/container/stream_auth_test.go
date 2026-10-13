@@ -25,7 +25,7 @@ import (
 func streamApp(c *Container) *fiber.App {
 	app := fiber.New(fiber.Config{DisableStartupMessage: true})
 
-	app.Get("/stream", c.requireStreamAuth(), func(ctx *fiber.Ctx) error {
+	app.Get("/stream", c.requireStreamAuth("chat_not_configured"), func(ctx *fiber.Ctx) error {
 		return ctx.JSON(fiber.Map{
 			"user":      middleware.CurrentUserID(ctx).String(),
 			"workspace": middleware.WorkspaceUUID(ctx).String(),

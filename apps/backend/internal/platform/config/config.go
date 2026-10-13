@@ -21,7 +21,45 @@ type Config struct {
 	Tasks        TasksConfig
 	Memory       MemoryConfig
 	Storage      StorageConfig
+	WhatsApp     WhatsAppConfig
 	Logging      LoggingConfig
+}
+
+// WhatsAppConfig holds what the WhatsApp gateway needs.
+//
+// It is two configurations in one namespace because the two ends are one
+// deployment: the API process reaches the gateway, and the gateway process owns
+// the connections. Which end a value belongs to is said on the field.
+type WhatsAppConfig struct {
+	// GatewayURL is the wa-gateway's internal address, as the API reaches it.
+	// Empty means numbers can be listed and read but not linked or sent as.
+	GatewayURL string `mapstructure:"GatewayURL" validate:"optional"`
+	// GatewayToken authenticates the API to the gateway. It is a shared secret
+	// because both ends are ours and the gateway has no user of its own. Empty
+	// refuses every call in both directions.
+	GatewayToken string `mapstructure:"GatewayToken" validate:"optional"`
+	// Address is where the gateway process listens. It is not a public address:
+	// the gateway speaks for every tenant it serves.
+	Address string `mapstructure:"Address" validate:"optional"`
+	// Owner names this gateway instance in the lease. Empty generates one per
+	// process, which is right for a single instance and wrong for a fleet that
+	// restarts: a fresh name each time looks like a new claimant.
+	Owner string `mapstructure:"Owner" validate:"optional"`
+	// HourlyLimit is the default send ceiling of a number, in messages per hour.
+	// Zero means the product default.
+	HourlyLimit int `mapstructure:"HourlyLimit" validate:"optional"`
+	// LeaseTTL is how long a lease survives without a renewal, which is the upper
+	// bound on a takeover.
+	LeaseTTL time.Duration `mapstructure:"LeaseTTL" validate:"optional"`
+	// LeaseRenew is how often a held lease is extended.
+	LeaseRenew time.Duration `mapstructure:"LeaseRenew" validate:"optional"`
+	// TypingDelay is how long the typing indicator shows before a message leaves.
+	TypingDelay time.Duration `mapstructure:"TypingDelay" validate:"optional"`
+	// MaxMediaBytes refuses an inbound attachment larger than this.
+	MaxMediaBytes int `mapstructure:"MaxMediaBytes" validate:"optional"`
+	// LogWhatsmeow turns on whatsmeow's own protocol logging. It writes a line
+	// per decrypted message, so it is a debugging switch rather than a default.
+	LogWhatsmeow bool `mapstructure:"LogWhatsmeow" validate:"optional"`
 }
 
 // IntegrationConfig holds what the integration hub needs beyond its adapters.

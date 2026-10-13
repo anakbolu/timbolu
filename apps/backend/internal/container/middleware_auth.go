@@ -104,10 +104,10 @@ func (c *Container) requireTenant() fiber.Handler {
 // EventSource clients cannot set a header, so without this the live stream would
 // be unreachable from a page — and the alternative, an unauthenticated stream,
 // would leak another tenant's events.
-func (c *Container) requireStreamAuth() fiber.Handler {
+func (c *Container) requireStreamAuth(notConfiguredCode string) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		if c.Services.Auth == nil || c.Services.Workspace == nil {
-			return response.Unavailable(ctx, "the live stream is not configured", "chat_not_configured")
+			return response.Unavailable(ctx, "the live stream is not configured", notConfiguredCode)
 		}
 
 		token := bearerToken(ctx)

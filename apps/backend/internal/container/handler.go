@@ -16,6 +16,7 @@ import (
 	memoryhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/handler"
 	routinehandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/handler"
 	taskhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/handler"
+	whatsapphandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/handler"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	workspacehandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/handler"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
@@ -40,6 +41,8 @@ type Handlers struct {
 	Memory *memoryhandler.Handler
 	// Routine serves the routines, their schedules, and their run history.
 	Routine *routinehandler.Handler
+	// WhatsApp serves the linked numbers, the link flow, and what they carried.
+	WhatsApp *whatsapphandler.Handler
 }
 
 // newHandlers builds every handler from the service set. Handlers receive the
@@ -87,6 +90,9 @@ func newHandlers(services *Services, log *zap.Logger, cfg *config.Config) *Handl
 
 	if services.Routine != nil {
 		handlers.Routine = routinehandler.New(services.Routine, log)
+	}
+	if services.WhatsApp != nil {
+		handlers.WhatsApp = whatsapphandler.New(services.WhatsApp, log)
 	}
 
 	if services.Integration != nil {
@@ -212,6 +218,15 @@ func (c *Container) registerRoutes() {
 		routinehandler.Routes(tenant, c.Handlers.Routine)
 	}
 
+	// WhatsApp: the numbers the workspace linked and who answers them. Every
+	// member reads and edits them, because a shop's line going quiet is noticed
+	// by whoever is on shift rather than by the owner.
+	if c.Handlers.WhatsApp == nil {
+		registerWhatsAppFallback(tenant)
+	} else {
+		whatsapphandler.Routes(tenant, c.Handlers.WhatsApp)
+	}
+
 	// Approvals: every member reads the drafts and decides on them, because the
 	// person who notices a wrong invoice is not always the owner. Changing what
 	// the workspace allows unattended needs a managing role, the way the provider
@@ -274,19 +289,26 @@ func (c *Container) registerRoutes() {
 // cookie, so the reference in the URL is the only capability, and it names one
 // document.
 func (c *Container) registerStreamRoutes() {
-	if c.Handlers.Chat == nil {
-		return
-	}
-
 	api := c.Config.Http.ApiPrefix
-	for _, path := range []string{api + "/events/stream", api + "/events/socket"} {
-		c.app.Use(path, c.requireStreamAuth())
+
+	if c.Handlers.Chat != nil {
+		for _, path := range []string{api + "/events/stream", api + "/events/socket"} {
+			c.app.Use(path, c.requireStreamAuth("chat_not_configured"))
+		}
+
+		stream := c.app.Group(api)
+		chathandler.StreamRoutes(stream, c.Handlers.Chat)
+
+		chathandler.ContentRoutes(c.app, c.Handlers.Chat)
 	}
 
-	stream := c.app.Group(api)
-	chathandler.StreamRoutes(stream, c.Handlers.Chat)
-
-	chathandler.ContentRoutes(c.app, c.Handlers.Chat)
+	// The link attempt has its own socket for a reason the workspace stream cannot
+	// serve: a QR is a capability, and it must reach the person who started the
+	// attempt rather than every member of the workspace.
+	if c.Handlers.WhatsApp != nil {
+		c.app.Use(api+"/whatsapp/links/:linkID/socket", c.requireStreamAuth("whatsapp_not_configured"))
+		whatsapphandler.LinkStreamRoutes(c.app.Group(api), c.Handlers.WhatsApp)
+	}
 }
 
 // registerUnavailableModules registers the fallbacks for the modules that are
@@ -386,6 +408,31 @@ func registerMemoryFallback(router fiber.Router) {
 	message := "memory is not configured"
 	router.All("/memories*", unavailable(message, "memory_not_configured"))
 	router.All("/knowledge*", unavailable(message, "memory_not_configured"))
+}
+
+// registerWhatsAppFallback answers 503 for the WhatsApp routes.
+func registerWhatsAppFallback(router fiber.Router) {
+	for _, route := range []struct {
+		method string
+		path   string
+	}{
+		{fiber.MethodGet, "/whatsapp/numbers"},
+		{fiber.MethodPost, "/whatsapp/numbers"},
+		{fiber.MethodGet, "/whatsapp/numbers/:numberID"},
+		{fiber.MethodPatch, "/whatsapp/numbers/:numberID"},
+		{fiber.MethodDelete, "/whatsapp/numbers/:numberID"},
+		{fiber.MethodPost, "/whatsapp/numbers/:numberID/terms"},
+		{fiber.MethodPost, "/whatsapp/numbers/:numberID/link"},
+		{fiber.MethodPost, "/whatsapp/links/:linkID/pair-code"},
+		{fiber.MethodGet, "/whatsapp/numbers/:numberID/messages"},
+		{fiber.MethodGet, "/whatsapp/numbers/:numberID/outbox"},
+		{fiber.MethodGet, "/whatsapp/links/:linkID"},
+		{fiber.MethodDelete, "/whatsapp/links/:linkID"},
+		{fiber.MethodGet, "/whatsapp/links/:linkID/socket"},
+		{fiber.MethodGet, "/whatsapp/messages/:messageID/media"},
+	} {
+		router.Add(route.method, route.path, unavailable("whatsapp is not configured", "whatsapp_not_configured"))
+	}
 }
 
 // registerRoutineFallback answers 503 for the routine routes.

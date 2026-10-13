@@ -12,6 +12,7 @@ import (
 	memorydomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain"
 	routinedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
 	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
+	whatsappdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/domain"
 	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/redis"
 )
@@ -43,6 +44,9 @@ type Services struct {
 	// Routine is built by openRoutine, which needs the task runtime to hand a run's
 	// work to and the engine to schedule it with.
 	Routine routinedomain.Service
+	// WhatsApp is the linked numbers and who answers them. The API reaches it
+	// through the gateway; the gateway process serves it from the same module.
+	WhatsApp whatsappdomain.Service
 }
 
 // newServices builds every service. Optional dependencies (Redis today) are

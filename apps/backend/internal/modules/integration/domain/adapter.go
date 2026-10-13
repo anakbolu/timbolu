@@ -179,6 +179,23 @@ func (e *RateLimitedError) Error() string {
 // only needs "was this a limit" does not have to know the type.
 func (e *RateLimitedError) Unwrap() error { return ErrRateLimited }
 
+// Credentialled is an adapter that says where its credential comes from.
+//
+// It exists because not every application is authorised by a token the provider
+// issues. A mailbox hands back a refresh token; a linked WhatsApp number is
+// paired by a phone and the session lives with the process that holds it, so
+// there is nothing to store in the token columns. An adapter that implements this
+// and answers false is asking to be called without one — and the executor skips
+// opening a token it will not be given.
+//
+// It is deliberately optional: an adapter that says nothing needs a token, which
+// is the common case and the safe default.
+type Credentialled interface {
+	// NeedsToken reports whether a call to this adapter must carry a stored
+	// token.
+	NeedsToken() bool
+}
+
 // Adapter is one application's whole surface.
 //
 // Everything provider-specific lives behind this: the HTTP calls, the OAuth

@@ -123,6 +123,32 @@ Storage:
   ContentFrameAncestors:
     - "http://localhost:3000"
 
+# WhatsApp runs as its own process because a session is a socket that stays open.
+# Locally the two ends share this file: the API reaches the gateway on the compose
+# network, and the gateway listens on the same port name.
+WhatsApp:
+  # Empty means numbers can be listed and read but not linked or sent as, which is
+  # what a deployment without a gateway looks like.
+  # Compose is the local stack, so the address is the service name. An API run on
+  # the host overrides this with WA_GATEWAY_URL=http://localhost:8090.
+  GatewayURL: "http://wa-gateway:8090"
+  GatewayToken: "local_dev_wa_gateway_token"
+  Address: ":8090"
+  # Empty generates a name per process, which is right for a single instance and
+  # wrong for a fleet that restarts: a fresh name each time looks like a new
+  # claimant and delays every takeover.
+  Owner: ""
+  # Zero takes the product default of forty messages an hour.
+  HourlyLimit: 0
+  LeaseTTL: "30s"
+  LeaseRenew: "10s"
+  TypingDelay: "1200ms"
+  # Zero takes the product default of 25 MB.
+  MaxMediaBytes: 0
+  # whatsmeow's own protocol log writes a line per decrypted message, so it is a
+  # debugging switch rather than a default.
+  LogWhatsmeow: false
+
 Logging:
   Level: "debug"
   Format: "console"

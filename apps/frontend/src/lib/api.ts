@@ -1541,3 +1541,188 @@ export function previewRoutine(
     workspace: workspaceId,
   });
 }
+
+/**
+ * A WhatsApp number a workspace has linked, or is linking.
+ *
+ * `status` is the whole state machine: `unlinked` is a row somebody created and did
+ * not finish, `linking` is a code being shown, `connected` is a live session, and
+ * the last two are the two ways it can be down. `connected` and `linked` differ on
+ * purpose — a session that exists but is offline is still linked, and the screen
+ * says which of the two it is.
+ */
+export type WhatsAppNumber = {
+  id: string;
+  phone: string;
+  label: string;
+  agent_id?: string;
+  status: "unlinked" | "linking" | "connected" | "needs_relink" | "disconnected";
+  reason?: string;
+  linked: boolean;
+  connected: boolean;
+  /** Whether this workspace accepted the warning about an unsupported route. */
+  terms_accepted: boolean;
+  hourly_limit: number;
+  created_at: string;
+  last_seen_at?: string;
+};
+
+/**
+ * One attempt to link a number.
+ *
+ * `qr_matrix` is the code as rows of "1" and "0": it travels on the per-attempt
+ * socket rather than on the workspace stream, because a QR is a capability and
+ * whoever scans it links the number.
+ */
+export type WhatsAppLink = {
+  link_id: string;
+  number_id?: string;
+  state: "waiting" | "code" | "paired" | "expired" | "failed";
+  qr?: string;
+  qr_matrix?: string[];
+  pair_code?: string;
+  expires_at?: string;
+  reason?: string;
+};
+
+/** A message a customer sent. */
+export type WhatsAppMessage = {
+  id: string;
+  wa_message_id: string;
+  chat: string;
+  from?: string;
+  name?: string;
+  group: boolean;
+  ours: boolean;
+  kind: "text" | "image" | "video" | "audio" | "document" | "sticker" | "other";
+  text: string;
+  media_kind?: string;
+  media_status?: "" | "pending" | "ready" | "failed";
+  media_error?: string;
+  task_id?: string;
+  received_at: string;
+};
+
+/** A message this workspace asked a number to send. */
+export type WhatsAppOutbox = {
+  id: string;
+  to: string;
+  kind: string;
+  text: string;
+  status: "queued" | "sending" | "sent" | "failed" | "held";
+  attempts: number;
+  last_error?: string;
+  sent_at?: string;
+  created_at: string;
+};
+
+/** listWhatsAppNumbers returns the workspace's numbers. */
+export function listWhatsAppNumbers(workspaceId: string): Promise<ApiResult<WhatsAppNumber[]>> {
+  return request<WhatsAppNumber[]>("/whatsapp/numbers", { workspace: workspaceId });
+}
+
+/** prepareWhatsAppNumber records a number and who answers it, before it is linked. */
+export function prepareWhatsAppNumber(
+  workspaceId: string,
+  input: { phone: string; label?: string; agent_id: string },
+): Promise<ApiResult<WhatsAppNumber>> {
+  return request<WhatsAppNumber>("/whatsapp/numbers", { method: "POST", body: input, workspace: workspaceId });
+}
+
+/** updateWhatsAppNumber changes the label, the Bolu that answers, or the ceiling. */
+export function updateWhatsAppNumber(
+  workspaceId: string,
+  numberId: string,
+  input: { label?: string; agent_id?: string; hourly_limit?: number },
+): Promise<ApiResult<WhatsAppNumber>> {
+  return request<WhatsAppNumber>(`/whatsapp/numbers/${numberId}`, {
+    method: "PATCH",
+    body: input,
+    workspace: workspaceId,
+  });
+}
+
+/** acceptWhatsAppTerms records that the workspace accepted the warning. */
+export function acceptWhatsAppTerms(workspaceId: string, numberId: string): Promise<ApiResult<WhatsAppNumber>> {
+  return request<WhatsAppNumber>(`/whatsapp/numbers/${numberId}/terms`, { method: "POST", workspace: workspaceId });
+}
+
+/** startWhatsAppLink begins a pairing and answers the first state to show. */
+export function startWhatsAppLink(
+  workspaceId: string,
+  numberId: string,
+  input: { phone?: string } = {},
+): Promise<ApiResult<WhatsAppLink>> {
+  return request<WhatsAppLink>(`/whatsapp/numbers/${numberId}/link`, {
+    method: "POST",
+    body: input,
+    workspace: workspaceId,
+  });
+}
+
+/** whatsAppLinkState reads one attempt, which is how a screen recovers after a reload. */
+export function whatsAppLinkState(workspaceId: string, linkId: string): Promise<ApiResult<WhatsAppLink>> {
+  return request<WhatsAppLink>(`/whatsapp/links/${linkId}`, { workspace: workspaceId });
+}
+
+/** whatsAppPairCode asks for the phone-code alternative to scanning. */
+export function whatsAppPairCode(workspaceId: string, linkId: string, phone: string): Promise<ApiResult<WhatsAppLink>> {
+  return request<WhatsAppLink>(`/whatsapp/links/${linkId}/pair-code`, {
+    method: "POST",
+    body: { phone },
+    workspace: workspaceId,
+  });
+}
+
+/** cancelWhatsAppLink abandons an attempt. */
+export function cancelWhatsAppLink(workspaceId: string, linkId: string): Promise<ApiResult<null>> {
+  return request<null>(`/whatsapp/links/${linkId}`, { method: "DELETE", workspace: workspaceId });
+}
+
+/** unlinkWhatsAppNumber ends the session and keeps the message history. */
+export function unlinkWhatsAppNumber(workspaceId: string, numberId: string): Promise<ApiResult<WhatsAppNumber>> {
+  return request<WhatsAppNumber>(`/whatsapp/numbers/${numberId}`, { method: "DELETE", workspace: workspaceId });
+}
+
+/** listWhatsAppMessages returns what customers wrote, newest first. */
+export function listWhatsAppMessages(
+  workspaceId: string,
+  numberId: string,
+  filter: { chat?: string; limit?: number } = {},
+): Promise<ApiResult<WhatsAppMessage[]>> {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(filter)) {
+    if (value !== undefined && value !== "" && value !== 0) query.set(key, String(value));
+  }
+  const suffix = query.toString() ? `?${query}` : "";
+  return request<WhatsAppMessage[]>(`/whatsapp/numbers/${numberId}/messages${suffix}`, { workspace: workspaceId });
+}
+
+/** listWhatsAppOutbox returns what this workspace asked a number to send. */
+export function listWhatsAppOutbox(
+  workspaceId: string,
+  numberId: string,
+  filter: { status?: string; limit?: number } = {},
+): Promise<ApiResult<WhatsAppOutbox[]>> {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(filter)) {
+    if (value !== undefined && value !== "" && value !== 0) query.set(key, String(value));
+  }
+  const suffix = query.toString() ? `?${query}` : "";
+  return request<WhatsAppOutbox[]>(`/whatsapp/numbers/${numberId}/outbox${suffix}`, { workspace: workspaceId });
+}
+
+/**
+ * whatsAppLinkSocket opens the per-attempt socket.
+ *
+ * It is the only place the QR travels: a browser cannot set a header on a
+ * WebSocket, so the token and the workspace go in the query string, exactly as the
+ * workspace event stream does it.
+ */
+export function whatsAppLinkSocketURL(workspaceId: string, linkId: string): string {
+  const base = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080").replace(/^http/, "ws");
+  const query = new URLSearchParams({ workspace_id: workspaceId });
+  const token = getAccessToken();
+  if (token) query.set("token", token);
+  return `${base}/api/whatsapp/links/${linkId}/socket?${query}`;
+}

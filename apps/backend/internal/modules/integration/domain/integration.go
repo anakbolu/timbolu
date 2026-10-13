@@ -70,6 +70,30 @@ type Scope struct {
 	WorkspaceID uuid.UUID
 }
 
+// LinkInput is a connection this deployment holds the credential for.
+//
+// It is not an authorisation the provider performed: pairing a WhatsApp number
+// gives us a session that lives in our own gateway, and there is no token to
+// store. What the hub still owns is everything else — the connection a screen
+// shows, the grant a Bolu holds, and the approval gate an action passes through.
+type LinkInput struct {
+	App          string
+	AccountLabel string
+	Scopes       []string
+}
+
+// Validate refuses an input the schema would reject, so the failure is a message
+// rather than a constraint violation.
+func (in LinkInput) Validate() error {
+	if strings.TrimSpace(in.App) == "" {
+		return errors.New("integration: an app is required")
+	}
+	if strings.TrimSpace(in.AccountLabel) == "" {
+		return errors.New("integration: an account label is required")
+	}
+	return nil
+}
+
 // Integration is one connected account. It carries no token: the sealed values
 // stay in the repository and are opened one at a time, when they are used.
 type Integration struct {
@@ -319,6 +343,11 @@ type Service interface {
 	Get(ctx context.Context, scope Scope, id uuid.UUID) (Integration, error)
 	// Connect stores a completed authorisation, sealing the tokens.
 	Connect(ctx context.Context, scope Scope, input ConnectInput) (Integration, error)
+	// Link records a connection whose credential this deployment holds itself,
+	// with nothing in the token columns. A screen shows it, a Bolu is granted it,
+	// and an action on it still passes through the approval gate — what changes is
+	// only where the credential lives.
+	Link(ctx context.Context, scope Scope, input LinkInput) (Integration, error)
 	// Token opens the stored token of a connection. This is the only path that
 	// decrypts, and it is called where the token is about to be used.
 	Token(ctx context.Context, scope Scope, id uuid.UUID) (Token, error)

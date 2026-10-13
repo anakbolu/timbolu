@@ -38,6 +38,11 @@ func (c *Container) openIntegration(_ context.Context, cfg *config.Config, o *op
 	if err != nil {
 		return fmt.Errorf("integration: key management: %w", err)
 	}
+	// Kept on the container because the WhatsApp session is sealed with the same
+	// ring: both are credentials for one workspace, and two rings would be two
+	// things to rotate and two ways to be wrong about which key a row used.
+	c.Keys = keys
+
 	if keys == nil {
 		c.Logger.Warn("integration tokens are disabled: no KMS_MASTER_KEY configured")
 	} else if retired := keys.RetiredIDs(); len(retired) > 0 {
@@ -125,7 +130,20 @@ func (c *Container) integrationAdapters(o *options, cfg *config.Config) []integr
 		return o.adapters
 	}
 
-	adapters := make([]integrationdomain.Adapter, 0, 1)
+	adapters := make([]integrationdomain.Adapter, 0, 2)
+
+	// WhatsApp is offered when this deployment can reach a gateway. It is not
+	// conditional on a credential the way Gmail is: a linked number needs no OAuth
+	// application, so what decides is whether there is a runtime to send through.
+	//
+	// The adapter resolves the module when it is called rather than when it is
+	// installed, and that is the whole point: this runs before the WhatsApp module
+	// is assembled — a linked number is a connection the hub shows, so the hub has
+	// to exist first — and an adapter holding a nil service would offer tools
+	// nobody could run.
+	if strings.TrimSpace(cfg.WhatsApp.GatewayURL) != "" && strings.TrimSpace(cfg.WhatsApp.GatewayToken) != "" {
+		adapters = append(adapters, adWattsApp(c))
+	}
 
 	// Gmail is the integration the MVP is built around. A deployment that has not
 	// registered an OAuth application for it simply does not offer it, rather than

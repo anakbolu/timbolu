@@ -134,6 +134,24 @@ Storage:
   # document. It must be listed: the content origin is a different host.
   ContentFrameAncestors: []
 
+# WhatsApp: the gateway runs as its own process, so the address it is reached at
+# and the address it listens on are both supplied here. The token is a shared
+# secret between two of our own processes; production supplies it through the
+# environment like every other secret.
+WhatsApp:
+  GatewayURL: ""
+  GatewayToken: ""
+  Address: ":8090"
+  # A stable name is required for a fleet: a fresh one each start looks like a new
+  # claimant and delays every takeover.
+  Owner: ""
+  HourlyLimit: 0
+  LeaseTTL: "30s"
+  LeaseRenew: "10s"
+  TypingDelay: "1200ms"
+  MaxMediaBytes: 0
+  LogWhatsmeow: false
+
 Logging:
   Level: "info"
   Format: "json"

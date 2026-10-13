@@ -112,7 +112,9 @@ zone, the pause switch, and the run history), `/office` (the room, where each
 Bolu stands by its derived state), `/dashboard/integrations` (the hub: connected
 accounts, grants per Bolu, MCP servers), `/settings` (workspace profile, working
 hours, approval policies), `/settings/team`, `/settings/model`, `/chat`, and
-`/groups`. Every one of them reads the workspace through
+`/groups`. Integrasi also carries the WhatsApp card: the number is linked by scanning
+a code, the warning is read before the code exists, and what customers wrote and what
+the workspace asked to send are shown side by side. Every one of them reads the workspace through
 `components/dashboard/workspace-data.tsx`, which holds one copy of the roster,
 the conversations, the drafts and the tasks and keeps them current from the event
 stream. The Dashboard artboard is `design/keluarga-bolu-dashboard.html`; when a
@@ -120,4 +122,4 @@ port and the reference disagree, the reference wins. Rutinitas reads and writes 
 routine module's own endpoints: a cadence is registered in the workspace's timezone,
 the next times come from the same translation the engine uses, and the history shows
 the task's own one-line summary. Belum ada integrasi pembayaran; auth, workspace,
-agent, approval, LLM, memori dan rutinitas sudah tersambung ke backend.
+agent, approval, LLM, memori, rutinitas dan WhatsApp sudah tersambung ke backend.

@@ -525,6 +525,80 @@ type WebhookEvent struct {
 	LastError     string
 }
 
+type WhatsappDirectory struct {
+	NumberID    uuid.UUID
+	WorkspaceID uuid.UUID
+	Enabled     bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+type WhatsappMessage struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	NumberID    uuid.UUID
+	WaMessageID string
+	ChatJid     string
+	SenderJid   string
+	SenderName  string
+	IsGroup     bool
+	IsFromMe    bool
+	Kind        string
+	Text        string
+	MediaKey    string
+	MediaKind   string
+	MediaSize   int64
+	MediaStatus string
+	MediaError  string
+	ReceivedAt  time.Time
+	TaskID      *uuid.UUID
+	CreatedAt   time.Time
+}
+
+type WhatsappNumber struct {
+	ID            uuid.UUID
+	WorkspaceID   uuid.UUID
+	IntegrationID *uuid.UUID
+	Phone         string
+	Label         string
+	AgentID       *uuid.UUID
+	Status        string
+	StatusReason  string
+	TosAcceptedAt *time.Time
+	HourlyLimit   int32
+	ConnectedAt   *time.Time
+	LastSeenAt    *time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+type WhatsappOutbox struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	NumberID    uuid.UUID
+	ToJid       string
+	Kind        string
+	Text        string
+	MediaKey    string
+	DraftID     *uuid.UUID
+	Status      string
+	Attempts    int32
+	LastError   string
+	NotBefore   time.Time
+	ClaimedAt   *time.Time
+	WaMessageID string
+	SentAt      *time.Time
+	CreatedAt   time.Time
+}
+
+type WhatsappSession struct {
+	NumberID     uuid.UUID
+	WorkspaceID  uuid.UUID
+	SealedDevice []byte
+	Jid          string
+	UpdatedAt    time.Time
+}
+
 type Workspace struct {
 	ID             uuid.UUID
 	Name           string
