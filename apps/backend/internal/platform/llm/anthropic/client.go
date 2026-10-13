@@ -96,7 +96,9 @@ func (c *Client) Capabilities() domain.Capabilities {
 		Streaming:         true,
 		PromptCaching:     c.cfg.PromptCaching,
 		ParallelToolCalls: true,
-		MaxContextTokens:  c.cfg.ContextTokens,
+		// No embedding endpoint exists in this API at all.
+		Embeddings:       false,
+		MaxContextTokens: c.cfg.ContextTokens,
 	}
 }
 

@@ -125,6 +125,60 @@ func TestLoadRejectsAMalformedQuota(t *testing.T) {
 	require.Contains(t, err.Error(), "LLM_QUOTA_ENABLED")
 }
 
+// TestLoadReadsTheMemorySettings is the E10 configuration gate: every bound the
+// memory module reads can be set from the environment, and a mistyped one is an
+// error rather than a silent default.
+//
+// A silently-defaulted bound is the failure mode worth catching: a quota that
+// reads as "unlimited" because a typo fell back to zero is only discovered on the
+// invoice, and a quiet period that falls back to five minutes is only discovered
+// when an extraction does not happen.
+func TestLoadReadsTheMemorySettings(t *testing.T) {
+	clearOverrides(t)
+	t.Setenv("ENVIRONMENT", "local")
+	t.Setenv("MEMORY_MAIN_TOKENS", "900")
+	t.Setenv("MEMORY_RECALL_MEMORIES", "3")
+	t.Setenv("MEMORY_RECALL_KNOWLEDGE", "2")
+	t.Setenv("MEMORY_SIMILARITY", "0.75")
+	t.Setenv("MEMORY_QUIET_SECONDS", "20")
+	t.Setenv("MEMORY_EXTRACTION_MESSAGES", "12")
+	t.Setenv("MEMORY_CHUNK_RUNES", "500")
+	t.Setenv("MEMORY_CHUNK_OVERLAP_RUNES", "50")
+	t.Setenv("MEMORY_MAX_CONTENT_RUNES", "800")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	require.Equal(t, 900, cfg.Memory.MainTokens)
+	require.Equal(t, 3, cfg.Memory.RecallMemories)
+	require.Equal(t, 2, cfg.Memory.RecallKnowledge)
+	require.Equal(t, 0.75, cfg.Memory.Similarity)
+	require.Equal(t, 20, cfg.Memory.QuietSeconds)
+	require.Equal(t, 12, cfg.Memory.ExtractionMessages)
+	require.Equal(t, 500, cfg.Memory.ChunkRunes)
+	require.Equal(t, 50, cfg.Memory.ChunkOverlapRunes)
+	require.Equal(t, 800, cfg.Memory.MaxContentRunes)
+}
+
+// TestLoadRejectsAMalformedMemorySetting: a value that will not parse is an error,
+// for the same reason the quota is.
+func TestLoadRejectsAMalformedMemorySetting(t *testing.T) {
+	clearOverrides(t)
+	t.Setenv("ENVIRONMENT", "local")
+	t.Setenv("MEMORY_QUIET_SECONDS", "sebentar")
+
+	_, err := Load()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "MEMORY_QUIET_SECONDS")
+
+	t.Setenv("MEMORY_QUIET_SECONDS", "20")
+	t.Setenv("MEMORY_SIMILARITY", "mirip")
+
+	_, err = Load()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "MEMORY_SIMILARITY")
+}
+
 // TestLocalDefaultsSealProviderSecrets: the development key exists so a
 // developer can store a provider key without configuring anything.
 func TestLocalDefaultsSealProviderSecrets(t *testing.T) {

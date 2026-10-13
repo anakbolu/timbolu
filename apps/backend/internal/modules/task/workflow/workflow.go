@@ -124,6 +124,11 @@ type Context struct {
 	// service cannot disagree about what a limit is.
 	Limits domain.Limits
 	Depth  int
+	// Memory is what the Bolu remembers and what the search found for this task.
+	// It is loaded once per task rather than per round, so the retrieved block —
+	// and therefore the provider's cached prefix — is the same text on every
+	// round of one task.
+	Memory domain.Recall
 }
 
 // ModelRequest is one model call.
@@ -132,6 +137,10 @@ type ModelRequest struct {
 	WorkspaceID string
 	AgentID     string
 	System      string
+	// Retrieved is the memory and the document chunks a search found for this
+	// task, already marked as data by the module that retrieved it. It travels
+	// apart from System because only System is the prefix a provider caches.
+	Retrieved string
 	// Messages is the conversation so far, in order, including the tool calls the
 	// model made and what they answered. Without those the model would be asked
 	// the same question every round.
@@ -423,6 +432,7 @@ func (s *runState) oneRound(ctx workflow.Context, loaded Context, approvals, can
 		WorkspaceID: s.input.WorkspaceID,
 		AgentID:     s.input.AgentID,
 		System:      SystemPrompt(loaded, s.input),
+		Retrieved:   loaded.Memory.Retrieved,
 		Messages:    s.turns,
 		Tools:       loaded.Tools,
 	}

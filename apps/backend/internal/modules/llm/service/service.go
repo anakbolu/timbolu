@@ -67,11 +67,16 @@ type Deps struct {
 	Reader domain.UsageReader
 	// Counter is the live token spend; Quota is the allowance. Both are required
 	// only when QuotaEnabled is set.
-	Counter  domain.QuotaCounter
-	Quota    domain.QuotaPolicy
-	Costs    domain.CostTable
-	Default  domain.ProviderConfig
-	Settings Config
+	Counter domain.QuotaCounter
+	Quota   domain.QuotaPolicy
+	Costs   domain.CostTable
+	Default domain.ProviderConfig
+	// EmbeddingModel is the model the platform embeds with. It is a deployment
+	// fact rather than a workspace setting: the vectors have to fit the schema,
+	// and the workspace supplies only the key. Empty means a provider's own
+	// configured model is used, which only works when that model embeds.
+	EmbeddingModel string
+	Settings       Config
 }
 
 // Service is the gateway implementation. It satisfies the domain's Gateway, the

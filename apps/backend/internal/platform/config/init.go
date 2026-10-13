@@ -250,5 +250,77 @@ func loadFromEnv(cfg *Config) error {
 		cfg.Tasks.MaxToolResultBytes = size
 	}
 
+	if v := os.Getenv("MEMORY_MAIN_TOKENS"); v != "" {
+		tokens, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse MEMORY_MAIN_TOKENS: %w", err)
+		}
+		cfg.Memory.MainTokens = tokens
+	}
+
+	if v := os.Getenv("MEMORY_RECALL_MEMORIES"); v != "" {
+		count, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse MEMORY_RECALL_MEMORIES: %w", err)
+		}
+		cfg.Memory.RecallMemories = count
+	}
+
+	if v := os.Getenv("MEMORY_RECALL_KNOWLEDGE"); v != "" {
+		count, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse MEMORY_RECALL_KNOWLEDGE: %w", err)
+		}
+		cfg.Memory.RecallKnowledge = count
+	}
+
+	if v := os.Getenv("MEMORY_SIMILARITY"); v != "" {
+		similarity, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			return fmt.Errorf("parse MEMORY_SIMILARITY: %w", err)
+		}
+		cfg.Memory.Similarity = similarity
+	}
+
+	if v := os.Getenv("MEMORY_QUIET_SECONDS"); v != "" {
+		seconds, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse MEMORY_QUIET_SECONDS: %w", err)
+		}
+		cfg.Memory.QuietSeconds = seconds
+	}
+
+	if v := os.Getenv("MEMORY_EXTRACTION_MESSAGES"); v != "" {
+		count, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse MEMORY_EXTRACTION_MESSAGES: %w", err)
+		}
+		cfg.Memory.ExtractionMessages = count
+	}
+
+	if v := os.Getenv("MEMORY_CHUNK_RUNES"); v != "" {
+		runes, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse MEMORY_CHUNK_RUNES: %w", err)
+		}
+		cfg.Memory.ChunkRunes = runes
+	}
+
+	if v := os.Getenv("MEMORY_CHUNK_OVERLAP_RUNES"); v != "" {
+		runes, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse MEMORY_CHUNK_OVERLAP_RUNES: %w", err)
+		}
+		cfg.Memory.ChunkOverlapRunes = runes
+	}
+
+	if v := os.Getenv("MEMORY_MAX_CONTENT_RUNES"); v != "" {
+		runes, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse MEMORY_MAX_CONTENT_RUNES: %w", err)
+		}
+		cfg.Memory.MaxContentRunes = runes
+	}
+
 	return nil
 }

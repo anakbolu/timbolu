@@ -13,6 +13,7 @@ import (
 	healthhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/handler"
 	integrationhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/handler"
 	llmhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/handler"
+	memoryhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/handler"
 	taskhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/handler"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	workspacehandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/handler"
@@ -34,6 +35,8 @@ type Handlers struct {
 	Approval  *approvalhandler.Handler
 	// Integration serves the connected accounts and the authorization flow.
 	Integration *integrationhandler.Handler
+	// Memory serves the two layers and the knowledge base.
+	Memory *memoryhandler.Handler
 }
 
 // newHandlers builds every handler from the service set. Handlers receive the
@@ -73,6 +76,10 @@ func newHandlers(services *Services, log *zap.Logger, cfg *config.Config) *Handl
 	}
 	if services.Approval != nil {
 		handlers.Approval = approvalhandler.New(services.Approval, log)
+	}
+
+	if services.Memory != nil {
+		handlers.Memory = memoryhandler.New(services.Memory, log)
 	}
 
 	if services.Integration != nil {
@@ -180,6 +187,15 @@ func (c *Container) registerRoutes() {
 		taskhandler.Routes(tenant, c.Handlers.Task)
 	}
 
+	// Memory: what a Bolu remembers and what it knows. Every member reads it and
+	// every member edits it, because the person who notices a wrong fact is not
+	// always the owner.
+	if c.Handlers.Memory == nil {
+		registerMemoryFallback(tenant)
+	} else {
+		memoryhandler.Routes(tenant, c.Handlers.Memory)
+	}
+
 	// Approvals: every member reads the drafts and decides on them, because the
 	// person who notices a wrong invoice is not always the owner. Changing what
 	// the workspace allows unattended needs a managing role, the way the provider
@@ -277,6 +293,9 @@ func (c *Container) registerUnavailableModules(api fiber.Router) {
 	if c.Handlers.Task == nil {
 		registerTaskFallback(api)
 	}
+	if c.Handlers.Memory == nil {
+		registerMemoryFallback(api)
+	}
 	if c.Handlers.Approval == nil {
 		registerApprovalFallback(api)
 	}
@@ -341,6 +360,13 @@ func registerChatFallback(router fiber.Router) {
 	router.All("/conversations*", unavailable(message, "chat_not_configured"))
 	router.All("/attachments*", unavailable(message, "chat_not_configured"))
 	router.All("/events*", unavailable(message, "chat_not_configured"))
+}
+
+// registerMemoryFallback answers 503 for the memory routes.
+func registerMemoryFallback(router fiber.Router) {
+	message := "memory is not configured"
+	router.All("/memories*", unavailable(message, "memory_not_configured"))
+	router.All("/knowledge*", unavailable(message, "memory_not_configured"))
 }
 
 // registerModelFallback answers 503 for the model configuration routes.

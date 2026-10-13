@@ -45,6 +45,15 @@ SET status = $3, updated_at = now()
 WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL
 RETURNING *;
 
+-- name: SetMemoryExtraction :one
+-- The switch that decides whether a quiet conversation is read into memory. It
+-- lives here because the column belongs to this table; the memory module reads it
+-- and the memory screen writes it through this endpoint.
+UPDATE agents
+SET memory_extraction_enabled = $3, updated_at = now()
+WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL
+RETURNING *;
+
 -- name: MoveAgentToTeam :one
 UPDATE agents
 SET team_id = $3, updated_at = now()

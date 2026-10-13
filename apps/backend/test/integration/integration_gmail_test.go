@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -160,6 +161,14 @@ func decodeRaw(t *testing.T, raw string) string {
 	return string(decoded)
 }
 
+// gmailTestClock is the moment the approval gate is told it is.
+//
+// It is a Monday at 12:00 in the workspace's own zone, which is inside the default
+// 08:00–21:00 Asia/Jakarta window that onboarding creates. A fixed midday is what
+// makes "the approved action left" a statement about the executor rather than about
+// the hour the suite happened to run.
+var gmailTestClock = time.Date(2026, 3, 2, 12, 0, 0, 0, time.FixedZone("WIB", 7*60*60))
+
 // gmailFixture wires both modules over one onboarded workspace, so the approval
 // gate and the integration hub are the real ones and joined the way the container
 // joins them.
@@ -218,6 +227,12 @@ func newGmailFixture(t *testing.T, dsn string) *gmailFixture {
 	app, err := container.New(ctx, cfg,
 		container.WithLogger(zap.NewNop()),
 		container.WithIntegrationAdapters(adapter),
+		// The approval gate reads the clock to decide whether the workspace is open,
+		// and these tests drive approved actions through it. Pinned to the middle of
+		// the default 08:00–21:00 Jakarta window, the assertion is about the executor;
+		// unpinned, the same test passes during Jakarta's working day and fails after
+		// 21:00 — which is most of the night, and therefore most CI runs.
+		container.WithApprovalClock(func() time.Time { return gmailTestClock }),
 	)
 	require.NoError(t, err)
 	t.Cleanup(app.Close)

@@ -19,6 +19,7 @@ type Config struct {
 	Kms          KmsConfig
 	Integrations IntegrationConfig
 	Tasks        TasksConfig
+	Memory       MemoryConfig
 	Storage      StorageConfig
 	Logging      LoggingConfig
 }
@@ -80,6 +81,36 @@ type KmsConfig struct {
 	// RetiredKeys are the older keys, as `id:key` pairs separated by commas.
 	// They are read-only: a wrap always uses the active key.
 	RetiredKeys string `mapstructure:"RetiredKeys" validate:"optional"`
+}
+
+// MemoryConfig bounds what memory costs and how long a conversation must be
+// quiet before it is read into it.
+//
+// Every field is optional: a zero falls back to the product default, so a
+// deployment only states what it wants to differ from. The one that matters most
+// is MainTokens, because that text travels in every single call.
+type MemoryConfig struct {
+	// MainTokens caps the workspace memory that is sent on every call. The cap is
+	// in tokens rather than rows because that is what the bill is in.
+	MainTokens int `mapstructure:"MainTokens" validate:"optional"`
+	// RecallMemories and RecallKnowledge bound what one round retrieves.
+	RecallMemories  int `mapstructure:"RecallMemories" validate:"optional"`
+	RecallKnowledge int `mapstructure:"RecallKnowledge" validate:"optional"`
+	// Similarity is how close a candidate has to be to count as the same fact.
+	// Above it, a newer memory replaces the older one instead of joining it.
+	Similarity float64 `mapstructure:"Similarity" validate:"optional"`
+	// QuietSeconds is how long a conversation must not move before extraction
+	// reads it. Shorter reads more and costs more; longer reads a settled thread.
+	QuietSeconds int `mapstructure:"QuietSeconds" validate:"optional"`
+	// ExtractionMessages bounds how much of a thread the extractor reads.
+	ExtractionMessages int `mapstructure:"ExtractionMessages" validate:"optional"`
+	// ChunkRunes is the size of one knowledge chunk, and ChunkOverlapRunes is how
+	// much of the end of one chunk repeats at the start of the next so a sentence
+	// cut in half is still findable.
+	ChunkRunes        int `mapstructure:"ChunkRunes" validate:"optional"`
+	ChunkOverlapRunes int `mapstructure:"ChunkOverlapRunes" validate:"optional"`
+	// MaxContentRunes bounds one memory and one chunk.
+	MaxContentRunes int `mapstructure:"MaxContentRunes" validate:"optional"`
 }
 
 // TasksConfig bounds what one task may spend. Every field is optional: a zero

@@ -884,6 +884,65 @@ func (_c *Repository_SetGrant_Call) RunAndReturn(run func(context.Context, domai
 	return _c
 }
 
+// SetMemoryExtraction provides a mock function with given fields: ctx, scope, id, enabled
+func (_m *Repository) SetMemoryExtraction(ctx context.Context, scope domain.Scope, id uuid.UUID, enabled bool) (domain.Agent, error) {
+	ret := _m.Called(ctx, scope, id, enabled)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SetMemoryExtraction")
+	}
+
+	var r0 domain.Agent
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, uuid.UUID, bool) (domain.Agent, error)); ok {
+		return rf(ctx, scope, id, enabled)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, uuid.UUID, bool) domain.Agent); ok {
+		r0 = rf(ctx, scope, id, enabled)
+	} else {
+		r0 = ret.Get(0).(domain.Agent)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, domain.Scope, uuid.UUID, bool) error); ok {
+		r1 = rf(ctx, scope, id, enabled)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// Repository_SetMemoryExtraction_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetMemoryExtraction'
+type Repository_SetMemoryExtraction_Call struct {
+	*mock.Call
+}
+
+// SetMemoryExtraction is a helper method to define mock.On call
+//   - ctx context.Context
+//   - scope domain.Scope
+//   - id uuid.UUID
+//   - enabled bool
+func (_e *Repository_Expecter) SetMemoryExtraction(ctx interface{}, scope interface{}, id interface{}, enabled interface{}) *Repository_SetMemoryExtraction_Call {
+	return &Repository_SetMemoryExtraction_Call{Call: _e.mock.On("SetMemoryExtraction", ctx, scope, id, enabled)}
+}
+
+func (_c *Repository_SetMemoryExtraction_Call) Run(run func(ctx context.Context, scope domain.Scope, id uuid.UUID, enabled bool)) *Repository_SetMemoryExtraction_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(domain.Scope), args[2].(uuid.UUID), args[3].(bool))
+	})
+	return _c
+}
+
+func (_c *Repository_SetMemoryExtraction_Call) Return(_a0 domain.Agent, _a1 error) *Repository_SetMemoryExtraction_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *Repository_SetMemoryExtraction_Call) RunAndReturn(run func(context.Context, domain.Scope, uuid.UUID, bool) (domain.Agent, error)) *Repository_SetMemoryExtraction_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // SetStatus provides a mock function with given fields: ctx, scope, id, status
 func (_m *Repository) SetStatus(ctx context.Context, scope domain.Scope, id uuid.UUID, status string) (domain.Agent, error) {
 	ret := _m.Called(ctx, scope, id, status)

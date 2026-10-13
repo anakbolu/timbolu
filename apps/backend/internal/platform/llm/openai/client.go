@@ -43,6 +43,10 @@ type Config struct {
 	SupportsTools     bool
 	SupportsVision    bool
 	ParallelToolCalls bool
+	// SupportsEmbeddings says this server implements the embeddings route of
+	// this wire format. The format defines one; a given gateway (OpenRouter, for
+	// instance) may still answer 404, which then falls to the next provider.
+	SupportsEmbeddings bool
 	// Organization and extra headers some gateways need.
 	Headers map[string]string
 	// HTTPClient lets a test point the adapter at a stub server.
@@ -95,6 +99,7 @@ func (c *Client) Capabilities() domain.Capabilities {
 		Streaming:         true,
 		PromptCaching:     false,
 		ParallelToolCalls: c.cfg.ParallelToolCalls,
+		Embeddings:        c.cfg.SupportsEmbeddings,
 		MaxContextTokens:  c.cfg.ContextTokens,
 	}
 }
@@ -275,7 +280,14 @@ func mergeToolCall(pending []*domain.ToolCall, fragment streamToolCall) []*domai
 
 // do performs the HTTP call and turns a failure into the shared error set.
 func (c *Client) do(ctx context.Context, body []byte, stream bool) (*http.Response, error) {
-	url := c.cfg.BaseURL + "/v1/chat/completions"
+	return c.post(ctx, "/v1/chat/completions", body, stream)
+}
+
+// post sends one body to one route of the provider's API. The path is a
+// parameter because this wire format serves completions and embeddings from the
+// same host with the same headers.
+func (c *Client) post(ctx context.Context, path string, body []byte, stream bool) (*http.Response, error) {
+	url := c.cfg.BaseURL + path
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("%w: build request: %w", domain.ErrInvalidRequest, err)

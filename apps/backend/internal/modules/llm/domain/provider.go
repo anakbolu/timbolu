@@ -109,10 +109,6 @@ type Message struct {
 	Images      []Image
 	ToolCalls   []ToolCall
 	ToolResults []ToolResult
-	// CachePrefix marks the last message of a stable prefix (persona,
-	// instructions, main memory) that the provider may cache. Adapters that
-	// support it emit a cache breakpoint; the others ignore it.
-	CachePrefix bool
 }
 
 // Tool is a callable capability offered to the model. Label comes from the tool
@@ -136,8 +132,19 @@ const (
 
 // ChatRequest is one completion request.
 type ChatRequest struct {
-	Model         string
-	System        string
+	Model  string
+	System string
+	// Retrieved is what a search found for this request: a Bolu's private
+	// memory, and the chunks of the workspace's documents that are close to the
+	// question. It is data rather than instruction, and whoever produces it
+	// marks it as such.
+	//
+	// It travels apart from System because the two are cached differently: the
+	// system text is the stable prefix — persona, instructions, main memory —
+	// that a provider with prompt caching keeps between calls, while this block
+	// changes with the question. Joining them would spend a cache write on every
+	// task and lose the hits the stable half earns.
+	Retrieved     string
 	Messages      []Message
 	Tools         []Tool
 	ToolChoice    ToolChoice
@@ -235,7 +242,12 @@ type Capabilities struct {
 	Streaming         bool
 	PromptCaching     bool
 	ParallelToolCalls bool
-	MaxContextTokens  int
+	// Embeddings says the provider has an embedding endpoint at all. A provider
+	// without one is skipped by the embedding chain rather than asked and
+	// refused, which is the difference between "try the next provider" and
+	// "nothing here can do it".
+	Embeddings       bool
+	MaxContextTokens int
 }
 
 // Supports reports why a request cannot be served, or nil when it can.
@@ -273,6 +285,40 @@ type Provider interface {
 	// channel is closed when the stream ends; the last event is EventDone or
 	// EventError.
 	Stream(ctx context.Context, req ChatRequest) (<-chan StreamEvent, error)
+	// Embed turns text into vectors.
+	//
+	// An adapter whose API has no embedding endpoint reports ErrUnsupported and
+	// advertises Embeddings=false, so the chain can move on instead of stopping
+	// on a capability the provider never had.
+	Embed(ctx context.Context, req EmbedRequest) (EmbedResponse, error)
+}
+
+// EmbeddingDimensions is the width of the vectors this product stores. The
+// bootstrap migration pins `vector(1536)` and the memory and knowledge tables
+// are written with it, so a model that answers with another width is refused
+// before a row exists rather than failing on the insert.
+const EmbeddingDimensions = 1536
+
+// EmbedRequest is one embedding call.
+type EmbedRequest struct {
+	// Model overrides the embedding model the deployment configured. Empty means
+	// the deployment's model, and failing that the provider's own.
+	Model string
+	// Inputs is the text to embed, in order. The answer has one vector per
+	// input, in the same order.
+	Inputs   []string
+	Metadata RequestMetadata
+}
+
+// EmbedResponse is what an embedding call answered.
+type EmbedResponse struct {
+	// Vectors is one vector per input, in the order the inputs were sent.
+	Vectors [][]float32
+	// Model and Provider record who actually answered, which is what the usage
+	// ledger stores when a fallback was used.
+	Model    string
+	Provider string
+	Usage    Usage
 }
 
 // UsageEntry is one row of the usage ledger.

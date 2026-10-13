@@ -396,7 +396,7 @@ func TestTheGateIsAbsentWithoutTheApprovalService(t *testing.T) {
 		Repositories: &Repositories{},
 		Services:     &Services{},
 	}
-	require.NoError(t, withoutDatabase.openApproval(context.Background(), &config.Config{}))
+	require.NoError(t, withoutDatabase.openApproval(context.Background(), &config.Config{}, &options{}))
 	require.Nil(t, withoutDatabase.Services.Approval)
 }
 

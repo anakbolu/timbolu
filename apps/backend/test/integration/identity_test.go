@@ -469,8 +469,15 @@ func TestInvitationFlow(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, status, "a member must not be able to change settings")
 
 	// The owner can, and the change is visible to the member.
+	//
+	// The endpoint replaces the profile rather than patching fields, which is why
+	// the whole profile travels in the body: the window outbound actions leave in
+	// is what the approval gate reads, and a request that omitted it would write a
+	// workspace whose window starts at 00:00.
 	status, _, body = api.call(t, fiber.MethodPatch, "/api/workspaces/current",
-		`{"name":"Toko Sinar Jaya","business_field":"Retail","timezone":"Asia/Makassar"}`, withWorkspace(ownerToken, workspaceID))
+		`{"name":"Toko Sinar Jaya","business_field":"Retail","timezone":"Asia/Makassar",`+
+			`"language":"id","work_hours_start":"08:00","work_hours_end":"21:00","work_days":[1,2,3,4,5,6]}`,
+		withWorkspace(ownerToken, workspaceID))
 	require.Equal(t, http.StatusOK, status, body)
 
 	status, payload, _ = api.call(t, fiber.MethodGet, "/api/workspaces/current", "", withWorkspace(memberToken, workspaceID))

@@ -166,6 +166,30 @@ func (r *Repository) Update(ctx context.Context, scope domain.Scope, id uuid.UUI
 	return r.Get(ctx, scope, id)
 }
 
+// SetMemoryExtraction flips the switch that decides whether a quiet conversation
+// is read into memory.
+func (r *Repository) SetMemoryExtraction(ctx context.Context, scope domain.Scope, id uuid.UUID, enabled bool) (domain.Agent, error) {
+	err := r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
+		_, err := queries.SetMemoryExtraction(ctx, sqlcgen.SetMemoryExtractionParams{
+			ID:                      id,
+			WorkspaceID:             scope.WorkspaceID,
+			MemoryExtractionEnabled: enabled,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return domain.ErrAgentNotFound
+			}
+			return fmt.Errorf("agent: set memory extraction: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return domain.Agent{}, err
+	}
+
+	return r.Get(ctx, scope, id)
+}
+
 // SetStatus flips the rest switch.
 func (r *Repository) SetStatus(ctx context.Context, scope domain.Scope, id uuid.UUID, status string) (domain.Agent, error) {
 	err := r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
@@ -713,23 +737,26 @@ func toDatabaseScope(scope domain.Scope) database.Scope {
 // agentRow is the shape both joined queries return. sqlc generates a separate
 // struct per query, so the two are flattened into this one before conversion.
 type agentRow struct {
-	ID           uuid.UUID
-	WorkspaceID  uuid.UUID
-	TeamID       uuid.UUID
-	Name         string
-	Role         string
-	Persona      string
-	Tone         string
-	Shape        string
-	Color        string
-	Status       string
-	TemplateKey  string
-	DefaultModel []byte
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	Tools        []byte
-	TeamName     string
-	TeamKind     string
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	TeamID      uuid.UUID
+	Name        string
+	Role        string
+	Persona     string
+	Tone        string
+	Shape       string
+	Color       string
+	Status      string
+	// MemoryExtraction is the switch that decides whether a quiet conversation is
+	// read into the Bolu's memory.
+	MemoryExtraction bool
+	TemplateKey      string
+	DefaultModel     []byte
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	Tools            []byte
+	TeamName         string
+	TeamKind         string
 }
 
 func toAgentFromList(row sqlcgen.ListAgentsRow) (domain.Agent, error) {
@@ -737,8 +764,9 @@ func toAgentFromList(row sqlcgen.ListAgentsRow) (domain.Agent, error) {
 		ID: row.ID, WorkspaceID: row.WorkspaceID, TeamID: row.TeamID,
 		Name: row.Name, Role: row.Role, Persona: row.Persona, Tone: row.Tone,
 		Shape: row.Shape, Color: row.Color, Status: row.Status,
-		TemplateKey: row.TemplateKey, DefaultModel: row.DefaultModel,
-		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, Tools: row.Tools,
+		MemoryExtraction: row.MemoryExtractionEnabled, TemplateKey: row.TemplateKey,
+		DefaultModel: row.DefaultModel,
+		CreatedAt:    row.CreatedAt, UpdatedAt: row.UpdatedAt, Tools: row.Tools,
 		TeamName: row.TeamName, TeamKind: row.TeamKind,
 	})
 }
@@ -748,8 +776,9 @@ func toAgentFromGet(row sqlcgen.GetAgentRow) (domain.Agent, error) {
 		ID: row.ID, WorkspaceID: row.WorkspaceID, TeamID: row.TeamID,
 		Name: row.Name, Role: row.Role, Persona: row.Persona, Tone: row.Tone,
 		Shape: row.Shape, Color: row.Color, Status: row.Status,
-		TemplateKey: row.TemplateKey, DefaultModel: row.DefaultModel,
-		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, Tools: row.Tools,
+		MemoryExtraction: row.MemoryExtractionEnabled, TemplateKey: row.TemplateKey,
+		DefaultModel: row.DefaultModel,
+		CreatedAt:    row.CreatedAt, UpdatedAt: row.UpdatedAt, Tools: row.Tools,
 		TeamName: row.TeamName, TeamKind: row.TeamKind,
 	})
 }
@@ -765,23 +794,24 @@ func toAgent(row agentRow) (domain.Agent, error) {
 	}
 
 	return domain.Agent{
-		ID:           row.ID,
-		WorkspaceID:  row.WorkspaceID,
-		TeamID:       row.TeamID,
-		TeamName:     row.TeamName,
-		TeamKind:     row.TeamKind,
-		Name:         row.Name,
-		Role:         row.Role,
-		Persona:      row.Persona,
-		Tone:         row.Tone,
-		Shape:        row.Shape,
-		Color:        row.Color,
-		Status:       row.Status,
-		TemplateKey:  row.TemplateKey,
-		Tools:        tools,
-		DefaultModel: model,
-		CreatedAt:    row.CreatedAt,
-		UpdatedAt:    row.UpdatedAt,
+		ID:               row.ID,
+		WorkspaceID:      row.WorkspaceID,
+		TeamID:           row.TeamID,
+		TeamName:         row.TeamName,
+		TeamKind:         row.TeamKind,
+		Name:             row.Name,
+		Role:             row.Role,
+		Persona:          row.Persona,
+		Tone:             row.Tone,
+		Shape:            row.Shape,
+		Color:            row.Color,
+		Status:           row.Status,
+		MemoryExtraction: row.MemoryExtraction,
+		TemplateKey:      row.TemplateKey,
+		Tools:            tools,
+		DefaultModel:     model,
+		CreatedAt:        row.CreatedAt,
+		UpdatedAt:        row.UpdatedAt,
 	}, nil
 }
 

@@ -94,6 +94,25 @@ Tasks:
   MaxHandoffDepth: 2
   MaxToolResultBytes: 16384
 
+Memory:
+  # The workspace memory travels in every call, so the cap is in tokens rather
+  # than rows. Pinned memories come first.
+  MainTokens: 1500
+  # How many chunks one round retrieves, and how close a match has to be to
+  # replace an existing memory rather than join it.
+  RecallMemories: 6
+  RecallKnowledge: 4
+  Similarity: 0.90
+  # How long a conversation must not move before it is read. Shorter reads more
+  # and costs more; longer reads a settled thread.
+  QuietSeconds: 300
+  ExtractionMessages: 30
+  # One knowledge chunk, and how much of its end repeats at the start of the next
+  # so a sentence cut in half is still findable.
+  ChunkRunes: 1000
+  ChunkOverlapRunes: 150
+  MaxContentRunes: 2000
+
 Storage:
   # "s3" for anything deployed: MinIO, Cloudflare R2, Backblaze B2, or AWS S3.
   # The credentials come from S3_ACCESS_KEY and S3_SECRET_KEY.

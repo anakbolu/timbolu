@@ -93,6 +93,11 @@ Plan:
 
 # What one task may spend. A zero falls back to the product default, so the
 # section states only what differs from it.
+Memory:
+  # A short quiet period locally, so an extraction can be watched without waiting
+  # five minutes between messages.
+  QuietSeconds: 20
+
 Tasks:
   MaxSteps: 12
   MaxTokens: 120000

@@ -26,22 +26,23 @@ type ActivityEvent struct {
 }
 
 type Agent struct {
-	ID           uuid.UUID
-	WorkspaceID  uuid.UUID
-	TeamID       uuid.UUID
-	Name         string
-	Role         string
-	Persona      string
-	Tone         string
-	Shape        string
-	Color        string
-	Status       string
-	TemplateKey  string
-	DefaultModel []byte
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	DeletedAt    *time.Time
-	Tools        []byte
+	ID                      uuid.UUID
+	WorkspaceID             uuid.UUID
+	TeamID                  uuid.UUID
+	Name                    string
+	Role                    string
+	Persona                 string
+	Tone                    string
+	Shape                   string
+	Color                   string
+	Status                  string
+	TemplateKey             string
+	DefaultModel            []byte
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
+	DeletedAt               *time.Time
+	Tools                   []byte
+	MemoryExtractionEnabled bool
 }
 
 type AgentGrant struct {
@@ -338,6 +339,17 @@ type QuotaPeriod struct {
 	Warning100SentAt *time.Time
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+}
+
+type RetrievalUsage struct {
+	ID              int64
+	WorkspaceID     uuid.UUID
+	TaskID          *uuid.UUID
+	AgentID         *uuid.UUID
+	MemoryID        *uuid.UUID
+	KnowledgeItemID *uuid.UUID
+	Similarity      float32
+	CreatedAt       time.Time
 }
 
 type Routine struct {

@@ -42,6 +42,7 @@ type fakeProvider struct {
 	caps     domain.Capabilities
 	chatFn   func(domain.ChatRequest) (domain.ChatResponse, error)
 	streamFn func(domain.ChatRequest) (<-chan domain.StreamEvent, error)
+	embedFn  func(domain.EmbedRequest) (domain.EmbedResponse, error)
 }
 
 func (p *fakeProvider) Name() string { return p.name }
@@ -62,6 +63,15 @@ func (p *fakeProvider) Stream(_ context.Context, req domain.ChatRequest) (<-chan
 		return nil, errors.New("fake provider: no stream scripted")
 	}
 	return p.streamFn(req)
+}
+
+func (p *fakeProvider) Embed(_ context.Context, req domain.EmbedRequest) (domain.EmbedResponse, error) {
+	if p.embedFn == nil {
+		// A provider without the capability answers the way a real one does, so a
+		// test that forgets to script it sees the honest refusal.
+		return domain.EmbedResponse{}, fmt.Errorf("%w: fake provider has no embedding route", domain.ErrUnsupported)
+	}
+	return p.embedFn(req)
 }
 
 // fakeFactory behaves like the platform registry: it accepts the two known

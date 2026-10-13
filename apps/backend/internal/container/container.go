@@ -12,12 +12,15 @@ package container
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"go.uber.org/zap"
 
 	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
 	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
+	memoryactivity "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/activity"
+	memorydomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain"
 	taskactivity "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/activity"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/authn"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
@@ -53,6 +56,13 @@ type Container struct {
 	// process so the API and the worker share one assembly point, and only the
 	// worker runs it.
 	Tasks *taskactivity.Activities
+	// Memory is the memory service, kept on the container because the chat
+	// service and the extraction schedule both reach it before the handler set is
+	// built.
+	Memory memorydomain.Service
+	// MemoryTasks is the extraction activity set, registered by the agent worker
+	// alongside the task one.
+	MemoryTasks *memoryactivity.Activities
 
 	Repositories *Repositories
 	Services     *Services
@@ -84,7 +94,11 @@ type options struct {
 	// reaching the provider.
 	adapters    []integrationdomain.Adapter
 	adaptersSet bool
-	buildApp    bool
+	// clock pins the approval gate's sense of the time. A test supplies one because
+	// the working-hours window is read from it: without pinning, whether an
+	// approved action leaves or is held depends on when the suite runs.
+	clock    func() time.Time
+	buildApp bool
 }
 
 // Option customises container assembly.
@@ -157,6 +171,16 @@ func WithIntegrationAdapters(adapters ...integrationdomain.Adapter) Option {
 		o.adapters = adapters
 		o.adaptersSet = true
 	}
+}
+
+// WithApprovalClock pins the time the approval gate reads.
+//
+// The working-hours rule asks the clock whether the workspace is open, so a test
+// that drives an approved action through the gate would otherwise pass during
+// Jakarta's working day and fail outside it. Pinning it in the test is what makes
+// the assertion about the executor rather than about the hour the suite ran.
+func WithApprovalClock(clock func() time.Time) Option {
+	return func(o *options) { o.clock = clock }
 }
 
 // WithoutHTTP skips building the Fiber app. The worker binaries use it so they
@@ -236,7 +260,16 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Container, e
 	// The approval gate comes before the task runtime: the runtime asks it whether
 	// an action may leave, and a task that could not ask would have nothing
 	// stopping it from sending.
-	if err := c.openApproval(ctx, cfg); err != nil {
+	if err := c.openApproval(ctx, cfg, o); err != nil {
+		c.Close()
+		return nil, err
+	}
+
+	// Memory comes after the gateway, because a write is embedded before it is
+	// stored, and after the approval repository, because the trail it writes to
+	// lives there. It comes before the task runtime and the conversations, which
+	// both ask it for something.
+	if err := c.openMemory(ctx, cfg); err != nil {
 		c.Close()
 		return nil, err
 	}

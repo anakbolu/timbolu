@@ -137,8 +137,21 @@ type Scope struct {
 // IsZero reports whether the scope carries no identity.
 func (s Scope) IsZero() bool { return s.WorkspaceID == uuid.Nil }
 
+// Embedder is the embedding half of the gateway.
+//
+// It is declared on its own so a caller that only embeds — the memory and
+// knowledge pipeline — does not depend on chat, provider configuration, and the
+// usage report to send a string and get a vector back.
+type Embedder interface {
+	// Embed turns text into vectors, walking the fallback chain the same way a
+	// completion does.
+	Embed(ctx context.Context, scope Scope, req EmbedRequest) (EmbedResponse, error)
+}
+
 // Gateway is what the agent worker calls.
 type Gateway interface {
+	// Embedder is part of the gateway: the same chain, the same ledger.
+	Embedder
 	// Chat runs one completion, falling back when a provider fails in a way that
 	// another provider might survive.
 	Chat(ctx context.Context, scope Scope, req ChatRequest) (ChatResponse, error)

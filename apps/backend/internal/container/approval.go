@@ -26,7 +26,7 @@ import (
 // It is assembled before the task runtime because the task runtime asks it
 // whether an action may leave, which is the product's central guardrail: without
 // this, a Bolu that decides to send an email has nothing stopping it.
-func (c *Container) openApproval(_ context.Context, _ *config.Config) error {
+func (c *Container) openApproval(_ context.Context, _ *config.Config, o *options) error {
 	if c.Repositories == nil || c.Repositories.Approval == nil {
 		c.Logger.Warn("the approval gate is disabled: no database connection")
 		return nil
@@ -39,6 +39,10 @@ func (c *Container) openApproval(_ context.Context, _ *config.Config) error {
 		Events: c.approvalEventSink(),
 		Hours:  workspaceHours{workspace: c.Repositories.Workspace},
 		Logger: c.Logger,
+		// Only a test overrides this. The working-hours rule reads the clock, so a
+		// test that drives an approval through has to pin it, or the same test passes
+		// during Jakarta's working day and fails after 21:00.
+		Clock: o.clock,
 	})
 
 	// The approval repository is handed to the workspace repository as its second

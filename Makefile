@@ -74,7 +74,7 @@ test: ## Run the test suite (integration tests need Docker)
 test-integration: ## Run only the testcontainers integration tests
 	cd $(BACKEND) && CGO_ENABLED=0 go test ./test/integration/... -count=1
 
-smoke-task: ## Run the task runtime end to end against the compose stack (needs `make up`)
+smoke-task: ## Run the task runtime, the bound, and the memory pipeline end to end against the compose stack (needs `make up`)
 	cd $(BACKEND) && bash scripts/smoke-task.sh
 
 smoke-approval: ## Run the approval gate end to end against the compose stack (needs `make up`)

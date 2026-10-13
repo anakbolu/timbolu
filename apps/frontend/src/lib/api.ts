@@ -392,6 +392,8 @@ export type Agent = {
   template_key?: string;
   tools: string[];
   default_model: Record<string, unknown>;
+  /** Whether a quiet conversation is read into this Bolu's memory. */
+  memory_extraction_enabled: boolean;
   created_at: string;
 };
 
@@ -1233,6 +1235,136 @@ export function refreshIntegration(workspaceId: string, id: string): Promise<Api
 /** removeIntegration deletes a connection. */
 export function removeIntegration(workspaceId: string, id: string): Promise<ApiResult<null>> {
   return request<null>(`/integrations/${id}`, { method: "DELETE", workspace: workspaceId });
+}
+
+/** Memory is one thing a Bolu remembers. */
+export type Memory = {
+  id: string;
+  workspace_id: string;
+  /** Empty for the workspace-wide layer, set for one Bolu's own. */
+  agent_id?: string;
+  content: string;
+  kind: string;
+  source_message_id?: string;
+  pinned: boolean;
+  created_by: string;
+  /** Names the memory that replaced this one; set on a version kept as history. */
+  superseded_by?: string;
+  similarity?: number;
+  created_at: string;
+  updated_at: string;
+};
+
+/** KnowledgeItem is one chunk of a document the workspace owns. */
+export type KnowledgeItem = {
+  id: string;
+  workspace_id: string;
+  agent_id?: string;
+  source: string;
+  chunk_index: number;
+  content: string;
+  /** pending, ready, or failed. Only a ready chunk is ever searchable. */
+  status: string;
+  similarity?: number;
+  created_at: string;
+};
+
+/** MemoryFilter narrows the memory screen's read. */
+export type MemoryFilter = {
+  /** A Bolu id, or "main" for the workspace-wide layer. */
+  layer?: string;
+  query?: string;
+  /** Keeps the replaced versions in the answer. */
+  history?: boolean;
+  limit?: number;
+};
+
+/** listMemories returns what the workspace and its Bolu remember. */
+export function listMemories(workspaceId: string, filter: MemoryFilter = {}): Promise<ApiResult<Memory[]>> {
+  const query = new URLSearchParams();
+  if (filter.layer) {
+    query.set("agent_id", filter.layer);
+  }
+  if (filter.query) {
+    query.set("q", filter.query);
+  }
+  if (filter.history) {
+    query.set("history", "true");
+  }
+  if (filter.limit) {
+    query.set("limit", String(filter.limit));
+  }
+
+  const suffix = query.toString();
+  return request<Memory[]>(`/memories${suffix ? `?${suffix}` : ""}`, { workspace: workspaceId });
+}
+
+/** addMemory stores one memory a person wrote. */
+export function addMemory(
+  workspaceId: string,
+  input: { content: string; kind: string; agent_id?: string; pinned?: boolean },
+): Promise<ApiResult<Memory>> {
+  return request<Memory>("/memories", { method: "POST", body: input, workspace: workspaceId });
+}
+
+/** updateMemory changes a memory: its text, its kind, its pin, or its layer. */
+export function updateMemory(
+  workspaceId: string,
+  id: string,
+  input: { content?: string; kind?: string; pinned?: boolean; agent_id?: string; move_to_main?: boolean },
+): Promise<ApiResult<Memory>> {
+  return request<Memory>(`/memories/${id}`, { method: "PATCH", body: input, workspace: workspaceId });
+}
+
+/** deleteMemory removes a memory and its embedding, permanently. */
+export function deleteMemory(workspaceId: string, id: string): Promise<ApiResult<null>> {
+  return request<null>(`/memories/${id}`, { method: "DELETE", workspace: workspaceId });
+}
+
+/** listKnowledge returns the workspace's document chunks, failed ones included. */
+export function listKnowledge(
+  workspaceId: string,
+  filter: { status?: string; query?: string; agent_id?: string } = {},
+): Promise<ApiResult<KnowledgeItem[]>> {
+  const query = new URLSearchParams();
+  if (filter.status) {
+    query.set("status", filter.status);
+  }
+  if (filter.query) {
+    query.set("q", filter.query);
+  }
+  if (filter.agent_id) {
+    query.set("agent_id", filter.agent_id);
+  }
+
+  const suffix = query.toString();
+  return request<KnowledgeItem[]>(`/knowledge${suffix ? `?${suffix}` : ""}`, { workspace: workspaceId });
+}
+
+/** ingestDocument chunks one document, embeds it, and stores the chunks. */
+export function ingestDocument(
+  workspaceId: string,
+  input: { source: string; text: string; agent_id?: string },
+): Promise<ApiResult<KnowledgeItem[]>> {
+  return request<KnowledgeItem[]>("/knowledge", { method: "POST", body: input, workspace: workspaceId });
+}
+
+/** deleteKnowledge removes one chunk and its embedding. */
+export function deleteKnowledge(workspaceId: string, id: string): Promise<ApiResult<null>> {
+  return request<null>(`/knowledge/${id}`, { method: "DELETE", workspace: workspaceId });
+}
+
+/** setMemoryExtraction turns automatic extraction on or off for one Bolu. */
+export function setMemoryExtraction(
+  workspaceId: string,
+  agentId: string,
+  enabled: boolean,
+): Promise<ApiResult<Agent>> {
+  return request<Agent>(`/agents/${agentId}/memory-extraction`, {
+    method: "PATCH",
+    body: { enabled },
+    workspace: workspaceId,
+  });
 }
 
 /** listHubGrants returns the connections one Bolu may use. */

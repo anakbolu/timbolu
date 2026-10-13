@@ -106,6 +106,18 @@ What they prove:
 - `TestWorkerRunsAgainstTemporal` — the container connects to Temporal, the
   worker registers a workflow, the workflow executes, and the worker stops
   cleanly.
+- `TestMemoryVectorSearchNeverCrossesAWorkspace`, `TestPrivateMemoryDoesNotLeakBetweenBolu`
+  — the memory gates that can only be proven against a database: two workspaces
+  with the same fact and the same vector, one query, and only the caller's row comes
+  back; and a private memory is invisible to another Bolu in the *same* workspace.
+- `TestDeletingAMemoryRemovesItFromTheSearch`, `TestSupersededMemoryStaysAsHistory`,
+  `TestChunksSettleToReadyOrFailed` — the delete is a real delete (the row and the
+  retrieval record that named it go, and the search stops finding it), a superseded
+  memory leaves exactly one active version, and a chunk whose embedding failed is
+  never searchable while still being visible to a person.
+- `TestThePipelineEndToEnd` — the module's own use cases against Postgres: a
+  request is stored and confirmed, the next round is given it, and forgetting it
+  removes it from the search.
 - `TestTaskSurvivesAWorkerRestart` — the gate the durable runtime exists for: a
   worker is killed while a model call is in flight, a second worker takes over,
   and the task finishes with each completed round recorded exactly once. The
@@ -124,13 +136,28 @@ stack up — but it is what proves the wiring that unit tests script away:
 1. a chat message becomes a durable task, the task runs out of process, records
    its rounds, and writes the answer into the thread it was asked in;
 2. with `TASK_MAX_STEPS=1`, a task that keeps asking for a tool stops as failed
-   with a `stopped_reason` a person can read, rather than looping.
+   with a `stopped_reason` a person can read, rather than looping;
+3. the memory pipeline, which is the part that only exists in the wiring: a
+   message asks to remember something and is confirmed by the module that stored
+   the row; a later task answers with what was remembered, which proves the memory
+   reached the provider rather than only the database (the stub only says so when
+   it finds the text in its own prompt); a quiet conversation is read by the
+   extraction workflow and the small talk in it is dropped; a fact said again with
+   a new value leaves one active memory and the older version as history; a secret
+   is refused; a document is chunked, embedded, and stored ready; and a delete
+   takes the row out of the table for good.
 
 `make smoke-approval` runs the same stack against the approval gate: a
 `write_external` tool call becomes a draft and the task parks; a revision sends the
 task back to its agent with the note; an approval reaches the send boundary and
 stops there honestly, because no integration executor exists yet (EPIC 8); and an
 approval outside working hours is held with a reason the user can read.
+
+Phase 3 needs the extraction workflow to be registered under the name the schedule
+starts it with, which is a contract no compiler checks. The workflow's own test
+(`TestTheWorkflowNameIsTheFunctionName`) pins it, because the failure it prevents
+is a silent stall: the run is scheduled, no worker recognises the type, and the
+retries look like a slow conversation.
 
 The worker-restart guarantee is not covered here: it is
 `TestTaskSurvivesAWorkerRestart` in `test/integration`, which kills a real worker

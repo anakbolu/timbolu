@@ -117,19 +117,28 @@ func (c *Client) encodeRequest(req domain.ChatRequest, stream bool) ([]byte, err
 		"stream": stream,
 	}
 
-	// This API takes the system prompt as its own field, not as a message.
-	if req.System != "" {
-		if c.cfg.PromptCaching {
-			// A cache breakpoint on the stable prefix measurably cuts the cost
-			// of every later turn.
-			payload["system"] = []map[string]any{{
-				"type":          "text",
-				"text":          req.System,
-				"cache_control": map[string]any{"type": "ephemeral"},
-			}}
-		} else {
-			payload["system"] = req.System
+	// This API takes the system prompt as its own field, not as a message. A
+	// retrieval block travels as a second block of that field, so the cache
+	// breakpoint lands after the stable prefix rather than after the retrieved
+	// text: the persona, the instructions, and the main memory are what is worth
+	// caching, and the search result is not.
+	if req.System != "" || req.Retrieved != "" {
+		blocks := make([]map[string]any, 0, 2)
+
+		if req.System != "" {
+			block := map[string]any{"type": "text", "text": req.System}
+			if c.cfg.PromptCaching {
+				// A cache breakpoint on the stable prefix measurably cuts the cost
+				// of every later turn.
+				block["cache_control"] = map[string]any{"type": "ephemeral"}
+			}
+			blocks = append(blocks, block)
 		}
+		if req.Retrieved != "" {
+			blocks = append(blocks, map[string]any{"type": "text", "text": req.Retrieved})
+		}
+
+		payload["system"] = blocks
 	}
 
 	if req.Temperature != nil {

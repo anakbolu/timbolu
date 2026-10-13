@@ -53,6 +53,14 @@ func (p *stubProvider) Chat(context.Context, llmdomain.ChatRequest) (llmdomain.C
 	}, nil
 }
 
+// Embed answers a fixed vector, so a test can store a memory and then find it.
+func (p *stubProvider) Embed(context.Context, llmdomain.EmbedRequest) (llmdomain.EmbedResponse, error) {
+	if p.err != nil {
+		return llmdomain.EmbedResponse{}, p.err
+	}
+	return llmdomain.EmbedResponse{Model: p.model, Usage: p.usage}, nil
+}
+
 func (p *stubProvider) Stream(context.Context, llmdomain.ChatRequest) (<-chan llmdomain.StreamEvent, error) {
 	events := make(chan llmdomain.StreamEvent, 2)
 	events <- llmdomain.StreamEvent{Type: llmdomain.EventUsage, Usage: &p.usage}

@@ -56,7 +56,12 @@ func (c *Container) openChat(_ context.Context, cfg *config.Config) error {
 		Events:        c.Repositories.Chat,
 		Publisher:     publisher,
 		Storage:       objectStore,
-		Logger:        c.Logger,
+		// The memory module answers a request to remember something and tells the
+		// extractor that this thread is still moving. It is wired before the
+		// responder check below because it does not need the gateway to exist:
+		// only a write does, and that is the memory module's own problem.
+		Memory: c.memoryForChat(),
+		Logger: c.Logger,
 	}
 
 	if gateway != nil {

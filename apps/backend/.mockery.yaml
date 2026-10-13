@@ -48,6 +48,14 @@ packages:
       Provider:
       SecretBox:
       Resolver:
+  github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain:
+    interfaces:
+      Service:
+      Repository:
+      Conversation:
+      Auditor:
+      Scheduler:
+      Completer:
   github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain:
     interfaces:
       Service:

@@ -359,6 +359,113 @@ func TestLoadTaskContextOffersTheHandoffTool(t *testing.T) {
 	require.Equal(t, domain.DefaultLimits.MaxSteps, loaded.Limits.MaxSteps)
 }
 
+// stubRecall answers the memory port. It records the query so a test can assert
+// what the search was run against, which is the task's own instruction.
+type stubRecall struct {
+	recall domain.Recall
+	err    error
+	asked  []domain.RecallRequest
+}
+
+func (s *stubRecall) Recall(_ context.Context, _ domain.Scope, request domain.RecallRequest) (domain.Recall, error) {
+	s.asked = append(s.asked, request)
+	if s.err != nil {
+		return domain.Recall{}, s.err
+	}
+	return s.recall, nil
+}
+
+// TestLoadTaskContextCarriesTheMemory is the E10.2/E10.3 seam: what a Bolu
+// remembers and what the search found reach the round, and the search runs
+// against the task's own instruction.
+func TestLoadTaskContextCarriesTheMemory(t *testing.T) {
+	memory := &stubRecall{recall: domain.Recall{
+		Stable:    "Yang kamu ingat tentang workspace ini:\n- Jam buka 08.00-21.00",
+		Retrieved: "<data sumber=\"katalog.pdf\">\nOngkir Bandung 15 ribu\n</data>",
+		Used:      1,
+	}}
+
+	h := newHarness(t, domain.DefaultLimits, func(deps *Deps) { deps.Memory = memory })
+
+	loaded, err := h.activities.LoadTaskContext(context.Background(), h.input())
+	require.NoError(t, err)
+
+	require.Contains(t, loaded.Memory.Stable, "Jam buka 08.00-21.00")
+	require.Contains(t, loaded.Memory.Retrieved, "Ongkir Bandung 15 ribu")
+	require.Equal(t, 1, loaded.Memory.Used)
+
+	require.Len(t, memory.asked, 1)
+	require.Equal(t, uuid.MustParse(agentID), memory.asked[0].AgentID)
+	require.Equal(t, h.task.ID, memory.asked[0].TaskID)
+
+	// And the two halves are placed where they belong: the stable text joins the
+	// cached prefix, the retrieved text travels apart from it.
+	system := workflow.SystemPrompt(loaded, h.input())
+	require.Contains(t, system, "Jam buka 08.00-21.00", "the main memory is part of the instruction block")
+	require.NotContains(t, system, "Ongkir Bandung 15 ribu", "the retrieved block is not part of the cached prefix")
+}
+
+// TestATaskAnswersWithoutItsMemory is why the read degrades: a memory module that
+// cannot answer must not stop the task, because the answer is worth more than its
+// context.
+func TestATaskAnswersWithoutItsMemory(t *testing.T) {
+	memory := &stubRecall{err: errors.New("the memory module is down")}
+
+	h := newHarness(t, domain.DefaultLimits, func(deps *Deps) { deps.Memory = memory })
+
+	loaded, err := h.activities.LoadTaskContext(context.Background(), h.input())
+	require.NoError(t, err, "a memory that cannot be read must not fail the round")
+
+	require.Empty(t, loaded.Memory.Stable)
+	require.Empty(t, loaded.Memory.Retrieved)
+	require.Equal(t, "Oren", loaded.Agent.Name, "the rest of the context is still loaded")
+}
+
+// TestMemoryIsLoadedWithTheTaskInstruction: the search is run against what the
+// task was asked, which is what makes the retrieval about this question rather
+// than about the workspace in general.
+func TestMemoryIsLoadedWithTheTaskInstruction(t *testing.T) {
+	memory := &stubRecall{}
+
+	h := newHarness(t, domain.DefaultLimits, func(deps *Deps) { deps.Memory = memory })
+
+	input := h.input()
+	input.Prompt = "berapa ongkir ke Bandung?"
+
+	_, err := h.activities.LoadTaskContext(context.Background(), input)
+	require.NoError(t, err)
+
+	require.Len(t, memory.asked, 1)
+	require.Equal(t, "berapa ongkir ke Bandung?", memory.asked[0].Query)
+}
+
+// TestCallModelSendsTheRetrievedBlockApart is the caching seam: the retrieved
+// text reaches the provider as its own block, so the stable prefix stays stable
+// and the cache can hit.
+func TestCallModelSendsTheRetrievedBlockApart(t *testing.T) {
+	var captured llmdomain.ChatRequest
+
+	h := newHarness(t, domain.DefaultLimits, func(deps *Deps) {
+		deps.Gateway = capturingGateway{onChat: func(_ llmdomain.Scope, req llmdomain.ChatRequest) (llmdomain.ChatResponse, error) {
+			captured = req
+			return llmdomain.ChatResponse{Text: "oke", FinishReason: llmdomain.FinishStop}, nil
+		}}
+	})
+
+	_, err := h.activities.CallModel(context.Background(), workflow.ModelRequest{
+		TaskID:      h.task.ID.String(),
+		WorkspaceID: h.scope.WorkspaceID.String(),
+		AgentID:     agentID,
+		System:      "Kamu Oren.",
+		Retrieved:   "<data sumber=\"katalog.pdf\">\nOngkir Bandung 15 ribu\n</data>",
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, "Kamu Oren.", captured.System)
+	require.Contains(t, captured.Retrieved, "Ongkir Bandung 15 ribu")
+	require.NotContains(t, captured.System, "Ongkir")
+}
+
 // TestLoadTaskContextRefusesAnUnknownWorkspace is the tenant guard: an activity
 // whose workspace is missing or wrong fails rather than reading anything.
 func TestLoadTaskContextRefusesAnUnknownWorkspace(t *testing.T) {
@@ -952,6 +1059,12 @@ func (g capturingGateway) Chat(_ context.Context, scope llmdomain.Scope, req llm
 
 func (g capturingGateway) Stream(context.Context, llmdomain.Scope, llmdomain.ChatRequest) (<-chan llmdomain.StreamEvent, error) {
 	return nil, errors.New("not used")
+}
+
+// Embed is not used by the task runtime: a task reads memory through its own
+// port, and the embedding call belongs to the module that writes it.
+func (g capturingGateway) Embed(context.Context, llmdomain.Scope, llmdomain.EmbedRequest) (llmdomain.EmbedResponse, error) {
+	return llmdomain.EmbedResponse{}, errors.New("not used")
 }
 
 func (g capturingGateway) Providers(context.Context, llmdomain.Scope) ([]llmdomain.Redacted, error) {
