@@ -16,14 +16,22 @@ import { SESSION_HINT_COOKIE } from "@/lib/session-hint";
  * makes this decision safe to take here at all.
  */
 export default function proxy(request: NextRequest) {
-  if (request.cookies.has(SESSION_HINT_COOKIE)) {
-    return NextResponse.next();
+  if (!request.cookies.has(SESSION_HINT_COOKIE)) {
+    const door = request.nextUrl.clone();
+    door.pathname = "/login";
+    door.search = "";
+    return NextResponse.redirect(door);
   }
 
-  const door = request.nextUrl.clone();
-  door.pathname = "/login";
-  door.search = "";
-  return NextResponse.redirect(door);
+  // This answer depends on a cookie, so a shared cache must not store it. Next
+  // marks these screens as static and sends `s-maxage=31536000`, and that header
+  // knows nothing about the gate: if an edge cache ever stored the redirect above,
+  // a signed-in visitor would be bounced to a sign-in page that then bounced them
+  // straight back — a loop no amount of signing in can leave. Declaring it here is
+  // what keeps the gate the only thing deciding who gets in.
+  const response = NextResponse.next();
+  response.headers.set("Cache-Control", "private, no-store");
+  return response;
 }
 
 /**
