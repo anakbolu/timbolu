@@ -173,8 +173,12 @@ var (
 	modelPurposes     = newVocabulary("agent", "routing", "extraction", "embedding")
 	rateLimitSurfaces = newVocabulary("login", "integration", "chat", "upload")
 	retentionKinds    = newVocabulary("step", "attachment")
-	integrationApps   = newVocabulary("gmail", "whatsapp")
-	activityNames     = newVocabulary("LoadTaskContext", "CallModel", "RunTool", "RequestDraft",
+	// The applications this codebase ships. `order` is one of them even though it is not a
+	// connected account: its tools reach no provider, and they are still this deployment's own —
+	// leaving it out would chart every catalogue and order call as `other`, which is the one
+	// label an incident cannot be triaged against.
+	integrationApps = newVocabulary("gmail", "whatsapp", "order")
+	activityNames   = newVocabulary("LoadTaskContext", "CallModel", "RunTool", "RequestDraft",
 		"CarryOutDraft", "RecordStep", "BeatTask", "CompleteTask", "PrepareHandoff",
 		"ResumeTask", "MarkHandoffStarted", "ExtractConversation")
 )

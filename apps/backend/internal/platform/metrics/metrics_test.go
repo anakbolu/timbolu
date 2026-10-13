@@ -251,6 +251,8 @@ func bodyOf(t *testing.T, collected metricdata.ResourceMetrics) string {
 // workspace gave its own MCP server.
 func TestAnUnknownLabelValueBecomesOther(t *testing.T) {
 	require.Equal(t, "gmail", classifyApp("gmail"))
+	require.Equal(t, "order", classifyApp("order"),
+		"the workspace's own data is an application this deployment ships, so its tools are not `other`")
 	require.Equal(t, otherLabel, classifyApp("toko-sinar-crm"), "an MCP server's own name is grouped")
 	require.Equal(t, otherLabel, classify("something-new", taskTriggers))
 	require.Equal(t, otherLabel, classify("", taskOutcomes))
