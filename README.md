@@ -149,16 +149,25 @@ erasure flow, which is also a screen at `/settings/data`.
 - **Local infra:** Docker Compose (`postgres`, `redis`, `temporal`, `migrate`,
   `api`, `agent-worker`, `integration-worker`, `frontend`).
 
-Frontend routes today: `/` (hero + 8 bot), `/pricing` (tier placeholder, catatan
-billing transfer bank), and the signed-in workspace under `apps/frontend/src/app/(workspace)`:
+Frontend routes today: `/` (the marketing page — a hero, the crew, how it works, a
+look at the workspace, the FAQ, and the closing call to action) and `/pricing` (the
+three packages, with the same prices and member caps the `plans` table holds, plus the
+note that payment is by bank transfer or virtual account rather than Stripe — reached
+from the navigation, which it was not before). The signed-in workspace lives under
+`apps/frontend/src/app/(workspace)`:
 `/dashboard` (the front door — the roster, the live activity feed, the drafts waiting,
 and the week's finished work), `/dashboard/routines` (the routines screen: the form
 that sets a cadence, the routines per Bolu with their next run in the workspace's own
 zone, the pause switch, and the run history), `/office` (the room, where each
 Bolu stands by its derived state), `/dashboard/integrations` (the hub: connected
 accounts, grants per Bolu, MCP servers), `/settings` (workspace profile, working
-hours, approval policies), `/settings/team`, `/settings/model`, `/chat`, and
-`/groups`. Integrasi also carries the WhatsApp card: the number is linked by scanning
+hours, approval policies), `/settings/team`, `/settings/model`, `/chat`, `/groups`, `/dashboard/usage` (what the
+workspace spent, read three ways over one window, with the tasks that need a person),
+and `/tasks` with `/tasks/[taskID]` (the task history, and one task's rounds and
+hand-offs). `/tasks/[taskID]` is the app's first dynamic route: the layout above it
+reads the workspace from client hooks, so the route file carries `export const
+instant = false` — this repo builds with `cacheComponents`, which calls an unbounded
+segment a blocking route. Integrasi also carries the WhatsApp card: the number is linked by scanning
 a code, the warning is read before the code exists, and what customers wrote and what
 the workspace asked to send are shown side by side. Every one of them reads the workspace through
 `components/dashboard/workspace-data.tsx`, which holds one copy of the roster,
