@@ -34,9 +34,11 @@ function getServerSessionHint() {
 export function StartLink({
   className,
   children,
+  onClick,
 }: {
   className?: string;
   children?: React.ReactNode;
+  onClick?: () => void;
 }) {
   // The server answer and the first hydration render agree (no session), then the
   // client snapshot — the actual cookie — replaces it after hydration, which is
@@ -49,7 +51,7 @@ export function StartLink({
   );
 
   return (
-    <Link href={signedIn ? "/dashboard" : "/signup"} className={className}>
+    <Link href={signedIn ? "/dashboard" : "/signup"} className={className} onClick={onClick}>
       {children}
     </Link>
   );
