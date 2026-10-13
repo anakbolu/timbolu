@@ -617,6 +617,21 @@ steps_of() {
     curl -fsS "${API}/tasks/$1/steps" "${AUTH[@]}"
 }
 
+draft_state() {
+    curl -fsS "${API}/drafts/$1" "${AUTH[@]}" |
+        python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["status"])'
+}
+
+wait_for_draft_status() {
+    local draft="$1" want="$2" deadline=$((SECONDS + 90)) status=""
+    while (( SECONDS < deadline )); do
+        status=$(draft_state "$draft")
+        [[ "$status" == "$want" ]] && break
+        sleep 1
+    done
+    printf '%s' "$status"
+}
+
 # -------------------------------------------------- phase 1: the order is taken
 
 log "phase 1: the message becomes an order priced from the catalogue"
@@ -848,6 +863,60 @@ PARKED=$(wait_for_task_status "$DRAFT_TASK" "waiting_approval")
 [[ "$PARKED" == "waiting_approval" ]] ||
     fail "the task did not park on the invoice; status is ${PARKED}"
 
+# ------------------------------------------------ phase 5: the approval goes through
+
+log "phase 5: what a person approves is what actually leaves"
+curl -fsS -X POST "${API}/drafts/${DRAFT_ID}/approve" "${AUTH[@]}" \
+    -H 'Content-Type: application/json' -d '{"note":"kirim"}' >/dev/null
+
+# The task ends by itself: approving carries the action out and finishes the round without another
+# model call, so a task that stayed parked would mean the decision never reached it.
+FINAL=$(wait_for_task_status "$DRAFT_TASK" "succeeded")
+[[ "$FINAL" == "succeeded" ]] || fail "the approved invoice did not finish; the task is ${FINAL}"
+
+SENT=$(wait_for_draft_status "$DRAFT_ID" "sent")
+[[ "$SENT" == "sent" ]] || fail "the approved message was not recorded as sent; status is ${SENT}"
+
+# And the provider received exactly one message, whose body is the one the card showed. This is the
+# half of the promise the earlier phases cannot prove: the gate is not just a stop, it is a hand.
+[[ -s /tmp/smoke-order-gmail-sent.jsonl ]] ||
+    fail "nothing reached the provider, so the approval proved nothing"
+
+python3 - "$DRAFT_ID" "$ORDER" <<'PY'
+import base64, json, sys
+
+with open("/tmp/smoke-order-gmail-sent.jsonl") as handle:
+    sent = [json.loads(line) for line in handle if line.strip()]
+
+assert len(sent) == 1, "exactly one message must have been sent, got {}".format(len(sent))
+
+order = json.loads(sys.argv[2])
+raw = sent[0]["raw"]
+message = base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)).decode()
+
+# The order's code and total are what a customer would quote back, so they are what the message has to
+# carry: a template that lost them would still be a sendable message, and still wrong.
+assert order["code"] in message, message
+assert "30000" in message, message
+assert "Kopi Arabika" in message, message
+print("  the provider received one message carrying {} and its total".format(order["code"]))
+PY
+
+log "the decision is on the audit trail, attributed to the person"
+curl -fsS "${API}/audit?limit=20" "${AUTH[@]}" | python3 -c '
+import json, sys
+rows = json.load(sys.stdin)["data"]
+actions = [row["action"] for row in rows]
+assert "draft.created" in actions, actions
+assert "draft.approved" in actions, actions
+assert "draft.sent" in actions, actions
+
+approved = [row for row in rows if row["action"] == "draft.approved"]
+assert approved, "an approval must be recorded once"
+assert approved[0].get("actor_user_id"), "an approval names the person who made it"
+print("  {} recorded, with the actor on it".format(", ".join(sorted(set(actions)))))
+'
+
 echo
 echo "SMOKE OK"
 echo "  a customer's message became an order priced from the workspace's own catalogue,"
@@ -855,4 +924,6 @@ echo "  with the Bolu and the task that took it recorded;"
 echo "  a product the catalogue does not have refused the whole order and was answered"
 echo "  with what the catalogue does have;"
 echo "  an order whose quantity was not clear was asked about rather than guessed at;"
-echo "  the invoice became a draft carrying the total, the task parked, and nothing left."
+echo "  the invoice became a draft carrying the total, the task parked, and nothing left;"
+echo "  and what a person approved is what the provider received, once, with the decision on"
+echo "  the audit trail."

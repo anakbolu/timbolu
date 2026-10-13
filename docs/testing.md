@@ -506,10 +506,21 @@ Three phases, each a promise the product makes rather than a code path:
    so a customer who says *more* than the catalogue does still gets an answer — and the
    order count is still one. Nothing was written, including the customer.
 3. **nothing leaves without a person.** The Bolu reads the order back, composes the
-   invoice with the total, and hands it to `whatsapp.send_message`; the draft that
-   appears carries the recipient and the total, the task parks as `waiting_approval`,
-   and `sent_at` is empty. The sending tool is `write_external`, which is what put it
+   invoice with the total, and hands it to the sending tool; the draft that appears
+   carries the recipient, the order's code, and the total, it appears in the thread as
+   a card, the task parks as `waiting_approval`, `sent_at` is empty, and **the provider
+   has received nothing**. The sending tool is `write_external`, which is what put it
    through the gate rather than out of the door.
+4. **what a person approves is what leaves.** The draft is approved; the task finishes by
+   itself (approving carries the action out without another model call), the draft reads
+   `sent`, and the provider stub received **exactly one** message whose body carries the
+   order's code, its line, and its total — the numbers a customer would quote back. The
+   decision is on the audit trail with the person who made it.
+
+The channel is read off the tools the deployment actually offers (`*.send` or
+`*.send_message`), so the run exercises the flow rather than one integration: a deployment
+with a WhatsApp gateway and one with only a mailbox take the same path and differ only in
+which adapter runs at the end.
 
 EPIC 9 has no workflow of its own: the gateway is a process, not a workflow. What it
 does have is a **lease**, and that is tested against a real Redis in

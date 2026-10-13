@@ -91,8 +91,10 @@ kanal keluar). Membuat Bolu dari template ini adalah satu panggilan `POST /api/a
 | 10 | Klik setujui di layar, atau `POST /api/drafts/:id/approve` | Draf menjadi `sent`/`approved` dan tugas selesai — hanya kalau aksinya benar-benar dikerjakan |
 | 11 | `GET /api/audit?limit=10` | `draft.created` dan `draft.approved` ada, masing-masing sekali per draf, dengan `actor_user_id` pada persetujuannya |
 
-Langkah 1-9 adalah yang dijalankan otomatis oleh smoke (fase 1 sampai 4). Langkah 10-11 dijalankan di
-staging dengan kanal sungguhan, karena keduanya butuh keputusan dan kredensial orang.
+Langkah 1-9 dijalankan otomatis oleh smoke (fase 1 sampai 4). Langkah 10-11 dijalankan otomatis juga
+(fase 5), terhadap penyedia yang di-stub — jadi yang dibuktikan adalah mekanikanya: keputusan itu
+dibawa ke executor, executor menjalankan aksinya, dan hasilnya dicatat sebagai terkirim beserta
+jejaknya. Yang belum terbukti adalah sisi penyedia yang sungguhan, dan itu bagian staging.
 
 ### Kasus yang harus tetap benar
 
@@ -106,7 +108,7 @@ staging dengan kanal sungguhan, karena keduanya butuh keputusan dan kredensial o
 
 ## Bentuk yang bisa dijalankan
 
-`make smoke-order` menjalankan langkah 1-8 di atas terhadap stack compose, dengan stub model dan
+`make smoke-order` menjalankan langkah 1-11 di atas terhadap stack compose, dengan stub model dan
 stub penyedia email, dan menghentikan langkahnya di titik yang sama setiap kali:
 
 - fase 1 — pesanan tercatat dengan harga katalog (assertion per field terhadap katalog, termasuk
@@ -114,8 +116,11 @@ stub penyedia email, dan menghentikan langkahnya di titik yang sama setiap kali:
 - fase 2 — produk yang tidak ada menolak seluruh pesanan dan jumlah pesanan tidak bertambah;
 - fase 3 — pesanan yang jumlahnya belum jelas ditolak dan ditanyakan, dan tidak ada pesanan yang
   tertulis sebagian;
-- fase 4 — tagihan menjadi draf dengan total dan kode pesanan, tugas parkir, dan penyedia belum
-  menerima apa pun.
+- fase 4 — tagihan menjadi draf dengan total dan kode pesanan, muncul sebagai kartu di thread, tugas
+  parkir, dan penyedia belum menerima apa pun;
+- fase 5 — draf disetujui, tugasnya selesai sendiri, drafnya menjadi `sent`, dan penyedia menerima
+  **tepat satu** pesan yang memuat kode pesanan, barisnya, dan totalnya — dengan keputusan itu di
+  jejak audit beserta pelakunya.
 
 Skenario ini bisa dijalankan ulang oleh siapa pun tanpa bertanya: `make smoke-order` menghasilkan
 workspace baru setiap kali, dan data ujinya tidak bercampur dengan data lain karena seluruhnya
