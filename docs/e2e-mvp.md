@@ -188,6 +188,50 @@ Satu kualitas yang **tidak** dijaga alurnya: kalimatnya. Stub bisa menulis apa s
 sungguhan bisa menulis tagihan yang membingungkan meski angkanya benar — itulah yang diukur tingkat
 persetujuan tanpa revisi di staging, dan tidak ada test di repo ini yang bisa menggantikannya.
 
+## Gerbang 1: apa yang diputuskan (E14.6)
+
+Issue #118 meminta keputusan yang bersandar pada data, dengan tiga kriteria yang sudah disepakati:
+draf disetujui tanpa revisi, biaya per tugas, dan tugas gagal per integrasi. Angka-angka itu ada di
+tabel yang sudah dipakai produk ini, jadi `make gate-report` (`scripts/gate-report.sh`) membacanya
+dan mencetaknya beserta ambangnya masing-masing:
+
+| Yang dibaca | Sumber | Ambang |
+| --- | --- | --- |
+| Tugas selesai / gagal / dibatalkan / masih hidup | `tasks` | — |
+| Tugas gagal per integrasi | `task_steps` (`kind = 'tool_result'`, hasilnya memuat `error`) | ≤ 5% dari panggilan alat integrasi itu |
+| Draf disetujui tanpa revisi | `drafts` dan `draft_revisions` | ≥ 70% dari yang sudah diputuskan |
+| Biaya & token, per tugas dan per pesanan | `usage_ledger`, `tasks`, `orders` | — (bahan untuk harga paket) |
+
+Skripnya **melaporkan**, bukan menggagalkan: ini laporan untuk sebuah keputusan. Yang ia jaga adalah
+definisinya — rumus tiap angka tinggal di satu tempat, supaya versi pertama dan versi keempat dari
+pertanyaan yang sama tidak menghasilkan angka yang berbeda.
+
+Dijalankan terhadap stack demo (provider stub) sesudah satu alur penuh, ia mencetak:
+
+```
+Tugas
+  total 4  ·  selesai 3  ·  gagal 0  ·  dibatalkan 0  ·  masih hidup 1
+Tugas gagal per integrasi  (ambang: ≤ 5% dari panggilan alatnya)
+  order      6 panggilan  ·  0 gagal  ·  0.0%  ->  lolos
+Draf disetujui tanpa revisi  (ambang: ≥ 70% dari yang sudah diputuskan)
+  diputuskan 0  ·  bersih 0  ·  revisi 0  ·  0%  ->  belum ada yang diputuskan
+Biaya & token
+  ledger: 17 panggilan (10 agen, 7 lain)  ·  3472 token masuk  ·  464 token keluar  ·  85 micro-rupiah
+  per tugas rata-rata: 2.7 panggilan  ·  928 token  ·  0 micro-rupiah
+  per pesanan tercatat: 2 pesanan  ·  2096 token  ·  0 micro-rupiah
+Pesanan
+  2 pesanan  ·  2 pelanggan  ·  total 42000 rupiah
+```
+
+Yang perlu dibaca dari situ, dan yang tidak: **tugas gagal per integrasi lolos dengan 0%** pada enam
+panggilan `order.*`; **draf belum ada yang diputuskan**, karena satu-satunya draf di run itu masih
+menunggu dan yang menyetujui di smoke adalah skripnya sendiri; dan **kolom rupiahnya belum berarti**,
+karena angka itu tabel harga platform dikalikan token stub.
+
+**Keputusannya sendiri belum diambil.** Itu milik pemilik produk, dan #118 menulis bahwa epic fase
+berikutnya hanya dibuat setelah keputusan ini. Yang bisa disiapkan dari sini sudah disiapkan:
+angkanya bisa dibaca, definisinya terkunci, dan yang tidak bisa dijawab di lokal disebut apa adanya.
+
 ## Biaya per tugas (E14.5)
 
 Angka yang diminta task itu diambil dari `usage_ledger`, bukan dari perkiraan: satu tugas

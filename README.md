@@ -80,6 +80,7 @@ executed by another process's model configuration:
 docker stop bolu-api bolu-agent-worker bolu-integration-worker
 make smoke-task && make smoke-approval && make smoke-order
 make measure-orders   # what one order costs, measured twenty times from usage_ledger
+make gate-report      # the numbers Gerbang 1 is decided on, read from the database
 docker start bolu-api bolu-agent-worker bolu-integration-worker
 ```
 

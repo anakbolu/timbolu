@@ -1,5 +1,5 @@
 .PHONY: help up down logs build dev frontend backend api worker-logs \
-        test test-integration smoke-task smoke-approval smoke-order measure-orders demo demo-stop cover lint archcheck sqlc mocks generate llm-fixtures \
+        test test-integration smoke-task smoke-approval smoke-order measure-orders demo demo-stop gate-report cover lint archcheck sqlc mocks generate llm-fixtures \
         migrate-up migrate-down migrate-create psql ci
 
 COMPOSE := docker compose
@@ -88,6 +88,9 @@ measure-orders: ## Measure what one order costs, repeated, from usage_ledger (ne
 
 demo: ## Start a stack you can click through, with a workspace, catalogue and Bolu already set up
 	bash $(BACKEND)/scripts/demo.sh
+
+gate-report: ## The numbers Gerbang 1 is decided on, read from the database
+	cd $(BACKEND) && bash scripts/gate-report.sh
 
 demo-stop: ## Stop what `make demo` started
 	@lsof -ti ":11441" -ti ":11442" | xargs -r kill 2>/dev/null || true
