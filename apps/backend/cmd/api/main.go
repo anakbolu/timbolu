@@ -67,6 +67,12 @@ func run() error {
 		zap.Bool("temporal", c.Temporal != nil),
 	)
 
+	// The billing sweep is a loop in this process rather than a durable workflow,
+	// because nothing in it waits: each pass recomputes the allowance from the times
+	// and the ledger, so a pass that never ran is corrected by the next one. It needs
+	// the database and Redis and nothing else, both of which this process already has.
+	go c.RunBillingSweep(ctx)
+
 	serverErr := make(chan error, 1)
 	go func() {
 		serverErr <- c.App().Listen(address)

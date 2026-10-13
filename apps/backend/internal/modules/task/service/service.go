@@ -39,6 +39,11 @@ type Deps struct {
 	// Events publishes what a task is doing. Optional: without it the work still
 	// happens and only the live views are behind.
 	Events domain.EventSink
+	// Budget refuses a new task a workspace can no longer afford. The runtime asks
+	// the same policy at every round boundary; asking it here as well is what makes
+	// a task *held* rather than opened and failed, which is the difference between
+	// a person seeing "no allowance left" and seeing a task that died.
+	Budget domain.Budget
 	Limits domain.Limits
 	Logger *zap.Logger
 	Clock  func() time.Time
@@ -48,6 +53,7 @@ type Deps struct {
 type Service struct {
 	deps   Deps
 	limits domain.Limits
+	budget domain.Budget
 	clock  func() time.Time
 }
 
@@ -58,7 +64,7 @@ func New(deps Deps) *Service {
 		clock = time.Now
 	}
 
-	return &Service{deps: deps, limits: deps.Limits.Normalise(), clock: clock}
+	return &Service{deps: deps, limits: deps.Limits.Normalise(), budget: deps.Budget, clock: clock}
 }
 
 // Dispatch opens a task for a trigger and hands it to the durable runtime.
@@ -94,6 +100,16 @@ func (s *Service) Dispatch(ctx context.Context, scope domain.Scope, req domain.D
 		// that started anyway would contradict it.
 		if !s.deps.Agents.Active(agent) {
 			return domain.Task{}, fmt.Errorf("%w: %s sedang istirahat", domain.ErrInvalidInput, agent.Name)
+		}
+	}
+
+	// The workspace's allowance is asked before the task is opened, so a workspace
+	// with nothing left is *held* rather than opened and failed. The same policy is
+	// asked at every round boundary, so a task already running stops there with the
+	// same reason instead of being killed in the middle of a call.
+	if s.budget != nil {
+		if err := s.budget.Allow(ctx, scope.WorkspaceID); err != nil {
+			return domain.Task{}, err
 		}
 	}
 

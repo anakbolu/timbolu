@@ -1726,3 +1726,134 @@ export function whatsAppLinkSocketURL(workspaceId: string, linkId: string): stri
   if (token) query.set("token", token);
   return `${base}/api/whatsapp/links/${linkId}/socket?${query}`;
 }
+
+// ---------------------------------------------------------------- billing
+
+/** One package this deployment sells. */
+export type BillingPlan = {
+  key: string;
+  name: string;
+  monthly_price_idr: number;
+  token_quota: number;
+  daily_cost_micros: number;
+  period_days: number;
+  max_agents: number;
+  max_integrations: number;
+  max_members: number;
+  is_trial: boolean;
+};
+
+/** One pack of tokens a workspace can buy inside a period. */
+export type TopUpPackage = {
+  key: string;
+  name: string;
+  token_amount: number;
+  price_idr: number;
+};
+
+/**
+ * The package a workspace is on, and what it has spent of it.
+ *
+ * `entitlement` is derived by the backend from the period and the grace window rather
+ * than remembered, so a client reads it instead of computing one — two computations
+ * would eventually disagree about whether a workspace has stopped.
+ */
+export type Subscription = {
+  id: string;
+  plan_key: string;
+  plan_name: string;
+  /** The package that takes effect at the next period, when somebody chose one. */
+  pending_plan_key?: string;
+  pending_plan_name?: string;
+  status: "trial" | "active" | "past_due" | "canceled";
+  entitlement: "active" | "grace" | "read_only";
+  current_period_start: string;
+  current_period_end: string;
+  grace_until?: string;
+  grace_days: number;
+  read_only: boolean;
+  tokens_granted: number;
+  tokens_topped_up: number;
+  tokens_used: number;
+  /** Negative means the package does not bound tokens. */
+  tokens_remaining: number;
+  used_percent: number;
+  daily_cost_micros: number;
+  spent_today_micros: number;
+  outstanding_idr: number;
+  max_agents: number;
+  max_integrations: number;
+  max_members: number;
+  top_ups: TopUpPackage[];
+};
+
+/** One amount a workspace owes, or owed. */
+export type Invoice = {
+  id: string;
+  kind: "subscription" | "topup";
+  status: "pending" | "paid" | "failed" | "expired";
+  amount_idr: number;
+  token_amount?: number;
+  period_start: string;
+  period_end: string;
+  /** What a person acts on to pay: a link, or the virtual account and its bank. */
+  payment_instructions?: string;
+  provider?: string;
+  attempts: number;
+  last_error?: string;
+  expires_at?: string;
+  paid_at?: string;
+  created_at: string;
+  outstanding: boolean;
+};
+
+/** A package, its usage, and what it owes, read at one moment. */
+export type BillingSnapshot = {
+  plan: BillingPlan;
+  subscription: Subscription;
+  entitlement: Subscription["entitlement"];
+  read_only: boolean;
+  grace_days: number;
+  invoices: Invoice[];
+  outstanding: Invoice[];
+  top_ups: TopUpPackage[];
+};
+
+/** billingSnapshot reads the workspace's package and what it owes. */
+export function billingSnapshot(workspaceId: string): Promise<ApiResult<BillingSnapshot>> {
+  return request<BillingSnapshot>("/billing/subscription", { workspace: workspaceId });
+}
+
+/** listBillingPlans returns the packages this deployment sells. */
+export function listBillingPlans(workspaceId: string): Promise<ApiResult<BillingPlan[]>> {
+  return request<BillingPlan[]>("/billing/plans", { workspace: workspaceId });
+}
+
+/** changeBillingPlan moves the workspace to another package. */
+export function changeBillingPlan(workspaceId: string, planKey: string): Promise<ApiResult<BillingSnapshot>> {
+  return request<BillingSnapshot>("/billing/subscription", {
+    method: "POST",
+    body: { plan_key: planKey },
+    workspace: workspaceId,
+  });
+}
+
+/** listInvoices returns what the workspace was charged, newest first. */
+export function listInvoices(workspaceId: string, status?: string): Promise<ApiResult<Invoice[]>> {
+  const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
+  return request<Invoice[]>(`/billing/invoices${suffix}`, { workspace: workspaceId });
+}
+
+/** payInvoice asks for a way to pay one invoice. */
+export function payInvoice(workspaceId: string, invoiceId: string): Promise<ApiResult<Invoice>> {
+  return request<Invoice>(`/billing/invoices/${invoiceId}/pay`, { method: "POST", workspace: workspaceId });
+}
+
+/** buyTopUp buys tokens inside the period the workspace is in. */
+export function buyTopUp(workspaceId: string, packageKey: string): Promise<ApiResult<Invoice>> {
+  return request<Invoice>("/billing/topups", {
+    method: "POST",
+    body: { package_key: packageKey },
+    workspace: workspaceId,
+  });
+}

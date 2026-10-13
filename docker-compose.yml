@@ -72,8 +72,27 @@ x-backend-env: &backend-env
   LLM_CHAIN_LIMIT: ${LLM_CHAIN_LIMIT:-3}
   # The cost ceiling of one day per workspace, in micro-rupiah. Zero means
   # unlimited. It is the second bound the quota asks, alongside the period's
-  # token allowance.
+  # token allowance. With billing wired, each package carries its own ceiling and
+  # this is what a deployment without packages runs with.
   PLAN_DAILY_COST_MICROS: ${PLAN_DAILY_COST_MICROS:-0}
+  # Billing: the package a workspace is on, the allowance it grants, and how it is
+  # paid for. Leaving the Duitku values empty keeps the module on and its online
+  # payment off — an invoice is written and the screen says to transfer and
+  # confirm, which is how the first customers pay. The callback URL is required to
+  # take payment at all: Duitku posts the notification there and reaches it from
+  # outside the compose network.
+  BILLING_PROVIDER: ${BILLING_PROVIDER:-}
+  DUITKU_MERCHANT_CODE: ${DUITKU_MERCHANT_CODE:-}
+  DUITKU_API_KEY: ${DUITKU_API_KEY:-}
+  DUITKU_SANDBOX: ${DUITKU_SANDBOX:-true}
+  DUITKU_PAYMENT_METHOD: ${DUITKU_PAYMENT_METHOD:-}
+  DUITKU_EXPIRY_MINUTES: ${DUITKU_EXPIRY_MINUTES:-0}
+  DUITKU_CALLBACK_URL: ${DUITKU_CALLBACK_URL:-}
+  DUITKU_RETURN_URL: ${DUITKU_RETURN_URL:-}
+  DUITKU_BASE_URL: ${DUITKU_BASE_URL:-}
+  BILLING_GRACE_DAYS: ${BILLING_GRACE_DAYS:-0}
+  BILLING_SYNC_INTERVAL: ${BILLING_SYNC_INTERVAL:-15m}
+  BILLING_SWEEP_INTERVAL: ${BILLING_SWEEP_INTERVAL:-15m}
   # What one task may spend. A zero falls back to the product default.
   TASK_MAX_STEPS: ${TASK_MAX_STEPS:-12}
   TASK_MAX_TOKENS: ${TASK_MAX_TOKENS:-120000}

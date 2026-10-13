@@ -9,6 +9,7 @@ import (
 	agenthandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/handler"
 	approvalhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/handler"
 	authhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/handler"
+	billinghandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/handler"
 	chathandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/handler"
 	healthhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/handler"
 	integrationhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/handler"
@@ -43,6 +44,8 @@ type Handlers struct {
 	Routine *routinehandler.Handler
 	// WhatsApp serves the linked numbers, the link flow, and what they carried.
 	WhatsApp *whatsapphandler.Handler
+	// Billing serves the package, the allowance, and the invoices.
+	Billing *billinghandler.Handler
 }
 
 // newHandlers builds every handler from the service set. Handlers receive the
@@ -94,6 +97,9 @@ func newHandlers(services *Services, log *zap.Logger, cfg *config.Config) *Handl
 	if services.WhatsApp != nil {
 		handlers.WhatsApp = whatsapphandler.New(services.WhatsApp, log)
 	}
+	if services.Billing != nil {
+		handlers.Billing = billinghandler.New(services.Billing, log)
+	}
 
 	if services.Integration != nil {
 		handlers.Integration = integrationhandler.New(services.Integration, log, integrationhandler.Config{
@@ -140,6 +146,17 @@ func (c *Container) registerRoutes() {
 		integrationhandler.CallbackRoutes(api, c.Handlers.Integration)
 	}
 
+	// A payment notification is a provider reaching us, so it is registered here
+	// with the other public routes and for the same reason: an empty-path group
+	// below applies its middleware to the whole prefix, so a route added after it
+	// would be asked for a session the provider cannot have.
+	//
+	// What makes it safe instead is the adapter's own signature check, which is the
+	// only thing standing between a stranger and a paid package.
+	if c.Handlers.Billing != nil {
+		billinghandler.WebhookRoutes(api, c.Handlers.Billing)
+	}
+
 	// Authenticated, no active workspace required.
 	user := api.Group("", c.requireUser())
 	authhandler.ProtectedRoutes(user, c.Handlers.Auth)
@@ -163,16 +180,21 @@ func (c *Container) registerRoutes() {
 	verified := api.Group("", c.requireUser(), c.requireVerified())
 	workspacehandler.VerifiedRoutes(verified, c.Handlers.Workspace)
 
-	// Active workspace required.
-	tenant := api.Group("", c.requireUser(), c.requireTenant())
+	// Active workspace required. The subscription guard runs here rather than inside
+	// each service, because "everything that writes stops" is one decision about the
+	// workspace rather than thirty about its endpoints — and thirty copies would be
+	// thirty places for a new endpoint to forget.
+	tenant := api.Group("", c.requireUser(), c.requireTenant(), c.requireActiveSubscription())
 	workspacehandler.TenantRoutes(tenant, c.Handlers.Workspace)
 
-	// Member management needs a managing role on top of the tenant.
-	managers := api.Group("", c.requireUser(), c.requireTenant(), requireRole(domain.RoleOwner, domain.RoleAdmin))
+	// Member management needs a managing role on top of the tenant. The subscription
+	// guard is repeated on each of these groups because each is a group of its own:
+	// middleware registered on one does not reach another.
+	managers := api.Group("", c.requireUser(), c.requireTenant(), c.requireActiveSubscription(), requireRole(domain.RoleOwner, domain.RoleAdmin))
 	workspacehandler.ManagerRoutes(managers, c.Handlers.Workspace)
 
 	// Workspace settings are owner-only.
-	owners := api.Group("", c.requireUser(), c.requireTenant(), requireRole(domain.RoleOwner))
+	owners := api.Group("", c.requireUser(), c.requireTenant(), c.requireActiveSubscription(), requireRole(domain.RoleOwner))
 	workspacehandler.OwnerRoutes(owners, c.Handlers.Workspace)
 
 	if c.Handlers.Agent == nil {
@@ -227,6 +249,18 @@ func (c *Container) registerRoutes() {
 		whatsapphandler.Routes(tenant, c.Handlers.WhatsApp)
 	}
 
+	// Billing: the package, the allowance, and the invoices. Every member reads
+	// and every member pays, because the person who notices the workspace has gone
+	// read-only is not always the owner — and the money arriving is what fixes it.
+	//
+	// It is deliberately outside the read-only middleware applied to the rest of
+	// this group. See `requireActiveSubscription` for why.
+	if c.Handlers.Billing == nil {
+		registerBillingFallback(tenant)
+	} else {
+		billinghandler.Routes(tenant, c.Handlers.Billing)
+	}
+
 	// Approvals: every member reads the drafts and decides on them, because the
 	// person who notices a wrong invoice is not always the owner. Changing what
 	// the workspace allows unattended needs a managing role, the way the provider
@@ -257,7 +291,7 @@ func (c *Container) registerRoutes() {
 	}
 
 	// Changing the registry, a group, or a provider needs a managing role.
-	registry := api.Group("", c.requireUser(), c.requireTenant(), requireRole(domain.RoleOwner, domain.RoleAdmin))
+	registry := api.Group("", c.requireUser(), c.requireTenant(), c.requireActiveSubscription(), requireRole(domain.RoleOwner, domain.RoleAdmin))
 	if c.Handlers.Agent != nil {
 		agenthandler.ManagerRoutes(registry, c.Handlers.Agent)
 	}
@@ -408,6 +442,23 @@ func registerMemoryFallback(router fiber.Router) {
 	message := "memory is not configured"
 	router.All("/memories*", unavailable(message, "memory_not_configured"))
 	router.All("/knowledge*", unavailable(message, "memory_not_configured"))
+}
+
+// registerBillingFallback answers 503 for the billing routes.
+func registerBillingFallback(router fiber.Router) {
+	for _, route := range []struct {
+		method string
+		path   string
+	}{
+		{fiber.MethodGet, "/billing/subscription"},
+		{fiber.MethodGet, "/billing/plans"},
+		{fiber.MethodPost, "/billing/subscription"},
+		{fiber.MethodGet, "/billing/invoices"},
+		{fiber.MethodPost, "/billing/invoices/:invoiceID/pay"},
+		{fiber.MethodPost, "/billing/topups"},
+	} {
+		router.Add(route.method, route.path, unavailable("billing is not configured", "billing_not_configured"))
+	}
 }
 
 // registerWhatsAppFallback answers 503 for the WhatsApp routes.

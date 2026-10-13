@@ -421,12 +421,15 @@ export function SettingsView() {
         <div>
           <h2 className={HEADING}>Paket dan tagihan</h2>
           <div className="text-bolu-muted">
-            Belum ada paket berjalan. Penagihan transfer bank dikerjakan setelah billing dibangun.
+            Paket workspace, pemakaian token periode ini, paket tambahan, dan tagihan yang harus dibayar.
           </div>
         </div>
-        <span className="flex min-h-11 items-center rounded-full border border-bolu-border px-5 font-bold text-bolu-muted">
-          Belum tersedia
-        </span>
+        <a
+          href="/settings/subscription"
+          className="flex min-h-11 items-center rounded-full bg-bolu-ink px-5 font-bold text-white no-underline hover:text-white"
+        >
+          Buka langganan
+        </a>
       </section>
     </div>
   );

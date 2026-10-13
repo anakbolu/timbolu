@@ -17,6 +17,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"go.uber.org/zap"
 
+	billingdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/domain"
 	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
 	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 	memoryactivity "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/activity"
@@ -77,6 +78,12 @@ type Container struct {
 	// It is kept on the container because the gateway process hands it its own
 	// runtime, and because the integration adapter reaches it.
 	WhatsApp whatsappdomain.Service
+	// Billing is the module: the package a workspace is on, the allowance it grants,
+	// what it owes, and the sweep that reconciles the three. It is kept here because
+	// three other modules ask it a question — the model gateway for an allowance, the
+	// Bolu registry for a cap, and the tenant middleware for whether a write is
+	// allowed at all.
+	Billing billingdomain.Service
 	// Keys is the key ring that wraps a workspace's data key. It is kept here
 	// because two modules seal credentials with it: the hub seals tokens, and this
 	// one seals a WhatsApp session.
@@ -256,6 +263,15 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Container, e
 	// because they need them, and before the handlers, because they need the
 	// services.
 	if err := c.openAuth(ctx, cfg); err != nil {
+		c.Close()
+		return nil, err
+	}
+
+	// Billing comes before the model gateway, because the gateway's quota policy is
+	// this module's answer: a gateway built first would hold the configured fixed
+	// allowance for the life of the process, and every workspace would be served on
+	// it. It also comes before the integration hub, which asks it for a cap.
+	if err := c.openBilling(ctx, cfg); err != nil {
 		c.Close()
 		return nil, err
 	}

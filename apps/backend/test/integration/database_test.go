@@ -23,7 +23,7 @@ import (
 )
 
 // latestMigration is the version of the newest migration file.
-const latestMigration = 15
+const latestMigration = 16
 
 const (
 	pgUser     = "postgres"
@@ -211,6 +211,27 @@ func TestSchemaObjectsExist(t *testing.T) {
 	var plans int
 	require.NoError(t, pool.QueryRow(ctx, "SELECT count(*) FROM plans WHERE is_trial").Scan(&plans))
 	require.Equal(t, 1, plans, "the trial plan must be seeded")
+
+	// The packages a workspace can move to, and the packs it can buy on top. They are
+	// product decisions, and a workspace that reaches its allowance has to be offered
+	// something concrete — so a deployment whose seeds failed is a dead end rather than
+	// a smaller product.
+	var paid int
+	require.NoError(t, pool.QueryRow(ctx, `
+		SELECT count(*) FROM plans
+		WHERE NOT is_trial AND monthly_price_idr > 0 AND token_quota > 0`).Scan(&paid))
+	require.GreaterOrEqual(t, paid, 2, "the paid packages must be seeded")
+
+	var topups int
+	require.NoError(t, pool.QueryRow(ctx, `
+		SELECT count(*) FROM topup_packages WHERE active AND token_amount > 0 AND price_idr > 0`).Scan(&topups))
+	require.GreaterOrEqual(t, topups, 1, "at least one top-up pack must be seeded")
+
+	// Every package bounds something, and the trial is short on purpose: a package
+	// nobody ever leaves is not a trial.
+	var days int
+	require.NoError(t, pool.QueryRow(ctx, "SELECT period_days FROM plans WHERE is_trial").Scan(&days))
+	require.Less(t, days, 30, "a trial is shorter than a month")
 }
 
 // TestRowLevelSecurityIsolatesWorkspaces is the tenant isolation gate: with the

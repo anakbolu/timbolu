@@ -195,6 +195,64 @@ What they prove:
   `TestStepsAreRecordedInOrder`, `TestTaskRuntimeIsTenantScoped` — the task
   schema, the handoff chain, and tenant isolation, against a real Postgres.
 
+### Billing (EPIC 12)
+
+The billing module's own tests are three layers, and each exists for something the
+others cannot see:
+
+- `domain/billing_test.go` — the arithmetic, which is what a careless refactor changes
+  silently: when a workspace stops working (inside the period, then the grace window,
+  then nothing but reads), what the allowance is (the package plus what was bought),
+  and which thresholds a period crossed. A zero allowance is *unlimited* rather than
+  exhausted, and the test says so, because reading it as zero would refuse every call
+  of a package that bounds no tokens.
+- `service/` — the decisions: which mirror of the usage is telling the truth when the
+  two disagree, which thresholds are reported and in what order, when an invoice is
+  issued, what a payment does, and that a replayed delivery buys nothing twice. The
+  clock is a field rather than the wall clock, and that is not a convenience: every
+  rule here is about a moment.
+- `handler/` — the wire: that the numbers a screen needs are on it, that an absent
+  value is an empty string rather than a zero uuid, and that each refusal maps to the
+  status a screen branches on. `unverifiable_payment` is 400 rather than 500 because a
+  provider told "internal error" would redeliver a body that can never verify.
+- `internal/platform/payment/duitku` — the adapter, and the signature is the part that
+  matters: it is checked against a body the test signed itself, with the wrong key, with
+  an amount edited after signing, and with a callback for another merchant. `OrderID` is
+  asserted to be short enough for Duitku's fifty-character field, because a truncated one
+  would leave a callback naming something this build cannot find.
+- `test/integration/billing_test.go` — against a real Postgres, the claims a mock would
+  only restate: a workspace created through onboarding's own transaction has exactly one
+  live trial subscription and the period it grants; the allowance is measured against the
+  real ledger and a top-up adds to it in the period it was bought in; a settled invoice
+  cannot be settled again; the billing tables are tenant-isolated by policy (naming
+  another workspace's invoice by id is not enough, and a write from outside is refused by
+  the policy rather than by the filter); the package's caps reach the Bolu registry and the
+  member invitation; and the one unscoped read — the sweep's queue — is what tells the
+  sweep which tenant to open.
+- `test/integration/billing_quota_test.go` — E12.2's gate, and the one property only a
+  real Redis and a real Postgres can answer: **concurrent callers sharing one allowance
+  must not each get the whole of it.** Fifty callers start at once against an allowance of
+  ten; the exact count that passes is not the property — the check is a read followed by a
+  decision, so callers already inside when the allowance runs out finish — what must hold
+  is that the allowance is *shared*, that the overshoot is bounded by the concurrency
+  rather than unbounded, and that what they recorded is what the counter reads back and
+  what the sweep then writes into the durable mirror. The other half is
+  `TestTheCounterAndTheLedgerAgreeAfterReconciliation`, in both directions: a counter that
+  holds more than the row (calls since the last reconciliation) and a Redis that lost its
+  keys while the row remembers. The second is why the check takes the larger of the two —
+  a flushed Redis must not hand a workspace its month again.
+- `internal/container/billing_wiring_test.go` — where the read-only guard sits. It is
+  registered on four route groups rather than inside each service, so "everything that
+  writes stops" is one decision and a group somebody forgot is a write that would go
+  through. The test enumerates the writes across every module, asserts reads are still
+  answered, asserts the billing routes are exempt, and asserts that a subscription that
+  cannot be *read* does not open writes.
+
+The payment path is verified end to end against a stand-in for Duitku
+(`internal/platform/payment/duitku`'s own shape): the inquiry is signed and answered, a
+signed callback settles the invoice and the tokens land, a replayed callback buys nothing
+twice, and a callback with a tampered signature is refused with 400.
+
 ### The end-to-end smoke
 
 `make smoke-task` runs the API and the agent worker on the host against the

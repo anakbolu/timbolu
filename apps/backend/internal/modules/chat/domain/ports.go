@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 
@@ -196,6 +197,15 @@ type AgentDirectory interface {
 	// Active reports whether a Bolu accepts new work. A resting Bolu never does.
 	Active(ref AgentRef) bool
 }
+
+// ErrNoBudget is what a message becomes when the workspace's package does not allow the
+// reply to be opened.
+//
+// It is this module's own sentinel rather than the task runtime's, because the two are
+// separate modules: whoever wires them translates between the two, and this is the half a
+// screen reads. The answer is not "try again" — it is "buy a top-up or wait for the next
+// period", and a person acts on it differently from every other refusal.
+var ErrNoBudget = errors.New("chat: the workspace's package does not allow a reply")
 
 // TaskStarter hands a message to the task runtime, which is EPIC 6.
 //

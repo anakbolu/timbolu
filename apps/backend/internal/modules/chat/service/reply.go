@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -161,6 +162,14 @@ func (s *Service) dispatchTask(
 	})
 	if err != nil {
 		s.finishReply(ctx, scope, conversation, responder, placeholder, nil, chatdomain.MessageFailed, err.Error())
+
+		// A refusal a person has to act on is passed through as it is: what fixes it is
+		// money rather than another attempt, and the sentence the package wrote already
+		// says which. Wrapping it in "could not open a task" would put the reason behind
+		// a description of the symptom.
+		if errors.Is(err, chatdomain.ErrNoBudget) {
+			return result, err
+		}
 		return result, fmt.Errorf("chat: open task: %w", err)
 	}
 

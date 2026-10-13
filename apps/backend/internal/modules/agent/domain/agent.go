@@ -263,8 +263,9 @@ func (s Scope) IsZero() bool {
 	return s.UserID == uuid.Nil && s.WorkspaceID == uuid.Nil
 }
 
-// PlanLimits reports how many Bolu a workspace may have. EPIC 12 (#97) wires
-// the real subscription; until then the container uses the unlimited default.
+// PlanLimits reports how many Bolu a workspace may have, which is the subscription's
+// answer. A deployment without billing leaves it unwired, and the registry then uses
+// its own configured cap alone.
 type PlanLimits interface {
 	MaxAgents(ctx context.Context, workspaceID uuid.UUID) (int, error)
 }

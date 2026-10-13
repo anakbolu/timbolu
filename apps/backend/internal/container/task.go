@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
 
 	agentdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
+	billingdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/domain"
 	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
 	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 	taskactivity "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/activity"
@@ -49,6 +51,7 @@ func (c *Container) openTask(_ context.Context, cfg *config.Config) error {
 		Steps:   c.Repositories.Task,
 		Starter: starter,
 		Events:  c.taskEventSink(),
+		Budget:  c.budget(),
 		Limits:  taskLimits(cfg),
 		Logger:  c.Logger,
 	}
@@ -520,9 +523,53 @@ func (s chatTaskStarter) Start(ctx context.Context, scope chatdomain.Scope, req 
 		Prompt:         req.Title,
 	})
 	if err != nil {
+		// The container is where the two modules meet, so it is where one module's
+		// refusal becomes the other's. A workspace that cannot spend is a message the
+		// chat module does not know about, and a screen needs a sentence it can act on
+		// rather than an internal failure.
+		if reason, refused := budgetRefusal(err); refused {
+			return uuid.Nil, fmt.Errorf("%w: %s", chatdomain.ErrNoBudget, reason)
+		}
 		return uuid.Nil, err
 	}
 	return task.ID, nil
+}
+
+// budgetRefusal reports whether an error is the workspace's package refusing to pay, and
+// the sentence a person should read.
+//
+// Both halves of the package are here: an allowance that is spent, and a subscription
+// past its grace window. They are different instructions to a person — buy a top-up, or
+// pay the invoice — and both mean the work cannot be opened.
+func budgetRefusal(err error) (string, bool) {
+	switch {
+	case errors.Is(err, billingdomain.ErrQuotaExceeded):
+		return userSentence(err, billingdomain.ErrQuotaExceeded), true
+	case errors.Is(err, billingdomain.ErrReadOnly):
+		return userSentence(err, billingdomain.ErrReadOnly), true
+	default:
+		return "", false
+	}
+}
+
+// userSentence is what a person should read, taken out of an error's own words.
+//
+// The sentinel is searched for rather than only trimmed from the front, because by the
+// time the refusal reaches here it carries the wrappers of every layer it passed through
+// — the model gateway's own check wraps it before the task runtime sees it — and what a
+// person reads should be the sentence the package wrote rather than the list of packages
+// that noticed.
+func userSentence(err error, prefix error) string {
+	text := err.Error()
+	if index := strings.Index(text, prefix.Error()); index >= 0 {
+		text = text[index+len(prefix.Error()):]
+	}
+
+	message := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(text), ":"))
+	if message == "" {
+		return prefix.Error()
+	}
+	return message
 }
 
 // Compile-time checks that every adapter satisfies the port it is wired to.

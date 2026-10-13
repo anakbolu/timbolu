@@ -61,7 +61,19 @@ var (
 	// connection waiting for a fresh login looks like. The caller asks the person
 	// to reconnect rather than retrying.
 	ErrNoToken = errors.New("integration: the connection has no usable token")
+	// ErrPlanLimit means the workspace's package does not allow another connection.
+	// It is a refusal to buy out of rather than one to retry.
+	ErrPlanLimit = errors.New("integration: paket workspace tidak mengizinkan koneksi baru")
 )
+
+// PlanLimits reports how many connections a workspace's package allows.
+//
+// It is a port for the reason the other plan ports are: this module does not know
+// what a subscription is, and the container hands it the module that does. Unwired
+// means the deployment sells no packages, and nothing is capped.
+type PlanLimits interface {
+	MaxIntegrations(ctx context.Context, workspaceID uuid.UUID) (int, error)
+}
 
 // Scope is the tenant every call is bound to. It mirrors the approval module's
 // scope: the user is who is asking, the workspace is what they may see.

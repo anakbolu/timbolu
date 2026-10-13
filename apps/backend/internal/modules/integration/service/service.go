@@ -36,6 +36,9 @@ type Deps struct {
 	Logger *zap.Logger
 	// Clock is the source of "now", so a test can age a token without sleeping.
 	Clock func() time.Time
+	// Limits reports how many connections the workspace's package allows. Optional:
+	// unwired means the deployment sells no packages and nothing is capped.
+	Limits domain.PlanLimits
 	// Registry holds the adapters this deployment knows. Optional: without one no
 	// integration tool can run, which is what a deployment with no adapters is.
 	Registry domain.Registry
@@ -97,6 +100,47 @@ func (s *service) Get(ctx context.Context, scope domain.Scope, id uuid.UUID) (do
 	return s.deps.Repository.Get(ctx, scope, id)
 }
 
+// checkConnectionLimit refuses a connection the workspace's package does not allow.
+//
+// Re-authorising an account the workspace already has is not a new connection, and
+// refusing it would lock a workspace out of fixing a broken token — so the accounts
+// it already holds are subtracted before the package's allowance is asked.
+func (s *service) checkConnectionLimit(ctx context.Context, scope domain.Scope, input domain.ConnectInput) error {
+	if s.deps.Limits == nil {
+		return nil
+	}
+
+	limit, err := s.deps.Limits.MaxIntegrations(ctx, scope.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	if limit <= 0 {
+		return nil
+	}
+
+	existing, err := s.deps.Repository.List(ctx, scope)
+	if err != nil {
+		return err
+	}
+
+	held := 0
+	for _, connection := range existing {
+		if connection.App == input.App && connection.AccountLabel == input.AccountLabel {
+			// The same account, so this is a re-authorisation rather than a new
+			// connection.
+			return nil
+		}
+		held++
+	}
+
+	if held >= limit {
+		return fmt.Errorf("%w: paket ini mengizinkan %d koneksi; putuskan salah satu atau naikkan paket",
+			domain.ErrPlanLimit, limit)
+	}
+
+	return nil
+}
+
 // Connect stores a completed authorisation.
 //
 // The tokens are sealed before they reach the repository, so a row that is
@@ -108,6 +152,9 @@ func (s *service) Connect(ctx context.Context, scope domain.Scope, input domain.
 	}
 	if s.deps.Cipher == nil {
 		return domain.Integration{}, domain.ErrNoCipher
+	}
+	if err := s.checkConnectionLimit(ctx, scope, input); err != nil {
+		return domain.Integration{}, err
 	}
 
 	access, err := s.deps.Cipher.Seal(ctx, scope.WorkspaceID, input.AccessToken)

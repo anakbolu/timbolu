@@ -29,9 +29,12 @@ var (
 	ErrWorkspaceNotFound    = errors.New("workspace: workspace not found")
 	// ErrInvalidInput means the request itself is wrong (a blank name, an
 	// unknown timezone, a malformed address). Handlers answer 400 for it.
-	ErrInvalidInput          = errors.New("workspace: invalid input")
-	ErrInvalidRole           = errors.New("workspace: unknown role")
-	ErrMemberNotFound        = errors.New("workspace: member not found")
+	ErrInvalidInput   = errors.New("workspace: invalid input")
+	ErrInvalidRole    = errors.New("workspace: unknown role")
+	ErrMemberNotFound = errors.New("workspace: member not found")
+	// ErrPlanLimit means the workspace's package does not allow another member. It
+	// is a refusal to buy out of rather than one to retry.
+	ErrPlanLimit             = errors.New("workspace: paket ini tidak mengizinkan anggota baru")
 	ErrCannotRemoveYourself  = errors.New("workspace: you cannot remove your own membership")
 	ErrInvitationAlreadySent = errors.New("workspace: an invitation for this address is already pending")
 )

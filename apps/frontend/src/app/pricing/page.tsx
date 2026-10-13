@@ -18,46 +18,48 @@ const TIERS: Tier[] = [
     name: "Gratis",
     price: "Rp 0",
     period: "/ bulan",
-    tagline: "Untuk mencoba satu anggota keluarga.",
+    tagline: "Untuk mencoba dengan tim kecil.",
     features: [
-      "1 anggota tim",
+      "3 anggota tim",
+      "200 ribu token per periode",
+      "Enam Bolu siap pakai",
       "Invoice dan balasan sebagai draf",
-      "Rekap pesanan mingguan",
-      "Riwayat 30 hari",
     ],
     cta: { label: "Coba gratis", href: "/dashboard" },
   },
   {
     name: "Keluarga",
-    price: "Segera",
+    price: "Rp 149.000",
+    period: "/ bulan",
     tagline: "Untuk bisnis yang sudah jalan.",
     features: [
-      "Enam anggota tim lengkap",
-      "WhatsApp, email, dan spreadsheet",
-      "Jadwal kerja dan izin kirim otomatis",
-      "Arsip dokumen tanpa batas",
+      "6 anggota tim dan 6 Bolu",
+      "2 juta token per bulan",
+      "Tiga aplikasi terhubung",
+      "Paket tambahan token saat menipis",
     ],
-    cta: { label: "Segera hadir" },
+    cta: { label: "Mulai", href: "/signup" },
     featured: true,
   },
   {
     name: "Rombongan",
-    price: "Custom",
+    price: "Rp 449.000",
+    period: "/ bulan",
     tagline: "Untuk tim dan agensi.",
     features: [
-      "Anggota tim sesuai kebutuhan",
-      "Akses tim dan peran",
+      "25 anggota tim dan 20 Bolu",
+      "8 juta token per bulan",
+      "Sepuluh aplikasi terhubung",
       "Catatan aktivitas lengkap",
-      "Dukungan prioritas",
     ],
-    cta: { label: "Hubungi kami", href: "/dashboard" },
+    cta: { label: "Mulai", href: "/signup" },
   },
 ];
 
 export const metadata: Metadata = {
   title: "Harga",
   description:
-    "Harga Keluarga Bolu: mulai gratis, tambah anggota tim saat bisnismu siap. Bayar lewat transfer bank Indonesia.",
+    "Harga Keluarga Bolu: mulai gratis dengan 200 ribu token, naikkan paket saat bisnismu siap. Bayar lewat transfer bank atau virtual account Indonesia.",
 };
 
 export default function PricingPage() {
@@ -71,8 +73,8 @@ export default function PricingPage() {
               Harga
             </h1>
             <p className="mt-5 text-[19px] text-bolu-muted">
-              Mulai gratis dengan satu anggota tim. Tambah anggota lain saat bisnismu
-              siap — bayar dengan transfer bank Indonesia.
+              Mulai gratis dengan 3 anggota tim. Naikkan paket saat bisnismu siap —
+              bayar dengan transfer bank atau virtual account Indonesia.
             </p>
           </div>
 

@@ -149,6 +149,38 @@ WhatsApp:
   # debugging switch rather than a default.
   LogWhatsmeow: false
 
+# Billing: the package a workspace is on, the allowance it grants, and how it is
+# paid for. Local development takes no online payment — the module still writes
+# invoices and still enforces the package, which is what makes it testable without
+# a gateway account.
+Billing:
+  # Empty means no payment provider: an invoice is created and the screen says to
+  # transfer and confirm. The Duitku credentials fill this in.
+  Provider: ""
+  # Zero takes the product default of a week.
+  GraceDays: 0
+  SyncInterval: "15m"
+  # Zero disables the reconciliation pass, which local development may want when it
+  # is stepping through one.
+  SweepInterval: "15m"
+  SweepLimit: 0
+  Duitku:
+    MerchantCode: ""
+    APIKey: ""
+    Sandbox: true
+    # Duitku's own code for the payment channel to offer. Empty takes a bank virtual
+    # account, which is what the product's customers already use.
+    PaymentMethod: ""
+    ExpiryMinutes: 0
+    # Duitku reaches the callback from outside, so it has to be an absolute address this
+    # deployment serves. Locally it is the host-run API; a tunnel is what makes it
+    # reachable, and without one the payment page works but nothing hears that it was paid.
+    CallbackURL: "http://localhost:8080/api/billing/webhooks/duitku"
+    ReturnURL: "http://localhost:3000/settings/subscription"
+    # Empty follows DUITKU_SANDBOX. A sandbox run that wants to verify its own wiring
+    # points this at a stand-in.
+    BaseURL: ""
+
 Logging:
   Level: "debug"
   Format: "console"

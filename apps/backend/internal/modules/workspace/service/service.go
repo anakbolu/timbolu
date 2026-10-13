@@ -36,6 +36,9 @@ type Deps struct {
 	Mailer domain.Mailer
 	// Tokens generates the random invitation token and its hash.
 	Tokens domain.Tokens
+	// Limits reports how many members the workspace's package allows. Optional:
+	// unwired means the deployment sells no packages and nothing is capped.
+	Limits domain.PlanLimits
 	Config Config
 }
 
@@ -43,6 +46,7 @@ type service struct {
 	deps   domain.Repository
 	mail   domain.Mailer
 	tokens domain.Tokens
+	limits domain.PlanLimits
 	cfg    Config
 }
 
@@ -61,6 +65,7 @@ func New(deps Deps) domain.Service {
 		deps:   deps.Repository,
 		mail:   deps.Mailer,
 		tokens: deps.Tokens,
+		limits: deps.Limits,
 		cfg:    deps.Config,
 	}
 }
@@ -266,6 +271,42 @@ func (s *service) RemoveMember(ctx context.Context, scope domain.Scope, actorRol
 
 // Invite sends an invitation. Only owners and admins may invite, and the role
 // they may grant is capped by their own: an admin cannot create an owner.
+// checkMemberLimit refuses an invitation the workspace's package does not allow.
+//
+// It counts the people who are there plus the invitations that are still open,
+// because an invitation is a seat somebody will take: counting only the members
+// would let a workspace invite ten people into a package that allows three, and the
+// last seven would fail at acceptance — after they were told to expect access.
+func (s *service) checkMemberLimit(ctx context.Context, scope domain.Scope) error {
+	if s.limits == nil {
+		return nil
+	}
+
+	limit, err := s.limits.MaxMembers(ctx, scope.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	if limit <= 0 {
+		return nil
+	}
+
+	members, err := s.deps.Members(ctx, scope)
+	if err != nil {
+		return err
+	}
+	invitations, err := s.deps.Invitations(ctx, scope)
+	if err != nil {
+		return err
+	}
+
+	if len(members)+len(invitations) >= limit {
+		return fmt.Errorf("%w: paket ini mengizinkan %d anggota; naikkan paket untuk menambah",
+			domain.ErrPlanLimit, limit)
+	}
+
+	return nil
+}
+
 func (s *service) Invite(ctx context.Context, scope domain.Scope, actorRole string, actorID uuid.UUID, email, role string) (domain.Invitation, error) {
 	if !domain.CanManageMembers(actorRole) {
 		return domain.Invitation{}, domain.ErrForbidden
@@ -279,6 +320,9 @@ func (s *service) Invite(ctx context.Context, scope domain.Scope, actorRole stri
 
 	normalized, err := normalizeEmail(email)
 	if err != nil {
+		return domain.Invitation{}, err
+	}
+	if err := s.checkMemberLimit(ctx, scope); err != nil {
 		return domain.Invitation{}, err
 	}
 

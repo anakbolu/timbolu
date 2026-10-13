@@ -5,6 +5,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -434,6 +435,13 @@ func (h *Handler) fail(c *fiber.Ctx, operation string, err error) error {
 		return response.Error(c, fiber.StatusBadRequest, err.Error(), "invalid_input", nil)
 	case errors.Is(err, domain.ErrInvalidRole):
 		return response.Error(c, fiber.StatusBadRequest, "unknown role", "invalid_role", nil)
+	case errors.Is(err, domain.ErrPlanLimit):
+		// 409 rather than 403: nothing is forbidden about who is asking, and the answer is
+		// to buy a bigger package rather than to ask somebody else. The message names the
+		// package's own number, which the service put in it.
+		return response.Error(c, fiber.StatusConflict,
+			strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(err.Error(), domain.ErrPlanLimit.Error()), ":")),
+			"plan_limit_reached", nil)
 	case errors.Is(err, domain.ErrWorkspaceNotFound):
 		return response.Error(c, fiber.StatusNotFound, "workspace not found", "workspace_not_found", nil)
 	default:

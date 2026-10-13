@@ -72,9 +72,17 @@ func (c *Container) openLLM(_ context.Context, cfg *config.Config) error {
 			// the ledger, which is slower but correct.
 			c.Logger.Warn("quota is enabled but redis is not configured: every check reads the ledger")
 		}
-		deps.Quota = fixedAllowance{
-			tokens:      cfg.Llm.TokensPerPeriod,
-			dailyMicros: cfg.Plan.DailyCostMicros,
+		// The subscription is what a workspace may spend, when this deployment sells
+		// packages at all. The configured allowance is what a deployment without
+		// billing runs with, which is why it stays: a self-hosted installation that
+		// wants one bound for everybody should not have to seed a plan to get it.
+		if c.Billing != nil {
+			deps.Quota = billingQuotaPolicy{service: c.Billing}
+		} else {
+			deps.Quota = fixedAllowance{
+				tokens:      cfg.Llm.TokensPerPeriod,
+				dailyMicros: cfg.Plan.DailyCostMicros,
+			}
 		}
 	}
 

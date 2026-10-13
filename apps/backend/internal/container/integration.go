@@ -109,6 +109,9 @@ func (c *Container) openIntegration(_ context.Context, cfg *config.Config, o *op
 		// forever-nil runtime.
 		Triggers: integrationTriggers{container: c},
 		Limiter:  limits,
+		// The package decides how many connections a workspace may have. Unwired
+		// means the deployment sells none, and nothing is capped.
+		Limits: c.billingIntegrationLimits(),
 		// The MCP servers belong to a workspace, so the tools they contribute are
 		// read per scope rather than registered here with the deployment's own
 		// adapters.

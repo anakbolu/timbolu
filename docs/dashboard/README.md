@@ -16,6 +16,7 @@ bukan data contoh.
 | `08-mobile.png` | Mobile: bilah atas menggantikan sidebar di bawah 760px |
 | `09-mobile-menu.png` | Mobile: drawer terbuka |
 | `10-memori.png` | Memori: memori utama, memori pribadi tiap Bolu, dan basis pengetahuan |
+| `11-langganan.png` | Langganan: paket dan periodenya, pemakaian token, batas paket, tagihan yang menunggu dengan cara bayarnya, paket tambahan, paket yang tersedia, dan riwayat tagihan |
 
 Diambil 2026-10-12. Angka di layar adalah isi workspace uji, jadi nol di tempat
 yang belum punya pekerjaan — itu memang perilakunya, bukan tampilan kosong.
@@ -24,6 +25,13 @@ yang belum punya pekerjaan — itu memang perilakunya, bukan tampilan kosong.
 atas daftar aplikasi: peringatan jalur tidak resmi dengan tombol terimanya, pemilih
 nomor dan Bolu yang menjawab, serta status tiap nomor. Yang belum ada di layar
 adalah QR-nya, karena penautan butuh HP sungguhan untuk dipindai.
+
+`11-langganan.png` diambil setelah EPIC 12 mendarat: paket Keluarga aktif dengan
+periode dan batasnya, pemakaian 800 ribu dari 3,4 juta token (termasuk 1,4 juta
+dari dua paket tambahan yang sudah dibayar), satu tagihan langganan yang menunggu
+beserta virtual account-nya, kedua paket tambahan yang bisa dibeli, tiga paket
+yang tersedia, dan riwayat tagihan lengkap. Angka-angkanya dari workspace uji yang
+benar-benar melewati alur pembayaran, bukan data contoh.
 
 `02-rutinitas.png` diambil setelah EPIC 11 mendarat, dengan tiga rutinitas yang
 benar-benar tersimpan lewat API — satu harian, satu tiap jam dalam rentang, dan
