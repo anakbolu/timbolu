@@ -10,6 +10,7 @@
  * and the values come from what the API can answer.
  */
 
+import { Bell, Check } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
@@ -79,9 +80,7 @@ export function DashView() {
             aria-label="Notifikasi"
             className="flex size-11 cursor-pointer items-center justify-center rounded-full border border-bolu-border bg-white"
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1E1B2E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5a2.2 2.2 0 0 0 4 0" />
-            </svg>
+            <Bell size={20} strokeWidth={2} aria-hidden="true" />
           </button>
           <div className="flex size-11 items-center justify-center rounded-full bg-[#FDE7DA] font-display font-bold">
             {initials}
@@ -226,9 +225,7 @@ export function DashView() {
                       />
                     ) : (
                       <div className="flex size-8 items-center justify-center rounded-full bg-bolu-ink">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                          <path d="M5 12.5l4.5 4.5L19 7.5" />
-                        </svg>
+                        <Check size={16} strokeWidth={3} color="#FFFFFF" aria-hidden="true" />
                       </div>
                     )}
                   </div>

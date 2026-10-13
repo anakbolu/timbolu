@@ -9,6 +9,7 @@
  * button does not return to a page whose session is gone.
  */
 
+import { LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -43,21 +44,7 @@ export function SignOutButton({ className }: { className?: string }) {
         "flex min-h-[52px] cursor-pointer items-center gap-3 rounded border-0 bg-transparent px-3.5 text-[17px] font-bold text-bolu-ink disabled:opacity-60"
       }
     >
-      <svg
-        width="22"
-        height="22"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-      >
-        <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" />
-        <path d="M10 17l-5-5 5-5" />
-        <path d="M5 12h11" />
-      </svg>
+      <LogOut size={22} strokeWidth={2} aria-hidden="true" />
       <span className="flex-1 text-left">{busy ? "Keluar…" : "Keluar"}</span>
     </button>
   );

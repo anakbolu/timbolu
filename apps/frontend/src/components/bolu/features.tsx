@@ -1,11 +1,11 @@
+import { AlignLeft, ClipboardCheck, Clock } from "lucide-react";
+
 import { FEATURES } from "@/lib/crew";
 
 function FeatureIcon({ kind }: { kind: (typeof FEATURES)[number]["icon"] }) {
   const shared = {
     width: 34,
     height: 34,
-    viewBox: "0 0 24 24",
-    fill: "none",
     stroke: "#1E1B2E",
     strokeWidth: 2,
     strokeLinecap: "round" as const,
@@ -14,28 +14,14 @@ function FeatureIcon({ kind }: { kind: (typeof FEATURES)[number]["icon"] }) {
   };
 
   if (kind === "check") {
-    return (
-      <svg {...shared}>
-        <rect x="4" y="3" width="16" height="18" rx="3" />
-        <path d="M8.5 12.5l2.5 2.5 4.5-5" />
-      </svg>
-    );
+    return <ClipboardCheck {...shared} />;
   }
 
   if (kind === "clock") {
-    return (
-      <svg {...shared}>
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 7v5l3 2" />
-      </svg>
-    );
+    return <Clock {...shared} />;
   }
 
-  return (
-    <svg {...shared}>
-      <path d="M4 6h16M4 12h16M4 18h10" />
-    </svg>
-  );
+  return <AlignLeft {...shared} />;
 }
 
 export function Features() {
