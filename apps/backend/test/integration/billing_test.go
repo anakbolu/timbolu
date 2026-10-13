@@ -353,18 +353,21 @@ func TestASubscriptionRoundTripsAndItsPeriodsAreReadable(t *testing.T) {
 	// The directory is what the sweep reads, and touching it moves the workspace's next pass
 	// rather than removing it from the queue.
 	due, err := fixture.repository.DueWorkspaces(ctx, time.Now().Add(time.Hour), 100)
+	require.NoError(t, err)
 	require.Contains(t, due, fixture.workspace)
 
 	require.NoError(t, fixture.repository.TouchDirectory(ctx, fixture.scope, fixture.workspace,
 		time.Now().Add(-time.Minute)))
 
 	due, err = fixture.repository.DueWorkspaces(ctx, time.Now(), 100)
+	require.NoError(t, err)
 	require.Contains(t, due, fixture.workspace, "a pass that is due stays due")
 
 	require.NoError(t, fixture.repository.TouchDirectory(ctx, fixture.scope, fixture.workspace,
 		time.Now().Add(time.Hour)))
 
 	due, err = fixture.repository.DueWorkspaces(ctx, time.Now(), 100)
+	require.NoError(t, err)
 	require.NotContains(t, due, fixture.workspace, "a workspace moved forward is not read again")
 
 	// And the limit bounds the pass, so a deployment with many workspaces reconciles them
