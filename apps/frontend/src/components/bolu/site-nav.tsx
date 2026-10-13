@@ -6,6 +6,10 @@ const LINKS = [
   { href: "/#tim", label: "Timnya" },
   { href: "/#cara-kerja", label: "Cara kerja" },
   { href: "/#intip", label: "Intip kerjanya" },
+  // The prices are their own page rather than a section here, because a person deciding what to pay
+  // arrives with that question on its own — and until this link existed the page was reachable only by
+  // typing its URL, which is a page nobody reads.
+  { href: "/pricing", label: "Harga" },
   { href: "/#tanya", label: "Tanya jawab" },
 ];
 
