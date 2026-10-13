@@ -82,7 +82,7 @@ export default function PricingPage() {
             {TIERS.map((tier) => (
               <li
                 key={tier.name}
-                className={`flex flex-col rounded-[28px] border bg-white p-7 ${
+                className={`flex flex-col rounded border bg-white p-7 ${
                   tier.featured ? "border-bolu-ink" : "border-bolu-border"
                 }`}
               >
@@ -149,7 +149,7 @@ export default function PricingPage() {
             ))}
           </ul>
 
-          <div className="mx-auto mt-10 max-w-[760px] rounded-[28px] border border-bolu-border bg-white p-6">
+          <div className="mx-auto mt-10 max-w-[760px] rounded border border-bolu-border bg-white p-6">
             <h2 className="font-display text-[20px] font-semibold">Pembayaran lokal</h2>
             <p className="mt-2 text-bolu-muted">
               Tagihan dan checkout belum aktif — harga di halaman ini masih placeholder.

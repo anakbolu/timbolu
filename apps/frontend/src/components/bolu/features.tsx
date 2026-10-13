@@ -55,7 +55,7 @@ export function Features() {
         {FEATURES.map((feature) => (
           <li
             key={feature.title}
-            className="flex flex-col gap-2.5 rounded-[28px] border border-bolu-border bg-white p-[26px]"
+            className="flex flex-col gap-2.5 rounded border border-bolu-border bg-white p-[26px]"
           >
             <FeatureIcon kind={feature.icon} />
             <div className="font-display text-[22px] font-semibold">{feature.title}</div>

@@ -31,7 +31,7 @@ import {
 
 import { useWorkspace } from "./workspace-data";
 
-const CARD = "rounded-[26px] border border-bolu-border bg-white";
+const CARD = "rounded border border-bolu-border bg-white";
 const HEADING = "font-display text-[22px] font-semibold";
 
 /** Dasbor is the overview screen. */
@@ -92,7 +92,7 @@ export function DashView() {
       {/* Suruh Bolu: the one place a task is given. The backend's router is what
           decides which Bolu answers, so the message goes into the team's group
           thread and the choice is made there rather than guessed here. */}
-      <div className="flex flex-wrap items-center gap-3.5 rounded-[26px] bg-bolu-ink p-[18px_20px] text-white">
+      <div className="flex flex-wrap items-center gap-3.5 rounded bg-bolu-ink p-[18px_20px] text-white">
         <label htmlFor="suruh" className="flex-none font-display text-[19px] font-semibold max-[760px]:basis-full">
           Suruh Bolu
         </label>
@@ -161,7 +161,7 @@ export function DashView() {
               {pending.map((row) => (
                 <div
                   key={row.draft.draft_id}
-                  className="flex flex-wrap items-center gap-3 rounded-[18px] border border-bolu-line p-[10px_12px]"
+                  className="flex flex-wrap items-center gap-3 rounded border border-bolu-line p-[10px_12px]"
                 >
                   <div className="size-11 flex-none">
                     {row.agent ? (
@@ -254,7 +254,7 @@ export function DashView() {
               <div key={bar.day} className="flex h-full flex-col items-center justify-end gap-1.5">
                 <div className="text-[13px] font-semibold">{bar.label}</div>
                 <div
-                  className="w-full max-w-[46px] rounded-xl"
+                  className="w-full max-w-[46px] rounded"
                   style={{ height: bar.h, backgroundColor: bar.bg }}
                 />
                 <div className="text-[14px] text-bolu-muted" style={{ fontWeight: bar.weight }}>

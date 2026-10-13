@@ -21,7 +21,7 @@ export function Flow() {
         </p>
       </div>
 
-      <div className="flex flex-col gap-7 rounded-[32px] border border-bolu-border bg-white px-7 py-8">
+      <div className="flex flex-col gap-7 rounded border border-bolu-border bg-white px-7 py-8">
         <div aria-hidden="true" className="relative mx-[6%] h-3.5">
           <div className="absolute inset-x-0 top-1.5 border-t-2 border-dashed border-[#C9CDE0]" />
           <div className="courier absolute top-0 -ml-[13px] h-3.5 w-[26px] rounded bg-bolu-accent" />

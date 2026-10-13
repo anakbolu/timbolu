@@ -30,7 +30,7 @@ import { crewFor, expressionOf, stateOf } from "@/lib/dashboard-view";
 import { WhatsAppPanel } from "./whatsapp-panel";
 import { useWorkspace } from "./workspace-data";
 
-const CARD = "rounded-[26px] border border-bolu-border bg-white";
+const CARD = "rounded border border-bolu-border bg-white";
 const HEADING = "font-display text-[22px] font-semibold";
 
 /** STATUS_LABEL says what a connection's state means, in the user's words. */
@@ -116,7 +116,7 @@ function Tile({ app, size = 40 }: { app: string; size?: number }) {
   return (
     <span
       aria-hidden
-      className="flex flex-none items-center justify-center rounded-[12px] font-display font-bold text-white"
+      className="flex flex-none items-center justify-center rounded font-display font-bold text-white"
       style={{ width: size, height: size, backgroundColor: tile, fontSize: size * 0.36 }}
     >
       {mono}
@@ -274,12 +274,12 @@ export function IntegrationsPanel() {
       </header>
 
       {error ? (
-        <p role="alert" className="rounded-2xl bg-bolu-flag/10 px-4 py-3 text-[15px] text-bolu-flag">
+        <p role="alert" className="rounded bg-bolu-flag/10 px-4 py-3 text-[15px] text-bolu-flag">
           {error}
         </p>
       ) : null}
       {shown ? (
-        <p role="status" className="rounded-2xl bg-bolu-live/10 px-4 py-3 text-[15px] text-bolu-lunas">
+        <p role="status" className="rounded bg-bolu-live/10 px-4 py-3 text-[15px] text-bolu-lunas">
           {shown}
         </p>
       ) : null}
@@ -332,7 +332,7 @@ export function IntegrationsPanel() {
               return (
                 <li
                   key={connection.integration_id}
-                  className="flex flex-col gap-3 rounded-[26px] border border-bolu-border bg-white p-4"
+                  className="flex flex-col gap-3 rounded border border-bolu-border bg-white p-4"
                 >
                   <div className="flex items-center gap-3">
                     <Tile app={connection.app} size={48} />
@@ -552,7 +552,7 @@ export function IntegrationsPanel() {
               return (
                 <li
                   key={adapter.app}
-                  className="flex flex-col gap-2.5 rounded-[26px] border border-bolu-border bg-white p-4"
+                  className="flex flex-col gap-2.5 rounded border border-bolu-border bg-white p-4"
                 >
                   <div className="flex items-center gap-3">
                     <Tile app={adapter.app} size={44} />
@@ -625,7 +625,7 @@ export function IntegrationsPanel() {
             {hub.servers.map((server) => (
               <li
                 key={server.id}
-                className="flex flex-wrap items-start justify-between gap-3 rounded-[18px] border border-bolu-line px-4 py-3"
+                className="flex flex-wrap items-start justify-between gap-3 rounded border border-bolu-line px-4 py-3"
               >
                 <div className="min-w-0">
                   <p className="truncate font-semibold">{server.label || server.app}</p>
@@ -718,7 +718,7 @@ function MCPForm({
   return (
     <form onSubmit={add} className="flex flex-wrap items-end gap-3">
       {error ? (
-        <p role="alert" className="basis-full rounded-xl bg-bolu-flag/10 px-3 py-2 text-[14px] text-bolu-flag">
+        <p role="alert" className="basis-full rounded bg-bolu-flag/10 px-3 py-2 text-[14px] text-bolu-flag">
           {error}
         </p>
       ) : null}
@@ -728,7 +728,7 @@ function MCPForm({
           value={app}
           onChange={(event) => setApp(event.target.value)}
           placeholder="notion"
-          className="min-h-11 w-40 rounded-xl border border-bolu-border px-3.5 text-[15px] font-normal outline-none focus:border-bolu-accent"
+          className="min-h-11 w-40 rounded border border-bolu-border px-3.5 text-[15px] font-normal outline-none focus:border-bolu-accent"
         />
       </label>
       <label className="flex min-w-[200px] flex-[1_1_260px] flex-col gap-1.5 text-[14px] font-semibold">
@@ -737,7 +737,7 @@ function MCPForm({
           value={endpoint}
           onChange={(event) => setEndpoint(event.target.value)}
           placeholder="https://mcp.example.com/mcp"
-          className="min-h-11 w-full rounded-xl border border-bolu-border px-3.5 text-[15px] font-normal outline-none focus:border-bolu-accent"
+          className="min-h-11 w-full rounded border border-bolu-border px-3.5 text-[15px] font-normal outline-none focus:border-bolu-accent"
         />
       </label>
       <label className="flex min-w-[160px] flex-[1_1_200px] flex-col gap-1.5 text-[14px] font-semibold">
@@ -746,7 +746,7 @@ function MCPForm({
           type="password"
           value={credential}
           onChange={(event) => setCredential(event.target.value)}
-          className="min-h-11 w-full rounded-xl border border-bolu-border px-3.5 text-[15px] font-normal outline-none focus:border-bolu-accent"
+          className="min-h-11 w-full rounded border border-bolu-border px-3.5 text-[15px] font-normal outline-none focus:border-bolu-accent"
         />
       </label>
       <button
