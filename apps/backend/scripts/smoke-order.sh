@@ -44,7 +44,7 @@ cleanup() {
     stop_child "${STUB_PID:-}"
     stop_child "${GMAIL_PID:-}"
     [[ -n "${BIN_DIR:-}" ]] && rm -rf "$BIN_DIR"
-    rm -f /tmp/smoke-order-gmail.py
+
 }
 trap cleanup EXIT
 
@@ -75,67 +75,6 @@ done
 # offer without a linked WhatsApp number. Google is stubbed so the whole flow runs without an account:
 # the consent screen the flow is started against, the token it stores, and what it received when a
 # person approved the send.
-cat > /tmp/smoke-order-gmail.py <<'PY'
-import json, sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import parse_qs, urlparse
-
-SENT = "/tmp/smoke-order-gmail-sent.jsonl"
-
-
-class Handler(BaseHTTPRequestHandler):
-    def _send(self, payload, status=200):
-        data = json.dumps(payload).encode()
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
-
-    def do_POST(self):
-        length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(length)
-        path = urlparse(self.path).path
-
-        if path.endswith("/token"):
-            form = parse_qs(body.decode())
-            if form.get("grant_type", [""])[0] == "refresh_token":
-                return self._send({"access_token": "ya29.refreshed", "expires_in": 3600})
-            return self._send({"access_token": "ya29.connected", "refresh_token": "1//refresh",
-                               "expires_in": 3600, "scope": "https://www.googleapis.com/auth/gmail.send"})
-
-        if "/messages/send" in path:
-            with open(SENT, "a") as log:
-                log.write(body.decode() + "\n")
-            return self._send({"id": "msg-sent", "threadId": "t1"})
-
-        if path.endswith("/drafts"):
-            return self._send({"id": "draft-1", "message": {"id": "m1"}})
-
-        return self._send({"error": "unknown"}, 404)
-
-    def do_GET(self):
-        parsed = urlparse(self.path)
-        if parsed.path == "/auth":
-            query = parse_qs(parsed.query)
-            redirect = query.get("redirect_uri", [""])[0]
-            state = query.get("state", [""])[0]
-            self.send_response(302)
-            self.send_header("Location", "{}?code=a-good-code&state={}".format(redirect, state))
-            self.end_headers()
-            return
-
-        if parsed.path.endswith("/users/me/profile"):
-            return self._send({"emailAddress": "toko@example.com"})
-
-        return self._send({"error": "unknown"}, 404)
-
-    def log_message(self, *args):
-        pass
-
-
-HTTPServer(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
-PY
 
 GMAIL_PORT="${GMAIL_PORT:-11438}"
 
@@ -147,8 +86,10 @@ start_gmail() {
     done
     lsof -ti ":${GMAIL_PORT}" >/dev/null 2>&1 && fail "port ${GMAIL_PORT} did not free up"
 
-    rm -f /tmp/smoke-order-gmail-sent.jsonl
-    python3 /tmp/smoke-order-gmail.py "$GMAIL_PORT" &
+    rm -f "${SENT_LOG:-/tmp/smoke-order-gmail-sent.jsonl}"
+    # The mailbox is `scripts/gmail-stub.py`, shared with the demo: both need the same consent screen
+    # and the same send endpoint, and a second copy is a second place the flow can be wrong.
+    python3 scripts/gmail-stub.py "$GMAIL_PORT" &
     GMAIL_PID=$!
 
     for _ in $(seq 1 20); do
@@ -693,13 +634,13 @@ SENT=$(wait_for_draft_status "$DRAFT_ID" "sent")
 
 # And the provider received exactly one message, whose body is the one the card showed. This is the
 # half of the promise the earlier phases cannot prove: the gate is not just a stop, it is a hand.
-[[ -s /tmp/smoke-order-gmail-sent.jsonl ]] ||
+[[ -s "${SENT_LOG:-/tmp/smoke-order-gmail-sent.jsonl}" ]] ||
     fail "nothing reached the provider, so the approval proved nothing"
 
 python3 - "$DRAFT_ID" "$ORDER" <<'PY'
-import base64, json, sys
+import base64, json, os, sys
 
-with open("/tmp/smoke-order-gmail-sent.jsonl") as handle:
+with open(os.environ.get("SENT_LOG", "/tmp/smoke-order-gmail-sent.jsonl")) as handle:
     sent = [json.loads(line) for line in handle if line.strip()]
 
 assert len(sent) == 1, "exactly one message must have been sent, got {}".format(len(sent))

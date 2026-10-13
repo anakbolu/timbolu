@@ -10,10 +10,12 @@ of it is a second place the flow can be wrong. `STUB_MODE` picks what it does:
   invoice     read the customer's orders, then compose the invoice and hand it to the sending tool.
   measure     read the product, the quantity, and the phone out of the customer's own message, then
               run the same three rounds as `take`. What the measurement runs repeated times.
+  demo        the flow a person drives by hand: read the message, look the price up, record the order,
+              and compose the invoice when asked. What `make demo` runs against.
 
 Usage: STUB_MODE=take python3 scripts/order-stub.py <port>
 """
-import json, os, re, sys
+import hashlib, json, math, os, re, sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 # The stub walks each phase's flow the way the template's persona describes it. It is deliberately
@@ -25,6 +27,9 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 #            The phase that ends parked on a draft.
 #   incomplete  record an order whose quantity is zero, then ask the customer. The phase where a
 #            half-read message must not become a line on an invoice.
+#   demo     the flow driven by whatever a person types rather than by a script: two things are asked
+#            about rather than guessed (an unnamed product, a missing quantity) and the invoice is only
+#            composed when it is asked for.
 MODE = os.environ.get("STUB_MODE", "take")
 
 KNOWN = {"product": "Kopi Arabika", "quantity": 2}
@@ -127,7 +132,17 @@ def total_from(result):
 PRODUCTS = [name.strip() for name in os.environ.get("STUB_PRODUCTS", "").split(",") if name.strip()]
 
 NUMBER = re.compile(r"[Nn]omor saya\s+(\d{6,})")
+NAME = re.compile(r"[Nn]ama saya\s+([A-Za-z][A-Za-z' ]{2,30}?)(?:[,.]|\s+nomor|\s+kirim|$)")
+# What the customer called the product, taken from the phrase after "pesan"/"order". It is what an
+# unknown product is looked up by, so the catalogue — not this stub — decides whether it exists.
+MENTIONED = re.compile(r"\b(?:pesan|order)\s+([A-Za-z][A-Za-z0-9' ]{2,40})", re.IGNORECASE)
+FILLER = re.compile(r"\s+\b(?:dong|ya|nih|sih|deh)\b.*$|[.,].*$", re.IGNORECASE)
+NOTE = re.compile(r"(kirim ke[^.]*)", re.IGNORECASE)
 QUANTITY = re.compile(r"(\d+(?:[.,]\d+)?)\s*(?:kg|pcs|box)?\s*$")
+
+# DEMO_MAILBOX is who the invoice is addressed to in the demo when the message named no customer:
+# a deployment with a stub provider has no real customer address, and the draft is what a person reads.
+DEMO_MAILBOX = os.environ.get("STUB_MAILBOX", "pelanggan@example.com")
 
 
 def message_of(body):
@@ -149,6 +164,9 @@ def read_order(body):
     text = message_of(body)
     product = next((name for name in PRODUCTS if name.lower() in text.lower()), "")
     phone = NUMBER.search(text)
+    name = NAME.search(text)
+    note = NOTE.search(text)
+    mentioned = MENTIONED.search(text)
 
     quantity = 0.0
     for fragment in text.replace("ya.", " ").replace("ya", " ").split():
@@ -157,7 +175,14 @@ def read_order(body):
             quantity = float(found.group(1).replace(",", "."))
             break
 
-    return {"product": product, "quantity": quantity, "customer_phone": phone.group(1) if phone else ""}
+    return {
+        "product": product,
+        "quantity": quantity,
+        "customer_phone": phone.group(1) if phone else "",
+        "customer_name": name.group(1).strip() if name else "",
+        "note": note.group(1).strip() if note else "",
+        "mentioned": FILLER.sub("", mentioned.group(1)).strip() if mentioned else "",
+    }
 
 
 def decide_measure(body, offered):
@@ -180,7 +205,125 @@ def decide_measure(body, offered):
         order["quantity"], "", order["product"], total_from(result_text(body, "order.record_order"))))
 
 
+# The embedding endpoint, which the memory pipeline needs: a memory is embedded before it is stored, and
+# a workspace with no embedding provider cannot remember anything at all — including the main memory the
+# template's persona reads. The vectors come from a word hash, so two texts that share words are
+# measurably closer than two that do not, which is what makes a search behave like a search.
+DIMENSIONS = 1536
+
+
+def embed(text):
+    """embed turns text into a unit vector by hashing its words."""
+    vector = [0.0] * DIMENSIONS
+    for word in re.findall(r"[\w.]+", text.lower()):
+        digest = hashlib.sha256(word.encode()).digest()
+        vector[int.from_bytes(digest[:4], "big") % DIMENSIONS] += 1.0
+
+    norm = math.sqrt(sum(value * value for value in vector)) or 1.0
+    return [value / norm for value in vector]
+
+
+def quantity_text(quantity):
+    """How a person writes a quantity: 2, not 2.0 — and 2.5 when it really is two and a half."""
+    if quantity == int(quantity):
+        return str(int(quantity))
+
+    return "{:g}".format(quantity)
+
+def decide_demo(body, offered):
+    """The flow a person tries by hand: read the message, look the price up, record, then invoice.
+
+    It is the `take` and `invoice` paths of the smoke driven by whatever was typed rather than by a
+    script, because that is the difference between trying the product and watching a test run. Two
+    things it deliberately does *not* do, both of which are the product's promises rather than the
+    stub's convenience:
+
+      - a message with no quantity, or with a product the catalogue does not have, is asked about
+        rather than recorded with an invented line;
+      - the invoice is only composed when asked for, so the draft card appears when the person
+        following along reaches that step.
+    """
+    text = message_of(body).lower()
+    order = read_order(body)
+
+    # "tagih" and its relatives: compose the invoice from the newest order and hand it to the sending
+    # tool, which is the call the approval gate holds.
+    if any(word in text for word in ("tagih", "tagihan", "invoice")):
+        if not called(body, "order.read_orders"):
+            return call("order.read_orders", {"customer_phone": order["customer_phone"], "limit": 5}, "read")
+
+        read = result_text(body, "order.read_orders")
+        orders = json.loads(read).get("pesanan") if read else []
+        latest = orders[0] if orders else {}
+        if not latest:
+            return answer("Belum ada pesanan yang bisa ditagih.")
+
+        lines = ", ".join(
+            "{} {} {}".format(line.get("jumlah"), line.get("satuan", ""), line.get("produk", ""))
+            for line in latest.get("baris", [])
+        )
+        message = "Tagihan pesanan {}: {} - total Rp {:g}. Mohon dikonfirmasi ya.".format(
+            latest.get("kode", ""), lines, latest.get("total_rupiah", 0))
+
+        send = next((name for name in offered if name.endswith((".send", ".send_message"))), "")
+        if not send:
+            return answer("Tagihan sudah siap, tapi belum ada kanal pengiriman yang tersambung.")
+
+        if send.endswith(".send_message"):
+            return call(send, {"to": order["customer_phone"], "text": message}, "send")
+
+        return call(send, {
+            "to": DEMO_MAILBOX,
+            "subject": "Tagihan pesanan {}".format(latest.get("kode", "")),
+            "body": message,
+        }, "send")
+
+    # A product the catalogue does not have is still looked up, and the *tool* is what answers: it
+    # carries the candidates, so "Kopi Luwak" comes back as "we sell Kopi Arabika, Kopi Susu". Answering
+    # from here would hide the behaviour worth seeing — a wrong product is a question with options, not
+    # a dead end.
+    if not order["product"] and order["mentioned"]:
+        if called(body, "order.find_product"):
+            # The candidates come from the tool's own answer, so what the customer is offered is what
+            # the catalogue actually has — including the case worth seeing: a phrase that contains a
+            # catalogue name ("Kopi Arabika Gayo") still comes back with that product as a candidate.
+            found = json.loads(result_text(body, "order.find_product") or "{}")
+            names = [row.get("nama", "") for row in (found.get("kandidat") or []) if row.get("nama")]
+            if names:
+                return answer("Produk itu belum ada di katalog kami. Yang mirip ada: {}. Mau yang mana?".format(
+                    ", ".join(names)))
+
+            return answer("Produk itu belum ada di katalog kami. Mau pesan yang lain?")
+
+        return call("order.find_product", {"product": order["mentioned"]}, "find")
+
+    if not order["product"]:
+        return answer("Maaf, produknya yang mana ya? Sebutkan nama produknya seperti di katalog.")
+
+    if not called(body, "order.find_product"):
+        return call("order.find_product", {"product": order["product"]}, "find")
+
+    # The quantity is asked about before anything is written, which is the second promise: a message
+    # that did not say how much is a question, not a guess.
+    if order["quantity"] <= 0:
+        return answer("Berapa jumlah {} yang mau dipesan?".format(order["product"]))
+
+    if not called(body, "order.record_order"):
+        return call("order.record_order", {
+            "customer_name": order["customer_name"],
+            "customer_phone": order["customer_phone"],
+            "note": order["note"],
+            "items": [{"product": order["product"], "quantity": order["quantity"]}],
+        }, "record")
+
+    return answer("Baik, sudah saya catat: {} {}, total {}. Kalau mau ditagih, bilang saja.".format(
+        quantity_text(order["quantity"]), order["product"],
+        total_from(result_text(body, "order.record_order"))))
+
 def decide(body, offered):
+    if MODE == "demo":
+        return decide_demo(body, offered)
+
     if MODE == "measure":
         return decide_measure(body, offered)
 
@@ -247,10 +390,30 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
         body = json.loads(self.rfile.read(length) or b"{}")
+
+        if self.path.endswith("/embeddings"):
+            inputs = body.get("input") or []
+            if isinstance(inputs, str):
+                inputs = [inputs]
+            payload = {
+                "object": "list",
+                "model": body.get("model", "stub"),
+                "data": [
+                    {"object": "embedding", "index": index, "embedding": embed(text)}
+                    for index, text in enumerate(inputs)
+                ],
+                "usage": {"prompt_tokens": 12, "total_tokens": 12},
+            }
+
+            return self.reply(payload)
+
         offered = [t["function"]["name"] for t in body.get("tools", []) if t.get("function", {}).get("name")]
 
         payload = decide(body, offered)
 
+        self.reply(payload)
+
+    def reply(self, payload):
         data = json.dumps(payload).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")

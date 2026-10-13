@@ -1,5 +1,5 @@
 .PHONY: help up down logs build dev frontend backend api worker-logs \
-        test test-integration smoke-task smoke-approval smoke-order measure-orders cover lint archcheck sqlc mocks generate llm-fixtures \
+        test test-integration smoke-task smoke-approval smoke-order measure-orders demo demo-stop cover lint archcheck sqlc mocks generate llm-fixtures \
         migrate-up migrate-down migrate-create psql ci
 
 COMPOSE := docker compose
@@ -85,6 +85,13 @@ smoke-order: ## Run the MVP order flow end to end against the compose stack (nee
 
 measure-orders: ## Measure what one order costs, repeated, from usage_ledger (needs `make up`)
 	cd $(BACKEND) && bash scripts/measure-orders.sh $(or $(COUNT),20)
+
+demo: ## Start a stack you can click through, with a workspace, catalogue and Bolu already set up
+	bash $(BACKEND)/scripts/demo.sh
+
+demo-stop: ## Stop what `make demo` started
+	@lsof -ti ":11441" -ti ":11442" | xargs -r kill 2>/dev/null || true
+	@docker compose -f docker-compose.yml -f docker-compose.demo.yml stop api agent-worker integration-worker
 
 cover: ## Run the tests and enforce the coverage gate (MIN_COVERAGE, default 80)
 	cd $(BACKEND) && CGO_ENABLED=0 MIN_COVERAGE=$(or $(MIN_COVERAGE),80) ./scripts/coverage.sh

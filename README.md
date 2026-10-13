@@ -52,8 +52,29 @@ cp .env.example .env
 make up
 ```
 
-The end-to-end checks run against that stack, each one stopping the compose workers first so the
-run's task is not executed by another process's model configuration:
+### Trying it by hand
+
+`make up` starts the product but gives it no model provider, so the first task fails with "no provider
+is configured" — and the catalogue has to be filled in through the API, because maintaining it is a
+screen the product does not have yet. `make demo` closes both gaps:
+
+```bash
+make demo        # a stack you can click through
+```
+
+It starts a model stub and a mailbox stub on the host, points the backend at them, and seeds a
+workspace you can use immediately — `demo@bolu.local` / `Rahasia123!`, with a sales Bolu, five
+catalogue products, the workspace memory, and Gmail connected through its own consent flow. It prints
+what to try and what each step should show. `make demo-stop` stops what it started.
+
+The answers come from a scripted stub rather than a model, so what you are trying is the product —
+catalogue prices, the draft, the approval, the audit trail, the usage screen — and not the model's
+judgement. For a real model, fill in `LLM_DEFAULT_*` in `.env` and run `make up` as usual.
+
+### The end-to-end checks
+
+They run against the same stack, each one stopping the compose workers first so the run's task is not
+executed by another process's model configuration:
 
 ```bash
 docker stop bolu-api bolu-agent-worker bolu-integration-worker

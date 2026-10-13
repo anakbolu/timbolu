@@ -453,6 +453,30 @@ Six layers, and each exists for something the others cannot see:
   the three `order.*` rows in `tool_catalog` agree with what the adapter declares — the agreement the
   code comments promise, and the one thing that needs both a database read and a Go read to check.
 
+### Trying it by hand
+
+`make demo` is not a check: it is the stack a person clicks through. It exists because `make up`
+starts the product with no model provider, so the first task a person opens fails with "no provider is
+configured" — and because the catalogue has to be filled through the API, which is not a screen the
+product has yet. It runs a model stub and a mailbox stub on the host, points the backend at them
+through `docker-compose.demo.yml`, and seeds an account, a workspace, a sales Bolu, five products, the
+workspace memory, and a Gmail connection completed through the provider's consent flow.
+
+Three things about it are worth keeping when it is changed, because each cost a debugging round:
+
+- **the model stub must serve `/v1/embeddings`.** A memory is embedded before it is stored, so a
+  deployment that can chat but cannot embed cannot remember anything — including the main memory the
+  template's persona reads. It answers 500 with `provider returned 0 vectors for 1 inputs` and the
+  message is not obviously about embeddings.
+- **an unknown product is looked up, not answered from the stub.** The candidates live in the tool's
+  own answer, so a stub that decides for itself hides the behaviour the epic asks for: the catalogue
+  answers, with the products it does have.
+- **a person's flow needs a channel, or there is no draft.** The Bolu composes the invoice and looks for
+  a `*.send` tool; with none it says so and no card appears. The mailbox is connected for exactly that
+  reason, and what it received is appended to `/tmp/bolu-demo-gmail-sent.jsonl`, so approving the card in
+  the browser and then reading that file is how "approved" and "went out" are told apart by hand. The
+  *assertion* on those two being the same message is the smoke's phase 5, not the demo's.
+
 ### Measuring what an order costs (EPIC 14)
 
 `make measure-orders` (`scripts/measure-orders.sh`) runs the same stack as the smoke and sends the
