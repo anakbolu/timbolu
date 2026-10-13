@@ -494,6 +494,20 @@ The rupiah figure it prints is the platform's price table applied to a stub's to
 run says so rather than implying a price: pricing needs staging with a real provider, which is the
 part of E14.5 this repository cannot do for itself.
 
+### The gate report (EPIC 14)
+
+`make gate-report` (`scripts/gate-report.sh`) prints the numbers Gerbang 1 is decided on — tasks by
+outcome, tool failures per integration, drafts approved without a revision, and the token and cost
+spend per task and per order. It reads the database rather than the API, because the question is
+about the rows themselves including the ones a workspace filter would hide, and it prints each
+threshold beside its number rather than asserting it: it is a report for a decision, not a gate.
+
+Two things it is careful about, and both are the reason it exists as a script instead of four queries
+in somebody's shell history: **each definition lives in one place** — so the first and the fourth
+version of "how many drafts were approved cleanly" cannot disagree — and **it says what it cannot
+answer**. The rupiah column is the platform's price table times a provider's token counts, so against
+the stub it is nearly zero and the script says so rather than letting a reader take it for a price.
+
 ### The end-to-end smoke
 
 `make smoke-task` runs the API and the agent worker on the host against the
