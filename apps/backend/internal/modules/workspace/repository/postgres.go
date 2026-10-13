@@ -807,6 +807,17 @@ func (r *Repository) RequesterEmail(ctx context.Context, userID uuid.UUID) (stri
 // and it is taken from the schema rather than from a list of tables, so a migration that adds a
 // `workspace_id` is counted the day it is created instead of the day somebody remembers to extend a
 // hand-written walk. See the query's own comment for what that means and what it cannot see.
+//
+// Two things make the deletion land at all, and both are said here rather than discovered later:
+//
+//   - **The audit trail is told this is an erasure.** `audit_logs` refuses a delete from anywhere else
+//     — that is what makes the trail append-only — and the trigger reads `app.audit_erase` for the
+//     length of the transaction. Without it the `DELETE FROM workspaces` cascades into `audit_logs`
+//     and is refused, so a workspace that ever recorded a sensitive action could not be erased at all.
+//     This was a real defect: the flag existed, the trigger was tested against it, and nothing on the
+//     application's own path ever set it.
+//   - **It is `SET LOCAL`, and inside the transaction that deletes.** A session-level setting would
+//     outlive the call and leave the next statement on a pooled connection able to delete audit rows.
 func (r *Repository) EraseWorkspace(ctx context.Context, id uuid.UUID) (int64, error) {
 	if r == nil || r.pool == nil {
 		return 0, fmt.Errorf("workspace: database is not configured")
@@ -816,6 +827,11 @@ func (r *Repository) EraseWorkspace(ctx context.Context, id uuid.UUID) (int64, e
 
 	err := r.pool.InScope(ctx, database.Scope{UserID: id, WorkspaceID: id}, func(tx pgx.Tx) error {
 		queries := sqlcgen.New(tx)
+
+		// The one lawful way past the trail's own guard, set for this transaction only.
+		if _, err := tx.Exec(ctx, `SELECT set_config('app.audit_erase', 'on', true)`); err != nil {
+			return fmt.Errorf("mark as erasure: %w", err)
+		}
 
 		counted, err := queries.CountWorkspaceRows(ctx, id.String())
 		if err != nil {

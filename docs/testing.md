@@ -395,8 +395,14 @@ against those rows (`scripts/check-usage.py`).
   record answers 404.
 - `test/integration/erasure_test.go` — the issue's own verification, against a real Postgres and a
   real object store: a workspace is filled through the modules' own services — conversation, message,
-  attachment, task with steps, memory **with a vector**, an approval policy — then erased, and then
-  the **schema is asked** what is left. The count reads `information_schema` for the same reason the
+  attachment, task with steps, memory **with a vector**, **an audit line** — then erased, and then
+  the **schema is asked** what is left. The audit line is not decoration: `audit_logs` is append-only
+  and refuses a delete from anywhere but an erasure, so a fixture that leaves the trail empty never
+  fires the trigger and a missing `app.audit_erase` goes unnoticed. That is exactly what happened —
+  the fixture's own comment claimed a draft with its audit lines and wrote neither, and the erasure
+  was broken for every workspace that had ever recorded a sensitive action. The test now fails without
+  that flag, which is the property worth keeping.
+  The count reads `information_schema` for the same reason the
   erasure's own count does, so a table the test forgot to check cannot make it pass; `data_erasures`
   is excluded deliberately, because it is the one table holding a workspace id without a reference and
   counting it would fail the test on the evidence that the erasure worked. The file asserts three

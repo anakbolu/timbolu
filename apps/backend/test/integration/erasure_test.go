@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/container"
+	approvaldomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/domain"
 	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
 	memorydomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/retention/domain"
@@ -110,6 +111,21 @@ func (f *erasureFixture) fill(t *testing.T) []string {
 		Output: []byte(`{"text":"Baik."}`),
 	})
 	require.NoError(t, err)
+
+	// An audit line, which is the data that cannot be written over or removed from anywhere but
+	// an erasure — so a workspace whose trail is empty is a workspace whose erasure proves nothing
+	// about the guard the trail carries. Writing it here is what makes the assertion below reach the
+	// `app.audit_erase` flag: without it the delete cascades into an empty table, the trigger never
+	// fires, and a missing flag goes unnoticed.
+	require.NoError(t, f.app.Repositories.Approval.RecordAudit(ctx,
+		approvaldomain.Scope{UserID: f.userID, WorkspaceID: f.workspace},
+		approvaldomain.AuditEntry{
+			Action:       "draft.created",
+			ObjectType:   "draft",
+			ObjectID:     uuid.NewString(),
+			ActorAgentID: f.agentID,
+			Metadata:     map[string]any{"action_kind": "gmail.send"},
+		}))
 
 	// A memory with its vector, which is the data UU PDP is really about: a derived
 	// representation of what a customer said. It is written through the module's own repository

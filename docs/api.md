@@ -232,6 +232,19 @@ deleted when they are.
 The published policy is `docs/kebijakan-data.md`; the reasoning, the processors, and
 the region decisions are in `docs/adr/0002-kepatuhan-uu-pdp.md`.
 
+### An erasure is the one path past the trail
+
+`audit_logs` is append-only, enforced by a trigger: an entry can be neither rewritten nor deleted, and
+the only statement that may remove one is a workspace erasure — which says so for the length of its own
+transaction (`app.audit_erase`, set with `SET LOCAL` inside the transaction that deletes). That is what
+keeps "nobody can change the trail" and "a person can have their data deleted" from being two rules that
+contradict each other, and it is a rule the database holds rather than one every caller remembers.
+
+The consequence worth knowing when reading this module: **a workspace that ever recorded a sensitive
+action cannot be erased without that flag**, because the `DELETE FROM workspaces` cascades into the trail
+and is refused. The flag is set by the workspace repository's own erasure, not by a caller.
+
+
 ## Conversations (EPIC 5)
 
 A message body is a list of typed blocks, not a string. Six types exist —
