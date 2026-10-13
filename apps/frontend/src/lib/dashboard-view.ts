@@ -164,6 +164,140 @@ const MONTHS = [
 ];
 const SHORT_DAYS = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"];
 
+/**
+ * TaskState is what a person is told about one task, in the words they read.
+ *
+ * It lives here, beside `stateOf` and `buildWeek`, because this module is where the dashboard's
+ * wording already lives — and because the same task appears on three surfaces (the dashboard's
+ * "Tugas terakhir", the task history, and a task's own page). A status that reads one way on one
+ * screen and another way on the next is worse than a status that reads badly: the reader has to
+ * decide which of the two to believe.
+ */
+export type TaskState = {
+  label: string;
+  color: string;
+  /** One sentence explaining it, or empty when the label is the whole story. */
+  note: string;
+  /** Live work: a task that still occupies a Bolu. */
+  live: boolean;
+};
+
+/**
+ * taskState says what a task's state is.
+ *
+ * `health` is not `status`, and keeping them apart is the point. The status is what the runtime
+ * stored; the health is derived from the heartbeat, so a task whose worker died reads `stuck` even
+ * though it still stores `running`. A screen that showed only the status would show an abandoned
+ * task as a working one — which is exactly the failure the health field exists to prevent.
+ */
+export function taskState(task: { status: string; health: string }): TaskState {
+  if (task.status === "succeeded") {
+    return { label: "Selesai", color: "#1E7A43", note: "", live: false };
+  }
+  if (task.status === "failed") {
+    return { label: "Gagal", color: "#B4421F", note: "", live: false };
+  }
+  if (task.status === "canceled") {
+    return { label: "Dibatalkan", color: "#5E5B70", note: "dihentikan sebelum selesai", live: false };
+  }
+  if (task.status === "waiting_approval" || task.health === "waiting") {
+    return { label: "Menunggu kamu", color: "#E2602B", note: "", live: true };
+  }
+  if (task.health === "stuck") {
+    return {
+      label: "Terhenti",
+      color: "#B4421F",
+      note: "detaknya berhenti; mungkin worker-nya mati",
+      live: true,
+    };
+  }
+  if (task.status === "queued") {
+    return { label: "Antre", color: "#5E5B70", note: "", live: true };
+  }
+
+  return { label: "Berjalan", color: "#2E6FE0", note: "", live: true };
+}
+
+/** taskTriggerLabel says how the task was started. */
+export function taskTriggerLabel(trigger: string): string {
+  switch (trigger) {
+    case "chat":
+      return "dari obrolan";
+    case "routine":
+      return "dari rutinitas";
+    case "webhook":
+      return "dari kiriman luar";
+    case "handoff":
+      return "dari Bolu lain";
+    default:
+      return trigger;
+  }
+}
+
+/** taskStepLabel says which round a step is. */
+export function taskStepLabel(kind: string): string {
+  switch (kind) {
+    case "think":
+      return "Berpikir";
+    case "tool_call":
+      return "Memanggil alat";
+    case "tool_result":
+      return "Hasil alat";
+    case "final":
+      return "Jawaban";
+    default:
+      return kind;
+  }
+}
+
+/**
+ * taskDuration says how long a task ran, or has been running.
+ *
+ * A task that has not finished is measured to `now`, which the caller passes: a component that read
+ * the clock itself would render a different number on every re-render.
+ */
+export function taskDuration(
+  task: { started_at?: string; created_at: string; finished_at?: string },
+  now: number,
+): string {
+  const started = new Date(task.started_at ?? task.created_at).getTime();
+  if (Number.isNaN(started)) {
+    return "";
+  }
+
+  const to = task.finished_at ? new Date(task.finished_at).getTime() : now;
+  if (Number.isNaN(to)) {
+    return "";
+  }
+
+  const seconds = Math.max(0, Math.round((to - started) / 1000));
+  if (seconds < 60) {
+    return `${seconds} detik`;
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes} menit`;
+  }
+
+  return `${Math.floor(minutes / 60)} jam ${minutes % 60} menit`;
+}
+
+/** formatTokens renders a token count with thousands separators. */
+export function formatTokens(tokens: number): string {
+  return new Intl.NumberFormat("id-ID").format(tokens);
+}
+
+/** formatMoment renders an instant in the reader's own locale and zone. */
+export function formatMoment(value: string): string {
+  const moment = new Date(value);
+  if (Number.isNaN(moment.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(moment);
+}
+
 /** greeting is what the header says at this hour. */
 export function greeting(now = new Date()): string {
   const hour = now.getHours();

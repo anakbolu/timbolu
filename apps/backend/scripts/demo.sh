@@ -174,18 +174,25 @@ fi
 
 auth=(-H "Authorization: Bearer ${access}" -H "X-Workspace-Id: ${ws}")
 
-# A Bolu from the sales template, which is the one that carries the order-to-invoice flow.
-agents=$(curl -fsS "$(api)/agents" "${auth[@]}" |
-    python3 -c 'import json,sys; print(len(json.load(sys.stdin)["data"]))')
-if [[ "$agents" == "0" ]]; then
-    team=$(curl -fsS "$(api)/teams" "${auth[@]}" |
-        python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; print([t for t in d if t["kind"]=="bolu"][0]["id"])')
+# Two Bolu from the templates: the sales one carries the order-to-invoice flow, and the second one is
+# there so a handoff has somewhere to go — "serahkan ke Ijo" is a chain a person can watch.
+team=$(curl -fsS "$(api)/teams" "${auth[@]}" |
+    python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; print([t for t in d if t["kind"]=="bolu"][0]["id"])')
+
+for entry in "Oren:oren" "Ijo:ijo"; do
+    name="${entry%%:*}"
+    key="${entry##*:}"
+    present=$(curl -fsS "$(api)/agents" "${auth[@]}" |
+        python3 -c "import json,sys; print(any(a['name']=='${name}' for a in json.load(sys.stdin)['data']))")
+    if [[ "$present" == "True" ]]; then
+        printf '    Bolu already there: %s\n' "$name"
+        continue
+    fi
+
     curl -fsS -X POST "$(api)/agents" "${auth[@]}" -H 'Content-Type: application/json' \
-        -d "{\"team_id\":\"${team}\",\"name\":\"Oren\",\"template_key\":\"oren\"}" >/dev/null
-    printf '    Bolu created: Oren (template oren)\n'
-else
-    printf '    Bolu already there: %s\n' "$agents"
-fi
+        -d "{\"team_id\":\"${team}\",\"name\":\"${name}\",\"template_key\":\"${key}\"}" >/dev/null
+    printf '    Bolu created: %s (template %s)\n' "$name" "$key"
+done
 
 # The catalogue. A price is what every later quote is built on, so it is typed in the way a person
 # types it on the screen — through the API the screen itself calls.

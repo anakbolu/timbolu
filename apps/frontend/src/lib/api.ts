@@ -1109,6 +1109,55 @@ export function listAttentionTasks(
   return request<AttentionTask[]>(`/tasks/attention?limit=${limit}`, { workspace: workspaceId });
 }
 
+/** getTask returns one task by its id. */
+export function getTask(workspaceId: string, taskID: string): Promise<ApiResult<Task>> {
+  return request<Task>(`/tasks/${taskID}`, { workspace: workspaceId });
+}
+
+/** listTaskChildren returns the tasks this one handed work to, which is how a chain is read. */
+export function listTaskChildren(workspaceId: string, taskID: string): Promise<ApiResult<Task[]>> {
+  return request<Task[]>(`/tasks/${taskID}/children`, { workspace: workspaceId });
+}
+
+/**
+ * cancelTask stops a task that has not finished.
+ *
+ * What comes back is the task as it now is, not an acknowledgement: a caller that
+ * shows "canceled" without reading the answer would show it even when the task had
+ * already succeeded and the call changed nothing.
+ */
+export function cancelTask(workspaceId: string, taskID: string): Promise<ApiResult<Task>> {
+  return request<Task>(`/tasks/${taskID}/cancel`, { method: "POST", workspace: workspaceId });
+}
+
+/**
+ * A step is one recorded round of a task: the model thinking, a tool being called,
+ * a tool answering, or the final answer.
+ *
+ * `pruned` means the round's contents were removed by the retention job — its shape
+ * stays so the history still reads as a history, and `input`/`output` are absent
+ * rather than empty. A screen must show that difference: an empty round and one
+ * whose payload was deliberately removed are two different facts.
+ */
+export type TaskStep = {
+  step_id: string;
+  seq: number;
+  kind: "think" | "tool_call" | "tool_result" | "final";
+  tool_name?: string;
+  tool_label?: string;
+  input?: unknown;
+  output?: unknown;
+  pruned: boolean;
+  created_at: string;
+  input_tokens: number;
+  output_tokens: number;
+};
+
+/** listTaskSteps returns a task's rounds, in the order they happened. */
+export function listTaskSteps(workspaceId: string, taskID: string): Promise<ApiResult<TaskStep[]>> {
+  return request<TaskStep[]>(`/tasks/${taskID}/steps`, { workspace: workspaceId });
+}
+
 /** What one window cost, read three ways. */
 export type UsageReport = {
   days: number;
