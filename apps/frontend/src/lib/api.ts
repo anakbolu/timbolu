@@ -8,6 +8,8 @@
  *   which reads the cookie and returns a fresh access token.
  */
 
+import { SESSION_HINT_COOKIE, SESSION_HINT_MAX_AGE } from "@/lib/session-hint";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 export type ApiError = {
@@ -94,8 +96,37 @@ export function getAccessToken(): string | null {
   return accessToken;
 }
 
+/**
+ * setAccessToken is where a session is gained and lost, so it is also where the
+ * edge gate is told about it.
+ *
+ * Every path runs through here — login, refresh, logout — so the hint cannot drift
+ * from the token. Mirroring it in any of those three callers instead would leave
+ * the fourth, whenever somebody adds one, updating the session without updating
+ * the gate.
+ *
+ * The hint is not readable JavaScript state: it carries no secret and the API
+ * never looks at it. It exists so the gate can answer before the dashboard shell
+ * is sent, which the refresh cookie cannot do because the backend scopes it to
+ * the auth endpoints on purpose.
+ */
 export function setAccessToken(token: string | null): void {
   accessToken = token;
+
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  // A hint with no expiry outlives the refresh cookie it stands for, and a stale
+  // one only costs the gate a guess it can recover from: the layout still
+  // redirects once the refresh fails. Deleting on the way out is what makes
+  // logging out visible at the edge at all.
+  if (token === null) {
+    document.cookie = `${SESSION_HINT_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax`;
+    return;
+  }
+
+  document.cookie = `${SESSION_HINT_COOKIE}=1; Max-Age=${SESSION_HINT_MAX_AGE}; Path=/; SameSite=Lax`;
 }
 
 export function getActiveWorkspaceId(): string | null {
@@ -228,9 +259,12 @@ export async function login(email: string, password: string): Promise<ApiResult<
 /** refreshSession exchanges the refresh cookie for a new access token. */
 export async function refreshSession(): Promise<ApiResult<Session>> {
   const result = await request<Session>("/auth/refresh", { method: "POST", authenticated: false });
-  if (result.ok) {
-    setAccessToken(result.data.access_token);
-  }
+
+  // This is *the* question "is my session still alive", so its answer is what the
+  // token and the gate are set from — including the answer "no". A failed refresh
+  // that left the hint standing would keep admitting a browser whose session is
+  // gone, and the gate would be advice rather than a gate.
+  setAccessToken(result.ok ? result.data.access_token : null);
   return result;
 }
 

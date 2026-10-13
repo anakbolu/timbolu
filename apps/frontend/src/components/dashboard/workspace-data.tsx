@@ -14,6 +14,7 @@
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import {
   createGroup,
@@ -21,6 +22,7 @@ import {
   currentWorkspace,
   decideDraft as decideDraftRequest,
   ensureActiveWorkspace,
+  getAccessToken,
   listAgentTeams,
   listApprovalPolicies,
   listConversations,
@@ -32,6 +34,7 @@ import {
   listMembers,
   listTasks,
   sendMessage,
+  setAccessToken,
   type ActivityEvent,
   type Agent,
   type AgentTeam,
@@ -123,6 +126,7 @@ export function useWorkspace(): WorkspaceData {
 }
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<RealtimeStatus>("connecting");
@@ -243,6 +247,17 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     if (!id) {
       setReady(true);
       setError("Sesi berakhir. Masuk lagi.");
+      // `ensureActiveWorkspace` refreshes first, so returning nothing means either
+      // that the refresh failed or that the account has no workspace yet — and the
+      // two want opposite answers. Only the first is sent to the door: bouncing the
+      // second would put an account with no workspace on a loop between /login and
+      // /dashboard, since signing in again lands it right back here.
+      //
+      // The token says which happened. A failed refresh stores nothing, while a
+      // refresh that succeeded but found no workspace leaves a live token.
+      if (getAccessToken() === null) {
+        router.replace("/login");
+      }
       return;
     }
     setWorkspaceID(id);
@@ -259,6 +274,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     if (pending.ok) setDrafts(pending.data);
     if (account.ok) setUser(account.data);
     else if (account.status === 401) {
+      // The API rejected the token, so the session in hand is not one. Dropping it
+      // clears the gate's hint with it, and the next navigation is turned away
+      // before this shell is sent a second time — which is why this branch leaves
+      // the message on screen rather than redirecting: the redirect belongs to the
+      // gate, and a second one from here could outrun the cookie write.
+      setAccessToken(null);
       setReady(true);
       setError("Sesi berakhir. Masuk lagi.");
       return;
@@ -270,7 +291,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
     setError(null);
     setReady(true);
-  }, [loadAgents, loadConversations, loadHub, loadPolicies, loadTasks]);
+  }, [loadAgents, loadConversations, loadHub, loadPolicies, loadTasks, router]);
 
   useEffect(() => {
     void (async () => {
