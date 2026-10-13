@@ -4,8 +4,8 @@
  * The workspace store behind every screen.
  *
  * Each screen used to fetch its own copy of the same things — the Bolu, the
- * conversations, the drafts and the tasks — which is how the sidebar, the
- * dashboard and the office came to disagree about one workspace. One provider
+ * conversations, the drafts and the tasks — which is how the sidebar and the
+ * dashboard came to disagree about one workspace. One provider
  * holds them now, and one live connection keeps them current: a view reads from
  * here, and reacts through the actions below.
  *

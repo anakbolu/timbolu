@@ -499,7 +499,7 @@ func (s *Service) Emit(ctx context.Context, event chatdomain.Event) error {
 	return nil
 }
 
-// emitAgentState publishes a Bolu's derived state, which the office view renders.
+// emitAgentState publishes a Bolu's derived state to the live stream.
 func (s *Service) emitAgentState(ctx context.Context, scope chatdomain.Scope, agentID uuid.UUID, state string, payload chatdomain.AgentStatePayload) {
 	encoded, err := json.Marshal(chatdomain.WireState(
 		agentID, state, payload.Reason, parseWireID(payload.TaskID), parseWireID(payload.DraftID)))

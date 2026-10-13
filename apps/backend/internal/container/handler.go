@@ -250,7 +250,7 @@ func (c *Container) registerRoutes() {
 	}
 
 	// Tasks: everyone in the workspace reads the history and the steps, because
-	// the office and the feed are built from them. A task is never opened here:
+	// the feed is built from them. A task is never opened here:
 	// chat, a routine, a webhook, or another task opens one, and each of those
 	// has its own entry point.
 	if c.Handlers.Task == nil {

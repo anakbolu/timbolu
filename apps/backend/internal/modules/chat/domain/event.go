@@ -9,7 +9,7 @@ import (
 )
 
 // Event types. Every live view is built from this one stream: the chat thread,
-// the activity feed, the dashboard, and the office.
+// the activity feed, and the dashboard.
 const (
 	// EventMessageNew is a message that was added to a conversation.
 	EventMessageNew = "message.new"
@@ -20,17 +20,17 @@ const (
 	EventTaskStarted = "task.started"
 	EventTaskStep    = "task.step"
 	// EventTaskRunning is a task's heartbeat. It is what moves a Bolu in the
-	// office view without the client polling.
+	// dashboard without the client polling.
 	EventTaskRunning = "task.running"
-	// EventTaskWaiting is a task parked on a human decision, which the office
-	// shows at the approval desk rather than as work in progress.
+	// EventTaskWaiting is a task parked on a human decision, which the
+	// dashboard shows as waiting rather than as work in progress.
 	EventTaskWaiting  = "task.waiting_approval"
 	EventTaskFinished = "task.finished"
 	// EventDraftCreated and EventDraftDecided follow an approval.
 	EventDraftCreated = "draft.created"
 	EventDraftDecided = "draft.decided"
-	// EventAgentState is a Bolu's derived state. The office view computes a
-	// position from it; no coordinate is stored anywhere.
+	// EventAgentState is a Bolu's derived state. No coordinate is stored
+	// anywhere; a consumer derives a position from it if it draws one.
 	EventAgentState = "agent.state"
 	// EventRoutineRun is a routine that fired.
 	EventRoutineRun = "routine.run"
@@ -45,7 +45,7 @@ const (
 const Heartbeat = 25 * time.Second
 
 // Agent states, which are the same values the registry derives for its display
-// status. The office view maps each to a place in the room.
+// status. The dashboard shows a Bolu in the state it reports.
 const (
 	StateWorking  = "working"
 	StateWaiting  = "waiting"
@@ -82,7 +82,7 @@ type AgentStatePayload struct {
 	AgentID string `json:"agent_id"`
 	// State is one of the State* values.
 	State string `json:"state"`
-	// Reason is what the Bolu is doing, which the office shows next to it.
+	// Reason is what the Bolu is doing.
 	Reason string `json:"reason,omitempty"`
 	// TaskID and DraftID point at the work that decided the state.
 	TaskID  string `json:"task_id,omitempty"`

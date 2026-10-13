@@ -64,7 +64,7 @@ func TestWireIDRendersAbsenceAsAnEmptyString(t *testing.T) {
 }
 
 // TestTaskTotalsAndLiveness is the arithmetic and the liveness rule the bounds
-// and the office view both read.
+// and the feed both read.
 func TestTaskTotalsAndLiveness(t *testing.T) {
 	task := Task{InputTokens: 120, OutputTokens: 40}
 	require.Equal(t, int64(160), task.TotalTokens())

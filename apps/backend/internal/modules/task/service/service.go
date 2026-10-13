@@ -20,7 +20,7 @@ import (
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
 )
 
-// TitleMaxRunes bounds a task title, which is shown in the feed and the office.
+// TitleMaxRunes bounds a task title, which is shown in the feed.
 const TitleMaxRunes = 160
 
 // TriggerWhitelist is the set a client may open a task with. `handoff` is not in
@@ -251,7 +251,7 @@ func (s *Service) Cancel(ctx context.Context, scope domain.Scope, id uuid.UUID) 
 // SignalCancel is the signal name that stops a running task.
 const SignalCancel = "cancel"
 
-// Event types the feed, the office, and the chat read.
+// Event types the feed and the chat read.
 const (
 	EventTaskStarted  = "task.started"
 	EventTaskStep     = "task.step"
@@ -276,8 +276,8 @@ func (s *Service) fail(ctx context.Context, scope domain.Scope, task domain.Task
 	s.emitTask(ctx, scope, failed, EventTaskFinished)
 }
 
-// emitTask publishes a task's state, which is how the feed and the office learn
-// about it without polling.
+// emitTask publishes a task's state, which is how the feed learns about it
+// without polling.
 func (s *Service) emitTask(ctx context.Context, scope domain.Scope, task domain.Task, eventType string) {
 	if s.deps.Events == nil {
 		return

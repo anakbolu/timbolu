@@ -103,7 +103,7 @@ RETURNING *;
 
 -- name: ParkTask :one
 -- A task waiting for a human has not stopped; it is parked, and the reason is
--- what the office and the task endpoint show.
+-- what the task endpoint shows.
 UPDATE tasks
 SET status = 'waiting_approval',
     waiting_reason = $3,

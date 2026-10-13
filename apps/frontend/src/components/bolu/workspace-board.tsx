@@ -23,7 +23,7 @@ function CheckMark() {
 }
 
 /**
- * The live office board: each bot rotates through its acts on a shared tick,
+ * The live board: each bot rotates through its acts on a shared tick,
  * and the "Barusan selesai" feed shifts with the same tick.
  */
 export function WorkspaceBoard() {

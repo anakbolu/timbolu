@@ -438,7 +438,7 @@ func (a *Activities) CarryOutDraft(ctx context.Context, request workflow.DraftCa
 		// A held action is not a failure and not a step: the task is waiting, and
 		// it says so in the store a well as on the wire. Without the park its
 		// status would stay `running` while the workflow slept for hours, and the
-		// office would show it as stuck the moment the heartbeat went stale.
+		// task would read as stuck the moment the heartbeat went stale.
 		reason := result.Reason
 		if reason == "" {
 			reason = "menunggu jam kerja"
@@ -839,7 +839,7 @@ func (a *Activities) cost(task domain.Task, beat workflow.Beat) int64 {
 	}.AsLLMUsage())
 }
 
-// emit publishes a task event, which is how the feed and the office see it.
+// emit publishes a task event, which is how the feed sees it.
 func (a *Activities) emit(ctx context.Context, scope domain.Scope, task domain.Task, eventType string) {
 	if a.deps.Events == nil {
 		return

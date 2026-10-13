@@ -198,8 +198,8 @@ func (b quotaBudget) Allow(ctx context.Context, workspaceID uuid.UUID) error {
 }
 
 // taskEventSink adapts the chat module's event store to the task module's port,
-// so a task event reaches the feed, the office, and the chat thread through the
-// same durable stream.
+// so a task event reaches the feed and the chat thread through the same durable
+// stream.
 func (c *Container) taskEventSink() taskdomain.EventSink {
 	if c == nil || c.Repositories == nil || c.Repositories.Chat == nil {
 		return nil

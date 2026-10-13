@@ -307,7 +307,7 @@ func (r whatsAppReplies) Answer(ctx context.Context, scope whatsappdomain.Scope,
 	}
 
 	// The trigger is `webhook`: the message came from outside the product, which
-	// is what the trigger column means and what the office view reads.
+	// is what the trigger column means.
 	dispatched, err := r.service.Dispatch(ctx, taskdomain.Scope{
 		UserID:      scope.UserID,
 		WorkspaceID: scope.WorkspaceID,

@@ -4,7 +4,7 @@
 //
 // A task is a durable unit of work. It survives a worker restart, it can wait
 // for a human for hours, and every round it takes is recorded — which is what
-// lets the office, the activity feed, and the history read the same truth.
+// lets the activity feed and the history read the same truth.
 package domain
 
 import (
@@ -25,7 +25,7 @@ const (
 	// StatusRunning is a task a workflow is working on.
 	StatusRunning = "running"
 	// StatusWaitingApproval is a task parked on a human decision. It has not
-	// stopped: it is waiting, and the office shows it that way.
+	// stopped: it is waiting, and the dashboard marks it as such.
 	StatusWaitingApproval = "waiting_approval"
 	StatusSucceeded       = "succeeded"
 	StatusFailed          = "failed"
@@ -490,8 +490,8 @@ type OutcomeReport struct {
 // case for a task a person started.
 var ErrOutcomeUnclaimed = errors.New("task: no outcome sink claimed this task")
 
-// Event describes one entry of the activity stream, which is how the feed, the
-// office, and the chat see one truth.
+// Event describes one entry of the activity stream, which is how the feed and
+// the chat see one truth.
 //
 // It mirrors the chat module's event rather than importing it: the container
 // adapts the two, so neither module reaches into the other.

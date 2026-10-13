@@ -15,7 +15,7 @@ import { Bolu } from "@/components/bolu/bolu";
 import type { BoluExpressionName } from "@/components/bolu/characters";
 import { ACT_INTERVAL_MS, FEED_AGES, bot } from "@/lib/crew";
 
-/** Status ring colours, from the office legend in the design. */
+/** Status ring colours, from the legend in the design. */
 const STATUS = {
   kerja: "#2FA65A",
   antre: "#E2602B",

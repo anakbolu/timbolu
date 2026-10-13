@@ -796,7 +796,7 @@ func TestMarshalQuietNeverFailsARound(t *testing.T) {
 	require.JSONEq(t, `{}`, string(marshalQuiet(func() {})))
 }
 
-// TestTaskEventCarriesTheScope is the event the feed and the office read.
+// TestTaskEventCarriesTheScope is the event the feed reads.
 func TestTaskEventCarriesTheScope(t *testing.T) {
 	workspaceID := uuid.New()
 	agentID := uuid.New()

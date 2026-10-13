@@ -67,15 +67,6 @@ export const STATE_DOT: Record<string, string> = {
   resting: "#8B88A0",
 };
 
-/** Where each state sits in the office room. */
-export const STATE_SPOT: Record<string, "desk" | "queue" | "sofa" | "bean"> = {
-  working: "desk",
-  thinking: "desk",
-  waiting: "queue",
-  idle: "sofa",
-  resting: "bean",
-};
-
 /** A stat card: a label, the number, and what the number counts. */
 export type StatItem = { label: string; value: string; note: string };
 
@@ -480,7 +471,7 @@ const EVENT_TEXT: Record<string, (payload: Record<string, unknown>) => string> =
 /**
  * buildFeed turns the activity stream into the dashboard's feed rows.
  *
- * The stream is the same one the chat and the office read, so the feed cannot
+ * The stream is the same one the chat reads, so the feed cannot
  * disagree with them about what happened. An event that names no Bolu — a person
  * deciding a draft — is drawn as the person.
  */

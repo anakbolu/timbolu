@@ -159,8 +159,7 @@ from the navigation, which it was not before). The signed-in workspace lives und
 `/dashboard` (the front door — the roster, the live activity feed, the drafts waiting,
 and the week's finished work), `/dashboard/routines` (the routines screen: the form
 that sets a cadence, the routines per Bolu with their next run in the workspace's own
-zone, the pause switch, and the run history), `/office` (the room, where each
-Bolu stands by its derived state), `/dashboard/integrations` (the hub: connected
+zone, the pause switch, and the run history), `/dashboard/integrations` (the hub: connected
 accounts, grants per Bolu, MCP servers), `/settings` (workspace profile, working
 hours, approval policies), `/settings/team`, `/settings/model`, `/chat`, `/groups`, `/dashboard/usage` (what the
 workspace spent, read three ways over one window, with the tasks that need a person),
