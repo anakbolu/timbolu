@@ -1,5 +1,6 @@
 "use client";
 
+import { MoveRight } from "lucide-react";
 import { useState } from "react";
 import { BotSvg } from "@/components/bolu/bot-svg";
 import {
@@ -159,19 +160,7 @@ function ArsipMock() {
           className="flex flex-wrap items-center gap-x-3.5 gap-y-2 rounded border border-bolu-border px-3.5 py-3 text-[15px]"
         >
           <span className="text-bolu-muted line-through">{file.from}</span>
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="#1E1B2E"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M5 12h14M13 6l6 6-6 6" />
-          </svg>
+          <MoveRight size={20} strokeWidth={2.5} aria-hidden="true" />
           <span className="font-semibold">{file.to}</span>
         </div>
       ))}

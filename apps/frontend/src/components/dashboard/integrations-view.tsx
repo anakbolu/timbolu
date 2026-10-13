@@ -10,6 +10,7 @@
  * one, so it also reads the outcome of a flow from the query string.
  */
 
+import { Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Bolu } from "@/components/bolu/bolu";
@@ -258,10 +259,7 @@ export function IntegrationsPanel() {
           </p>
         </div>
         <label className="flex min-h-[46px] flex-[0_1_300px] items-center gap-2 rounded-full border border-bolu-chip bg-white px-4">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5E5B70" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
-            <circle cx="11" cy="11" r="7" />
-            <path d="M20 20l-4-4" />
-          </svg>
+          <Search size={18} strokeWidth={2.2} aria-hidden="true" />
           <span className="sr-only">Cari aplikasi</span>
           <input
             type="search"

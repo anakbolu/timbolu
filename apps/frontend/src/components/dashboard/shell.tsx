@@ -9,6 +9,7 @@
  * back button does what a person expects; the visual result is identical.
  */
 
+import { ChartColumn, Clock, LayoutGrid, ListChecks, Menu, Plus, Plug, Settings, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -31,26 +32,26 @@ const NAV = [
   {
     href: "/dashboard",
     label: "Dasbor",
-    icon: "M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z",
+    icon: LayoutGrid,
     /** matches reports whether a route is this entry, rather than a screen below it. */
     matches: (pathname: string) => pathname === "/dashboard",
   },
   {
     href: "/dashboard/routines",
     label: "Rutinitas",
-    icon: "M12 3a9 9 0 1 0 9 9M12 7v5l4 2M16 3h5v5",
+    icon: Clock,
     matches: (pathname: string) => pathname === "/dashboard/routines",
   },
   {
     href: "/dashboard/usage",
     label: "Pemakaian",
-    icon: "M4 19h16M7 16V9M12 16V5M17 16v-4",
+    icon: ChartColumn,
     matches: (pathname: string) => pathname === "/dashboard/usage",
   },
   {
     href: "/tasks",
     label: "Tugas",
-    icon: "M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2",
+    icon: ListChecks,
     // The detail page is below this entry rather than beside it, so the nav stays lit while a
     // person reads one task — the history is where they came from.
     matches: (pathname: string) => pathname === "/tasks" || pathname.startsWith("/tasks/"),
@@ -123,9 +124,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           onClick={() => setNavOpen(true)}
           className="relative flex size-11 cursor-pointer items-center justify-center rounded border-0 bg-bolu-bg"
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1E1B2E" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-            <path d="M4 7h16M4 12h16M4 17h16" />
-          </svg>
+          <Menu size={20} strokeWidth={2.5} aria-hidden="true" />
           {pending > 0 ? (
             <span className="absolute right-2 top-2 size-2.5 rounded-full border-2 border-bolu-bg bg-bolu-flag" />
           ) : null}
@@ -162,9 +161,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
             aria-label="Tutup menu"
             className="hidden size-11 flex-none cursor-pointer items-center justify-center rounded-full border-0 bg-bolu-bg max-[760px]:flex"
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E1B2E" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
+            <X size={18} strokeWidth={2.5} aria-hidden="true" />
           </button>
         </div>
 
@@ -181,9 +178,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                   on ? "bg-bolu-ink text-white hover:text-white" : "bg-transparent text-bolu-ink"
                 }`}
               >
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d={item.icon} />
-                </svg>
+                <item.icon size={22} strokeWidth={2} aria-hidden="true" />
                 <span className="flex-1 text-left">{item.label}</span>
                 {item.href === "/dashboard" && pending > 0 ? (
                   <span className="rounded-full bg-bolu-flag px-2 py-px text-[13px] font-bold text-white">
@@ -230,9 +225,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           href="/settings/team"
           className="mt-3 flex min-h-[46px] items-center gap-2.5 rounded border-2 border-dashed border-bolu-track px-3.5 font-semibold text-bolu-body no-underline hover:text-bolu-ink"
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
+          <Plus size={20} strokeWidth={2.5} aria-hidden="true" />
           Buat tim atau grup
         </Link>
 
@@ -248,9 +241,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                 : "bg-transparent text-bolu-ink"
             }`}
           >
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5" />
-            </svg>
+            <Plug size={22} strokeWidth={2} aria-hidden="true" />
             <span className="flex-1 text-left">Integrasi</span>
             <span className={`text-[13px] font-bold ${onIntegrations ? "text-white" : "text-bolu-muted"}`}>
               {connected === 0 ? "—" : `${connected} aktif`}
@@ -263,10 +254,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
               onSettings ? "bg-bolu-ink text-white hover:text-white" : "bg-transparent text-bolu-ink"
             }`}
           >
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" />
-            </svg>
+            <Settings size={22} strokeWidth={2} aria-hidden="true" />
             <span className="flex-1 text-left">Pengaturan</span>
           </Link>
         </div>

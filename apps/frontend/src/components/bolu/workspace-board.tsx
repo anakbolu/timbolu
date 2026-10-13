@@ -1,25 +1,12 @@
 "use client";
 
+import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
 import { BotSvg } from "@/components/bolu/bot-svg";
 import { ACT_INTERVAL_MS, CREW, FEED, FEED_AGES } from "@/lib/crew";
 
 function CheckMark() {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="#2FA65A"
-      strokeWidth="3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M5 12.5l4.5 4.5L19 7.5" />
-    </svg>
-  );
+  return <Check size={18} strokeWidth={3} color="#2FA65A" aria-hidden="true" />;
 }
 
 /**

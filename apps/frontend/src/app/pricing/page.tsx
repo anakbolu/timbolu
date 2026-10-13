@@ -1,3 +1,4 @@
+import { Check } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteFooter } from "@/components/bolu/site-footer";
@@ -107,18 +108,7 @@ export default function PricingPage() {
                 <ul className="mt-7 flex-1 list-none space-y-3 p-0 text-[15px] text-bolu-body">
                   {tier.features.map((feature) => (
                     <li key={feature} className="flex gap-3">
-                      <svg
-                        viewBox="0 0 20 20"
-                        aria-hidden="true"
-                        className="mt-0.5 size-4 shrink-0 text-bolu-muted"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M4.5 10.5l3.5 3.5 7.5-8" />
-                      </svg>
+                      <Check size={16} strokeWidth={1.8} aria-hidden="true" className="mt-0.5 shrink-0 text-bolu-muted" />
                       {feature}
                     </li>
                   ))}
