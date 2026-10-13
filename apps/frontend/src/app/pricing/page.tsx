@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteFooter } from "@/components/bolu/site-footer";
 import { SiteNav } from "@/components/bolu/site-nav";
+import { StartLink } from "@/components/bolu/start-link";
 
 type Tier = {
   name: string;
@@ -116,16 +117,28 @@ export default function PricingPage() {
 
                 <div className="mt-8">
                   {tier.cta.href ? (
-                    <Link
-                      href={tier.cta.href}
-                      className={`block w-full rounded-full px-5 py-3 text-center font-semibold no-underline ${
-                        tier.featured
-                          ? "bg-bolu-accent text-white hover:text-white"
-                          : "border-2 border-bolu-ink text-bolu-ink hover:text-bolu-ink"
-                      }`}
-                    >
-                      {tier.cta.label}
-                    </Link>
+                    tier.cta.href === "/dashboard" ? (
+                      <StartLink
+                        className={`block w-full rounded-full px-5 py-3 text-center font-semibold no-underline ${
+                          tier.featured
+                            ? "bg-bolu-accent text-white hover:text-white"
+                            : "border-2 border-bolu-ink text-bolu-ink hover:text-bolu-ink"
+                        }`}
+                      >
+                        {tier.cta.label}
+                      </StartLink>
+                    ) : (
+                      <Link
+                        href={tier.cta.href}
+                        className={`block w-full rounded-full px-5 py-3 text-center font-semibold no-underline ${
+                          tier.featured
+                            ? "bg-bolu-accent text-white hover:text-white"
+                            : "border-2 border-bolu-ink text-bolu-ink hover:text-bolu-ink"
+                        }`}
+                      >
+                        {tier.cta.label}
+                      </Link>
+                    )
                   ) : (
                     <span
                       aria-disabled="true"
