@@ -48,6 +48,10 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// This binary names itself in the traces, so the API and the workers are separate services
+	// in a collector rather than one process that appears everywhere.
+	cfg.Telemetry.DefaultServiceName("bolu-api")
+
 	c, err := container.New(ctx, cfg)
 	if err != nil {
 		return err
@@ -72,6 +76,9 @@ func run() error {
 	// and the ledger, so a pass that never ran is corrected by the next one. It needs
 	// the database and Redis and nothing else, both of which this process already has.
 	go c.RunBillingSweep(ctx)
+	// The retention pass shares the process for the reason the billing sweep does: it is a
+	// loop with nothing to wait for. A deployment sets RETENTION_INTERVAL=0 to switch it off.
+	go c.RunRetention(ctx)
 
 	serverErr := make(chan error, 1)
 	go func() {

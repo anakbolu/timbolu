@@ -179,6 +179,22 @@ func (e *RateLimitedError) Error() string {
 // only needs "was this a limit" does not have to know the type.
 func (e *RateLimitedError) Unwrap() error { return ErrRateLimited }
 
+// Connectionless is an adapter whose tools belong to the workspace itself rather than to a connected
+// account: reading its product catalogue, recording an order into its own data.
+//
+// It is what lets the hub run such a tool with no connection row and no token. Every other adapter is
+// reached through a connection, and `integration_id` is what the token is looked up by — so a tool
+// with no account would otherwise be one nobody can call.
+//
+// The same fact is on `tool_catalog.needs_connection`, which is what the tool filter reads before a
+// Bolu is offered the tool at all. The two must agree, and a test asserts that every catalogue row
+// matches its adapter's declaration: a disagreement would either offer a tool nothing can run or hide
+// one that needs nothing.
+type Connectionless interface {
+	// NeedsConnection reports whether a call to this adapter requires a stored connection.
+	NeedsConnection() bool
+}
+
 // Credentialled is an adapter that says where its credential comes from.
 //
 // It exists because not every application is authorised by a token the provider

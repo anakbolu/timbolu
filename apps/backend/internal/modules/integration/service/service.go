@@ -39,6 +39,10 @@ type Deps struct {
 	// Limits reports how many connections the workspace's package allows. Optional:
 	// unwired means the deployment sells no packages and nothing is capped.
 	Limits domain.PlanLimits
+	// Auditor records grant changes in the workspace's trail. Optional: unwired means the
+	// change happens and leaves no line, which is what a deployment without the approval
+	// module runs with.
+	Auditor domain.Auditor
 	// Registry holds the adapters this deployment knows. Optional: without one no
 	// integration tool can run, which is what a deployment with no adapters is.
 	Registry domain.Registry
@@ -361,8 +365,17 @@ func (s *service) Execute(ctx context.Context, scope domain.Scope, integrationID
 		return s.executeMCP(ctx, scope, tool, arguments)
 	}
 
+	// A tool that belongs to the workspace itself runs with no connection at all: there is no account
+	// to open a token for, and nothing outside this deployment to reach. The adapter declares that
+	// (`Connectionless`), and a tool whose app declares nothing still needs a connection — which is
+	// the safe direction, because the alternative is a call that reaches a provider with no
+	// credential.
 	if integrationID == uuid.Nil {
-		return domain.Result{}, fmt.Errorf("%w: an integration id is required", domain.ErrInvalidInput)
+		if connectionless, ok := adapter.(domain.Connectionless); !ok || connectionless.NeedsConnection() {
+			return domain.Result{}, fmt.Errorf("%w: an integration id is required", domain.ErrInvalidInput)
+		}
+
+		return s.runConnectionless(ctx, spec, adapter, scope, arguments)
 	}
 
 	// The tool has to belong to the application the connection is for: running a
@@ -431,6 +444,38 @@ func (s *service) Execute(ctx context.Context, scope domain.Scope, integrationID
 	return result, nil
 }
 
+// runConnectionless runs a tool that needs no connection.
+//
+// The rate limiter is skipped, and that is deliberate rather than an omission: the limiter's bucket is
+// keyed by the connection, so there is nothing to pace a workspace's own catalogue against — the read
+// is a query in this deployment, and the write is the workspace's own data. Everything else is the
+// same path as a connected call: the tool is looked up in the registry, the arguments are validated
+// against the tool's own schema, and the adapter runs it.
+func (s *service) runConnectionless(
+	ctx context.Context,
+	spec domain.ToolSpec,
+	adapter domain.Adapter,
+	scope domain.Scope,
+	arguments json.RawMessage,
+) (domain.Result, error) {
+	if s.deps.Validator != nil {
+		if err := s.deps.Validator.Validate(spec.Schema, arguments); err != nil {
+			return domain.Result{}, err
+		}
+	}
+
+	result, err := adapter.Execute(ctx, domain.Call{
+		Scope:     scope,
+		Tool:      spec.Name,
+		Arguments: arguments,
+	})
+	if err != nil {
+		return domain.Result{}, fmt.Errorf("integration: %s: %w", spec.Name, err)
+	}
+
+	return result, nil
+}
+
 // Registry exposes the adapters this deployment knows.
 func (s *service) Registry() domain.Registry { return s.deps.Registry }
 
@@ -462,7 +507,40 @@ func (s *service) SetGrant(ctx context.Context, scope domain.Scope, agentID, int
 		return domain.Grant{}, fmt.Errorf("%w: the connection is not authorised yet", domain.ErrInvalidInput)
 	}
 
-	return s.deps.Repository.SetGrant(ctx, scope, agentID, integrationID, permission)
+	grant, err := s.deps.Repository.SetGrant(ctx, scope, agentID, integrationID, permission)
+	if err != nil {
+		return domain.Grant{}, err
+	}
+
+	// Who may act as what is the outbound permission surface, so a change to it is
+	// recorded: an incident that asks "which Bolu could send from this mailbox on Tuesday"
+	// is answered by this line and nothing else.
+	s.audit(ctx, scope, domain.AuditEntry{
+		Action:      "grant.set",
+		ObjectType:  "integration",
+		ObjectID:    integrationID.String(),
+		ActorUserID: scope.UserID,
+		Metadata: map[string]any{
+			"agent_id":   agentID.String(),
+			"permission": grant.Permission,
+			"app":        integration.App,
+		},
+	})
+
+	return grant, nil
+}
+
+// audit records one entry. A trail that could not be written is reported rather than
+// failing the action: the change already happened, and refusing it afterwards would leave
+// the workspace in a state nobody asked for.
+func (s *service) audit(ctx context.Context, scope domain.Scope, entry domain.AuditEntry) {
+	if s.deps.Auditor == nil {
+		return
+	}
+	if err := s.deps.Auditor.Record(ctx, scope, entry); err != nil && s.deps.Logger != nil {
+		s.deps.Logger.Warn("could not record a grant audit entry",
+			zap.String("action", entry.Action), zap.Error(err))
+	}
 }
 
 // DeleteGrant removes one grant.
@@ -470,7 +548,46 @@ func (s *service) DeleteGrant(ctx context.Context, scope domain.Scope, agentID, 
 	if agentID == uuid.Nil || integrationID == uuid.Nil {
 		return fmt.Errorf("%w: a Bolu id and an integration id are required", domain.ErrInvalidInput)
 	}
-	return s.deps.Repository.DeleteGrant(ctx, scope, agentID, integrationID)
+	// The grant is read first so the line can name what access was taken away. It is read
+	// only when something will record it, so a deployment with no trail does not pay a query
+	// for a line nobody writes.
+	var permission, app string
+	if s.deps.Auditor != nil {
+		existing, err := s.deps.Repository.Grants(ctx, scope, agentID)
+		if err != nil {
+			return err
+		}
+		for _, grant := range existing {
+			if grant.IntegrationID == integrationID {
+				permission = grant.Permission
+				if connection, err := s.deps.Repository.Get(ctx, scope, integrationID); err == nil {
+					app = connection.App
+				}
+				break
+			}
+		}
+	}
+
+	// A grant that is already gone keeps the repository's own refusal: the caller named
+	// something that is not there, and answering success would tell them a change happened
+	// when none did.
+	if err := s.deps.Repository.DeleteGrant(ctx, scope, agentID, integrationID); err != nil {
+		return err
+	}
+
+	s.audit(ctx, scope, domain.AuditEntry{
+		Action:      "grant.removed",
+		ObjectType:  "integration",
+		ObjectID:    integrationID.String(),
+		ActorUserID: scope.UserID,
+		Metadata: map[string]any{
+			"agent_id":   agentID.String(),
+			"permission": permission,
+			"app":        app,
+		},
+	})
+
+	return nil
 }
 
 // AllowedPermissions returns the permission a Bolu holds on each integration it

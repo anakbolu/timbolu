@@ -21,12 +21,26 @@
 #      its predecessor, and a delete takes the row out of the search.
 #
 # Usage: scripts/smoke-task.sh
+#
+# The trace of the run is asked for with the environment: OTEL_EXPORTER=console
+# prints every span of both processes, which is how "one task, one trace" is
+# checked by hand — the API's request span, the worker's workflow and activity
+# spans, and the model and tool spans inside them all carry one trace id. The
+# default is no exporter, so a run that is not being read leaves no output behind.
+#
+# OTEL_METRICS_EXPORTER=prometheus turns the run into a deployment a scraper can
+# read: curl localhost:${API_PORT}/metrics while it runs, and the four product
+# measures are the numbers the tasks below produced.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 API_PORT="${API_PORT:-8090}"
 STUB_PORT="${STUB_PORT:-11434}"
+# The worker has no HTTP API of its own, so it serves its operations endpoint on a port of its own:
+# /health, /ready, and /metrics. That is what makes the task measures, recorded in that process,
+# scrapeable at all — and what an orchestrator would probe.
+WORKER_OPS_ADDRESS="${WORKER_OPS_ADDRESS:-:9101}"
 DB="${DATABASE_URL:-postgres://employeebot:employeebot_secret@localhost:5432/employeebot?sslmode=disable}"
 
 log() { printf '\n==> %s\n' "$*"; }
@@ -355,6 +369,7 @@ stack_env() {
         "DATABASE_URL=${DB}" \
         "REDIS_URL=redis://localhost:6379/0" \
         "TEMPORAL_HOST_PORT=localhost:7233" \
+        "TEMPORAL_UI_BASE_URL=${TEMPORAL_UI_BASE_URL:-http://localhost:8233}" \
         "LOG_LEVEL=info" \
         "LOG_FORMAT=console" \
         "SECRET_ENCRYPTION_KEY=local_dev_secret_key_32_byte_len" \
@@ -398,10 +413,22 @@ run_with_env() {
     exec "$@"
 }
 
+# start_stack boots the API and the worker for one phase.
+#
+# It takes the phase's name because each phase's log must survive the next one:
+# the logs were a single fixed path once, so the evidence for a failure in the
+# bound phase was overwritten by the memory phase's own startup — which is exactly
+# when somebody is trying to read it. The paths are also what the failure messages
+# below point at, so they have to be the ones the phase actually wrote.
 start_stack() {
+    local phase="$1"
+    API_LOG="/tmp/smoke-api-${phase}.log"
+    WORKER_LOG="/tmp/smoke-worker-${phase}.log"
+
     log "starting the API on :${API_PORT}"
     ENVIRONMENT=local DATABASE_URL="$DB" REDIS_URL="redis://localhost:6379/0" \
     TEMPORAL_HOST_PORT="localhost:7233" HTTP_ADDRESS=":${API_PORT}" \
+    TEMPORAL_UI_BASE_URL="${TEMPORAL_UI_BASE_URL:-http://localhost:8233}" \
     FRONTEND_URL="http://localhost:3000" LOG_LEVEL=info LOG_FORMAT=console \
     MAIL_DRIVER=log SECRET_ENCRYPTION_KEY="local_dev_secret_key_32_byte_len" \
     LLM_DEFAULT_ADAPTER="$LLM_DEFAULT_ADAPTER" \
@@ -413,7 +440,11 @@ start_stack() {
     TASK_MAX_STEPS="${TASK_MAX_STEPS:-12}" TASK_MAX_TOKENS="${TASK_MAX_TOKENS:-120000}" \
     MEMORY_QUIET_SECONDS="${MEMORY_QUIET_SECONDS:-}" \
     MEMORY_SIMILARITY="${MEMORY_SIMILARITY:-}" \
-        "${BIN_DIR}/api" > /tmp/smoke-api.log 2>&1 &
+    OTEL_EXPORTER="${OTEL_EXPORTER:-}" OTEL_ENDPOINT="${OTEL_ENDPOINT:-}" \
+    OTEL_SAMPLE_RATIO="${OTEL_SAMPLE_RATIO:-}" OTEL_INSECURE="${OTEL_INSECURE:-}" \
+    OTEL_METRICS_EXPORTER="${OTEL_METRICS_EXPORTER:-}" \
+    OTEL_METRICS_ENDPOINT="${OTEL_METRICS_ENDPOINT:-}" \
+        "${BIN_DIR}/api" > "$API_LOG" 2>&1 &
     API_PID=$!
 
     log "starting the agent worker"
@@ -428,15 +459,20 @@ start_stack() {
     TASK_MAX_STEPS="${TASK_MAX_STEPS:-12}" TASK_MAX_TOKENS="${TASK_MAX_TOKENS:-120000}" \
     MEMORY_QUIET_SECONDS="${MEMORY_QUIET_SECONDS:-}" \
     MEMORY_SIMILARITY="${MEMORY_SIMILARITY:-}" \
-        "${BIN_DIR}/agent-worker" > /tmp/smoke-worker.log 2>&1 &
+    OTEL_EXPORTER="${OTEL_EXPORTER:-}" OTEL_ENDPOINT="${OTEL_ENDPOINT:-}" \
+    OTEL_SAMPLE_RATIO="${OTEL_SAMPLE_RATIO:-}" OTEL_INSECURE="${OTEL_INSECURE:-}" \
+    OTEL_METRICS_EXPORTER="${OTEL_METRICS_EXPORTER:-}" \
+    OTEL_METRICS_ENDPOINT="${OTEL_METRICS_ENDPOINT:-}" \
+    OPS_ADDRESS="${WORKER_OPS_ADDRESS}" \
+        "${BIN_DIR}/agent-worker" > "$WORKER_LOG" 2>&1 &
     WORKER_PID=$!
 
     for _ in $(seq 1 90); do
         curl -fsS "${API}/health" >/dev/null 2>&1 && return 0
-        kill -0 "$API_PID" 2>/dev/null || fail "the API exited during startup; see /tmp/smoke-api.log"
+        kill -0 "$API_PID" 2>/dev/null || fail "the API exited during startup; see ${API_LOG}"
         sleep 1
     done
-    fail "the API did not become ready; see /tmp/smoke-api.log"
+    fail "the API did not become ready; see ${API_LOG}"
 }
 
 stop_stack() {
@@ -456,7 +492,7 @@ stop_stack() {
 }
 
 API="http://localhost:${API_PORT}/api"
-start_stack
+start_stack chat
 
 log "registering an account"
 EMAIL="smoke-$(date +%s)@example.com"
@@ -466,11 +502,11 @@ curl -fsS -X POST "${API}/auth/register" -H 'Content-Type: application/json' \
 
 TOKEN=""
 for _ in $(seq 1 20); do
-    TOKEN=$(grep -o 'token=[A-Za-z0-9_-]*' /tmp/smoke-api.log | tail -1 | cut -d= -f2 || true)
+    TOKEN=$(grep -o 'token=[A-Za-z0-9_-]*' "$API_LOG" | tail -1 | cut -d= -f2 || true)
     [[ -n "$TOKEN" ]] && break
     sleep 1
 done
-[[ -n "$TOKEN" ]] || fail "no verification token in /tmp/smoke-api.log"
+[[ -n "$TOKEN" ]] || fail "no verification token in ${API_LOG}"
 
 log "verifying the address and logging in"
 curl -fsS -X POST "${API}/auth/verify-email" -H 'Content-Type: application/json' \
@@ -558,13 +594,30 @@ curl -fsS "${API}/tasks/${TASK}/steps" "${AUTH[@]}" | python3 scripts/print-step
 log "the answer, in the thread it was asked in"
 curl -fsS "${API}/conversations/${CONVERSATION}/messages" "${AUTH[@]}" | python3 scripts/print-thread.py
 
+# The metrics are checked only when the deployment was asked for them, because
+# the default is to report nothing: a scrape of a deployment with no exporter is a
+# 404 by design, and asserting the numbers there would be asserting the wrong
+# thing. What is checked is the reconciliation the epic asks for — the counters
+# the chart reads must agree with the task rows the phase above just produced.
+if [[ "${OTEL_METRICS_EXPORTER:-}" == "prometheus" ]]; then
+    log "the deployment's own measurements, scraped from /metrics"
+    # Both processes are scraped, because the work is split between them: the API accepts a task,
+    # the worker runs it and records what it spent. A scrape of one alone would read a depth that
+    # never comes back down, which is exactly what the first version of this check caught.
+    API_METRICS=$(curl -fsS "http://localhost:${API_PORT}/metrics")
+    WORKER_METRICS=$(curl -fsS "http://localhost${WORKER_OPS_ADDRESS}/metrics")
+    printf '%s\n' "$API_METRICS" "$WORKER_METRICS" | grep -E '^bolu_' | head -30
+
+    python3 scripts/check-metrics.py "$WORKER_METRICS" "$TASK_JSON" "$API_METRICS"
+fi
+
 # --------------------------------------------------------------- phase 2: bound
 
 log "restarting with a one-step allowance, to prove a bound stops the task"
 stop_stack
 TASK_MAX_STEPS=1
 start_stub tool
-start_stack
+start_stack bound
 
 log "sending a second message"
 curl -fsS -X POST "${API}/conversations/${CONVERSATION}/messages" "${AUTH[@]}" \
@@ -609,6 +662,19 @@ if "tool_call" not in kinds:
     raise SystemExit(f"the stub never asked for a tool, so this phase proved nothing: {kinds}")
 PY
 
+# The usage screen's own reads, checked while the failure this phase just produced
+# is on the books: the report must cover it, the export must be the same read, and the
+# attention list must carry it with a link that names its workflow.
+log "the usage screen's reads: the report, the export, and what needs attention"
+USAGE_JSON=$(curl -fsS "${API}/llm/usage/report?days=30" "${AUTH[@]}")
+printf '%s\n' "$USAGE_JSON" | python3 -m json.tool | head -30
+
+USAGE_CSV=$(curl -fsS "${API}/llm/usage/report?days=30&format=csv" "${AUTH[@]}")
+ATTENTION_JSON=$(curl -fsS "${API}/tasks/attention" "${AUTH[@]}")
+
+python3 scripts/check-usage.py "$USAGE_JSON" "$BOUND_JSON" "$USAGE_CSV" "$ATTENTION_JSON" \
+    "${TEMPORAL_UI_BASE_URL:-}"
+
 # --------------------------------------------------------------- phase 3: memory
 
 # The memory pipeline is the one thing that only exists in the wiring: a message
@@ -635,7 +701,7 @@ TASK_MAX_STEPS=12
 MEMORY_QUIET_SECONDS=5
 MEMORY_SIMILARITY=0.6
 start_stub memory
-start_stack
+start_stack memory
 
 MEMORY_AUTH=(-H "Authorization: Bearer ${ACCESS}" -H "X-Workspace-Id: ${WORKSPACE}")
 

@@ -169,6 +169,10 @@ func (o objectStorage) Delete(ctx context.Context, key string) error {
 	return o.store.Delete(ctx, key)
 }
 
+func (o objectStorage) List(ctx context.Context, prefix string) ([]string, error) {
+	return o.store.List(ctx, prefix)
+}
+
 func (o objectStorage) Driver() string { return o.store.Driver() }
 
 // agentDirectory adapts the agent registry to the port the chat module declares.

@@ -35,7 +35,9 @@ Indonesia dulu: transfer bank / virtual account. **Tidak ada Stripe.**
 │   └── frontend/    # Next.js (App Router) + TypeScript + Tailwind v4
 ├── docs/
 │   ├── adr/         # architecture decision records
-│   └── testing.md   # test layers and CI gates
+│   ├── testing.md   # test layers and CI gates
+│   ├── deployment.md # the three images, the migration step, and the environments
+│   └── e2e-mvp.md   # the MVP flow's end-to-end scenario and its measured cost per task
 ├── docker-compose.yml
 ├── Makefile
 └── .env.example
@@ -49,6 +51,18 @@ Backend layout, dependency rules, and commands: [`apps/backend/README.md`](apps/
 cp .env.example .env
 make up
 ```
+
+The end-to-end checks run against that stack, each one stopping the compose workers first so the
+run's task is not executed by another process's model configuration:
+
+```bash
+docker stop bolu-api bolu-agent-worker bolu-integration-worker
+make smoke-task && make smoke-approval && make smoke-order
+docker start bolu-api bolu-agent-worker bolu-integration-worker
+```
+
+`make smoke-order` is the MVP flow: a customer's message becomes an order priced from the
+workspace's own catalogue, and the invoice that follows is a draft a person approves.
 
 `make up` starts Postgres (with pgvector), Redis, Temporal and its UI, runs the
 migrations, then starts the API, both Temporal workers, and the frontend.
@@ -90,9 +104,17 @@ The backlog is tracked as epics and their tasks in GitHub issues: **EPIC 1–14*
 each epic being a sub-issue tree whose tasks are worked in order. The legacy
 issue set (#1–#11) is mapped onto those epics in comments on each issue.
 
+The MVP flow's end-to-end scenario — what it proves, the test data, and the steps with their
+expected results — is [`docs/e2e-mvp.md`](docs/e2e-mvp.md); `make smoke-order` runs the first eight
+steps of it against the compose stack.
+
 Decisions that shape the infrastructure live in [`docs/adr`](docs/adr):
 Temporal Cloud vs self-host and the data region are recorded in
-[ADR 0001](docs/adr/0001-temporal-dan-region.md).
+[ADR 0001](docs/adr/0001-temporal-dan-region.md), and the UU PDP decisions —
+where data is stored, who processes it, and how a deletion request is executed —
+in [ADR 0002](docs/adr/0002-kepatuhan-uu-pdp.md). What customers are shown is
+[`docs/kebijakan-data.md`](docs/kebijakan-data.md): retention in plain words and the
+erasure flow, which is also a screen at `/settings/data`.
 
 ## Stack
 

@@ -173,6 +173,65 @@ func (_c *ObjectStore_Get_Call) RunAndReturn(run func(context.Context, string) (
 	return _c
 }
 
+// List provides a mock function with given fields: ctx, prefix
+func (_m *ObjectStore) List(ctx context.Context, prefix string) ([]string, error) {
+	ret := _m.Called(ctx, prefix)
+
+	if len(ret) == 0 {
+		panic("no return value specified for List")
+	}
+
+	var r0 []string
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, string) ([]string, error)); ok {
+		return rf(ctx, prefix)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, string) []string); ok {
+		r0 = rf(ctx, prefix)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]string)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = rf(ctx, prefix)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// ObjectStore_List_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'List'
+type ObjectStore_List_Call struct {
+	*mock.Call
+}
+
+// List is a helper method to define mock.On call
+//   - ctx context.Context
+//   - prefix string
+func (_e *ObjectStore_Expecter) List(ctx interface{}, prefix interface{}) *ObjectStore_List_Call {
+	return &ObjectStore_List_Call{Call: _e.mock.On("List", ctx, prefix)}
+}
+
+func (_c *ObjectStore_List_Call) Run(run func(ctx context.Context, prefix string)) *ObjectStore_List_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(string))
+	})
+	return _c
+}
+
+func (_c *ObjectStore_List_Call) Return(_a0 []string, _a1 error) *ObjectStore_List_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *ObjectStore_List_Call) RunAndReturn(run func(context.Context, string) ([]string, error)) *ObjectStore_List_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Put provides a mock function with given fields: ctx, key, contentType, content
 func (_m *ObjectStore) Put(ctx context.Context, key string, contentType string, content []byte) (domain.StoredObject, error) {
 	ret := _m.Called(ctx, key, contentType, content)

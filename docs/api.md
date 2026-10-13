@@ -155,6 +155,8 @@ where the platform default is used only when the workspace configured nothing.
 | `DELETE /llm/providers/:id` | bearer + tenant | owner, admin | Removes it from the chain |
 | `POST /llm/providers/:id/test` | bearer + tenant | owner, admin | Calls the provider once and returns its capabilities; the call is recorded |
 | `GET /llm/usage?days=30` | bearer + tenant | any | Per-day totals: calls, tokens, cache tokens, cost (micro-rupiah) |
+| `GET /llm/usage/report?days=30&limit=25` | bearer + tenant | any | One window read three ways: `totals`, `by_agent`, `by_task`. `format=csv` returns the same read as a file |
+| `GET /tasks/attention?limit=50` | bearer + tenant | any | The tasks that need a person — `failed`, `stuck`, `waiting` — each with a `temporal_url` |
 | `GET /agents/:id/model` | bearer + tenant | any | The Bolu's override, never the key itself |
 | `PUT /agents/:id/model` | bearer + tenant | owner, admin | `{provider_id?, adapter?, base_url?, model?, api_key?, max_tokens?}` |
 
@@ -173,6 +175,62 @@ What the gateway guarantees:
 - **The quota is checked before the provider is called.** The live counter is
   Redis; when Redis is unavailable the check sums the ledger, so an outage cannot
   hand out a second allowance.
+
+### Where the usage numbers come from
+
+`GET /llm/usage/report` reads one window three ways, and the three are shown
+together because the difference between them is the answer:
+
+- **`totals`** is every call the workspace made in the window, including the ones
+  made outside any task — a memory extraction, an embedding, a routing decision.
+- **`by_agent`** is the same spend grouped by the Bolu that made it, dearest first,
+  with the name joined so a screen says which bot rather than which id.
+- **`by_task`** is the same spend grouped by the task that caused it, dearest first.
+
+So the total is larger than the sum of the per-task rows, and that gap is a fact
+about the product rather than a rounding error: work happens outside tasks. The
+screen shows it as "di luar tugas" rather than hiding it, because a person who adds
+up the rows and gets less than the total deserves to know why.
+
+`format=csv` returns the same read as a rectangular table with one header row and a
+`bagian` column naming the section (`total`, `per_bolu`, `per_tugas`). One shape,
+because a file with two-field preamble rows and nine-field data rows is one a strict
+reader refuses — the standard library's own refuses it, with "wrong number of
+fields". The numbers are written as raw micro-rupiah *and* as rupiah with two
+decimals, always with a dot: the export is machine-read, and a locale-dependent
+separator would make the column text in half the countries it is opened in.
+
+## Data policy and erasure (EPIC 13)
+
+| Endpoint | Auth | Role | Notes |
+| --- | --- | --- | --- |
+| `POST /workspaces/current/erasure` | bearer + tenant | owner | Removes the workspace and everything in it. Answers with `{workspace_id, objects, rows}` |
+| `GET /workspaces/current/erasure` | bearer + tenant | owner | The record of what was removed, or `erasure_not_found` |
+
+The person who asked is taken from the session, never from the body: who requested an
+erasure is part of the record, and a caller who could name somebody else would be
+writing that record. What the erasure covers, in the order it happens:
+
+1. **Object storage** — both of the chat module's prefixes (`attachments`, `content`)
+   are walked and emptied. Sandboxed HTML documents have no row at all, so a
+   database-driven deletion would leave them behind with nothing pointing at them.
+2. **Rows** — `DELETE FROM workspaces`, which cascades to every table that references
+   it: conversations, messages, attachments, memories and their vectors, tasks and
+   their steps, drafts, policies, audit lines, and the retention queue.
+3. **Evidence** — a row in `data_erasures` carrying the workspace id, its name, who
+   asked, when, and the counts. It has no foreign key, because it outlives what it
+   describes.
+
+The two failure modes are distinct and worth telling apart when something goes
+wrong: `erasure_unavailable` (503) means this deployment cannot complete an erasure
+— the record, the workspace deletion, or the object walk is not wired — and the
+request is refused rather than half-done; `erasure_failed` (500) means the attempt
+ran and stopped, with the reason on the record, and **nothing left half-removed**,
+because the objects are only removed when they can be, and the workspace is only
+deleted when they are.
+
+The published policy is `docs/kebijakan-data.md`; the reasoning, the processors, and
+the region decisions are in `docs/adr/0002-kepatuhan-uu-pdp.md`.
 
 ## Conversations (EPIC 5)
 
@@ -281,6 +339,7 @@ GET  /api/tasks            — the workspace history, newest first
 GET  /api/tasks/:id        — one task
 GET  /api/tasks/:id/steps  — the recorded rounds, in order
 GET  /api/tasks/:id/children — the tasks this one handed work to
+GET  /api/tasks/attention  — the work that needs a person, with a Temporal link
 POST /api/tasks/:id/cancel — stop a task that has not finished
 ```
 
@@ -290,6 +349,24 @@ with `task_not_configured` when the runtime is not wired.
 `GET /api/tasks` filters: `status`, `live=true` (queued, running, or waiting),
 `agent_id`, `parent_task_id`, `limit` (default 50, max 200). An unknown status is
 refused with `invalid_input` rather than ignored.
+
+`GET /api/tasks/attention` is one question — "what is waiting on me?" — rather
+than three, because a person who asked for the stuck, the parked, and the failed
+separately would read three lists that disagreed about their own paging. It reads
+the failures and the live tasks, and keeps only the live ones that are not going to
+move on their own: a task that is `running` is doing its job and is not on the list.
+The order is failures, then stuck, then waiting — a person with an approval to make
+and a failure to look at should make the decision first, because the parked task is
+holding work that is otherwise done.
+
+Each entry carries `attention` (`failed`, `stuck`, `waiting`) and a
+`temporal_url` that opens the task's workflow in this deployment's Temporal UI.
+The link is built by the server, from `TEMPORAL_UI_BASE_URL` and the namespace:
+the deployment is the only thing that knows which Temporal it has, and a link the
+browser assembled from configuration it does not have would work on a laptop and
+break in production. It is absent when the deployment named no UI, and on a task
+that never reached the engine — a link to a workflow that does not exist would be
+worse than no link.
 
 A task payload carries `trigger` (`chat`, `routine`, `webhook`, `handoff`),
 `status`, and a derived `health`:
@@ -665,6 +742,58 @@ message secrets, privacy tokens, and the outgoing-event buffer. WhatsApp re-send
 those when a connection comes up, and keeping them would grow the sealed blob with
 data nothing here reads.
 
+## Order and catalogue (EPIC 14)
+
+```
+GET    /api/orders/products               the catalogue (?q=, ?include_inactive=, ?limit=)
+POST   /api/orders/products               add a product (owner, admin)
+PUT    /api/orders/products/:id           edit a product (owner, admin)
+DELETE /api/orders/products/:id           remove a product (owner, admin)
+GET    /api/orders                        the orders, newest first (?customer_phone=, ?limit=)
+GET    /api/orders/:id                    one order with its lines
+POST   /api/orders/:id/cancel             mark it as not fulfilled (owner, admin)
+```
+
+The workspace's own data: the products it sells, the customers it talks to, and the orders it
+took. It is the first module whose tables are the workspace's business rather than a copy of
+something that lives at a provider, and the first whose tools belong to the workspace rather than
+to a connected account.
+
+### Prices travel in rupiah and are stored in micro-rupiah
+
+A screen writes and reads `price_idr` — 15000 is Rp 15.000 — and the column holds micro-rupiah,
+the unit `plans`, `usage_ledger`, and the cost report already use. One unit for money means an
+invoice total and a model's cost are the same number of the same thing, which is what makes them
+comparable; the conversion happens once, in the handler.
+
+A line keeps its own copy of what was agreed — the description, the unit, and the price — and
+still references the catalogue entry. Changing a product's price therefore does not rewrite an
+order that already exists, while "which catalogue entry was this" stays answerable. The line's
+total is written by the database as a generated column, and the order's total from its own lines,
+so a total cannot disagree with the quantity and price beside it.
+
+### An order is recorded by a Bolu, never by a client
+
+There is no endpoint that inserts an order, and that is deliberate: an order is a record of what a
+customer asked for, which is why a task reads a message and records it. A client that could insert
+one directly could claim an order that never happened. Cancelling is the one write, because a
+person deciding not to fulfil an order is exactly the kind of decision the product puts in a
+human's hands.
+
+The tool that records one takes a product name and a quantity and **no price**: the price comes
+from the catalogue, inside the same transaction that writes the order. A model therefore cannot
+put a number it invented on an invoice — there is nowhere to put it. A product the catalogue does
+not have refuses the whole order, carries the closest entries with their prices, and writes
+nothing; a quantity that is not positive is refused before the first insert, naming the line.
+
+### The catalogue is a managing role's business
+
+Reading it is every member's, because the person answering "what do we sell this for" is not
+always the owner. Writing it needs a managing role, the way the provider keys do: a price is what
+every later quote to every customer is based on. Duplicate names are refused case-insensitively —
+`Kopi Arabika` and `kopi arabika` are the same product to everybody except a database — with
+`duplicate_product`.
+
 ## Error codes
 
 | Code | Status | Meaning |
@@ -745,6 +874,8 @@ data nothing here reads.
 | `unverifiable_payment` | 400 | A payment notification that cannot be trusted; retrying cannot help |
 | `billing_unavailable` | 503 | No payment provider is configured for this deployment |
 | `billing_not_configured` | 503 | Module not wired (no database) |
+| `duplicate_product` | 409 | A product with that name is already in the catalogue |
+| `order_not_configured` | 503 | Module not wired (no database) |
 
 ## Billing, packages, and quota (EPIC 12)
 

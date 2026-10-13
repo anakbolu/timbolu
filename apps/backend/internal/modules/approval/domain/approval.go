@@ -194,8 +194,11 @@ type Decision struct {
 
 // AuditEntry is one thing that happened, for the record.
 type AuditEntry struct {
-	// Action names what happened: draft.created, draft.approved, draft.revised,
-	// draft.sent, draft.canceled, policy.updated.
+	// Action names what happened, as `<object>.<verb>`: draft.created,
+	// draft.approved, draft.sent, policy.updated, grant.set, member.role_changed,
+	// provider.created. The vocabulary is not enumerated in a constraint on purpose —
+	// a new module recording its own action should not need a migration — so the
+	// convention is what keeps the filter useful.
 	Action string
 	// ObjectType and ObjectID name what it happened to.
 	ObjectType string
@@ -268,9 +271,36 @@ type Repository interface {
 
 	// RecordAudit appends one entry to the audit trail.
 	RecordAudit(ctx context.Context, scope Scope, entry AuditEntry) error
-	// AuditTrail returns the entries, newest first.
-	AuditTrail(ctx context.Context, scope Scope, limit int) ([]AuditRecord, error)
+	// AuditTrail returns the entries the filter names, newest first.
+	AuditTrail(ctx context.Context, scope Scope, filter AuditFilter) ([]AuditRecord, error)
 }
+
+// AuditFilter narrows a trail read.
+//
+// Every field is optional and they combine, because the three questions an incident asks
+// are different and one of them is always the axis: what did this Bolu do, who touched
+// this thing, and what happened in this window.
+type AuditFilter struct {
+	// Action narrows to one action. A value ending in a dot is a prefix, so
+	// `grant.` reads every grant change without naming each verb.
+	Action string
+	// ObjectType and ObjectID narrow to one kind of thing, or one thing.
+	ObjectType string
+	ObjectID   string
+	// ActorAgentID narrows to one Bolu, ActorUserID to one person.
+	ActorAgentID uuid.UUID
+	ActorUserID  uuid.UUID
+	// Since and Until bound the window. Until is exclusive, so two windows that abut
+	// do not return the same entry twice.
+	Since time.Time
+	Until time.Time
+	// Limit caps one page. Zero takes the default.
+	Limit int
+}
+
+// Window reports whether the filter asks for a bounded window, which is what tells a
+// repository whether the time clauses belong in the statement at all.
+func (f AuditFilter) Window() bool { return !f.Since.IsZero() || !f.Until.IsZero() }
 
 // AuditRecord is one stored entry.
 type AuditRecord struct {

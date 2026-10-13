@@ -17,6 +17,8 @@ bukan data contoh.
 | `09-mobile-menu.png` | Mobile: drawer terbuka |
 | `10-memori.png` | Memori: memori utama, memori pribadi tiap Bolu, dan basis pengetahuan |
 | `11-langganan.png` | Langganan: paket dan periodenya, pemakaian token, batas paket, tagihan yang menunggu dengan cara bayarnya, paket tambahan, paket yang tersedia, dan riwayat tagihan |
+| `12-pemakaian.png` | Pemakaian: ringkasan token dan biaya, pemakaian per Bolu dan per tugas, dan daftar yang perlu perhatian dengan tautan ke Temporal |
+| `13-data.png` | Data: berapa lama tiap jenis data disimpan, di mana datanya berada, dan permintaan penghapusan workspace |
 
 Diambil 2026-10-12. Angka di layar adalah isi workspace uji, jadi nol di tempat
 yang belum punya pekerjaan — itu memang perilakunya, bukan tampilan kosong.
@@ -47,3 +49,18 @@ milik Oren, dan satu dokumen yang sudah dipecah lalu diindeks. Ia memperlihatkan
 susunan yang jadi alasan layarnya ada — memori utama di atas, satu bagian per
 Bolu, basis pengetahuan di bawah — dan bahwa tiap baris menyebut jenis, sumber,
 serta tanggalnya.
+
+`12-pemakaian.png` dan `13-data.png` diambil setelah EPIC 13 mendarat, dari workspace uji
+yang benar-benar menjalankan alur pesanan EPIC 14 lewat stub model: empat tugas dengan
+total 11 panggilan dan 3.864 token, dibaca dari `usage_ledger` — angka yang sama yang
+dibaca `/api/llm/usage/report`, dan yang diperiksa `scripts/check-usage.py` terhadap
+baris-barisnya. Baris **Perlu perhatian** memperlihatkan satu tugas gagal beserta
+tautannya ke Temporal: compose lokal tidak punya kredensial Gmail, jadi executor
+integrasinya menjawab "unknown tool: gmail.send" — persis perilaku yang diminta (tidak
+ada yang ditandai terkirim kalau tidak benar-benar keluar), dan itulah gunanya daftar
+itu.
+
+`13-data.png` memperlihatkan halaman kebijakan: setiap jenis data beserta lamanya, dan
+apa yang tersisa setelah jendelanya lewat — termasuk bahwa langkah tugas kehilangan
+isinya tapi mempertahankan bentuknya, dan bahwa jejak audit ikut hilang bersama
+workspace-nya.

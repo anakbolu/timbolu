@@ -154,13 +154,18 @@ type discardMailer struct{}
 // Send implements workspacedomain.Mailer.
 func (discardMailer) Send(context.Context, string, string, string) error { return nil }
 
-// fixtureTokens mints invitation tokens without a random source: the hash is what the
-// store keeps and the raw value is what the mailer would have carried.
-type fixtureTokens struct{}
+// fixtureTokens mints invitation tokens without a random source, and keeps the last raw
+// value so a test can accept the invitation the module just issued. The hash is what the
+// store keeps and the raw value is what the mailer would have carried — which is exactly
+// how the real path reaches the person it was sent to.
+type fixtureTokens struct {
+	last string
+}
 
 // Generate implements workspacedomain.Tokens.
-func (fixtureTokens) Generate() (string, string, error) {
+func (t *fixtureTokens) Generate() (string, string, error) {
 	raw := uuid.NewString()
+	t.last = raw
 	return raw, workspacedomain.HashToken(raw), nil
 }
 
@@ -717,7 +722,7 @@ func TestTheMemberCapCountsOpenInvitationsToo(t *testing.T) {
 	workspaces := workspaceservice.New(workspaceservice.Deps{
 		Repository: workspacerepo.New(fixture.pool),
 		Mailer:     discardMailer{},
-		Tokens:     fixtureTokens{},
+		Tokens:     &fixtureTokens{},
 		Limits:     billingPlanLimits{service: fixture.service},
 		Config:     workspaceservice.Config{FrontendURL: "https://app.example.com"},
 	})

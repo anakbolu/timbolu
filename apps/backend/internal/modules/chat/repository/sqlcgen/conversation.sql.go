@@ -236,6 +236,24 @@ func (q *Queries) CreateConversation(ctx context.Context, arg CreateConversation
 	return i, err
 }
 
+const deleteAttachment = `-- name: DeleteAttachment :execrows
+DELETE FROM message_attachments
+WHERE id = $1 AND workspace_id = $2
+`
+
+type DeleteAttachmentParams struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+}
+
+func (q *Queries) DeleteAttachment(ctx context.Context, arg DeleteAttachmentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteAttachment, arg.ID, arg.WorkspaceID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const eventsSince = `-- name: EventsSince :many
 SELECT id, workspace_id, type, actor_agent_id, actor_user_id, conversation_id, task_id, draft_id, payload, created_at FROM activity_events
 WHERE workspace_id = $1 AND id > $2
@@ -548,6 +566,56 @@ func (q *Queries) ListConversations(ctx context.Context, workspaceID uuid.UUID) 
 			&i.UpdatedAt,
 			&i.MessageCount,
 			&i.LastActivityAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listExpiredAttachments = `-- name: ListExpiredAttachments :many
+SELECT id, workspace_id, message_id, storage_key, filename, content_type, byte_size, checksum_sha256, created_at FROM message_attachments
+WHERE workspace_id = $1 AND created_at < $2
+ORDER BY created_at
+LIMIT $3
+`
+
+type ListExpiredAttachmentsParams struct {
+	WorkspaceID uuid.UUID
+	CreatedAt   time.Time
+	Limit       int32
+}
+
+// The retention job's read: the attachments of one workspace that are past their
+// window, oldest first.
+//
+// It runs in the workspace's scope like every other statement here, and it answers
+// the storage key the bytes live under, because the row and the object are two
+// halves of one attachment and a row removed without its object is a leak the
+// database cannot see.
+func (q *Queries) ListExpiredAttachments(ctx context.Context, arg ListExpiredAttachmentsParams) ([]MessageAttachment, error) {
+	rows, err := q.db.Query(ctx, listExpiredAttachments, arg.WorkspaceID, arg.CreatedAt, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MessageAttachment{}
+	for rows.Next() {
+		var i MessageAttachment
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.MessageID,
+			&i.StorageKey,
+			&i.Filename,
+			&i.ContentType,
+			&i.ByteSize,
+			&i.ChecksumSha256,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

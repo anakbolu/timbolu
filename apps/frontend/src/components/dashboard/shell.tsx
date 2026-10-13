@@ -42,6 +42,12 @@ const NAV = [
     matches: (pathname: string) => pathname === "/dashboard/routines",
   },
   {
+    href: "/dashboard/usage",
+    label: "Pemakaian",
+    icon: "M4 19h16M7 16V9M12 16V5M17 16v-4",
+    matches: (pathname: string) => pathname === "/dashboard/usage",
+  },
+  {
     href: "/office",
     label: "Kantor",
     icon: "M3 10.5 12 4l9 6.5M5 10v10h14V10M10 20v-5h4v5",

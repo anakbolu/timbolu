@@ -47,6 +47,7 @@ func (c *Container) openTask(_ context.Context, cfg *config.Config) error {
 	}
 
 	deps := taskservice.Deps{
+		Metrics: c.metricsFor(),
 		Tasks:   c.Repositories.Task,
 		Steps:   c.Repositories.Task,
 		Starter: starter,
@@ -81,6 +82,10 @@ func (c *Container) openTask(_ context.Context, cfg *config.Config) error {
 		Namer:    c.taskAgentNamer(),
 		Limits:   taskLimits(cfg),
 		Logger:   c.Logger,
+		// The activity set starts the spans of a task's rounds and tool calls, under the
+		// activity span the Temporal interceptor opens.
+		Tracer:  c.telemetryTracer(),
+		Metrics: c.metricsFor(),
 	})
 
 	return nil
@@ -139,14 +144,7 @@ func (c *Container) toolRegistry() taskdomain.ToolRegistry {
 	if service == nil {
 		return nil
 	}
-	return toolRegistry{service: service}
-}
-
-// toolExecutor runs a tool call. No integration executor exists yet, so this is
-// nil and a tool call is answered with "not available" rather than being
-// silently dropped. EPIC 8 (#66) supplies the implementation.
-func (c *Container) toolExecutor() taskdomain.ToolExecutor {
-	return nil
+	return toolRegistry{service: service, container: c}
 }
 
 // draftGate turns a write_external action into a draft a human decides on.
@@ -337,13 +335,20 @@ func toTaskAgentRef(agent agentdomain.Agent) taskdomain.AgentRef {
 
 // toolRegistry reports the tools a Bolu was granted.
 //
-// Two filters apply and both are real: the grant (which integrations the Bolu
-// was given) and an executor (something that can run the tool). The grant filter
-// is the registry's own query. The executor filter is applied here by asking the
-// executor for its catalogue, and a deployment with no executor offers no
-// integration tools at all rather than offering tools nothing can run.
+// Two filters apply and both are real: the grant (which integrations the Bolu was given) and an
+// executor (something that can run the tool). The grant filter is the registry's own query — the
+// workspace's catalogue and the Bolu's profile, joined against the grants. The executor filter is that
+// a tool the hub cannot run is not offered: a catalogue row without an adapter is a migration that
+// outran its code, and offering it teaches the model to call something that fails.
+//
+// The schema comes from the adapter that runs the tool, which is what makes the arguments a model sends
+// the arguments the tool expects. The catalogue carries the name, the label, and the description —
+// what a screen shows — and the adapter carries the schema, because a schema is code.
 type toolRegistry struct {
 	service agentdomain.Service
+	// schemas is the hub's registry, resolved lazily: the runtime is assembled after the hub, and a
+	// deployment with no hub offers the catalogue rows with an open schema rather than refusing them.
+	container *Container
 }
 
 // Tools implements taskdomain.ToolRegistry.
@@ -355,25 +360,48 @@ func (r toolRegistry) Tools(ctx context.Context, scope taskdomain.Scope, agentID
 
 	tools := make([]taskdomain.Tool, 0, len(granted))
 	for _, tool := range granted {
+		schema, runnable := r.schemaOf(tool.Name)
+		if !runnable {
+			// Nothing in this deployment can run it: the catalogue knows a tool no adapter claims.
+			// Offering it would be teaching the model to call something that cannot work.
+			continue
+		}
+
 		tools = append(tools, taskdomain.Tool{
 			Name:        tool.Name,
 			Integration: tool.Integration,
 			Description: tool.Description,
-			// The catalogue carries the label, which is what decides whether a
-			// call needs a human. The schema is the integration module's: until
-			// it lands, the tool is offered with an open object, which is
-			// permissive rather than wrong.
-			Schema: openSchema,
-			Label:  tool.Label,
+			Schema:      schema,
+			Label:       tool.Label,
 		})
 	}
 
 	return tools, nil
 }
 
-// openSchema accepts any argument object. A tool whose integration module has
-// not registered a schema yet is still callable, which is better than a tool the
-// model is offered and cannot call.
+// schemaOf answers the schema an adapter declares for one tool.
+//
+// The second answer is "something can run this", which is the filter above rather than a detail: a
+// catalogue row with no adapter behind it is offered to nobody, and a deployment with no hub at all
+// offers its rows with an open schema instead of hiding them — the API and the worker assemble
+// separately, and a worker without a hub is a deployment that cannot run tools, which its own executor
+// says when a call arrives.
+func (r toolRegistry) schemaOf(name string) (json.RawMessage, bool) {
+	if r.container != nil && r.container.Services != nil && r.container.Services.Integration != nil {
+		spec, _, ok := r.container.Services.Integration.Registry().Lookup(name)
+		if !ok {
+			return nil, false
+		}
+
+		return spec.Schema, true
+	}
+
+	return openSchema, true
+}
+
+// openSchema accepts any argument object. A tool with no adapter to ask is offered with it, which is
+// permissive rather than wrong: the hub validates the arguments against the real schema when the call
+// is made, so a wrong argument is refused either way.
 var openSchema = json.RawMessage(`{"type":"object","additionalProperties":true}`)
 
 // chatEventSink writes a task event to the durable stream the whole product

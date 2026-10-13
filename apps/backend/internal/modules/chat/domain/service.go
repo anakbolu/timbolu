@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -36,6 +37,18 @@ type Service interface {
 	Attachment(ctx context.Context, scope Scope, id uuid.UUID) (Attachment, error)
 	// AttachmentContent returns the metadata and the bytes of one file.
 	AttachmentContent(ctx context.Context, scope Scope, id uuid.UUID) (Attachment, []byte, error)
+	// EraseObjects removes every object this workspace owns — attachments and sandboxed
+	// content — and reports how many went.
+	//
+	// It is on the service rather than on the repository because it walks the bucket, and the
+	// prefixes are this module's own knowledge.
+	EraseObjects(ctx context.Context, workspaceID uuid.UUID) (int64, error)
+	// PruneAttachments removes the files past a moment, row and object together, and
+	// reports what went.
+	//
+	// It is on the service rather than on the repository because an attachment is two
+	// halves, and this is the layer that holds both.
+	PruneAttachments(ctx context.Context, scope Scope, olderThan time.Time, limit int) (AttachmentPrune, error)
 	// Content returns one sandboxed HTML document by its reference. It carries
 	// no tenant scope on purpose: the reference is the capability, and the
 	// document is served to an iframe that cannot send a cookie.
@@ -94,3 +107,18 @@ type AttachRequest struct {
 // storage's: an attachment is rendered inline next to a message, so a huge one
 // would be a way to make the UI unusable.
 const AttachmentMaxBytes = 25 * 1024 * 1024
+
+// AttachmentPrune is what one attachment sweep removed.
+type AttachmentPrune struct {
+	// Count is how many attachments were removed, row and object together.
+	Count int
+	// BytesFreed is what object storage gave back, which is the number that matters when
+	// the bucket is what is growing.
+	BytesFreed int64
+}
+
+// DefaultPruneLimit bounds one attachment sweep when the caller does not say how many.
+//
+// It is a default rather than a policy: the same batch size every pass is what keeps a
+// deployment with years of attachments from removing a month of storage in one statement.
+const DefaultPruneLimit = 500

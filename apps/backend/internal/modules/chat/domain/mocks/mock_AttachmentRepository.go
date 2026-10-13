@@ -8,6 +8,8 @@ import (
 	domain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
 	mock "github.com/stretchr/testify/mock"
 
+	time "time"
+
 	uuid "github.com/google/uuid"
 )
 
@@ -22,6 +24,115 @@ type AttachmentRepository_Expecter struct {
 
 func (_m *AttachmentRepository) EXPECT() *AttachmentRepository_Expecter {
 	return &AttachmentRepository_Expecter{mock: &_m.Mock}
+}
+
+// Delete provides a mock function with given fields: ctx, scope, id
+func (_m *AttachmentRepository) Delete(ctx context.Context, scope domain.Scope, id uuid.UUID) error {
+	ret := _m.Called(ctx, scope, id)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Delete")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, uuid.UUID) error); ok {
+		r0 = rf(ctx, scope, id)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// AttachmentRepository_Delete_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Delete'
+type AttachmentRepository_Delete_Call struct {
+	*mock.Call
+}
+
+// Delete is a helper method to define mock.On call
+//   - ctx context.Context
+//   - scope domain.Scope
+//   - id uuid.UUID
+func (_e *AttachmentRepository_Expecter) Delete(ctx interface{}, scope interface{}, id interface{}) *AttachmentRepository_Delete_Call {
+	return &AttachmentRepository_Delete_Call{Call: _e.mock.On("Delete", ctx, scope, id)}
+}
+
+func (_c *AttachmentRepository_Delete_Call) Run(run func(ctx context.Context, scope domain.Scope, id uuid.UUID)) *AttachmentRepository_Delete_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(domain.Scope), args[2].(uuid.UUID))
+	})
+	return _c
+}
+
+func (_c *AttachmentRepository_Delete_Call) Return(_a0 error) *AttachmentRepository_Delete_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *AttachmentRepository_Delete_Call) RunAndReturn(run func(context.Context, domain.Scope, uuid.UUID) error) *AttachmentRepository_Delete_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListExpired provides a mock function with given fields: ctx, scope, olderThan, limit
+func (_m *AttachmentRepository) ListExpired(ctx context.Context, scope domain.Scope, olderThan time.Time, limit int) ([]domain.Attachment, error) {
+	ret := _m.Called(ctx, scope, olderThan, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListExpired")
+	}
+
+	var r0 []domain.Attachment
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, time.Time, int) ([]domain.Attachment, error)); ok {
+		return rf(ctx, scope, olderThan, limit)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, time.Time, int) []domain.Attachment); ok {
+		r0 = rf(ctx, scope, olderThan, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]domain.Attachment)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, domain.Scope, time.Time, int) error); ok {
+		r1 = rf(ctx, scope, olderThan, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// AttachmentRepository_ListExpired_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListExpired'
+type AttachmentRepository_ListExpired_Call struct {
+	*mock.Call
+}
+
+// ListExpired is a helper method to define mock.On call
+//   - ctx context.Context
+//   - scope domain.Scope
+//   - olderThan time.Time
+//   - limit int
+func (_e *AttachmentRepository_Expecter) ListExpired(ctx interface{}, scope interface{}, olderThan interface{}, limit interface{}) *AttachmentRepository_ListExpired_Call {
+	return &AttachmentRepository_ListExpired_Call{Call: _e.mock.On("ListExpired", ctx, scope, olderThan, limit)}
+}
+
+func (_c *AttachmentRepository_ListExpired_Call) Run(run func(ctx context.Context, scope domain.Scope, olderThan time.Time, limit int)) *AttachmentRepository_ListExpired_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(domain.Scope), args[2].(time.Time), args[3].(int))
+	})
+	return _c
+}
+
+func (_c *AttachmentRepository_ListExpired_Call) Return(_a0 []domain.Attachment, _a1 error) *AttachmentRepository_ListExpired_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *AttachmentRepository_ListExpired_Call) RunAndReturn(run func(context.Context, domain.Scope, time.Time, int) ([]domain.Attachment, error)) *AttachmentRepository_ListExpired_Call {
+	_c.Call.Return(run)
+	return _c
 }
 
 // ListForMessage provides a mock function with given fields: ctx, scope, messageID

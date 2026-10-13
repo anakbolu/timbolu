@@ -1,6 +1,9 @@
 package config
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Config is the root application configuration. Values come from the YAML file
 // matching ENVIRONMENT and are then overridden by environment variables.
@@ -23,7 +26,75 @@ type Config struct {
 	Storage      StorageConfig
 	WhatsApp     WhatsAppConfig
 	Billing      BillingConfig
+	Retention    RetentionConfig
+	Telemetry    TelemetryConfig
 	Logging      LoggingConfig
+}
+
+// DefaultServiceName names this binary in the traces, unless the deployment named it.
+func (t *TelemetryConfig) DefaultServiceName(name string) {
+	if strings.TrimSpace(t.ServiceName) == "" {
+		t.ServiceName = name
+	}
+}
+
+// TelemetryConfig is where a deployment's traces go.
+//
+// The default is nowhere: a deployment that has not said where telemetry should be sent should not
+// be sending it. The provider is installed either way, so a request still has a trace id and its
+// log lines can be correlated — only the spans are dropped.
+type TelemetryConfig struct {
+	// ServiceName is what the spans are filed under. Each binary names itself, so a collector
+	// groups the API and the workers separately rather than under one name — which is what an
+	// incident reads as: one process or several.
+	ServiceName string `mapstructure:"ServiceName" validate:"optional"`
+	// Exporter is "none", "console" (a development run) or "otlp" (a collector).
+	Exporter string `mapstructure:"Exporter" validate:"optional"`
+	// Endpoint is the collector's host:port, required by the otlp exporter.
+	Endpoint string `mapstructure:"Endpoint" validate:"optional"`
+	// SampleRatio is the share of root traces kept, between 0 and 1. A trace a caller already
+	// sampled is always kept: dropping the work of a sampled request would leave a hole exactly
+	// where the work happened.
+	SampleRatio float64 `mapstructure:"SampleRatio" validate:"optional"`
+	// Insecure drops TLS to the collector, which is what a collector on the compose network
+	// wants.
+	Insecure bool `mapstructure:"Insecure" validate:"optional"`
+
+	// MetricsExporter is where measurements go: "none", "prometheus" (a scrape endpoint),
+	// "otlp" (a collector), or "console". It is a separate switch from the traces because the
+	// two are asked for separately in practice.
+	MetricsExporter string `mapstructure:"MetricsExporter" validate:"optional"`
+	// MetricsEndpoint is the collector's host:port, required by the otlp metrics exporter.
+	MetricsEndpoint string `mapstructure:"MetricsEndpoint" validate:"optional"`
+	// MetricsInterval is how often measurements are pushed. Zero takes the SDK's default.
+	// It does not apply to the Prometheus exporter, which is scraped.
+	MetricsInterval time.Duration `mapstructure:"MetricsInterval" validate:"optional"`
+}
+
+// RetentionConfig is how long the deployment keeps what a customer said and what a model
+// answered.
+//
+// The split is the design rather than a pair of numbers: a task's *shape* — which step, which
+// tool, how many tokens — is kept for good, and its raw payload is not. A retention rule that
+// removed whole rows would take the task history and the cost report with it, which is what
+// makes "keep less" and "the history stays readable" one decision instead of two that
+// contradict each other.
+type RetentionConfig struct {
+	// StepDays is how long a task step's raw input and output are kept. Zero takes the
+	// product default of thirty days.
+	StepDays int `mapstructure:"StepDays" validate:"optional"`
+	// AttachmentDays is how long an attachment's bytes are kept. Zero means attachments are
+	// kept as long as the message that carries them, which is what a deployment that does
+	// not want an attachment policy runs with.
+	AttachmentDays int `mapstructure:"AttachmentDays" validate:"optional"`
+	// Interval is how often the job runs. Zero disables it, which local development may
+	// want.
+	Interval time.Duration `mapstructure:"Interval" validate:"optional"`
+	// Batch bounds how many steps one pass prunes, so a deployment with years of history
+	// makes progress in slices rather than in one unbounded statement.
+	Batch int `mapstructure:"Batch" validate:"optional"`
+	// SweepLimit bounds how many workspaces one pass looks at.
+	SweepLimit int `mapstructure:"SweepLimit" validate:"optional"`
 }
 
 // BillingConfig holds what taking money online needs.
@@ -238,6 +309,12 @@ type AppConfig struct {
 
 // HttpConfig holds HTTP server settings.
 type HttpConfig struct {
+	// OpsAddress is where a process serves its operational surface — /health, /ready, and
+	// /metrics — when it has no HTTP API of its own, e.g. ":9101". The API has one already, so it
+	// answers on its own listener; a worker has none, and without this an orchestrator has nothing
+	// to probe and a scraper nothing to read. Empty means the process serves none, which is what a
+	// deployment that relies on pushes wants.
+	OpsAddress   string        `mapstructure:"OpsAddress" validate:"optional"`
 	Address      string        `mapstructure:"Address"`
 	ReadTimeout  time.Duration `mapstructure:"ReadTimeout"`
 	WriteTimeout time.Duration `mapstructure:"WriteTimeout"`
@@ -273,6 +350,12 @@ type TemporalConfig struct {
 	TaskQueueIntegration string `mapstructure:"TaskQueueIntegration" validate:"optional"`
 	TLS                  bool   `mapstructure:"TLS"`
 	APIKey               string `mapstructure:"APIKey" validate:"optional"`
+	// UIBaseURL is where this deployment's Temporal UI is reachable, e.g.
+	// "http://localhost:8233". A stuck task is diagnosed by opening its workflow, and that link
+	// is a deployment fact: the self-hosted UI is a port on the compose network and Temporal
+	// Cloud is a different host entirely. Empty means no link is offered, which is the honest
+	// answer for a deployment whose UI is not reachable from where the person reading is.
+	UIBaseURL string `mapstructure:"UIBaseURL" validate:"optional"`
 }
 
 // JWTConfig holds JWT signing settings.

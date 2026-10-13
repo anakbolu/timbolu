@@ -326,6 +326,35 @@ type StepRepository interface {
 	ListSteps(ctx context.Context, scope Scope, taskID uuid.UUID) ([]Step, error)
 }
 
+// StepPruner removes the raw payload of steps past their window.
+//
+// It is a separate interface rather than a method on StepRepository for a reason worth
+// stating: running a task and deleting its content are different powers, and nothing that runs
+// tasks should hold the second one by construction. The repository implements this; the
+// retention job is the only caller.
+//
+// The rows stay. What a step *was* — its kind, its tool, its sequence, its token counts, when
+// it ran — is what the task history and the cost report are built from, and that is not
+// content. Only `Input` and `Output` go, and the step is marked, so a reader can tell an
+// emptied payload from one that was never there.
+type StepPruner interface {
+	// PruneContents removes the raw input and output of steps older than a moment, and
+	// reports how many it emptied and how many are still waiting.
+	PruneContents(ctx context.Context, scope Scope, olderThan time.Time, limit int) (StepPrune, error)
+}
+
+// DefaultPruneLimit bounds one bulk prune.
+const DefaultPruneLimit = 500
+
+// StepPrune is what one bulk prune did.
+type StepPrune struct {
+	// Pruned is how many steps were emptied by the call.
+	Pruned int
+	// Remaining is how many steps were already past the moment and still hold their
+	// contents, which is what tells an operator whether one batch kept up.
+	Remaining int
+}
+
 // NewTask is a task to insert.
 type NewTask struct {
 	AgentID        uuid.UUID
@@ -694,6 +723,40 @@ func (u Usage) AsLLMUsage() llmdomain.Usage {
 
 // Gateway is the model the workflow calls.
 type Gateway = llmdomain.Gateway
+
+// Metrics is where the task runtime reports what it did, for the deployment's own charts.
+//
+// It is a port rather than a direct call because the module owns no telemetry: the container
+// implements it over whatever the deployment configured, and a deployment with metrics off is
+// handed nothing. That shape is what lets this package stay free of an SDK — and it is why every
+// method here takes plain values rather than an instrument, so the names and the label vocabularies
+// live in one place instead of being spelled out at each call site.
+//
+// Nothing here names a workspace, a Bolu, a task, or a workflow: a label with an unbounded value is
+// a time series per value, so the identity is left to `usage_ledger` and `tasks`, where the rows
+// already are and where a per-workspace question is answered exactly.
+type Metrics interface {
+	// TaskDispatched reports work this deployment accepted.
+	TaskDispatched(ctx context.Context)
+	// TaskSettled reports work that reached a terminal state, which is what brings the depth
+	// back down.
+	TaskSettled(ctx context.Context)
+	// TaskFinished reports a finished task with what it spent. The duration is how long it ran,
+	// in seconds.
+	TaskFinished(ctx context.Context, trigger, status string, seconds float64, inputTokens, outputTokens, costMicros int64)
+	// ToolCall reports one tool call. app is the integration the tool belongs to, which is what
+	// makes "which integration is failing" answerable — the tool's own name and its label are
+	// not here because a call site does not know them and because the step rows answer both
+	// exactly when the question is per-task rather than per-fleet.
+	ToolCall(ctx context.Context, app string, failed bool, seconds float64)
+	// DraftReady reports how long a draft took to be ready for a person, in seconds.
+	DraftReady(ctx context.Context, seconds float64)
+	// DraftDecided reports what a person did with a draft. revision is whether the decision
+	// followed a revision, which is the difference between "approved" and "approved as written".
+	DraftDecided(ctx context.Context, outcome string, revision bool)
+	// ActivityRetry reports an activity attempt past the first.
+	ActivityRetry(ctx context.Context, activity string, attempt int)
+}
 
 // UsageRecorder persists what one model call cost, which is how a task's spend
 // reaches the same ledger the rest of the product reads.

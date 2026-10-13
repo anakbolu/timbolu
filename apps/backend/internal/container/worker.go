@@ -80,7 +80,21 @@ func RunWorker(ctx context.Context, c *Container, cfg WorkerConfig) error {
 		return fmt.Errorf("%s: task queue is empty", cfg.Name)
 	}
 
-	w := sdkworker.New(c.Temporal.Client(), taskQueue, sdkworker.Options{})
+	// The worker is run with the same tracing interceptor the client was dialled with: that is
+	// what makes an activity's span a child of the workflow's, including when the activity is
+	// retried, resumed after a restart, or run by a different process than the one that started
+	// it.
+	tracing, err := c.temporalInterceptors()
+	if err != nil {
+		return fmt.Errorf("%s: build tracing interceptor: %w", cfg.Name, err)
+	}
+
+	// The worker inherits its logger from the client it was built with, and that client was
+	// dialled with the deployment's own logger — so a workflow's lines carry the same fields
+	// and the same format as every other line, including the workflow id the SDK adds.
+	w := sdkworker.New(c.Temporal.Client(), taskQueue, sdkworker.Options{
+		Interceptors: temporalWorkerInterceptors(tracing),
+	})
 	if cfg.Register != nil {
 		cfg.Register(w, c)
 	}

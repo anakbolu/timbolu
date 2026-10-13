@@ -33,14 +33,18 @@ type PayloadShape struct {
 	// WaitingDraftID links a parked task to the approval it waits on.
 	WaitingDraftID string `json:"waiting_draft_id,omitempty"`
 	WorkflowID     string `json:"workflow_id,omitempty"`
-	StepCount      int    `json:"step_count"`
-	InputTokens    int64  `json:"input_tokens"`
-	OutputTokens   int64  `json:"output_tokens"`
-	CostMicros     int64  `json:"cost_micros"`
-	StartedAt      string `json:"started_at,omitempty"`
-	FinishedAt     string `json:"finished_at,omitempty"`
-	HeartbeatAt    string `json:"heartbeat_at,omitempty"`
-	CreatedAt      string `json:"created_at"`
+	// TemporalRunID is the run of that workflow. It is carried beside the id because a workflow
+	// id is not unique over time — a retried task reuses it — and the UI's own link needs both
+	// to open the run that actually happened.
+	TemporalRunID string `json:"temporal_run_id,omitempty"`
+	StepCount     int    `json:"step_count"`
+	InputTokens   int64  `json:"input_tokens"`
+	OutputTokens  int64  `json:"output_tokens"`
+	CostMicros    int64  `json:"cost_micros"`
+	StartedAt     string `json:"started_at,omitempty"`
+	FinishedAt    string `json:"finished_at,omitempty"`
+	HeartbeatAt   string `json:"heartbeat_at,omitempty"`
+	CreatedAt     string `json:"created_at"`
 }
 
 // Payload renders one task for a client.
@@ -60,6 +64,7 @@ func Payload(task domain.Task, now time.Time) PayloadShape {
 		WaitingReason:  task.WaitingReason,
 		WaitingDraftID: domain.WireID(task.WaitingDraftID),
 		WorkflowID:     task.WorkflowID,
+		TemporalRunID:  task.TemporalRunID,
 		StepCount:      task.StepCount,
 		InputTokens:    task.InputTokens,
 		OutputTokens:   task.OutputTokens,

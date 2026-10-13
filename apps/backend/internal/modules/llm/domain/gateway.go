@@ -7,6 +7,19 @@ import (
 	"github.com/google/uuid"
 )
 
+// UsageReporter is the usage screen's read: a period's totals with the per-Bolu and per-task
+// breakdowns the same window is asked about.
+//
+// It is a port of its own rather than a method on Gateway, for the reason UsageReader is: the model
+// gateway is what a module calls to reach a model, and every module that fakes it — the chat
+// responder, the task runtime, the extraction — would otherwise carry a reporting method it never
+// calls. A screen that reads a report is a different consumer from the code that spends the tokens.
+type UsageReporter interface {
+	// Report returns what a workspace spent over a window of days, with the same window read
+	// three ways.
+	Report(ctx context.Context, scope Scope, days, limit int) (UsageReport, error)
+}
+
 // Adapter names, used in configuration and in the usage ledger.
 const (
 	AdapterOpenAI    = "openai"

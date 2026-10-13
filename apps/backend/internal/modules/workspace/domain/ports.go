@@ -42,6 +42,28 @@ type Tokens interface {
 	Generate() (raw string, hash string, err error)
 }
 
+// Auditor records what a person did, for the trail the product answers "who changed this"
+// with. The approval module owns the table.
+//
+// Membership and roles decide who can act inside the workspace, so a change to either is
+// one of the sensitive actions the epic lists.
+type Auditor interface {
+	Record(ctx context.Context, scope Scope, entry AuditEntry) error
+}
+
+// AuditEntry is one thing that happened, for the record.
+//
+// The email address of an invited person is deliberately absent from what this carries:
+// the trail names the member who was affected by id, and an address is personal data that
+// nothing here needs.
+type AuditEntry struct {
+	Action      string
+	ObjectType  string
+	ObjectID    string
+	ActorUserID uuid.UUID
+	Metadata    map[string]any
+}
+
 // PlanLimits reports how many members a workspace's package allows.
 //
 // It is a port for the reason the other plan ports are: this module does not know

@@ -123,6 +123,7 @@ func (m *memoryTasks) Finish(_ context.Context, scope domain.Scope, finish domai
 		task.StoppedReason = finish.StoppedReason
 		task.InputTokens = finish.InputTokens
 		task.OutputTokens = finish.OutputTokens
+		task.CostMicros = finish.CostMicros
 		task.StepCount = finish.StepCount
 		return nil
 	})
@@ -328,9 +329,17 @@ func (h *harness) input() workflow.TaskInput {
 }
 
 // stubTools offers one reading tool.
-type stubTools struct{}
+type stubTools struct {
+	// tools replaces the default registry, which is what a test that needs a tool the default
+	// list does not carry passes.
+	tools []domain.Tool
+}
 
-func (stubTools) Tools(context.Context, domain.Scope, uuid.UUID) ([]domain.Tool, error) {
+func (s stubTools) Tools(context.Context, domain.Scope, uuid.UUID) ([]domain.Tool, error) {
+	if s.tools != nil {
+		return s.tools, nil
+	}
+
 	return []domain.Tool{{
 		Name:        "gmail.search",
 		Integration: "gmail",

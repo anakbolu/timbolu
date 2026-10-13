@@ -12,6 +12,8 @@ import (
 	integrationrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/repository"
 	llmrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/repository"
 	memoryrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/repository"
+	orderrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/order/repository"
+	retentionrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/retention/repository"
 	routinerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/repository"
 	taskrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/repository"
 	whatsapprepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/repository"
@@ -51,10 +53,20 @@ type Repositories struct {
 	// WhatsApp holds the linked numbers, their sealed sessions, the messages they
 	// carried, the outbox that paces them, and the fleet directory.
 	WhatsApp *whatsapprepo.Repository
+	// Order holds the workspace's own commerce data: the products it sells, the
+	// customers it talks to, and the orders it took. It is the first repository
+	// whose tables are the workspace's business rather than a provider's cache of
+	// something that lives elsewhere.
+	Order *orderrepo.Repository
 	// Billing holds the packages sold, the subscription a workspace is on, the
 	// invoices it owes, the periods its allowance is counted over, and the sweep
 	// queue. It is filled in by openBilling.
 	Billing *billingrepo.Repository
+	// Retention holds the queue of workspaces due a content pass and the record of what
+	// each pass did. It is one of the two unscoped tables in the codebase, for the reason
+	// the migration explains: the queue is what tells the sweep which tenant to open a
+	// scope with.
+	Retention *retentionrepo.Repository
 }
 
 // newRepositories builds every repository. When there is no pool the
@@ -121,6 +133,12 @@ func newRepositories(pool *database.Pool) *Repositories {
 		// The approval module implements the draft, policy, revision, and audit
 		// ports over one connection and one tenant scope.
 		repositories.Approval = approvalrepo.New(pool)
+
+		// The order module holds the workspace's own commerce data. It is built here
+		// rather than in openOrder because the integration hub registers its adapter
+		// while the hub is assembled, and a deployment without storage offers no
+		// catalogue tools — which is a question about this repository, answered here.
+		repositories.Order = orderrepo.New(pool)
 	}
 	return repositories
 }

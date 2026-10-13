@@ -117,6 +117,10 @@ type Tool struct {
 	Integration string `json:"integration_app"`
 	Label       string `json:"label"`
 	Description string `json:"description"`
+	// NeedsConnection is false for a tool that belongs to the workspace itself — reading its product
+	// catalogue, recording an order — rather than to a connected account. The tool filter offers such
+	// a tool to any Bolu whose profile asks for it, and the hub runs it without a connection.
+	NeedsConnection bool `json:"needs_connection"`
 }
 
 // Grant gives one agent access to one integration.

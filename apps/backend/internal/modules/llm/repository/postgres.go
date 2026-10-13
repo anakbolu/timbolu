@@ -219,6 +219,110 @@ func (r *Repository) CostSince(ctx context.Context, workspaceID uuid.UUID, since
 	return total, nil
 }
 
+// Report returns the period's totals with the per-Bolu and per-task breakdowns.
+//
+// The three reads are one method rather than three because they are one answer: a screen that asked
+// for them separately could show a total from one moment and breakdowns from another, and the
+// reconciliation the usage screen exists for — "these rows add up to that number" — would then be a
+// statement about the timing of two requests rather than about the data.
+func (r *Repository) Report(ctx context.Context, workspaceID uuid.UUID, since time.Time, limit int) (domain.UsageReport, error) {
+	report := domain.UsageReport{
+		ByAgent: []domain.UsageByAgent{},
+		ByTask:  []domain.UsageByTask{},
+	}
+
+	err := r.read(ctx, workspaceID, func(queries *sqlcgen.Queries) error {
+		totals, err := queries.SumUsageSince(ctx, sqlcgen.SumUsageSinceParams{
+			WorkspaceID: workspaceID,
+			CreatedAt:   since,
+		})
+		if err != nil {
+			return fmt.Errorf("llm: sum usage: %w", err)
+		}
+
+		report.Totals = domain.UsageTotals{
+			Calls:            totals.Calls,
+			InputTokens:      totals.InputTokens,
+			OutputTokens:     totals.OutputTokens,
+			CacheReadTokens:  totals.CacheReadTokens,
+			CacheWriteTokens: totals.CacheWriteTokens,
+			CostMicros:       totals.CostMicros,
+		}
+
+		agents, err := queries.ListUsageByAgent(ctx, sqlcgen.ListUsageByAgentParams{
+			WorkspaceID: workspaceID,
+			CreatedAt:   since,
+			LimitCount:  int32(boundedLimit(limit)),
+		})
+		if err != nil {
+			return fmt.Errorf("llm: list usage by agent: %w", err)
+		}
+
+		report.ByAgent = make([]domain.UsageByAgent, 0, len(agents))
+		for _, row := range agents {
+			report.ByAgent = append(report.ByAgent, domain.UsageByAgent{
+				AgentID:      row.AgentID,
+				AgentName:    row.AgentName,
+				Calls:        row.Calls,
+				InputTokens:  row.InputTokens,
+				OutputTokens: row.OutputTokens,
+				CostMicros:   row.CostMicros,
+			})
+		}
+
+		tasks, err := queries.ListUsageByTask(ctx, sqlcgen.ListUsageByTaskParams{
+			WorkspaceID: workspaceID,
+			CreatedAt:   since,
+			LimitCount:  int32(boundedLimit(limit)),
+		})
+		if err != nil {
+			return fmt.Errorf("llm: list usage by task: %w", err)
+		}
+
+		report.ByTask = make([]domain.UsageByTask, 0, len(tasks))
+		for _, row := range tasks {
+			report.ByTask = append(report.ByTask, domain.UsageByTask{
+				TaskID:       derefUUID(row.TaskID),
+				TaskTitle:    row.TaskTitle,
+				TaskStatus:   row.TaskStatus,
+				Calls:        row.Calls,
+				InputTokens:  row.InputTokens,
+				OutputTokens: row.OutputTokens,
+				CostMicros:   row.CostMicros,
+			})
+		}
+
+		return nil
+	})
+	if err != nil {
+		return domain.UsageReport{}, err
+	}
+
+	return report, nil
+}
+
+// derefUUID reads a nullable id, answering the zero value for an absent one.
+//
+// The per-task query filters out rows with no task, so the column is never null in practice — but it
+// is declared nullable because the ledger permits a call outside any task, and a type assertion here
+// would be a crash waiting for the day somebody relaxes that filter.
+func derefUUID(id *uuid.UUID) uuid.UUID {
+	if id == nil {
+		return uuid.Nil
+	}
+
+	return *id
+}
+
+// boundedLimit takes the caller's page size or the module's default.
+func boundedLimit(limit int) int {
+	if limit <= 0 {
+		return domain.DefaultReportPage
+	}
+
+	return limit
+}
+
 func (r *Repository) Daily(ctx context.Context, workspaceID uuid.UUID, since time.Time) ([]domain.UsageDaily, error) {
 	var days []domain.UsageDaily
 

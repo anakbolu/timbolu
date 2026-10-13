@@ -122,3 +122,56 @@ SELECT m.id, m.workspace_id, m.user_id, m.role, m.created_at, m.updated_at,
 FROM members m
 JOIN users u ON u.id = m.user_id
 WHERE m.workspace_id = $1 AND m.user_id = $2;
+
+-- ------------------------------------------------------------- erasure
+
+-- name: WorkspaceName :one
+-- The name, read before the row that holds it is deleted: an erasure record that says a uuid was
+-- removed cannot be shown to the person who asked for their data back.
+SELECT name FROM workspaces WHERE id = $1;
+
+-- name: RequesterEmail :one
+-- The requester's address, read for the same reason.
+SELECT email FROM users WHERE id = $1;
+
+-- name: CountWorkspaceRows :one
+-- How many rows the cascade will take, counted from the schema rather than from a list.
+--
+-- **This is the design.** A hand-written list of tables would be a list that drifts: a migration
+-- adds a table with a `workspace_id` and whoever writes it has no reason to know a deletion walk
+-- exists — and the failure is silent, because the row that was missed is still there and nothing
+-- looks wrong. Reading `information_schema` means every table that declares the column is counted,
+-- so a new one is included the day it is created.
+--
+-- What it cannot see is a table that stores a workspace id *without* the reference — which is
+-- exactly what `data_erasures` does deliberately, and the one case where the reference is absent
+-- because the row must outlive the workspace.
+SELECT COALESCE(sum(counted.rows), 0)::bigint AS rows
+FROM (
+    SELECT (
+        xpath(
+            '/row/c/text()',
+            query_to_xml(
+                format('SELECT count(*) AS c FROM %I.%I WHERE workspace_id = %L',
+                       c.table_schema, c.table_name, sqlc.arg('workspace_id')::text),
+                false, true, ''
+            )
+        )
+    )[1]::text::bigint AS rows
+    FROM information_schema.columns c
+    JOIN information_schema.tables t
+      ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+    WHERE c.column_name = 'workspace_id'
+      AND c.table_schema = current_schema()
+      AND t.table_type = 'BASE TABLE'
+      AND t.table_name <> 'data_erasures'
+) AS counted;
+
+-- name: DeleteWorkspace :execrows
+-- Deletes the workspace, and with it every row that references it.
+--
+-- One statement rather than twenty: the foreign keys are what carry the deletion, so a module that
+-- adds a table is covered by the reference it declares. The row it removes is the tenant itself,
+-- which is what makes this a deletion rather than a soft delete — a flag would leave every other
+-- row in place and make "erased" a promise about a column.
+DELETE FROM workspaces WHERE id = $1;

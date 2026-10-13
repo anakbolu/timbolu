@@ -371,7 +371,7 @@ func TestTheAuditTrailIsComplete(t *testing.T) {
 		},
 	}))
 
-	records, err := fixture.repo.AuditTrail(ctx, fixture.scope, 10)
+	records, err := fixture.repo.AuditTrail(ctx, fixture.scope, approvaldomain.AuditFilter{Limit: 10})
 	require.NoError(t, err)
 	require.Len(t, records, 3)
 

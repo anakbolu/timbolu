@@ -7,6 +7,10 @@ Application:
 
 Http:
   Address: ":8080"
+  # Where a process with no HTTP API of its own serves /health, /ready, and /metrics, e.g. ":9101".
+  # The API already answers on its own listener; the workers have none, and an orchestrator needs
+  # something to probe. Empty means the process serves none.
+  OpsAddress: ""
   ReadTimeout: "30s"
   WriteTimeout: "30s"
   ApiPrefix: "/api"
@@ -29,6 +33,10 @@ Temporal:
   TaskQueueIntegration: "bolu-integration"
   TLS: true
   APIKey: ""
+  # Where this deployment's Temporal UI is reachable, for the link a stuck task offers. Empty
+  # means no link is shown, which is the honest answer when the UI is not reachable from where
+  # the person reading is.
+  UIBaseURL: ""
 
 JWT:
   Secret: ""
@@ -176,6 +184,31 @@ Billing:
     CallbackURL: ""
     ReturnURL: ""
     BaseURL: ""
+
+# Telemetry: where this deployment's traces go, and how many of them.
+#
+# The default is nowhere, and that is deliberate: a deployment that has not said where telemetry
+# should be sent should not be sending it. The tracer provider is installed either way, so a request
+# still has a trace id its log lines carry — only the spans are dropped.
+Telemetry:
+  # Left empty so each binary names itself: the API and the workers group separately.
+  ServiceName: ""
+  # "none", "console" (a development run) or "otlp" (a collector).
+  Exporter: "none"
+  Endpoint: ""
+  # The share of root traces kept. One keeps everything; zero keeps only what a caller sampled.
+  SampleRatio: 1.0
+  Insecure: false
+
+
+# Retention: every value comes from the environment, so a deployment can tighten a window
+# without a new image. RETENTION_INTERVAL=0 disables the job.
+Retention:
+  StepDays: 0
+  AttachmentDays: 0
+  Interval: "6h"
+  Batch: 0
+  SweepLimit: 0
 
 Logging:
   Level: "info"

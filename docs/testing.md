@@ -253,6 +253,156 @@ The payment path is verified end to end against a stand-in for Duitku
 signed callback settles the invoice and the tokens land, a replayed callback buys nothing
 twice, and a callback with a tampered signature is refused with 400.
 
+### Audit and retention (EPIC 13)
+
+Two properties, and both are about what happens to data after the fact — which is
+why they are integration tests rather than units: a mock would restate the rule
+instead of exercising the statement that enforces it.
+
+- `test/integration/audit_test.go` — **every sensitive action leaves exactly one
+  line, with the actor on it.** The four families the epic names are all here: a
+  provider created, a connection granted, an invitation sent, and a memory a person
+  removed — each recorded by its own module through its own adapter, which is what
+  makes "every sensitive action" a claim about the deployment rather than about
+  three of its modules. The actor is asserted over the *whole* trail in one loop,
+  because four adapters are four places a dropped actor could hide. It runs through the real container, so the three
+  adapters (workspace, integration hub, and model gateway) are under test, and the
+  translation between each module's entry shape and the trail's is the thing that
+  only the container can get wrong — a dropped actor would otherwise be a field
+  nobody checks. The reads are asserted by what a person asks: one action, an action
+  *prefix* ("show me the grant history"), the object that was touched, the Bolu that
+  acted, and the person; and by two abutting windows holding every entry exactly
+  once, because a half-open window is the difference between a report and a double
+  count. One test is about refusal: an entry that cannot be encoded is rejected
+  rather than stored as something else.
+- `test/integration/retention_test.go` — **a step's content has a clock on it and its
+  shape does not.** A step older than the window comes out of a real pass with
+  `input` and `output` emptied and everything the history and the cost report are
+  built from still there — the sequence, the kind, the labels, the tokens, the cost,
+  and the task's one-line summary. What is younger than the window is untouched, and
+  so is a workspace whose turn has not come, which is the assertion behind "nothing
+  is removed outside the policy". A second pass over the same window removes nothing,
+  which is what makes the job safe to re-run and safe on two instances at once. An
+  attachment is asserted to leave as two halves: the row is gone *and* the bytes are
+  gone from storage, because a row removed without its object is a leak no query will
+  ever find — and the file inside the window still reads back. The queue is asserted
+  to be filled by the database rather than by a caller's habit, since a workspace
+  missing from it is one whose customer's words are kept forever.
+- `internal/container/retention_wiring_test.go` — the container's own mistakes: a
+  deployment without a database leaves the job unwired, the configured days become
+  the windows (including the two different readings of a zero), and each adapter
+  passes the workspace and the cutoff through rather than swapping one for the other.
+- `internal/modules/retention/service/service_test.go` — the pass: what is pruned and
+  what is not, that one workspace's failure does not stop the fleet and is still
+  recorded on the run, that a pass which cannot read its queue still leaves a run
+  row, and that an unavailable pruner is a zero rather than a failure.
+
+### Tracing (EPIC 13)
+
+The spans are asserted where they are started, and the properties that matter are as much about what
+is absent as what is present:
+
+- `internal/platform/telemetry/telemetry_test.go` — the provider: an unknown exporter is a startup
+  failure rather than a deployment that silently reports nothing; a deployment with no exporter still
+  has valid trace ids; sampling is parent-based, so a trace a caller sampled survives a ratio of zero
+  *and* keeps the caller's trace id; the W3C header round-trips through the global propagator, which
+  is the one the middleware uses; and a ratio outside 0..1 is clamped rather than handed to the
+  sampler.
+- `internal/platform/middleware/tracing_test.go` — the HTTP span. The load-bearing one is
+  `TestTheRequestLogCarriesTheSpansTraceID`: the trace id in the log line and in the response header
+  must be the span's own, or a line and the trace it names are two different requests. The second is
+  `TestTheQueryStringNeverReachesTheSpan`, which is a security property rather than tidiness — the
+  event stream authenticates from the query string, so a span holding the URL holds a token. The
+  other two are that a failure's status is the status a trace shows, and that a service starting its
+  own span from the request's context is a child of the request.
+- `internal/modules/task/activity/tracing_test.go` — the task's own spans: the tool span is named for
+  the tool (the question "which one was slow" is not answered by a call id), a model round names the
+  provider and the model that *answered* so a fallback is visible, a nested step keeps its parent's
+  trace id, and a deployment with no tracer still runs. The prompt, the arguments, and the results are
+  asserted to be absent from every attribute.
+- `internal/platform/temporal/logger_test.go` — the SDK's own lines go into the deployment's log: the
+  key/value pairs become fields, a child logger does not mutate its parent (the SDK derives a
+  workflow's logger from a shared one, so a mutation would put one workflow's id on another's lines),
+  a dangling pair is still named, and the level is the deployment's.
+- `internal/container/telemetry_wiring_test.go` — the container: the provider is installed for a
+  deployment that named no exporter, an unknown exporter stops it, a container without telemetry asks
+  Temporal for no interceptor and gets a no-op tracer rather than a nil dereference, and each binary
+  names itself unless the deployment named the service.
+
+The end-to-end check is by hand, because it is the one thing a unit test cannot show:
+`OTEL_EXPORTER=console make smoke-task` prints both processes' spans, and the API's request span, the
+worker's workflow and activity spans, and the model and tool spans under them all carry one trace id.
+
+### Metrics (EPIC 13)
+
+- `internal/platform/metrics/metrics_test.go` — the instruments themselves, read back through a
+  manual reader: every product measure lands with the attributes the chart queries for, an unknown
+  label value becomes `other` (which is the cardinality rule, and the only thing that makes these
+  metrics affordable), an attempt number is bucketed rather than counted, the in-flight depth comes
+  back down, the Prometheus endpoint serves the deployment's own measurements, a second provider in
+  the same process does not share the first's registry, and a nil provider tolerates every recording
+  call — which is what lets the modules call through unconditionally.
+- `internal/modules/task/activity/metrics_test.go` — the runtime's own measures: a finished task
+  reports the numbers the *stored row* holds (so a chart and the dashboard cannot disagree), the
+  tool's integration is derived from its name, a call this deployment could not serve is counted as a
+  failure rather than disappearing, a draft's readiness is measured from the task opening, and a
+  direct call — which is not an activity — reports no retry rather than panicking.
+- `internal/modules/approval/service/metrics_test.go` and `llm/service/metrics_test.go` — the
+  decision (with the store's own status and revision counter) and the model call (with the purpose
+  the caller stated, and whether the chain had to move on). Both assert that opening a draft is *not*
+  a decision, which is what keeps a rate's numerator and denominator the same population.
+- `internal/container/metrics_wiring_test.go` — the deployment's side: no exporter means no provider,
+  an unknown one stops the process, the scrape route exists only when something is being scraped, the
+  one adapter satisfies all three module ports, and no tenant appears as a label.
+- `internal/container/ops_server_test.go` — the operations listener a worker serves: liveness answers
+  while a dependency is down (which is what keeps an orchestrator from restarting a healthy process
+  forever), readiness answers 503 while one is down, the scrape route exists only when something is
+  scraped, and the listener is off entirely unless the deployment named an address.
+
+### The usage and cost screen (EPIC 13)
+
+- `internal/modules/llm/handler/report_test.go` — the report as the screen reads it: both breakdowns
+  with the rupiah figure beside the micros, the window and the moment it started, the CSV as a
+  rectangular table whose rows all carry every column (a shorter preamble is a file a strict reader
+  refuses), and a 503 when the deployment has no reporting port rather than an empty period that
+  would read as "this workspace spent nothing".
+- `internal/modules/task/handler/attention_test.go` — the attention list: three of the four states
+  and not the fourth, the order (failures first, because a parked task is holding work that is
+  otherwise done), the Temporal link naming the namespace, the workflow *and* the run, no link when
+  the deployment named no UI, and no link on a task that never reached the engine.
+- `internal/container/usage_route_test.go` — the container's own registration, which is the property
+  no handler test can see: the report under the API prefix where the tenant guard is, and
+  `/tasks/attention` registered *before* `/tasks/:taskID` — Fiber matches in registration order, so
+  the reverse would read "attention" as a task id.
+- `test/integration/usage_report_test.go` — against a real Postgres, the reconciliation the epic asks
+  for: a known set of ledger rows read back three ways, the total covering a call made outside any
+  task, and the per-task rows deliberately *not* claiming it.
+
+The end-to-end check is the smoke's own reconciliation: it runs the API and the worker, produces a
+succeeded task and a failed one, and then compares the report, the export, and the attention list
+against those rows (`scripts/check-usage.py`).
+
+### Data policy and erasure (EPIC 13)
+
+- `internal/modules/retention/service/erasure_test.go` — the order the two halves happen in
+  (`objects` then `rows`, asserted as a sequence, because the reverse is what loses the storage
+  keys), the evidence carrying the *names* read before the rows that hold them, each failure mode
+  keeping its record without retrying, an incomplete deployment refusing rather than half-erasing,
+  and an unreadable requester not stopping the erasure the person is entitled to.
+- `internal/modules/retention/handler/handler_test.go` — the wire: the person comes from the session
+  rather than the body (a test sends somebody else's id in the body and asserts it is ignored), a
+  failure says nothing was half-removed, an incomplete deployment answers 503, and a workspace with no
+  record answers 404.
+- `test/integration/erasure_test.go` — the issue's own verification, against a real Postgres and a
+  real object store: a workspace is filled through the modules' own services — conversation, message,
+  attachment, task with steps, memory **with a vector**, an approval policy — then erased, and then
+  the **schema is asked** what is left. The count reads `information_schema` for the same reason the
+  erasure's own count does, so a table the test forgot to check cannot make it pass; `data_erasures`
+  is excluded deliberately, because it is the one table holding a workspace id without a reference and
+  counting it would fail the test on the evidence that the erasure worked. The file asserts three
+  things a mock cannot: no row anywhere, no object under either prefix, and the workspace row gone
+  rather than flagged — plus the record still readable afterwards with its name.
+
 ### The end-to-end smoke
 
 `make smoke-task` runs the API and the agent worker on the host against the
@@ -272,13 +422,44 @@ stack up — but it is what proves the wiring that unit tests script away:
    extraction workflow and the small talk in it is dropped; a fact said again with
    a new value leaves one active memory and the older version as history; a secret
    is refused; a document is chunked, embedded, and stored ready; and a delete
-   takes the row out of the table for good.
+   takes the row out of the table for good;
+4. **the usage screen's own reads** (`scripts/check-usage.py`), reconciled against
+   the task rows the phase just produced: the report covers the failed task and
+   counts at least its rounds, the per-Bolu and per-task breakdowns do not exceed
+   the total, the CSV is the *same* read (its total equals the screen's), and the
+   attention list carries the failed task with a Temporal link that names its
+   workflow and run. It runs only when the deployment is asked for the other
+   verification — `OTEL_METRICS_EXPORTER=prometheus` also makes the same script
+   check the counters against the task row (`scripts/check-metrics.py`), including
+   that the depth is back to zero across the two processes' counters.
 
 `make smoke-approval` runs the same stack against the approval gate: a
 `write_external` tool call becomes a draft and the task parks; a revision sends the
-task back to its agent with the note; an approval reaches the send boundary and
-stops there honestly, because no integration executor exists yet (EPIC 8); and an
-approval outside working hours is held with a reason the user can read.
+task back to its agent with the note; an approval is carried out against the provider
+and the task succeeds because it actually did; and an approval outside working hours
+is held with a reason the user can read.
+
+`make smoke-order` runs it against the MVP flow — a customer's message becomes an
+order in the workspace's own data, and the invoice that follows waits for a person.
+Three phases, each a promise the product makes rather than a code path:
+
+1. **the price comes from the catalogue.** The stub calls `order.find_product` and
+   then `order.record_order` with a product name and a quantity and nothing else,
+   because that is all the schema accepts. The order that lands is asserted field by
+   field against the catalogue row — description, unit, unit price, the line total the
+   database computed, and the order's total from its lines — and the recorded call is
+   read back off the trail to show it never carried a price at all. The Bolu and the
+   task are on the order.
+2. **an order that cannot be taken is not taken.** The customer names a product the
+   catalogue does not sell (`Kopi Arabika Gayo 1 kg`), the call is refused, the model
+   is told what the catalogue does have — the suggestion list works in both directions,
+   so a customer who says *more* than the catalogue does still gets an answer — and the
+   order count is still one. Nothing was written, including the customer.
+3. **nothing leaves without a person.** The Bolu reads the order back, composes the
+   invoice with the total, and hands it to `whatsapp.send_message`; the draft that
+   appears carries the recipient and the total, the task parks as `waiting_approval`,
+   and `sent_at` is empty. The sending tool is `write_external`, which is what put it
+   through the gate rather than out of the door.
 
 EPIC 9 has no workflow of its own: the gateway is a process, not a workflow. What it
 does have is a **lease**, and that is tested against a real Redis in
@@ -345,7 +526,7 @@ smoke fails for a reason that has nothing to do with the code. Stop them first:
 
 ```bash
 docker stop bolu-api bolu-agent-worker bolu-integration-worker
-make smoke-task && make smoke-approval
+make smoke-task && make smoke-approval && make smoke-order
 docker start bolu-api bolu-agent-worker bolu-integration-worker
 ```
 

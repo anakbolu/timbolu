@@ -147,6 +147,30 @@ type ConversationParticipant struct {
 	CreatedAt      time.Time
 }
 
+type Customer struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	Name        string
+	Phone       string
+	Email       string
+	Note        string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+type DataErasure struct {
+	ID               int64
+	WorkspaceID      uuid.UUID
+	WorkspaceName    string
+	RequestedBy      uuid.UUID
+	RequestedByEmail string
+	RequestedAt      time.Time
+	CompletedAt      *time.Time
+	ObjectsDeleted   int64
+	RowsDeleted      int64
+	Error            string
+}
+
 type Draft struct {
 	ID             uuid.UUID
 	WorkspaceID    uuid.UUID
@@ -325,6 +349,34 @@ type OauthState struct {
 	CreatedAt   time.Time
 }
 
+type Order struct {
+	ID            uuid.UUID
+	WorkspaceID   uuid.UUID
+	CustomerID    *uuid.UUID
+	CustomerPhone string
+	CustomerName  string
+	AgentID       *uuid.UUID
+	TaskID        *uuid.UUID
+	Code          string
+	Status        string
+	TotalMicros   int64
+	Note          string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+type OrderItem struct {
+	ID              uuid.UUID
+	WorkspaceID     uuid.UUID
+	OrderID         uuid.UUID
+	ProductID       *uuid.UUID
+	Description     string
+	Unit            string
+	Quantity        pgtype.Numeric
+	UnitPriceMicros int64
+	LineTotalMicros int64
+}
+
 type PasswordResetToken struct {
 	ID        uuid.UUID
 	UserID    uuid.UUID
@@ -350,6 +402,18 @@ type Plan struct {
 	PeriodDays      int32
 }
 
+type Product struct {
+	ID              uuid.UUID
+	WorkspaceID     uuid.UUID
+	Sku             string
+	Name            string
+	UnitPriceMicros int64
+	Unit            string
+	Active          bool
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
 type QuotaPeriod struct {
 	ID               uuid.UUID
 	WorkspaceID      uuid.UUID
@@ -362,6 +426,22 @@ type QuotaPeriod struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	TokensToppedUp   int64
+}
+
+type RetentionRun struct {
+	ID                int64
+	StartedAt         time.Time
+	FinishedAt        *time.Time
+	StepsPruned       int64
+	AttachmentsPruned int64
+	BytesFreed        int64
+	Error             string
+}
+
+type RetentionTarget struct {
+	WorkspaceID uuid.UUID
+	NextPruneAt time.Time
+	UpdatedAt   time.Time
 }
 
 type RetrievalUsage struct {
@@ -495,6 +575,8 @@ type ToolCatalog struct {
 	Label          string
 	Description    string
 	CreatedAt      time.Time
+	// False for a tool that belongs to the workspace itself and needs no connected account. The tool filter offers such a tool to any Bolu whose profile asks for it, and the hub runs it without a connection.
+	NeedsConnection bool
 }
 
 type TopupPackage struct {

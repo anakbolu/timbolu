@@ -47,11 +47,20 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// This binary names itself in the traces, so the API and the workers are separate services
+	// in a collector rather than one process that appears everywhere.
+	cfg.Telemetry.DefaultServiceName("bolu-agent-worker")
+
 	c, err := container.New(ctx, cfg, container.WithoutHTTP())
 	if err != nil {
 		return err
 	}
 	defer c.Close()
+
+	// This process has no HTTP API, so the operations listener is the only surface it serves:
+	// /health, /ready, and /metrics. It is off unless the deployment named an address for it, which
+	// is what an orchestrator probes and a scraper reads.
+	go c.RunOpsServer(ctx)
 
 	return container.RunWorker(ctx, c, container.WorkerConfig{
 		Name:          "agent-worker",

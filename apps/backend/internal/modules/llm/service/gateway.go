@@ -3,6 +3,9 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
+
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 )
@@ -24,14 +27,21 @@ func (s *Service) Chat(ctx context.Context, scope domain.Scope, req domain.ChatR
 		return domain.ChatResponse{}, err
 	}
 
+	ctx, span := s.startChatSpan(ctx, "llm.chat", scope, req)
+
 	chain, err := s.Resolve(ctx, scope)
 	if err != nil {
+		failChatSpan(span, 0, err)
+
 		return domain.ChatResponse{}, err
 	}
 
 	var lastErr error
+	attempts := 0
+	started := time.Now()
 
 	for _, cfg := range chain {
+		attempts++
 		provider, err := s.deps.Factory.Build(cfg)
 		if err != nil {
 			// A configuration this deployment cannot serve is not something the
@@ -64,11 +74,18 @@ func (s *Service) Chat(ctx context.Context, scope domain.Scope, req domain.ChatR
 		}
 
 		if err := s.record(ctx, scope, cfg, response, req.Metadata); err != nil {
+			failChatSpan(span, attempts, err)
+
 			return domain.ChatResponse{}, err
 		}
 
+		s.metric(ctx, cfg.Adapter, req.Metadata, attempts, time.Since(started))
+		finishChatSpan(span, response, attempts)
+
 		return response, nil
 	}
+
+	failChatSpan(span, attempts, lastErr)
 
 	return domain.ChatResponse{}, lastErr
 }
@@ -83,14 +100,22 @@ func (s *Service) Stream(ctx context.Context, scope domain.Scope, req domain.Cha
 		return nil, err
 	}
 
+	ctx, span := s.startChatSpan(ctx, "llm.chat.stream", scope, req)
+
 	chain, err := s.Resolve(ctx, scope)
 	if err != nil {
+		failChatSpan(span, 0, err)
+
 		return nil, err
 	}
 
 	var lastErr error
+	attempts := 0
+	started := time.Now()
 
 	for _, cfg := range chain {
+		attempts++
+
 		provider, err := s.deps.Factory.Build(cfg)
 		if err != nil {
 			return nil, err
@@ -125,10 +150,22 @@ func (s *Service) Stream(ctx context.Context, scope domain.Scope, req domain.Cha
 			continue
 		}
 
+		// The call is counted here rather than in the pump: what this measures is how long the
+		// provider took to *start* answering, which is what "the provider is slow" means. The
+		// span covers the whole answer, so the two numbers answer two different questions
+		// instead of being two spellings of one.
+		s.metric(ctx, cfg.Adapter, req.Metadata, attempts, time.Since(started))
+
+		// The span is handed to the pump and closed when the stream finishes: an answer
+		// takes seconds and its cost arrives with the last event, so a span that ended
+		// when the channel was returned would carry neither the duration nor the tokens
+		// — which is the whole of what somebody reading a slow answer wants to see.
 		out := make(chan domain.StreamEvent, streamBuffer)
-		go s.pump(ctx, out, scope, cfg, req.Metadata, first, events)
+		go s.pump(ctx, out, scope, cfg, req.Metadata, first, events, span, attempts)
 		return out, nil
 	}
+
+	failChatSpan(span, attempts, lastErr)
 
 	return nil, lastErr
 }
@@ -151,10 +188,18 @@ func (s *Service) pump(
 	meta domain.RequestMetadata,
 	first domain.StreamEvent,
 	events <-chan domain.StreamEvent,
+	span trace.Span,
+	attempts int,
 ) {
 	defer close(out)
 
 	var usage domain.Usage
+
+	// The span closes when the stream does, which is what carries an answer's real duration and
+	// its token counts — the two numbers somebody reading a slow reply is looking for.
+	defer func() {
+		finishChatSpan(span, s.response(cfg, usage), attempts)
+	}()
 
 	// handle forwards one event. It reports whether the stream is over.
 	handle := func(event domain.StreamEvent) bool {

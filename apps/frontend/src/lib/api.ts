@@ -135,15 +135,31 @@ type RequestOptions = {
   authenticated?: boolean;
 };
 
-/** request performs one API call and normalises the envelope. */
-async function request<T>(path: string, options: RequestOptions = {}): Promise<ApiResult<T>> {
+/**
+ * apiHeaders builds the headers one call carries.
+ *
+ * It is shared with the few reads that do not go through `request` — the CSV export, which wants a
+ * file rather than a parsed envelope — so the two cannot drift about how a token and a workspace
+ * travel.
+ */
+function apiHeaders(workspace: string | null): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
 
-  if (options.authenticated !== false && accessToken) {
+  if (accessToken) {
     headers.Authorization = `Bearer ${accessToken}`;
   }
-  if (options.workspace) {
-    headers["X-Workspace-Id"] = options.workspace;
+  if (workspace) {
+    headers["X-Workspace-Id"] = workspace;
+  }
+
+  return headers;
+}
+
+/** request performs one API call and normalises the envelope. */
+async function request<T>(path: string, options: RequestOptions = {}): Promise<ApiResult<T>> {
+  const headers = apiHeaders(options.workspace ?? null);
+  if (options.authenticated === false) {
+    delete headers.Authorization;
   }
 
   let response: Response;
@@ -1047,6 +1063,8 @@ export type Task = {
   waiting_reason?: string;
   waiting_draft_id?: string;
   workflow_id?: string;
+  /** The run of that workflow, which is what a Temporal UI link needs to open the right one. */
+  temporal_run_id?: string;
   step_count: number;
   input_tokens: number;
   output_tokens: number;
@@ -1068,6 +1086,151 @@ export function listTasks(
   }
   const suffix = query.toString() ? `?${query}` : "";
   return request<Task[]>(`/tasks${suffix}`, { workspace: workspaceId });
+}
+
+/** A task that needs a person, with the link that diagnoses it. */
+export type AttentionTask = Task & {
+  /** Why it is on the list: it failed, it is stuck, or it is waiting on a decision. */
+  attention: "failed" | "stuck" | "waiting";
+  /**
+   * Opens the task's workflow in this deployment's Temporal UI.
+   *
+   * Built by the server, because the deployment is the only thing that knows which Temporal it
+   * has: a compose port, a Cloud host, or none at all. Empty means there is no UI to open.
+   */
+  temporal_url?: string;
+};
+
+/** listAttentionTasks returns the work that needs a person: failed, stuck, and waiting. */
+export function listAttentionTasks(
+  workspaceId: string,
+  limit = 50,
+): Promise<ApiResult<AttentionTask[]>> {
+  return request<AttentionTask[]>(`/tasks/attention?limit=${limit}`, { workspace: workspaceId });
+}
+
+/** What one window cost, read three ways. */
+export type UsageReport = {
+  days: number;
+  /** The first moment the window covers, in the workspace's own timezone. */
+  period_started_at: string;
+  totals: UsageTotals;
+  by_agent: UsageAgentRow[];
+  by_task: UsageTaskRow[];
+};
+
+export type UsageTotals = {
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  cost_micros: number;
+  /** The same figure in rupiah, so a screen does not have to know the unit. */
+  cost_idr: number;
+};
+
+export type UsageAgentRow = {
+  agent_id: string;
+  agent_name: string;
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cost_micros: number;
+  cost_idr: number;
+};
+
+export type UsageTaskRow = {
+  task_id: string;
+  task_title: string;
+  task_status: string;
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cost_micros: number;
+  cost_idr: number;
+};
+
+/** usageReport returns what the workspace spent over a window, read three ways. */
+export function usageReport(
+  workspaceId: string,
+  days = 30,
+  limit = 25,
+): Promise<ApiResult<UsageReport>> {
+  return request<UsageReport>(`/llm/usage/report?days=${days}&limit=${limit}`, { workspace: workspaceId });
+}
+
+/**
+ * usageReportCSV downloads the same report as a file.
+ *
+ * It fetches rather than pointing an anchor at the URL, because the export is a tenant-scoped read
+ * and the token travels in a header rather than in a cookie-only session: an `<a href>` would
+ * download a 401. The file is built in the browser from the response, which is also what lets the
+ * name carry the day.
+ */
+export async function usageReportCSV(workspaceId: string, days = 30): Promise<{ ok: boolean; message: string }> {
+  try {
+    const response = await fetch(`${API_URL}/api/llm/usage/report?days=${days}&format=csv`, {
+      headers: apiHeaders(workspaceId),
+      credentials: "include",
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      return { ok: false, message: "Ekspor tidak bisa diunduh. Coba lagi." };
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `pemakaian-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+
+    return { ok: true, message: "Berkas pemakaian diunduh." };
+  } catch {
+    return { ok: false, message: "Tidak bisa menghubungi server. Cek koneksimu lalu coba lagi." };
+  }
+}
+
+/** The record of a workspace's data having been erased, which is what a person is owed. */
+export type ErasureRecord = {
+  workspace_id: string;
+  workspace_name: string;
+  requested_by: string;
+  requested_by_email: string;
+  requested_at: string;
+  completed_at: string;
+  objects_deleted: number;
+  rows_deleted: number;
+  complete: boolean;
+};
+
+/**
+ * eraseWorkspaceData removes the workspace and everything in it, on the owner's instruction.
+ *
+ * It is deliberately the last call a workspace ever makes: the workspace does not exist when this
+ * returns, so there is nothing left to address afterwards — which is why the answer is the evidence
+ * rather than a job id.
+ */
+export function eraseWorkspaceData(
+  workspaceId: string,
+): Promise<ApiResult<{ workspace_id: string; objects: number; rows: number }>> {
+  return request<{ workspace_id: string; objects: number; rows: number }>(
+    "/workspaces/current/erasure",
+    { method: "POST", workspace: workspaceId },
+  );
+}
+
+/** findErasure reads a workspace's erasure record, when there is one. */
+export function findErasure(workspaceId: string): Promise<ApiResult<ErasureRecord>> {
+  return request<ErasureRecord>("/workspaces/current/erasure", { workspace: workspaceId });
 }
 
 /** listDrafts returns the workspace's drafts, newest first. */

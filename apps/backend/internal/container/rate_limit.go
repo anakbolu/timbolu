@@ -11,6 +11,7 @@ import (
 
 	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
+	"github.com/robzlabz/employeebot/apps/backend/internal/platform/metrics"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/ratelimit"
 )
 
@@ -27,13 +28,16 @@ type callLimits struct {
 	// fallback applies to an app with no ceiling of its own. Zero means unlimited.
 	fallback int
 	logger   *zap.Logger
+	// metrics counts the refusals. It is a field rather than a parameter so the adapter stays
+	// the port the integration module asked for — and nil is the deployment with metrics off.
+	metrics *metrics.Provider
 }
 
 // newCallLimits builds the limiter from configuration.
 //
 // A malformed pair is refused rather than ignored: a ceiling that silently did
 // not apply is a quota that silently gets spent.
-func newCallLimits(cfg *config.Config, limiter *ratelimit.Limiter, logger *zap.Logger) (*callLimits, error) {
+func newCallLimits(cfg *config.Config, limiter *ratelimit.Limiter, logger *zap.Logger, provider *metrics.Provider) (*callLimits, error) {
 	if limiter == nil {
 		return nil, nil
 	}
@@ -48,6 +52,7 @@ func newCallLimits(cfg *config.Config, limiter *ratelimit.Limiter, logger *zap.L
 		perMinute: perMinute,
 		fallback:  cfg.Integrations.DefaultCallsPerMinute,
 		logger:    logger,
+		metrics:   provider,
 	}
 
 	if len(perMinute) > 0 || limits.fallback > 0 {
@@ -125,6 +130,14 @@ func (c *callLimits) Allow(ctx context.Context, app string, integrationID uuid.U
 			zap.Error(err),
 		)
 		return integrationdomain.LimitDecision{Allowed: true}, nil
+	}
+
+	// A refusal is counted where it happens, which is the only place that knows the difference
+	// between "the quota refused this call" and "the call failed for another reason". The
+	// surface is the app: it is bounded by the deployment's own configuration, and "which
+	// integration is being refused" is what says whether a ceiling is too tight.
+	if !result.Allowed {
+		c.metrics.RateLimited(ctx, "integration")
 	}
 
 	return integrationdomain.LimitDecision{

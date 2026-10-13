@@ -11,6 +11,8 @@ import (
 
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/interceptor"
+	"go.uber.org/zap"
 )
 
 // servingStatus is the health status Temporal reports when it can serve
@@ -38,6 +40,14 @@ type Config struct {
 	// TLS and APIKey are set for Temporal Cloud; self-hosted dev uses neither.
 	TLS    bool
 	APIKey string
+	// Interceptors are installed on the dialled client. The container passes the tracing
+	// interceptor, which is what makes a workflow's span a child of the request that started
+	// it.
+	Interceptors []interceptor.ClientInterceptor
+	// Logger is the deployment's logger, adapted for the SDK. It is set on the client, which
+	// is where the SDK reads it from: a worker inherits its client's logger, so a workflow's
+	// `workflow.GetLogger` lines land in the deployment's own log with its own fields.
+	Logger *zap.Logger
 }
 
 // New dials Temporal. The call fails fast when the endpoint is unreachable so a
@@ -53,8 +63,10 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 	}
 
 	options := client.Options{
-		HostPort:  cfg.HostPort,
-		Namespace: namespace,
+		HostPort:     cfg.HostPort,
+		Namespace:    namespace,
+		Interceptors: cfg.Interceptors,
+		Logger:       NewZapLogger(cfg.Logger),
 	}
 	if cfg.TLS {
 		options.ConnectionOptions = client.ConnectionOptions{

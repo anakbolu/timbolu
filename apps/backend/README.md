@@ -41,6 +41,7 @@ make sqlc            # regenerate the query code
 make mocks           # regenerate the domain mocks
 make migrate-up      # apply migrations to $DATABASE_URL
 make smoke-task      # the task runtime end to end against the compose stack
+make smoke-order     # the MVP flow: an order priced from the catalogue, an invoice that waits
 ```
 
 ## Modules
@@ -59,6 +60,7 @@ make smoke-task      # the task runtime end to end against the compose stack
 | `routine` | `/api/routines*`, `/api/routine-runs` | Work a Bolu runs on its own: the four cadences, the Temporal Schedule behind each one, the run history, and the cheap check that skips a model call |
 | `whatsapp` | `/api/whatsapp/*` | The number the shop answers on: the link flow, who answers it, what customers wrote, and the queue that paces what leaves. The connection itself lives in the `wa-gateway` process |
 | `billing` | `/api/billing/*` | The package a workspace is on, the allowance it grants, the tokens it bought on top, and what it owes. Payments go through Duitku; the quota is what gates every model call |
+| `order` | `/api/orders*`, `/api/orders/products*` | The workspace's own data: the catalogue a person maintains, the customers it talks to, and the orders a Bolu recorded. It is also the first application whose tools need no connected account |
 
 ### Authentication
 
@@ -273,8 +275,19 @@ read back inside the transaction that creates it.
   working task from one whose worker was evicted, because both read `running`, so
   `health` is derived from `heartbeat_at` and never stored.
 - **A tool reaches the model only if something can run it.** The registry applies
-  both filters — the grant (EPIC 3) and an executor (EPIC 8) — so a tool nothing
-  can execute is not offered, because offering it teaches the model to call it.
+  both filters — the grant (EPIC 3) and an adapter that claims the tool — so a tool
+  nothing can execute is not offered, because offering it teaches the model to call
+  it. A catalogue row no adapter claims is dropped; a deployment with no hub at all
+  offers its rows with an open schema rather than hiding them, and its executor says
+  "not available" when a call arrives.
+- **The executor decides the connection, from the grant rather than from the call.**
+  A connected tool runs against the account the Bolu was actually given, so a task
+  cannot name a mailbox its Bolu never had; a tool whose adapter is `Connectionless`
+  runs with no connection at all. A `write_external` call is refused here as well as
+  at the gate — the second lock on the same door — and a tool the Bolu was not
+  offered is refused even if the model asks for it. A tool that fails is answered as
+  a failed result, which is how "not in the catalogue" reaches the model as a
+  question rather than as a broken task.
 
 ### Approval and drafts
 
@@ -315,9 +328,10 @@ read back inside the transaction that creates it.
   `draft.revised`, `draft.sent`, and `policy.updated` land in `audit_logs` with
   the actor, so a send can be traced to its draft, its task, and the person who
   allowed it.
-- **Nothing is marked sent that did not leave.** With no integration executor yet
-  (EPIC 8 owns it) the action stops at the send boundary and the task fails with
-  that reason, rather than recording a send that never happened.
+- **Nothing is marked sent that did not leave.** An approved action is carried out
+  by the integration executor, and the vendor's answer is what marks it sent. A
+  deployment with no hub has no executor, and the action stops at that boundary with
+  the reason rather than being recorded as something that went out.
 
 ### Memory and knowledge (EPIC 10)
 
@@ -422,6 +436,149 @@ read back inside the transaction that creates it.
   answer with the routine *and* its next run times, read from the same write that
   changed them, so a form cannot show a stale time beside a cadence it just saved.
 
+### Retention and observability (EPIC 13)
+
+- **A step's shape is kept and its content is not.** What a step was — which tool, how many
+  tokens, when it ran — is what the task history and the cost report are built from, and the
+  one-line summary lives on the task itself. The raw `input` and `output` are a copy of a
+  conversation, and that is the half with a clock on it. The prune updates exactly those two
+  columns and sets `pruned_at`, so a pruned step still reads as a step and the history is the
+  same afterwards; a retention rule that deleted rows would make "keep less" and "the history
+  stays readable" two rules that contradict each other. Default `RETENTION_STEP_DAYS=30`.
+- **Every sensitive action leaves exactly one line, with the actor on it.** The approval module
+  owns `audit_logs` and the other modules write through it — the container adapts their entry
+  shapes, which is the only place the two sides meet. A line carries the action, the object, the
+  actor, and a detail map: a revoke, a role change, a model change, a grant. Reads filter by
+  action prefix, object, actor, and window, and the window is half-open so two abutting reads
+  hold every entry exactly once. A trail nobody can read is the same as no trail.
+- **Nothing is marked sent that did not leave.** An approved action is carried out by the
+  integration executor, and the vendor's answer is what marks it sent. A deployment with no hub
+  has no executor, and the action stops at that boundary with the reason rather than being
+  recorded as something that went out. See *Approval and drafts* for the gate itself.
+- **One task is one trace.** The API's request span, the workflow's and each activity's span
+  under it, and the model and tool calls inside those are all one trace: the W3C `traceparent`
+  header carries it across the process boundary between the API and a worker, and Temporal's own
+  tracing interceptor carries it into a workflow that was started before the worker was restarted.
+  The trace id in a log line is the span's own id rather than a second identifier generated
+  beside it — otherwise a line and the trace it names are two different requests.
+- **Spans carry identifiers, counts, and outcomes; never content.** A trace is a second store
+  with its own retention and its own access, one the product's own data policy does not reach, so
+  a prompt, a message, a tool's arguments, and a tool's result stay out of it. The URL is not
+  recorded either, and that one is a security property rather than tidiness: the event stream
+  authenticates from the query string, so a span holding the URL would hold a token.
+- **A deployment with no exporter is still traced.** The provider and the W3C propagator are
+  installed either way, so a request has a trace id its logs carry and an incoming trace is
+  joined rather than broken — while the spans are dropped. "No collector" must not mean "no
+  correlation between a log line and the request that produced it", which is precisely the case
+  somebody is looking at when they need it.
+- **Sampling is parent-based, with a ratio for roots.** A trace a caller already sampled stays
+  sampled here, because dropping it would leave a trace with a hole exactly where the work
+  happened. `OTEL_SAMPLE_RATIO` then decides the roots.
+- **The four fields are on every line a task writes.** `workspace_id`, `agent_id`, `task_id`, and
+  `workflow_id` — the workflow id read from Temporal rather than passed back by the caller, since
+  the runtime already knows it and a field the caller sends can be dropped. The SDK's own lines
+  go through the deployment's logger for the same reason, so a workflow's error is a line a log
+  search finds rather than one printed in another format somewhere else.
+- **No identifier is ever a metric label.** No workspace, no Bolu, no task, no workflow: a label
+  with an unbounded value is a time series per value, and one naming a workspace would grow without
+  limit and be paid for forever. What the charts carry is the *shape* of the work — which trigger,
+  which outcome, which integration, how many tokens — and the per-workspace question is answered by
+  a query over `usage_ledger`, `tasks`, and `drafts`, where the rows already are and where the
+  answer can be as precise as the question.
+- **A value outside its vocabulary becomes `other`.** A failure reason is free text in the database,
+  and the same text as a label is a new series per message the product learns to produce; the same
+  goes for an integration connected over MCP, whose name its own workspace chose. Each label has a
+  closed set, and the tests assert that the fallback is itself a legal value rather than a new one.
+- **The four product measures, and where each is known.** How long a draft took to become something
+  a person can read — measured by the step that produced it, from the moment the task opened, because
+  the promise is "the work is done, here it is" and a task that thought for three rounds took all
+  three. What a person did with it, split by outcome and by whether it had been sent back first —
+  recorded where the decision is stored, since only "approved as written" means the bot produced
+  usable work. What a task spent, split by direction — recorded from the *stored* row, so a chart and
+  the dashboard beside it cannot disagree. And which provider answered, with whether the chain had to
+  move on — the number that explains an unexpected bill.
+- **Operational measures come from where the fact is born.** A retry is only visible to the attempt
+  that *is* the retry, so the attempt number is read from Temporal rather than counted locally. A
+  refused call is only visible to the limiter that refused it, so the container's own adapters count
+  it. The depth is two counters — `bolu.task.dispatched` on the API, `bolu.task.settled` on the
+  worker — and the chart subtracts them, because a task is accepted in one process and finished in
+  another and a single-process depth would read `+1` forever. That is the *product's* depth rather
+  than Temporal's internal backlog: the SDK's metrics handler is an internal package at this version,
+  and that is stated rather than worked around.
+- **A worker serves one endpoint and nothing else.** It has no HTTP API, so `OPS_ADDRESS` gives it an
+  operations listener: `/health`, `/ready`, and `/metrics`. All three are there for the same reason —
+  the API has them on its own listener and a worker is invisible without one — and liveness
+  deliberately never touches a dependency, because a probe that failed on a database outage would
+  have an orchestrator restart a process that is running perfectly. It serves the probes and the
+  scrape handler alone: a worker with a general HTTP surface would be a second API with none of the
+  guards. It is off unless the deployment names an address, so a deployment that pushes its
+  measurements, or scrapes only the API, is unchanged.
+- **A deployment with no exporter builds no instruments.** Nil is what makes "this deployment reports
+  nothing" a fact a test asserts on the container rather than a behaviour it has to observe, and it
+  is why every module calls through unconditionally instead of each guarding its own call site.
+- **The scrape endpoint is rendered here, not by the OpenTelemetry Prometheus exporter.** The
+  exporter pulls in `prometheus/client_golang`, which needs a C toolchain to build on some platforms
+  — so a deployment that builds `CGO_ENABLED=0` everywhere else would suddenly need one, and a
+  machine without the platform's developer tools could not lint the package that serves metrics. What
+  the exporter does for us is turn one `metricdata` snapshot into text, which is one file
+  (`platform/metrics/scrape.go`): `# HELP`/`# TYPE` per family, a line per series, sorted labels so
+  two snapshots of an unchanged process are byte-identical, the counter `_total` suffix, and the unit
+  in the name where the format wants it (`bolu_task_duration_seconds`).
+- **The usage screen reads one window three ways, and shows the difference.** The period's totals,
+  the same window per Bolu, and the same window per task. The total is larger than the sum of the
+  per-task rows, and that gap is a fact about the product rather than a rounding error: memory
+  extraction, embeddings, and routing happen outside any task. It is shown as "di luar tugas" rather
+  than hidden, because a person who adds up the rows and gets less than the total deserves the
+  reason. The per-Bolu rows name the bot, and a deleted Bolu keeps its rows — `agent_id` is `SET
+  NULL` on delete, so its spend moves to the unattributed row rather than leaving the workspace's
+  total.
+- **The export is the same read as the screen.** `format=csv` on the report endpoint rather than a
+  second route, so a spreadsheet and the page cannot tell two stories about one month. It is one
+  rectangular table with a `bagian` column naming the section, because a file with a two-field
+  preamble and nine-field data rows is one a strict CSV reader refuses — the standard library's own
+  refuses it. Rupiah is written with a dot decimal and never a comma: the file is machine-read, and a
+  locale-dependent separator would make the column text in half the countries it is opened in.
+- **A stuck task's link is built server-side.** `TEMPORAL_UI_BASE_URL` plus the namespace, because
+  the deployment is the only thing that knows which Temporal it has — a compose port, a Cloud host,
+  or none at all. The link is absent when no UI is named and on a task that never reached the engine:
+  a link to a workflow that does not exist is worse than no link. `GET /tasks/attention` is one
+  question rather than three, and it keeps only the tasks that will not move on their own: one that
+  is `running` is doing its job.
+- **A workspace is erased in one statement, because the schema says so.** Every table with a
+  `workspace_id` references `workspaces` with `ON DELETE CASCADE`, so erasure is
+  `DELETE FROM workspaces` rather than a walk over twenty tables that a new migration can forget to
+  extend. The count of what went is read from `information_schema` for the same reason — a
+  hand-written list of tables is a second list to keep, and the row it misses is the one nobody
+  notices is still there. What the schema-driven count *cannot* see is a table holding a workspace id
+  without a reference, which is exactly what `data_erasures` does on purpose.
+- **The objects go before the rows, and that order is the whole design.** Attachments and sandboxed
+  content live in two bucket prefixes (`attachments`, `content`); deleting the workspace first
+  cascades their rows away, and the storage keys go with them — after which the bytes are unreachable
+  by any query, in a bucket nothing points at, which is a copy of a customer's file that survives the
+  request to remove it. So the bytes are removed while the keys that name them still exist.
+- **The evidence outlives the data.** `data_erasures` names the workspace and the requester as
+  *values*, with no foreign key, because both have to be answerable after the rows are gone — that is
+  the half of UU PDP that is easy to forget: the right to be answered. A request that fails keeps its
+  row with the reason and is **not** retried automatically: an erasure that half-succeeded is a state
+  a person has to look at, and a background retry would be the deployment deciding on its own to try
+  again with a customer's data. See `docs/adr/0002-kepatuhan-uu-pdp.md` and
+  `docs/kebijakan-data.md`.
+- **The prune runs per workspace, not in one statement.** Everything it touches is protected by
+  Row Level Security, so there is no "prune every tenant" without opening a scope per tenant —
+  and opening one per tenant is what makes the isolation real rather than a filter somebody has
+  to remember. `retention_targets` is the queue that says which one is due; a trigger queues every
+  workspace the moment it is created, because a workspace missing from the queue is one whose
+  customer's words are kept forever, and that is the failure nobody notices.
+- **The job is idempotent, and it says what it did.** `pruned_at IS NULL` is the guard, so a
+  second pass over the same window updates nothing and two instances cannot double-prune. Each
+  pass writes a `retention_runs` row — counts, bytes, and the reason it stopped — so "retention
+  stopped working three weeks ago" is a query rather than a hunt through rotated logs. A pass that
+  failed part way reports what it managed and names the workspace it could not finish.
+- **An attachment leaves as two halves or not at all.** The chat module owns both: the row and
+  the object. The object goes first, because a row is what a user can see and a row pointing at
+  nothing is the visible breakage — and a row whose object is already gone is fixed by the next
+  pass, while an object nothing points at is a leak no query will ever find.
+
 ### WhatsApp (EPIC 9)
 
 - **The connection is a separate process, and that is not a preference.** A WhatsApp
@@ -494,6 +651,50 @@ read back inside the transaction that creates it.
   — the whatsmeow engine and the HTTP client — so the third is a third
   implementation rather than a second design.
 
+### Order and catalogue (EPIC 14)
+
+The workspace's own data: the products it sells, the customers it talks to, and the orders it
+took. It is the first module whose tables are the workspace's business rather than a cache of
+something that lives at a provider, and the first whose tools belong to the workspace rather than
+to a connected account.
+
+- **Nobody types a price into a message, and no model invents one.** The recording tool's schema
+  has fields for a product name, a quantity, and a note — there is no field for a price. The
+  repository resolves each name against the catalogue inside the transaction and copies the
+  catalogue's name, unit, and price onto the line, so a price a model made up cannot reach an
+  invoice: it has nowhere to put it. That is a property of the interface rather than of a rule
+  somebody has to remember.
+- **An unknown product refuses the whole order.** Rolling back the lines that did resolve would
+  produce an invoice for part of what a customer asked for, which is worse than asking. The refusal
+  names the product, carries the closest catalogue entries with their prices, and tells the model to
+  ask — so "Kopi Luwat" is a question about "Kopi Arabika" rather than a second guess. Nothing is
+  written, including the customer upsert.
+- **A line snapshots what was agreed.** The line keeps the description, the unit, and the price it
+  was recorded with, and still references the product, so raising the price tomorrow does not
+  rewrite yesterday's order while "which catalogue entry was this" stays answerable.
+- **The line's total is the database's.** `line_total_micros` is a generated column and the order's
+  `total_micros` is written by one statement from its own lines, so a total cannot disagree with the
+  quantity and price beside it — and a rounding rule cannot differ between two callers.
+- **The catalogue is a screen's business, the orders are not.** A person maintains the catalogue
+  over HTTP (owners and admins, because a price is what every later quote is based on). Orders are
+  read-only over HTTP: they are recorded by a Bolu from what a customer said, and a client that
+  could insert one directly could claim an order that never happened. Cancelling is the one write,
+  because not fulfilling an order is a person's decision.
+- **A customer is keyed by the phone, within the workspace.** That is the identity the flow actually
+  has — a WhatsApp conversation is a number — so a second order from the same person resolves to the
+  same customer and the row's name follows the latest order. The number is normalized to digits on
+  the way in, so `0812-3456-7890` and `6281234567890@s.whatsapp.net` are one person.
+- **The tools need no connection, and that is what `needs_connection = false` says.** Every other
+  catalogue row is reached through an account somebody connected and then handed to a Bolu; reading
+  the workspace's own catalogue needs neither. The tool filter reads that column, the hub reads
+  `Connectionless` off the adapter, and a test asserts the two agree — a disagreement would either
+  offer a tool nothing can run or hide one that needs nothing.
+- **The sales template ships the flow as data.** `oren` carries the tools and the persona that
+  describe the order-to-invoice path, so a workspace gets it without a release and a different
+  workspace rewrites the text rather than waiting for one. Existing Bolus are deliberately not
+  changed by the migration: adding tools to somebody's Bolu would be granting permissions nobody
+  asked for.
+
 ## Configuration
 
 Configuration is read from `internal/platform/config/config.yaml` (or
@@ -526,6 +727,19 @@ bounded by `MEMORY_MAIN_TOKENS` (what travels in every call),
 `MEMORY_RECALL_MEMORIES` and `MEMORY_RECALL_KNOWLEDGE` (what one round retrieves),
 `MEMORY_SIMILARITY` (when a new memory replaces an old one), and
 `MEMORY_QUIET_SECONDS` (how long a conversation must be still before it is read).
+Retention is `RETENTION_STEP_DAYS` (how long a task step's raw payload is kept; zero
+takes the product default of thirty days), `RETENTION_ATTACHMENT_DAYS` (how long an
+attachment is kept; zero keeps it as long as the message that carries it),
+`RETENTION_INTERVAL` (how often the pass runs; zero disables it, which is what local
+development uses), and `RETENTION_BATCH`/`RETENTION_SWEEP_LIMIT` (how much one pass
+removes from one workspace and how many workspaces it looks at). Telemetry is `OTEL_EXPORTER`
+(`none` drops the spans and keeps the trace ids, `console` prints them for a development
+run, `otlp` sends them to a collector at `OTEL_ENDPOINT`), `OTEL_SERVICE_NAME` (empty, so
+each binary names itself), `OTEL_SAMPLE_RATIO` (the share of root traces kept), and
+`OTEL_INSECURE` for a collector without TLS. Metrics are `OTEL_METRICS_EXPORTER` (`none`,
+`prometheus` for the `/metrics` scrape endpoint, `otlp` for a collector, `console` for a
+development run), `OTEL_METRICS_ENDPOINT`, and `OTEL_METRICS_INTERVAL` for the pushing ones —
+a separate switch from the traces, because the two are asked for separately in practice.
 
 Deployment and region decisions: `docs/adr/0001-temporal-dan-region.md`.
 Test strategy and gates: `docs/testing.md`.

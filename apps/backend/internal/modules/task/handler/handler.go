@@ -25,6 +25,11 @@ import (
 type Handler struct {
 	service domain.Service
 	log     *zap.Logger
+	// temporalUI is where this deployment's Temporal UI is reachable, and temporalNamespace is
+	// the namespace its links are filed under. Both are deployment facts the container installs;
+	// an empty base means no link is offered.
+	temporalUI        string
+	temporalNamespace string
 }
 
 // New builds the handler.
@@ -35,6 +40,10 @@ func New(service domain.Service, log *zap.Logger) *Handler {
 // Routes registers the endpoints every member of the workspace may read.
 func Routes(group fiber.Router, h *Handler) {
 	group.Get("/tasks", h.History)
+	// The attention list is registered before the by-id route, and that order is load-bearing
+	// rather than cosmetic: Fiber matches in registration order, so `/tasks/:taskID` first would
+	// claim `/tasks/attention` and try to parse "attention" as a uuid.
+	group.Get("/tasks/attention", h.Attention)
 	group.Get("/tasks/:taskID", h.Get)
 	group.Get("/tasks/:taskID/steps", h.Steps)
 	group.Get("/tasks/:taskID/children", h.Children)

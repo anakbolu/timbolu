@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -111,6 +112,15 @@ type AttachmentRepository interface {
 	Open(ctx context.Context, scope Scope, id uuid.UUID) (Attachment, error)
 	// ListForMessage returns the attachments of one message.
 	ListForMessage(ctx context.Context, scope Scope, messageID uuid.UUID) ([]Attachment, error)
+	// ListExpired returns the attachments past a moment, oldest first, with the
+	// storage key their bytes live under.
+	ListExpired(ctx context.Context, scope Scope, olderThan time.Time, limit int) ([]Attachment, error)
+	// Delete removes one attachment's metadata row.
+	//
+	// The bytes are the storage half and are removed by the service, which is the only
+	// layer that holds both the repository and the object store — and removing half of
+	// an attachment is what it exists to prevent.
+	Delete(ctx context.Context, scope Scope, id uuid.UUID) error
 }
 
 // StoredObject is what a write to object storage produced.
@@ -133,6 +143,10 @@ type ObjectStore interface {
 	Put(ctx context.Context, key, contentType string, content []byte) (StoredObject, error)
 	Get(ctx context.Context, key string) ([]byte, error)
 	Delete(ctx context.Context, key string) error
+	// List returns every key under a prefix, which is what an erasure needs: the bytes of one
+	// workspace are in a bucket, and the keys that name them are rows that are about to be
+	// deleted.
+	List(ctx context.Context, prefix string) ([]string, error)
 	Driver() string
 }
 
@@ -148,6 +162,23 @@ func ObjectKey(prefix, workspaceID, objectID, filename string) string {
 		"objects", objectID,
 		SanitizeFilename(filename),
 	}, "/")
+}
+
+// ObjectPrefixes are the namespaces this module writes objects under.
+//
+// They are listed here rather than derived at the call site because they are the module's own
+// knowledge, and because an erasure has to walk all of them: a prefix missing from this list is a
+// copy of a customer's file that survives the request to remove it, and nothing in the database
+// would ever point at it again.
+var ObjectPrefixes = []string{AttachmentsPrefix, ContentRefPrefix}
+
+// AttachmentsPrefix is where uploaded files live.
+const AttachmentsPrefix = "attachments"
+
+// WorkspaceObjectPrefix is the key prefix under which one workspace's objects live, for each
+// namespace above. It is what an erasure lists.
+func WorkspaceObjectPrefix(prefix, workspaceID string) string {
+	return strings.Join([]string{prefix, "workspaces", workspaceID, "objects"}, "/")
 }
 
 // SanitizeFilename keeps a filename usable as one path segment.

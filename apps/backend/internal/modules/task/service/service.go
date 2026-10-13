@@ -47,6 +47,9 @@ type Deps struct {
 	Limits domain.Limits
 	Logger *zap.Logger
 	Clock  func() time.Time
+	// Metrics reports what this deployment accepted. Optional: without it the work happens and
+	// nothing is charted, which is what a deployment with metrics off runs with.
+	Metrics domain.Metrics
 }
 
 // Service is the task runtime implementation.
@@ -151,6 +154,12 @@ func (s *Service) Dispatch(ctx context.Context, scope domain.Scope, req domain.D
 	started, err := s.deps.Tasks.Start(ctx, scope, task.ID, result.WorkflowID, result.RunID)
 	if err != nil {
 		return task, err
+	}
+
+	// Counted once the engine accepted it, so the depth is work that will run rather than work
+	// this call created and then failed to hand over.
+	if s.deps.Metrics != nil {
+		s.deps.Metrics.TaskDispatched(ctx)
 	}
 
 	s.emitTask(ctx, scope, started, "task.started")

@@ -419,6 +419,21 @@ export function SettingsView() {
 
       <section className={`${CARD} flex flex-wrap items-center justify-between gap-3.5 p-[22px]`}>
         <div>
+          <h2 className={HEADING}>Data dan penghapusan</h2>
+          <div className="text-bolu-muted">
+            Apa yang kami simpan dan berapa lama, serta cara meminta seluruh data workspace dihapus.
+          </div>
+        </div>
+        <a
+          href="/settings/data"
+          className="flex min-h-11 items-center rounded-full border-2 border-bolu-ink px-5 font-bold text-bolu-ink no-underline hover:text-bolu-ink"
+        >
+          Buka kebijakan data
+        </a>
+      </section>
+
+      <section className={`${CARD} flex flex-wrap items-center justify-between gap-3.5 p-[22px]`}>
+        <div>
           <h2 className={HEADING}>Paket dan tagihan</h2>
           <div className="text-bolu-muted">
             Paket workspace, pemakaian token periode ini, paket tambahan, dan tagihan yang harus dibayar.

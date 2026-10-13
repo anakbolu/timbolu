@@ -22,6 +22,8 @@ import (
 	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 	memoryactivity "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/activity"
 	memorydomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain"
+	orderdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/order/domain"
+	retentiondomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/retention/domain"
 	routineactivity "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/activity"
 	routinedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
 	taskactivity "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/activity"
@@ -32,9 +34,11 @@ import (
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/kms"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/logger"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/mail"
+	"github.com/robzlabz/employeebot/apps/backend/internal/platform/metrics"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/oauth/google"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/ratelimit"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/redis"
+	"github.com/robzlabz/employeebot/apps/backend/internal/platform/telemetry"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/temporal"
 )
 
@@ -78,12 +82,32 @@ type Container struct {
 	// It is kept on the container because the gateway process hands it its own
 	// runtime, and because the integration adapter reaches it.
 	WhatsApp whatsappdomain.Service
+	// Order is the workspace's own commerce data, kept here because the integration
+	// adapter resolves it when a tool is called: the adapter is registered with the
+	// hub before this module exists, the way the WhatsApp adapter is, and it looks
+	// the module up rather than holding it.
+	Order orderdomain.Service
 	// Billing is the module: the package a workspace is on, the allowance it grants,
 	// what it owes, and the sweep that reconciles the three. It is kept here because
 	// three other modules ask it a question — the model gateway for an allowance, the
 	// Bolu registry for a cap, and the tenant middleware for whether a write is
 	// allowed at all.
 	Billing billingdomain.Service
+	// Retention is the job that keeps the deployment's content windows: it removes
+	// what a task step recorded and what an attachment held once they are past their
+	// window, and leaves the rows and their shape alone. It is kept on the container
+	// because it runs on a timer in the API process rather than on a request.
+	Retention retentiondomain.Service
+	// Metrics is the meter the whole process reports to: what the task runtime accepted and
+	// spent, what people did with its drafts, and what the model chain cost. It is nil when the
+	// deployment named no exporter, which is what makes every recording call a no-op rather than
+	// a branch at each call site.
+	Metrics *metrics.Provider
+	// Telemetry is the tracer provider the whole process reports to: the HTTP middleware, the
+	// Temporal client and workers, and the model and tool calls inside them. It is kept on the
+	// container because it must be shut down last, after the spans of the last request it
+	// started have been flushed.
+	Telemetry *telemetry.Provider
 	// Keys is the key ring that wraps a workspace's data key. It is kept here
 	// because two modules seal credentials with it: the hub seals tokens, and this
 	// one seals a WhatsApp session.
@@ -233,6 +257,22 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Container, e
 
 	c := &Container{Config: cfg, Logger: log}
 
+	// Telemetry comes first: everything assembled after it may start a span, and a provider
+	// installed halfway through the assembly would leave the first spans of the process
+	// unattached to anything — including the trace that the API request started.
+	if err := c.openTelemetry(ctx, cfg); err != nil {
+		c.Close()
+		return nil, err
+	}
+
+	// Metrics are installed beside the tracer and for the same reason: everything assembled
+	// after this point may report something, and an instrument built after the fact would miss
+	// the first measurements of the process.
+	if err := c.openMetrics(ctx, cfg); err != nil {
+		c.Close()
+		return nil, err
+	}
+
 	if err := c.openDatabase(ctx, cfg, o); err != nil {
 		c.Close()
 		return nil, err
@@ -299,6 +339,13 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Container, e
 		return nil, err
 	}
 
+	// The approval module owns the audit trail, so the three modules that record a
+	// sensitive action learn their writer now. Everything between their construction and
+	// this line is a process starting up, before any request is served.
+	c.UseWorkspaceAuditor()
+	c.UseIntegrationAuditor()
+	c.UseModelAuditor()
+
 	// Memory comes after the gateway, because a write is embedded before it is
 	// stored, and after the approval repository, because the trail it writes to
 	// lives there. It comes before the task runtime and the conversations, which
@@ -330,10 +377,28 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Container, e
 		return nil, err
 	}
 
+	// The order module comes after the integration hub, which registers its adapter as
+	// one of the applications this deployment speaks, and before the task runtime's
+	// calls reach it: a tool call is what reaches the module, and the runtime is
+	// assembled with the executor that makes those calls.
+	if err := c.openOrder(ctx, cfg); err != nil {
+		c.Close()
+		return nil, err
+	}
+
 	// Conversations come after the runtime: they answer with the gateway, address
 	// the Bolu the registry owns, and hand a message to the task runtime, so all
 	// three must be assembled first.
 	if err := c.openChat(ctx, cfg); err != nil {
+		c.Close()
+		return nil, err
+	}
+
+	// Retention is assembled last of the modules, because it prunes none of the tables
+	// itself: it removes task step contents through the task repository and attachments
+	// through the chat service, so both must exist. That order is the design rather than
+	// an accident — the module that owns a table is the module that writes it.
+	if err := c.openRetention(ctx, cfg); err != nil {
 		c.Close()
 		return nil, err
 	}
@@ -362,6 +427,10 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Container, e
 		// query string, and the tenant middleware that follows accepts the
 		// identity it resolved.
 		c.registerStreamRoutes()
+		// The scrape endpoint goes on before the module routes and outside their prefix: a
+		// scraper has no session and no workspace, so it must not be behind a guard that would
+		// ask it for one.
+		c.registerMetricsRoutes()
 		c.registerRoutes()
 	}
 
@@ -381,6 +450,19 @@ func (c *Container) App() *fiber.App {
 func (c *Container) Close() {
 	if c == nil {
 		return
+	}
+	// Metrics first: a measurement's last push is cheap, and a span that cannot be flushed is a
+	// lost trace rather than a lost count.
+	if c.Metrics != nil {
+		_ = c.Metrics.Shutdown(context.Background())
+		c.Metrics = nil
+	}
+	if c.Telemetry != nil {
+		// The flush gets a bounded moment of its own: a process shutting down on a signal has
+		// already lost the caller's deadline, and the buffered spans of the last seconds are
+		// exactly what somebody is looking at.
+		_ = c.Telemetry.Shutdown(context.Background())
+		c.Telemetry = nil
 	}
 	if c.Temporal != nil {
 		c.Temporal.Close()
@@ -463,6 +545,14 @@ func (c *Container) openTemporal(ctx context.Context, cfg *config.Config, o *opt
 		return nil
 	}
 
+	// The tracing interceptor carries a trace across the process boundary: a workflow's span
+	// is a child of the request that started it, and an activity's span is a child of the
+	// workflow's even when another process runs it.
+	tracing, err := c.temporalInterceptors()
+	if err != nil {
+		return fmt.Errorf("open temporal: %w", err)
+	}
+
 	client, err := temporal.New(ctx, temporal.Config{
 		HostPort:             cfg.Temporal.HostPort,
 		Namespace:            cfg.Temporal.Namespace,
@@ -470,6 +560,8 @@ func (c *Container) openTemporal(ctx context.Context, cfg *config.Config, o *opt
 		TaskQueueIntegration: cfg.Temporal.TaskQueueIntegration,
 		TLS:                  cfg.Temporal.TLS,
 		APIKey:               cfg.Temporal.APIKey,
+		Interceptors:         temporalClientInterceptors(tracing),
+		Logger:               c.Logger,
 	})
 	if err != nil {
 		return fmt.Errorf("open temporal: %w", err)
@@ -485,6 +577,9 @@ func (c *Container) newApp(cfg *config.Config) *fiber.App {
 		WriteTimeout: cfg.Http.WriteTimeout,
 		ErrorHandler: errorHandler(c.Logger),
 	})
+	// Tracing goes on first so the request's trace id comes from its own span, and the logger
+	// the next middleware builds is the same request as the trace.
+	app.Use(c.tracingMiddleware())
 	app.Use(requestContextMiddleware(c.Logger))
 	app.Use(corsMiddleware(cfg.Application.CORSOrigins))
 	return app

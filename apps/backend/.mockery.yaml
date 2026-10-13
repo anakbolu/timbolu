@@ -110,3 +110,7 @@ packages:
       Router:
       Responder:
       ObjectStore:
+  github.com/robzlabz/employeebot/apps/backend/internal/modules/order/domain:
+    interfaces:
+      Repository:
+      Service:

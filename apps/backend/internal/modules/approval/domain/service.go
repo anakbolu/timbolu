@@ -80,6 +80,22 @@ type PolicyRequest struct {
 }
 
 // Service is the approval use case contract.
+// Metrics is where the approval gate reports what people did with its drafts.
+//
+// It is a port because the module owns no telemetry: the container implements it over whatever the
+// deployment configured, and a deployment with metrics off is handed nothing.
+//
+// What it carries is deliberately two values and nothing else. A draft's identity, its task, and its
+// workspace are unbounded — one time series per draft — and the per-draft question is answered from
+// the `drafts` table, where the row already is. What the fleet's charts need is the *rate*: how
+// often a person approves what the bot produced, and how often they have to send it back first.
+type Metrics interface {
+	// DraftDecided reports one decision. outcome is the deployment's own vocabulary — approved,
+	// revised, canceled — and revision is whether this decision followed a revision, which is
+	// the difference between "approved as written" and "approved after being corrected".
+	DraftDecided(ctx context.Context, outcome string, revision bool)
+}
+
 type Service interface {
 	// Request either stores a proposal for a person or, when the workspace's
 	// policy allows it, carries the action out now.
@@ -111,6 +127,6 @@ type Service interface {
 	// SetPolicy stores a workspace's decision about one action kind.
 	SetPolicy(ctx context.Context, scope Scope, req PolicyRequest) (Policy, error)
 
-	// Audit returns the workspace's approval trail, newest first.
-	Audit(ctx context.Context, scope Scope, limit int) ([]AuditRecord, error)
+	// Audit returns the trail the filter names, newest first.
+	Audit(ctx context.Context, scope Scope, filter AuditFilter) ([]AuditRecord, error)
 }

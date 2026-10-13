@@ -133,6 +133,12 @@ func (s *stubUsageReader) Daily(context.Context, uuid.UUID, time.Time) ([]domain
 	return nil, nil
 }
 
+// Report is not used by the quota path: a bound asks for a sum, and the screen that reads a
+// period's breakdown is a different consumer.
+func (s *stubUsageReader) Report(context.Context, uuid.UUID, time.Time, int) (domain.UsageReport, error) {
+	return domain.UsageReport{}, nil
+}
+
 func (s *stubUsageReader) SumSince(_ context.Context, _ uuid.UUID, since time.Time) (int64, error) {
 	s.since = since
 	return s.sumSince, nil

@@ -7,6 +7,7 @@ package sqlcgen
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -138,6 +139,29 @@ func (q *Queries) CountLiveTasksForAgent(ctx context.Context, arg CountLiveTasks
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const countUnprunedSteps = `-- name: CountUnprunedSteps :one
+SELECT count(*) FROM task_steps
+WHERE workspace_id = $1
+  AND pruned_at IS NULL
+  AND created_at < $2
+`
+
+type CountUnprunedStepsParams struct {
+	WorkspaceID uuid.UUID
+	OlderThan   time.Time
+}
+
+// How much there is left to prune, so a run can say whether it kept up.
+//
+// The workspace is named even though Row Level Security already filters on it: a statement
+// that says what it counts is what makes the count anything other than a number.
+func (q *Queries) CountUnprunedSteps(ctx context.Context, arg CountUnprunedStepsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countUnprunedSteps, arg.WorkspaceID, arg.OlderThan)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const createTask = `-- name: CreateTask :one
@@ -699,6 +723,50 @@ func (q *Queries) ProgressTask(ctx context.Context, arg ProgressTaskParams) (Tas
 		&i.ReplyMessageID,
 	)
 	return i, err
+}
+
+const pruneTaskSteps = `-- name: PruneTaskSteps :execrows
+
+UPDATE task_steps
+SET input = '{}'::jsonb,
+    output = '{}'::jsonb,
+    pruned_at = now()
+WHERE task_steps.workspace_id = $1
+  AND task_steps.id IN (
+    SELECT candidate.id FROM task_steps AS candidate
+    WHERE candidate.workspace_id = $1
+      AND candidate.pruned_at IS NULL
+      AND candidate.created_at < $2
+    ORDER BY candidate.created_at
+    LIMIT $3
+)
+`
+
+type PruneTaskStepsParams struct {
+	WorkspaceID uuid.UUID
+	OlderThan   time.Time
+	LimitCount  int32
+}
+
+// ------------------------------------------------------------- retention
+// The retention job's own write: the raw contents go, the row stays.
+//
+// What is replaced is exactly the two payload columns. Everything a task history and the
+// cost report are built from — the step's kind, its tool, its sequence, its token counts, when
+// it happened — is untouched, which is what lets retention and a readable history be one
+// design rather than two rules that contradict each other.
+//
+// `pruned_at IS NULL` is the idempotency: a second pass over the same window updates nothing,
+// so the job is safe to re-run and safe on two instances at once.
+//
+// The batch is taken oldest-first through the `created_at` index and bounded by the limit, so
+// a deployment with years of steps prunes in slices rather than in one unbounded statement.
+func (q *Queries) PruneTaskSteps(ctx context.Context, arg PruneTaskStepsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, pruneTaskSteps, arg.WorkspaceID, arg.OlderThan, arg.LimitCount)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const resumeTask = `-- name: ResumeTask :one

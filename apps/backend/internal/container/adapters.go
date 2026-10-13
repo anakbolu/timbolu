@@ -11,6 +11,7 @@ import (
 	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/authn"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/mail"
+	"github.com/robzlabz/employeebot/apps/backend/internal/platform/metrics"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/oauth/google"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/ratelimit"
 )
@@ -71,14 +72,22 @@ func (g googleProvider) Exchange(ctx context.Context, code string) (authdomain.G
 }
 
 // loginThrottle adapts the Redis limiter to the auth domain port.
+//
+// It carries the meter because a refusal is only visible here: the auth module asks a yes/no question
+// and acts on the answer, so nothing above it can tell a throttled login from a successful one. The
+// count is what says whether the ceiling is protecting the product or turning away its users.
 type loginThrottle struct {
 	limiter *ratelimit.Limiter
+	metrics *metrics.Provider
 }
 
 func (l loginThrottle) Allow(ctx context.Context, key string, capacity int, refill float64) (authdomain.ThrottleResult, error) {
 	result, err := l.limiter.Allow(ctx, key, capacity, refill)
 	if err != nil {
 		return authdomain.ThrottleResult{}, err
+	}
+	if !result.Allowed {
+		l.metrics.RateLimited(ctx, "login")
 	}
 	return authdomain.ThrottleResult{Allowed: result.Allowed, RetryAfter: result.RetryAfter}, nil
 }

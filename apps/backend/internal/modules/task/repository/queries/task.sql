@@ -186,3 +186,42 @@ SELECT * FROM task_steps
 WHERE workspace_id = $1 AND task_id = $2
 ORDER BY seq DESC
 LIMIT 1;
+
+-- ------------------------------------------------------------- retention
+
+-- name: PruneTaskSteps :execrows
+-- The retention job's own write: the raw contents go, the row stays.
+--
+-- What is replaced is exactly the two payload columns. Everything a task history and the
+-- cost report are built from — the step's kind, its tool, its sequence, its token counts, when
+-- it happened — is untouched, which is what lets retention and a readable history be one
+-- design rather than two rules that contradict each other.
+--
+-- `pruned_at IS NULL` is the idempotency: a second pass over the same window updates nothing,
+-- so the job is safe to re-run and safe on two instances at once.
+--
+-- The batch is taken oldest-first through the `created_at` index and bounded by the limit, so
+-- a deployment with years of steps prunes in slices rather than in one unbounded statement.
+UPDATE task_steps
+SET input = '{}'::jsonb,
+    output = '{}'::jsonb,
+    pruned_at = now()
+WHERE task_steps.workspace_id = sqlc.arg('workspace_id')
+  AND task_steps.id IN (
+    SELECT candidate.id FROM task_steps AS candidate
+    WHERE candidate.workspace_id = sqlc.arg('workspace_id')
+      AND candidate.pruned_at IS NULL
+      AND candidate.created_at < sqlc.arg('older_than')
+    ORDER BY candidate.created_at
+    LIMIT sqlc.arg('limit_count')
+);
+
+-- name: CountUnprunedSteps :one
+-- How much there is left to prune, so a run can say whether it kept up.
+--
+-- The workspace is named even though Row Level Security already filters on it: a statement
+-- that says what it counts is what makes the count anything other than a number.
+SELECT count(*) FROM task_steps
+WHERE workspace_id = sqlc.arg('workspace_id')
+  AND pruned_at IS NULL
+  AND created_at < sqlc.arg('older_than');

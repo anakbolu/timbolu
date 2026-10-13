@@ -437,8 +437,16 @@ func (r *Repository) RecordAudit(ctx context.Context, scope domain.Scope, entry 
 	})
 }
 
-// AuditTrail returns the entries, newest first.
-func (r *Repository) AuditTrail(ctx context.Context, scope domain.Scope, limit int) ([]domain.AuditRecord, error) {
+// AuditTrail returns the entries the filter names, newest first.
+//
+// Every clause is optional and they combine, so one statement answers the three questions
+// an incident asks. A value ending in a dot in Action is a prefix, which is what makes
+// `grant.` read every grant change without a caller enumerating the verbs.
+func (r *Repository) AuditTrail(ctx context.Context, scope domain.Scope, filter domain.AuditFilter) ([]domain.AuditRecord, error) {
+	records := []domain.AuditRecord{}
+
+	// A limit nobody should be able to ask for is replaced rather than sent on.
+	limit := filter.Limit
 	switch {
 	case limit <= 0:
 		limit = domain.DefaultListLimit
@@ -446,18 +454,22 @@ func (r *Repository) AuditTrail(ctx context.Context, scope domain.Scope, limit i
 		limit = domain.MaxListLimit
 	}
 
-	var records []domain.AuditRecord
-
 	err := r.read(ctx, scope, func(queries *sqlcgen.Queries) error {
 		rows, err := queries.ListAuditEntries(ctx, sqlcgen.ListAuditEntriesParams{
-			WorkspaceID: scope.WorkspaceID,
-			Limit:       int32(limit),
+			WorkspaceID:  scope.WorkspaceID,
+			Action:       optionalText(filter.Action),
+			ObjectType:   optionalText(filter.ObjectType),
+			ObjectID:     optionalText(filter.ObjectID),
+			ActorAgentID: optional(filter.ActorAgentID),
+			ActorUserID:  optional(filter.ActorUserID),
+			Since:        optionalTime(filter.Since),
+			Until:        optionalTime(filter.Until),
+			LimitCount:   int32(limit),
 		})
 		if err != nil {
 			return fmt.Errorf("approval: list audit: %w", err)
 		}
 
-		records = make([]domain.AuditRecord, 0, len(rows))
 		for _, row := range rows {
 			records = append(records, toAuditRecord(row))
 		}
@@ -592,6 +604,21 @@ func optionalString(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+// optionalText is optionalString, named for what the audit filter does with it: an empty
+// filter field means "do not narrow by this", which is the same shape a NULL argument has.
+func optionalText(value string) *string { return optionalString(value) }
+
+// optionalTime renders a moment for the driver, or nil when the filter does not bound it.
+//
+// A zero time is not a moment, and sending one would ask for "since the year one" — which
+// is a filter that reads as a narrower one and quietly returns everything.
+func optionalTime(at time.Time) *time.Time {
+	if at.IsZero() {
+		return nil
+	}
+	return &at
 }
 
 func deref(id *uuid.UUID) uuid.UUID {

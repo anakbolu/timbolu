@@ -8,6 +8,8 @@ import (
 	domain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
 	mock "github.com/stretchr/testify/mock"
 
+	time "time"
+
 	uuid "github.com/google/uuid"
 )
 
@@ -559,6 +561,63 @@ func (_c *Service_Direct_Call) RunAndReturn(run func(context.Context, domain.Sco
 	return _c
 }
 
+// EraseObjects provides a mock function with given fields: ctx, workspaceID
+func (_m *Service) EraseObjects(ctx context.Context, workspaceID uuid.UUID) (int64, error) {
+	ret := _m.Called(ctx, workspaceID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for EraseObjects")
+	}
+
+	var r0 int64
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uuid.UUID) (int64, error)); ok {
+		return rf(ctx, workspaceID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uuid.UUID) int64); ok {
+		r0 = rf(ctx, workspaceID)
+	} else {
+		r0 = ret.Get(0).(int64)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uuid.UUID) error); ok {
+		r1 = rf(ctx, workspaceID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// Service_EraseObjects_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'EraseObjects'
+type Service_EraseObjects_Call struct {
+	*mock.Call
+}
+
+// EraseObjects is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workspaceID uuid.UUID
+func (_e *Service_Expecter) EraseObjects(ctx interface{}, workspaceID interface{}) *Service_EraseObjects_Call {
+	return &Service_EraseObjects_Call{Call: _e.mock.On("EraseObjects", ctx, workspaceID)}
+}
+
+func (_c *Service_EraseObjects_Call) Run(run func(ctx context.Context, workspaceID uuid.UUID)) *Service_EraseObjects_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uuid.UUID))
+	})
+	return _c
+}
+
+func (_c *Service_EraseObjects_Call) Return(_a0 int64, _a1 error) *Service_EraseObjects_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *Service_EraseObjects_Call) RunAndReturn(run func(context.Context, uuid.UUID) (int64, error)) *Service_EraseObjects_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Events provides a mock function with given fields: ctx, scope, afterID, limit
 func (_m *Service) Events(ctx context.Context, scope domain.Scope, afterID int64, limit int) ([]domain.Event, error) {
 	ret := _m.Called(ctx, scope, afterID, limit)
@@ -675,6 +734,65 @@ func (_c *Service_History_Call) Return(_a0 domain.Page, _a1 error) *Service_Hist
 }
 
 func (_c *Service_History_Call) RunAndReturn(run func(context.Context, domain.Scope, uuid.UUID, domain.Cursor) (domain.Page, error)) *Service_History_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// PruneAttachments provides a mock function with given fields: ctx, scope, olderThan, limit
+func (_m *Service) PruneAttachments(ctx context.Context, scope domain.Scope, olderThan time.Time, limit int) (domain.AttachmentPrune, error) {
+	ret := _m.Called(ctx, scope, olderThan, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for PruneAttachments")
+	}
+
+	var r0 domain.AttachmentPrune
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, time.Time, int) (domain.AttachmentPrune, error)); ok {
+		return rf(ctx, scope, olderThan, limit)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, time.Time, int) domain.AttachmentPrune); ok {
+		r0 = rf(ctx, scope, olderThan, limit)
+	} else {
+		r0 = ret.Get(0).(domain.AttachmentPrune)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, domain.Scope, time.Time, int) error); ok {
+		r1 = rf(ctx, scope, olderThan, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// Service_PruneAttachments_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'PruneAttachments'
+type Service_PruneAttachments_Call struct {
+	*mock.Call
+}
+
+// PruneAttachments is a helper method to define mock.On call
+//   - ctx context.Context
+//   - scope domain.Scope
+//   - olderThan time.Time
+//   - limit int
+func (_e *Service_Expecter) PruneAttachments(ctx interface{}, scope interface{}, olderThan interface{}, limit interface{}) *Service_PruneAttachments_Call {
+	return &Service_PruneAttachments_Call{Call: _e.mock.On("PruneAttachments", ctx, scope, olderThan, limit)}
+}
+
+func (_c *Service_PruneAttachments_Call) Run(run func(ctx context.Context, scope domain.Scope, olderThan time.Time, limit int)) *Service_PruneAttachments_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(domain.Scope), args[2].(time.Time), args[3].(int))
+	})
+	return _c
+}
+
+func (_c *Service_PruneAttachments_Call) Return(_a0 domain.AttachmentPrune, _a1 error) *Service_PruneAttachments_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *Service_PruneAttachments_Call) RunAndReturn(run func(context.Context, domain.Scope, time.Time, int) (domain.AttachmentPrune, error)) *Service_PruneAttachments_Call {
 	_c.Call.Return(run)
 	return _c
 }

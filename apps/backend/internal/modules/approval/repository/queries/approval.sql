@@ -163,7 +163,23 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING id, created_at;
 
 -- name: ListAuditEntries :many
+-- Every filter is optional, and each is written as "the argument is empty, or the row
+-- matches it". That shape is what lets one statement answer the three questions an
+-- incident asks — what did this Bolu do, who touched this thing, what happened in this
+-- window — without three statements that can disagree about ordering.
+--
+-- `sqlc.narg` is what makes an argument omittable: NULL means "do not narrow by this".
 SELECT * FROM audit_logs
-WHERE workspace_id = $1
+WHERE workspace_id = sqlc.arg('workspace_id')
+  AND (sqlc.narg('action')::text IS NULL
+       OR (right(sqlc.narg('action')::text, 1) = '.'
+           AND action LIKE sqlc.narg('action')::text || '%')
+       OR action = sqlc.narg('action')::text)
+  AND (sqlc.narg('object_type')::text IS NULL OR object_type = sqlc.narg('object_type')::text)
+  AND (sqlc.narg('object_id')::text IS NULL OR object_id = sqlc.narg('object_id')::text)
+  AND (sqlc.narg('actor_agent_id')::uuid IS NULL OR actor_agent_id = sqlc.narg('actor_agent_id')::uuid)
+  AND (sqlc.narg('actor_user_id')::uuid IS NULL OR actor_user_id = sqlc.narg('actor_user_id')::uuid)
+  AND (sqlc.narg('since')::timestamptz IS NULL OR created_at >= sqlc.narg('since')::timestamptz)
+  AND (sqlc.narg('until')::timestamptz IS NULL OR created_at < sqlc.narg('until')::timestamptz)
 ORDER BY created_at DESC, id DESC
-LIMIT $2;
+LIMIT sqlc.arg('limit_count');
