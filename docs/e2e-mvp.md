@@ -150,9 +150,8 @@ tiap jalan smoke hanya memutuskan satu draf, dan yang menyetujuinya adalah skrip
 dicatat sebagai "metriknya bisa dibaca", bukan sebagai kualitas. Yang bisa dibaca dari lima draf di
 database itu: dua `sent`, tiga masih `pending` karena jalan yang menghasilkannya berhenti sebelum fase
 5, dan salah satu dari yang `pending` memuat `None` pada daftar barisnya — bug stub yang sudah
-diperbaiki, dan
-alasan kenapa barisnya sekarang dibaca dari kunci yang benar (`jumlah`/`satuan`/`produk`, nama yang
-dipakai adapter, bukan `quantity`/`unit`/`description`).
+diperbaiki, dan alasan kenapa barisnya sekarang dibaca dari kunci yang benar
+(`jumlah`/`satuan`/`produk`, nama yang dipakai adapter, bukan `quantity`/`unit`/`description`).
 
 ## Contoh percakapan (E14.4)
 
