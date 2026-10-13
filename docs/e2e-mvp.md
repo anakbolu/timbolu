@@ -144,6 +144,51 @@ Angka pertama dan kedua dibaca dari tabel yang sudah ada — `drafts` dan `task_
 metrik baru yang perlu ditulis untuk mengukurnya. Ambangnya sengaja ditaruh di sini sebagai angka
 awal yang bisa diperdebatkan, bukan sebagai target yang dijanjikan ke pelanggan.
 
+Yang sudah tercatat di compose sesudah beberapa jalan `make smoke-order`: **2 dari 2 draf yang sudah
+diputuskan disetujui tanpa revisi** (`revision = 0`). Angka itu terlalu kecil untuk berarti apa-apa —
+tiap jalan smoke hanya memutuskan satu draf, dan yang menyetujuinya adalah skripnya sendiri — jadi ia
+dicatat sebagai "metriknya bisa dibaca", bukan sebagai kualitas. Yang bisa dibaca dari lima draf di
+database itu: dua `sent`, tiga masih `pending` karena jalan yang menghasilkannya berhenti sebelum fase
+5, dan salah satu dari yang `pending` memuat `None` pada daftar barisnya — bug stub yang sudah
+diperbaiki, dan
+alasan kenapa barisnya sekarang dibaca dari kunci yang benar (`jumlah`/`satuan`/`produk`, nama yang
+dipakai adapter, bukan `quantity`/`unit`/`description`).
+
+## Contoh percakapan (E14.4)
+
+Transkrip di bawah ini dikutip apa adanya dari satu jalan `make smoke-order` terhadap stack compose:
+satu workspace baru, template `oren` dipasang lewat API, lalu alurnya dijalankan. Yang perlu
+diketahui sebelum membacanya sebagai acuan: **yang menyusun kalimat balasannya adalah stub, bukan
+model** — jadi yang jadi acuan di sini adalah *alurnya* (kapan alat dipanggil, urutan round, dan apa
+yang harus dimuat setiap jawaban), bukan pilihan katanya. Kalimatnya sendiri akan berbeda di staging,
+dan itu justru yang diukur E14.4.
+
+```
+Pelanggan   Saya mau pesan 2 kg Kopi Arabika ya, kirim ke Jalan Melati 3.
+Oren        Baik Bu Sari, pesanannya sudah kami catat: 2 kg Kopi Arabika, total Rp 30000. Terima kasih.
+Pelanggan   Tambah 1 Kopi Arabika Gayo 1 kg ya.
+Oren        Produk itu belum ada di katalog kami, Bu. Mau saya catat produk lain?
+Pelanggan   Pesan Kopi Arabika ya, jumlahnya nyusul.
+Oren        Maaf Bu, jumlahnya berapa ya? Saya catat setelah jelas.
+Pelanggan   Tolong susun tagihannya ya.
+Oren        [kartu] GMAIL.SEND · Tagihan pesanan P-EBD33D → Bu Sari, tagihan pesanan P-EBD33D:
+            2 kg Kopi Arabika - total Rp 30000. Mohon dikonfirmasi ya.
+            [Setujui] [Minta revisi] [Batalkan]
+```
+
+Yang dibuktikan setiap balasan, dan karena itu yang harus tetap benar kalau promptnya diganti:
+
+| Balasan | Yang harus benar | Diperiksa oleh |
+| --- | --- | --- |
+| Kalimat pertama | totalnya datang dari katalog, bukan dari model | fase 1: total pesanan `30000` dan harga satuan `15000` di-assert terhadap baris katalog |
+| Kalimat kedua | produk yang tidak ada **dinyatakan** tidak ada, dan yang ditawarkan adalah yang katalog punya | fase 2: hasilnya memuat "Kopi Arabika" dan kode pesanan tidak bertambah |
+| Kalimat ketiga | jumlah yang belum jelas **ditanyakan**, bukan ditebak | fase 3: panggilan `record_order` ditolak karena jumlahnya nol, dan jumlah pesanan tetap satu |
+| Kartu terakhir | tagihannya memuat kode pesanan dan total, dan menunggu keputusan | fase 4: drafnya `pending`, payload memuat keduanya, dan penyedia belum menerima apa pun |
+
+Satu kualitas yang **tidak** dijaga alurnya: kalimatnya. Stub bisa menulis apa saja, dan model
+sungguhan bisa menulis tagihan yang membingungkan meski angkanya benar — itulah yang diukur tingkat
+persetujuan tanpa revisi di staging, dan tidak ada test di repo ini yang bisa menggantikannya.
+
 ## Biaya per tugas (E14.5)
 
 Angka yang diminta task itu diambil dari `usage_ledger`, bukan dari perkiraan: satu tugas
