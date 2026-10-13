@@ -156,11 +156,17 @@ satu baris per panggilan model, dengan token dan biaya micro-rupiah.
 | Draf disetujui tanpa revisi | `drafts` per lokasi: bandingkan jumlah `status = 'approved'` dengan jumlah `draft_revisions` |
 | Latensi sampai draf siap | selisih `drafts.created_at` dan pesan pemicunya |
 
-Satu jalan `make smoke-order` terhadap stack compose sudah diukur, dan angkanya di bawah ini adalah
-token yang benar-benar tercatat di `usage_ledger` — bukan perkiraan. Yang **belum** bisa dipakai
-sebagai dasar harga paket adalah kolom biayanya: stub model dihargai nyaris nol, jadi angka rupiah
-yang bermakna hanya datang dari staging dengan provider sungguhan (yang diminta E14.5). Yang bisa
-dipakai sekarang adalah bentuk tugasnya: berapa panggilan dan berapa token.
+Dua angka terakhir diukur oleh `make measure-orders`, dan ia membandingkan separuh pertama dengan
+separuh kedua dari jalan yang sama: harga per tugas yang naik seiring jumlah tugas akan terlihat di
+sana sebelum ia menjadi tagihan yang salah.
+
+Dua pengukuran sudah dijalankan terhadap stack compose, dan angkanya dibaca dari `usage_ledger`
+lewat laporan produk sendiri — bukan perkiraan. Yang **belum** bisa dipakai sebagai dasar harga paket
+adalah kolom rupiahnya: stub model dihargai nyaris nol, jadi angka uang yang bermakna hanya datang
+dari staging dengan provider sungguhan. Yang bisa dipakai sekarang adalah bentuk tugasnya — berapa
+panggilan, berapa token, dan apakah biayanya tumbuh seiring jumlah pesanan.
+
+**Satu alur, satu jalan** (`make smoke-order`, satu pesanan sampai draf tagihan):
 
 | Skenario | Panggilan model | Token masuk | Token keluar | Biaya tercatat |
 | --- | --- | --- | --- | --- |
@@ -170,12 +176,35 @@ dipakai sekarang adalah bentuk tugasnya: berapa panggilan dan berapa token.
 | Pesan pelanggan → tagihan menjadi draf (fase 4: `read_orders`, `send` yang menunggu) | 2 | 640 | 80 | 16 micro-rupiah (stub) |
 | Di luar tugas: ekstraksi memori (`purpose = extraction`, termasuk embedding-nya) | 2 | — | — | terpisah dari perhitungan di atas |
 
+**Dua puluh pesanan berturut-turut** (`make measure-orders 20`, satu per satu sampai masing-masing
+tercatat, lalu dibaca per tugas):
+
+| Yang diukur | Hasil |
+| --- | --- |
+| Pesanan tercatat | 20 dari 20, tanpa intervensi manual |
+| Panggilan model per pesanan | 3 (`find_product`, `record_order`, jawaban) — mode, tanpa sebaran |
+| Token per pesanan | 1.048 — seluruh dua puluh sama |
+| Total 20 pesanan | 60 panggilan, 20.960 token |
+| Biaya tercatat | 23 micro-rupiah per pesanan (stub) |
+| Latensi | 24 detik untuk 20 pesanan, **1,2 detik per pesanan** ujung ke ujung |
+| Akumulasi | separuh kedua 100% dari separuh pertama — tidak ada yang menumpuk per pesanan |
+
+Angka token yang identik itu bukan kebetulan yang bagus melainkan sifat stubbingnya: stub membalas
+dengan jumlah token yang sama setiap kali, jadi yang diukur skrip ini adalah **bentuk** alurnya —
+tiga panggilan, urutan round, dan tidak adanya akumulasi. Kalau history atau memori menumpuk per
+tugas, separuh kedua akan lebih mahal daripada separuh pertama; skripnya membandingkan itu, dan
+gagal kalau pertumbuhannya lebih dari 1,5×. Yang tidak diukur skrip ini adalah variasi keluaran model
+sungguhan, dan itulah yang dibawa staging: prompt yang sama bisa memakan token yang berbeda, dan hanya
+provider sungguhan yang tahu berapa.
+
 Yang terlihat dari bentuknya, dan layak jadi catatan tindak lanjut E14.5:
 
-- **Prompt naik seiring umur percakapan.** Panggilan pertama satu tugas sudah 320 token masuk karena
+- **Prompt naik seiring umur percakapan.** Panggilan pertama satu tugas sudah ~320 token masuk karena
   blok instruksi memuat persona, gaya bahasa, memori utama workspace, dan skema alat — dengan tiga
   alat `order.*` plus alat kanal keluar, skema itu sendiri bagian yang tumbuh. Percakapan yang
-  panjang menambah riwayat di atasnya.
+  panjang menambah riwayat di atasnya; pengukuran dua puluh pesanan di atas memakai percakapan yang
+  sama untuk semuanya, dan tokennya tidak naik, karena setiap pesan membuka tugas baru alih-alih
+  menambah ke percakapan tugas sebelumnya.
 - **Round kedua menduplikasi seluruh percakapan.** Setiap panggilan membawa lagi instruksi,
   riwayat, dan hasil alat sebelumnya, jadi biaya satu tugas tumbuh kuadratik terhadap jumlah round —
   bukan linear. Itu alasan utama `TASK_MAX_STEPS` ada, dan alasan kedua untuk memangkas hasil alat

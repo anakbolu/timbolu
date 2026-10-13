@@ -44,7 +44,7 @@ cleanup() {
     stop_child "${STUB_PID:-}"
     stop_child "${GMAIL_PID:-}"
     [[ -n "${BIN_DIR:-}" ]] && rm -rf "$BIN_DIR"
-    rm -f /tmp/smoke-order-stub.py /tmp/smoke-order-gmail.py
+    rm -f /tmp/smoke-order-gmail.py
 }
 trap cleanup EXIT
 
@@ -68,197 +68,6 @@ for container in bolu-agent-worker bolu-integration-worker; do
     fi
 done
 
-# ------------------------------------------------------------- stub provider
-
-cat > /tmp/smoke-order-stub.py <<'PY'
-import json, os, sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
-
-# The stub walks each phase's flow the way the template's persona describes it. It is deliberately
-# scripted rather than clever: a smoke that depends on a model choosing the right tool tests the model.
-#
-#   take     find the price, record the order, answer the customer. The order phase.
-#   unknown  record a product the catalogue does not have, then answer. The refusal phase.
-#   invoice  read the customer's orders, then compose the invoice and hand it to the sending tool.
-#            The phase that ends parked on a draft.
-#   incomplete  record an order whose quantity is zero, then ask the customer. The phase where a
-#            half-read message must not become a line on an invoice.
-MODE = os.environ.get("STUB_MODE", "take")
-
-KNOWN = {"product": "Kopi Arabika", "quantity": 2}
-# A product the catalogue does not sell, named the way a customer would name it: more specific than the
-# catalogue entry, which is the case where the suggestion list has to work backwards — the customer's
-# words contain the catalogue's name, not the other way round.
-UNKNOWN = {"product": "Kopi Arabika Gayo 1 kg", "quantity": 1}
-CUSTOMER = {"customer_name": "Bu Sari", "customer_phone": "628111222333"}
-
-
-def calls_by_id(body):
-    """Which tool each call id belongs to, read off the assistant turns.
-
-    A result message carries only the id of the call it answers — not the name — so the name has to come
-    from the call itself. This is the mapping the stub needs to know what it already asked for.
-    """
-    names = {}
-    for message in body.get("messages", []):
-        if message.get("role") != "assistant":
-            continue
-        for call in message.get("tool_calls") or []:
-            function = call.get("function") or {}
-            names[call.get("id")] = function.get("name")
-
-    return names
-
-
-def called(body, name):
-    """Whether the model already made one call to `name`."""
-    return name in calls_by_id(body).values()
-
-
-def result_text(body, name):
-    """The content of the newest result for `name`, or an empty string."""
-    by_id = calls_by_id(body)
-    results = []
-    for message in body.get("messages", []):
-        if message.get("role") != "tool":
-            continue
-        if by_id.get(message.get("tool_call_id")) != name:
-            continue
-        content = message.get("content") or ""
-        if isinstance(content, list):
-            content = " ".join(part.get("text", "") for part in content)
-        results.append(content)
-
-    return results[-1] if results else ""
-
-
-def call(name, arguments, call_id):
-    return {
-        "id": "chatcmpl-" + call_id,
-        "object": "chat.completion",
-        "model": "stub",
-        "choices": [{
-            "index": 0,
-            "message": {
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [{
-                    "id": call_id,
-                    "type": "function",
-                    "function": {"name": name, "arguments": json.dumps(arguments)},
-                }],
-            },
-            "finish_reason": "tool_calls",
-        }],
-        "usage": {"prompt_tokens": 320, "completion_tokens": 40, "total_tokens": 360},
-    }
-
-
-def answer(text):
-    return {
-        "id": "chatcmpl-order",
-        "object": "chat.completion",
-        "model": "stub",
-        "choices": [{
-            "index": 0,
-            "message": {"role": "assistant", "content": text},
-            "finish_reason": "stop",
-        }],
-        "usage": {"prompt_tokens": 280, "completion_tokens": 48, "total_tokens": 328},
-    }
-
-
-def total_from(result):
-    """The total the recording tool answered with, as a sentence a customer reads."""
-    try:
-        recorded = json.loads(result)
-    except (ValueError, TypeError):
-        return "Rp 0"
-
-    return "Rp {:g}".format(recorded.get("total_rupiah", 0))
-
-
-def decide(body, offered):
-    if MODE == "incomplete":
-        if not called(body, "order.record_order"):
-            # The product is real and the quantity is not: zero is schema-valid and meaningless, which
-            # is exactly the shape of a model that half-read the message.
-            return call("order.record_order", dict(CUSTOMER, items=[{"product": KNOWN["product"], "quantity": 0}]), "record")
-
-        return answer("Maaf Bu, jumlahnya berapa ya? Saya catat setelah jelas.")
-
-    if MODE == "unknown":
-        if not called(body, "order.record_order"):
-            return call("order.record_order", dict(CUSTOMER, items=[UNKNOWN]), "record-unknown")
-
-        return answer("Produk itu belum ada di katalog kami, Bu. Mau saya catat produk lain?")
-
-    if MODE == "invoice":
-        if not called(body, "order.read_orders"):
-            return call("order.read_orders", {"customer_phone": CUSTOMER["customer_phone"], "limit": 5}, "read")
-
-        read = result_text(body, "order.read_orders")
-        orders = json.loads(read).get("pesanan") if read else []
-        latest = orders[0] if orders else {}
-        total = latest.get("total_rupiah", 0)
-        # The line keys are the tool's own — the adapter names them in Indonesian, the same language a
-        # Bolu answers in — so the invoice a person reads is composed from what the tool answered rather
-        # than from a guess about its shape.
-        lines = ", ".join(
-            "{} {} {}".format(line.get("jumlah"), line.get("satuan", ""), line.get("produk", ""))
-            for line in latest.get("baris", [])
-        )
-        message = "Bu Sari, tagihan pesanan {}: {} - total Rp {:g}. Mohon dikonfirmasi ya.".format(
-            latest.get("kode", ""), lines, total)
-
-        # The channel is whichever one this deployment has, which is what "the available channel" means
-        # in the epic. It is read off the tools the model was offered rather than assumed, so this run
-        # works with WhatsApp when a number is linked and with a mailbox when the gateway is not part of
-        # the deployment — the flow above the send boundary is the same code either way.
-        send = next((name for name in offered if name.endswith((".send", ".send_message"))), "")
-        if not send:
-            return answer("Tagihan sudah siap, tapi belum ada kanal pengiriman yang tersambung.")
-
-        if send.endswith(".send_message"):
-            return call(send, {"to": CUSTOMER["customer_phone"], "text": message}, "send")
-
-        return call(send, {
-            "to": "pelanggan@example.com",
-            "subject": "Tagihan pesanan {}".format(latest.get("kode", "")),
-            "body": message,
-        }, "send")
-
-    # take
-    if not called(body, "order.find_product"):
-        return call("order.find_product", {"product": KNOWN["product"]}, "find")
-    if not called(body, "order.record_order"):
-        return call("order.record_order", dict(CUSTOMER, note="Kirim ke Jalan Melati 3", items=[KNOWN]), "record")
-
-    return answer("Baik Bu Sari, pesanannya sudah kami catat: 2 kg Kopi Arabika, total {}. Terima kasih.".format(
-        total_from(result_text(body, "order.record_order"))))
-
-
-class Handler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        length = int(self.headers.get("Content-Length", 0))
-        body = json.loads(self.rfile.read(length) or b"{}")
-        offered = [t["function"]["name"] for t in body.get("tools", []) if t.get("function", {}).get("name")]
-
-        payload = decide(body, offered)
-
-        data = json.dumps(payload).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
-
-    def log_message(self, *args):
-        pass
-
-
-HTTPServer(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
-PY
 
 # ------------------------------------------------------------------ gmail stub
 #
@@ -372,7 +181,7 @@ start_stub() {
     done
     lsof -ti ":${STUB_PORT}" >/dev/null 2>&1 && fail "port ${STUB_PORT} did not free up"
 
-    STUB_MODE="${1:-take}" python3 /tmp/smoke-order-stub.py "$STUB_PORT" &
+    STUB_MODE="${1:-take}" python3 scripts/order-stub.py "$STUB_PORT" &
     STUB_PID=$!
 
     for _ in $(seq 1 20); do
@@ -475,6 +284,11 @@ stop_stack() {
 
 log "starting the Gmail stub on :${GMAIL_PORT}"
 start_gmail
+
+# ------------------------------------------------------------- stub provider
+#
+# The model is `scripts/order-stub.py`, shared with the measurement script: both need the same flow,
+# and a second copy of it is a second place the flow can be wrong.
 
 log "starting the stub model provider on :${STUB_PORT}"
 start_stub take

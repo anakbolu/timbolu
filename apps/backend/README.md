@@ -42,6 +42,7 @@ make mocks           # regenerate the domain mocks
 make migrate-up      # apply migrations to $DATABASE_URL
 make smoke-task      # the task runtime end to end against the compose stack
 make smoke-order     # the MVP flow: an order priced from the catalogue, an invoice that waits
+make measure-orders  # what one order costs, repeated, read back from usage_ledger
 ```
 
 ## Modules

@@ -1,5 +1,5 @@
 .PHONY: help up down logs build dev frontend backend api worker-logs \
-        test test-integration smoke-task smoke-approval smoke-order cover lint archcheck sqlc mocks generate llm-fixtures \
+        test test-integration smoke-task smoke-approval smoke-order measure-orders cover lint archcheck sqlc mocks generate llm-fixtures \
         migrate-up migrate-down migrate-create psql ci
 
 COMPOSE := docker compose
@@ -82,6 +82,9 @@ smoke-approval: ## Run the approval gate end to end against the compose stack (n
 
 smoke-order: ## Run the MVP order flow end to end against the compose stack (needs `make up`)
 	cd $(BACKEND) && bash scripts/smoke-order.sh
+
+measure-orders: ## Measure what one order costs, repeated, from usage_ledger (needs `make up`)
+	cd $(BACKEND) && bash scripts/measure-orders.sh $(or $(COUNT),20)
 
 cover: ## Run the tests and enforce the coverage gate (MIN_COVERAGE, default 80)
 	cd $(BACKEND) && CGO_ENABLED=0 MIN_COVERAGE=$(or $(MIN_COVERAGE),80) ./scripts/coverage.sh

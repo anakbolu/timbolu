@@ -58,11 +58,14 @@ run's task is not executed by another process's model configuration:
 ```bash
 docker stop bolu-api bolu-agent-worker bolu-integration-worker
 make smoke-task && make smoke-approval && make smoke-order
+make measure-orders   # what one order costs, measured twenty times from usage_ledger
 docker start bolu-api bolu-agent-worker bolu-integration-worker
 ```
 
 `make smoke-order` is the MVP flow: a customer's message becomes an order priced from the
 workspace's own catalogue, and the invoice that follows is a draft a person approves.
+`make measure-orders` runs that flow twenty times and reads the cost back from `usage_ledger`, which
+is where the numbers in [`docs/e2e-mvp.md`](docs/e2e-mvp.md) come from.
 
 `make up` starts Postgres (with pgvector), Redis, Temporal and its UI, runs the
 migrations, then starts the API, both Temporal workers, and the frontend.

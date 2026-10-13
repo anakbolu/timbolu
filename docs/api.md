@@ -772,6 +772,11 @@ took. It is the first module whose tables are the workspace's business rather th
 something that lives at a provider, and the first whose tools belong to the workspace rather than
 to a connected account.
 
+`meta.count` on a list endpoint is the number of rows **in this page**, not the size of the result
+set — a client that wants a total reads the rows it asked for, or pages until `has_more` is false.
+That is the same shape the other list endpoints use, and it is worth knowing before writing a counter
+against `?limit=1`.
+
 ### Prices travel in rupiah and are stored in micro-rupiah
 
 A screen writes and reads `price_idr` — 15000 is Rp 15.000 — and the column holds micro-rupiah,

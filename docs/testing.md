@@ -453,6 +453,23 @@ Six layers, and each exists for something the others cannot see:
   the three `order.*` rows in `tool_catalog` agree with what the adapter declares — the agreement the
   code comments promise, and the one thing that needs both a database read and a Go read to check.
 
+### Measuring what an order costs (EPIC 14)
+
+`make measure-orders` (`scripts/measure-orders.sh`) runs the same stack as the smoke and sends the
+MVP flow twenty times, one order at a time, then reads the numbers back from `usage_ledger` **through
+the product's own report** — the same read the usage screen makes — so the figure is the product's
+answer rather than a sum a script did itself.
+
+Two properties are asserted rather than printed, and both are about the shape a package price stands
+on: every measured order has a row in the report (a join that silently missed one would price a
+package on half the orders), and the second half of the run does not cost more than 1.5× the first —
+a flow that accumulated history or memory per task would drift upward, and that drift is what makes a
+per-task price wrong six months later.
+
+The rupiah figure it prints is the platform's price table applied to a stub's token counts, so the
+run says so rather than implying a price: pricing needs staging with a real provider, which is the
+part of E14.5 this repository cannot do for itself.
+
 ### The end-to-end smoke
 
 `make smoke-task` runs the API and the agent worker on the host against the
