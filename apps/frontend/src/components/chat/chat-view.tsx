@@ -8,6 +8,7 @@
  * final event replaces it with the canonical body.
  */
 
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -388,6 +389,20 @@ function MessageRow({ message, name, face }: { message: ChatMessage; name: strin
             </ul>
           ) : null}
         </div>
+
+        {/* A message that opened a task says so, and the way in is the task itself: the work behind
+            an answer is the reason the answer can be trusted, and until this link existed the only
+            way to see it was to guess from the dashboard. */}
+        {message.task_id ? (
+          <p className={fromAgent ? "mt-1 text-[13px]" : "mt-1 text-right text-[13px]"}>
+            <Link
+              href={`/tasks/${message.task_id}`}
+              className="text-bolu-muted no-underline hover:underline"
+            >
+              Lihat tugasnya →
+            </Link>
+          </p>
+        ) : null}
       </div>
     </article>
   );

@@ -48,6 +48,14 @@ const NAV = [
     matches: (pathname: string) => pathname === "/dashboard/usage",
   },
   {
+    href: "/tasks",
+    label: "Tugas",
+    icon: "M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2",
+    // The detail page is below this entry rather than beside it, so the nav stays lit while a
+    // person reads one task — the history is where they came from.
+    matches: (pathname: string) => pathname === "/tasks" || pathname.startsWith("/tasks/"),
+  },
+  {
     href: "/office",
     label: "Kantor",
     icon: "M3 10.5 12 4l9 6.5M5 10v10h14V10M10 20v-5h4v5",

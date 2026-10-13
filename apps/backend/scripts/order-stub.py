@@ -11,7 +11,8 @@ of it is a second place the flow can be wrong. `STUB_MODE` picks what it does:
   measure     read the product, the quantity, and the phone out of the customer's own message, then
               run the same three rounds as `take`. What the measurement runs repeated times.
   demo        the flow a person drives by hand: read the message, look the price up, record the order,
-              and compose the invoice when asked. What `make demo` runs against.
+              compose the invoice when asked, and hand work to another Bolu when the person names
+              one. What `make demo` runs against.
 
 Usage: STUB_MODE=take python3 scripts/order-stub.py <port>
 """
@@ -230,6 +231,16 @@ def quantity_text(quantity):
 
     return "{:g}".format(quantity)
 
+# The handoff trigger, and the instructions a handoff carries.
+#
+# It is a phrase a person types rather than a mode of its own, because the demo serves every request
+# from one stub and a mode that handed off unconditionally would make the *child* task hand off too —
+# a chain that never bottoms out. The instructions deliberately do not contain the trigger, so the
+# child answers instead of handing the work back.
+HANDOFF = re.compile(r"serahkan ke\s+([A-Za-z]+)", re.IGNORECASE)
+HANDOFF_INSTRUCTIONS = "Rekap pesanan minggu ini dan sebutkan total dan jumlah pesanannya."
+
+
 def decide_demo(body, offered):
     """The flow a person tries by hand: read the message, look the price up, record, then invoice.
 
@@ -243,8 +254,33 @@ def decide_demo(body, offered):
       - the invoice is only composed when asked for, so the draft card appears when the person
         following along reaches that step.
     """
-    text = message_of(body).lower()
+    raw = message_of(body)
+    text = raw.lower()
     order = read_order(body)
+
+
+    # A handoff, when the person asked for one by name. The tool is performed by the workflow, not by
+    # an adapter, so what comes back is the child task's own answer.
+    if not called(body, "handoff"):
+        wanted = HANDOFF.search(raw)
+        if wanted:
+            return call("handoff", {
+                "agent": wanted.group(1),
+                "instructions": HANDOFF_INSTRUCTIONS,
+            }, "handoff")
+
+    if called(body, "handoff"):
+        return answer("Sudah saya minta tolong: {}".format(
+            result_text(body, "handoff") or "Bolu itu belum menjawab."))
+
+# A request for a recap rather than an order. It is the shape a handoff carries — the parent asks
+    # for a summary, not for a product — and a stub that answered it by asking which product would make
+    # the child look broken when the product is working exactly as designed.
+    if any(word in text for word in ("rekap", "ringkas", "laporan")):
+        return answer(
+            "Rekap periode ini: 3 pesanan tercatat, total Rp 66.000. "
+            "Terbanyak Roti Sisir (2 pesanan). Tidak ada pesanan yang gagal dicatat."
+        )
 
     # "tagih" and its relatives: compose the invoice from the newest order and hand it to the sending
     # tool, which is the call the approval gate holds.

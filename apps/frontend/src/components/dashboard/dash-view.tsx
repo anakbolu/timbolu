@@ -26,6 +26,7 @@ import {
   longDate,
   relativeAge,
   stateOf,
+  taskState,
 } from "@/lib/dashboard-view";
 
 import { useWorkspace } from "./workspace-data";
@@ -276,7 +277,7 @@ export function DashView() {
               return (
                 <Link
                   key={task.task_id}
-                  href="/chat"
+                  href={`/tasks/${task.task_id}`}
                   className="flex items-center justify-between gap-2.5 border-b border-bolu-line p-[8px_0] text-[15px] text-bolu-ink no-underline hover:text-bolu-ink"
                 >
                   <div className="min-w-0">
@@ -287,8 +288,8 @@ export function DashView() {
                     </div>
                   </div>
                   <div className="flex-none text-right">
-                    <div className="text-[13px] font-bold" style={{ color: taskColor(task) }}>
-                      {taskLabel(task)}
+                    <div className="text-[13px] font-bold" style={{ color: taskState(task).color }}>
+                      {taskState(task).label}
                     </div>
                   </div>
                 </Link>
@@ -301,20 +302,4 @@ export function DashView() {
   );
 }
 
-/** taskLabel is one task's state in a person's words. */
-function taskLabel(task: { status: string; health: string }): string {
-  if (task.status === "done") return "Selesai";
-  if (task.status === "failed") return "Gagal";
-  if (task.status === "canceled") return "Dibatalkan";
-  if (task.status === "waiting_approval" || task.health === "waiting") return "Menunggu kamu";
-  if (task.health === "stuck") return "Terhenti";
-  return "Berjalan";
-}
 
-/** taskColor is the dot the task list uses for that state. */
-function taskColor(task: { status: string; health: string }): string {
-  if (task.status === "done") return "#1E7A43";
-  if (task.status === "failed" || task.health === "stuck") return "#B4421F";
-  if (task.status === "waiting_approval" || task.health === "waiting") return "#E2602B";
-  return "#5E5B70";
-}
