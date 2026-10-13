@@ -229,6 +229,18 @@ others cannot see:
   the policy rather than by the filter); the package's caps reach the Bolu registry and the
   member invitation; and the one unscoped read — the sweep's queue — is what tells the
   sweep which tenant to open.
+- `test/integration/billing_quota_test.go` — E12.2's gate, and the one property only a
+  real Redis and a real Postgres can answer: **concurrent callers sharing one allowance
+  must not each get the whole of it.** Fifty callers start at once against an allowance of
+  ten; the exact count that passes is not the property — the check is a read followed by a
+  decision, so callers already inside when the allowance runs out finish — what must hold
+  is that the allowance is *shared*, that the overshoot is bounded by the concurrency
+  rather than unbounded, and that what they recorded is what the counter reads back and
+  what the sweep then writes into the durable mirror. The other half is
+  `TestTheCounterAndTheLedgerAgreeAfterReconciliation`, in both directions: a counter that
+  holds more than the row (calls since the last reconciliation) and a Redis that lost its
+  keys while the row remembers. The second is why the check takes the larger of the two —
+  a flushed Redis must not hand a workspace its month again.
 - `internal/container/billing_wiring_test.go` — where the read-only guard sits. It is
   registered on four route groups rather than inside each service, so "everything that
   writes stops" is one decision and a group somebody forgot is a write that would go

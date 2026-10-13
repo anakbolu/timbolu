@@ -54,7 +54,14 @@ type billingFixture struct {
 func newBillingFixture(t *testing.T, dsn string) *billingFixture {
 	t.Helper()
 
-	pool := poolFor(t, dsn)
+	return onboardBillingFixture(t, poolFor(t, dsn))
+}
+
+// onboardBillingFixture builds the fixture over a pool that is already open, so a test can
+// change the catalogue before the workspace onboards — the period a workspace starts with is
+// granted from the package at that moment.
+func onboardBillingFixture(t *testing.T, pool *database.Pool) *billingFixture {
+	t.Helper()
 
 	fixture := &billingFixture{
 		repository: billingrepo.New(pool),
