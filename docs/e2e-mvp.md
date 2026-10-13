@@ -163,6 +163,7 @@ dipakai sekarang adalah bentuk tugasnya: berapa panggilan dan berapa token.
 | Pesan pelanggan → produk tidak ada (fase 2: `record_order` ditolak, jawaban) | 2 | 600 | 88 | 15 micro-rupiah (stub) |
 | Pesan pelanggan → jumlahnya belum jelas (fase 3: `record_order` ditolak, jawaban) | 2 | 600 | 88 | 15 micro-rupiah (stub) |
 | Pesan pelanggan → tagihan menjadi draf (fase 4: `read_orders`, `send` yang menunggu) | 2 | 640 | 80 | 16 micro-rupiah (stub) |
+| Di luar tugas: ekstraksi memori (`purpose = extraction` + `embedding`) | 4 | — | — | terpisah dari perhitungan di atas |
 
 Yang terlihat dari bentuknya, dan layak jadi catatan tindak lanjut E14.5:
 

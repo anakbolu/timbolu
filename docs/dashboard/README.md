@@ -54,11 +54,17 @@ serta tanggalnya.
 yang benar-benar menjalankan alur pesanan EPIC 14 lewat stub model: empat tugas dengan
 total 11 panggilan dan 3.864 token, dibaca dari `usage_ledger` — angka yang sama yang
 dibaca `/api/llm/usage/report`, dan yang diperiksa `scripts/check-usage.py` terhadap
-baris-barisnya. Baris **Perlu perhatian** memperlihatkan satu tugas gagal beserta
-tautannya ke Temporal: compose lokal tidak punya kredensial Gmail, jadi executor
-integrasinya menjawab "unknown tool: gmail.send" — persis perilaku yang diminta (tidak
-ada yang ditandai terkirim kalau tidak benar-benar keluar), dan itulah gunanya daftar
-itu.
+baris-barisnya. Yang diperlihatkan halaman itu justru bagian yang paling mudah dibaca
+salah: tiga tugas selesai dengan round dan tokennya masing-masing, dan satu tugas
+**menunggu keputusan** dengan tautan ke Temporal dan tautan ke drafnya — yaitu tugas yang
+berhenti bukan karena gagal, tetapi karena tagihannya sedang menunggu seseorang. Itulah
+alasan daftar itu ada: pemakaian dan pekerjaan yang menggantung dibaca di satu layar.
+
+Di luar tugas, 2 panggilan adalah pekerjaan yang tidak dimiliki satu tugas pun: ledger
+mencatatnya dengan `purpose = extraction` (dan `embedding` untuk vektornya), yaitu
+pembacaan percakapan yang menghasilkan memori. Memisahkannya dari panggilan tugas adalah
+bagian dari yang diminta E14.5 — biaya ekstraksi dibaca terpisah dari biaya penulisan
+draf, karena keduanya tumbuh dengan sebab yang berbeda.
 
 `13-data.png` memperlihatkan halaman kebijakan: setiap jenis data beserta lamanya, dan
 apa yang tersisa setelah jendelanya lewat — termasuk bahwa langkah tugas kehilangan
