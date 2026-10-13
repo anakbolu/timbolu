@@ -34,7 +34,7 @@ export function AuthShell({ title, subtitle, children, footer, scene }: AuthShel
           Keluarga Bolu
         </Link>
 
-        <div className="rounded-3xl border border-bolu-border bg-bolu-surface p-7 shadow-[0_1px_2px_rgb(30_27_46_/_0.04)]">
+        <div className="rounded border border-bolu-border bg-bolu-surface p-7 shadow-[0_1px_2px_rgb(30_27_46_/_0.04)]">
           <h1 className="font-display text-2xl font-semibold text-bolu-ink">{title}</h1>
           <p className="mt-2 text-sm text-bolu-muted">{subtitle}</p>
           <div className="mt-6">{children}</div>
@@ -88,7 +88,7 @@ export function Field({
         autoComplete={autoComplete}
         required={required}
         minLength={minLength}
-        className="w-full rounded-xl border border-bolu-border bg-bolu-surface px-3.5 py-2.5 text-[15px] text-bolu-ink outline-none transition focus:border-bolu-accent focus:ring-2 focus:ring-bolu-accent/20"
+        className="w-full rounded border border-bolu-border bg-bolu-surface px-3.5 py-2.5 text-[15px] text-bolu-ink outline-none transition focus:border-bolu-accent focus:ring-2 focus:ring-bolu-accent/20"
       />
       {hint ? <p className="mt-1.5 text-xs text-bolu-muted">{hint}</p> : null}
     </div>
@@ -108,7 +108,7 @@ export function SubmitButton({
     <button
       type="submit"
       disabled={pending}
-      className="w-full rounded-xl bg-bolu-accent px-4 py-2.5 text-[15px] font-semibold text-white transition hover:bg-[#1a6cba] disabled:cursor-not-allowed disabled:opacity-60"
+      className="w-full rounded bg-bolu-accent px-4 py-2.5 text-[15px] font-semibold text-white transition hover:bg-[#1a6cba] disabled:cursor-not-allowed disabled:opacity-60"
     >
       {pending ? pendingLabel : label}
     </button>
@@ -123,7 +123,7 @@ export function Alert({ tone, children }: { tone: "error" | "success" | "info"; 
   } as const;
 
   return (
-    <p role={tone === "error" ? "alert" : "status"} className={`mb-4 rounded-xl border px-3.5 py-2.5 text-sm ${styles[tone]}`}>
+    <p role={tone === "error" ? "alert" : "status"} className={`mb-4 rounded border px-3.5 py-2.5 text-sm ${styles[tone]}`}>
       {children}
     </p>
   );
@@ -133,7 +133,7 @@ export function GoogleButton({ href }: { href: string }) {
   return (
     <a
       href={href}
-      className="mt-3 flex w-full items-center justify-center gap-2.5 rounded-xl border border-bolu-border bg-bolu-surface px-4 py-2.5 text-[15px] font-medium text-bolu-ink transition hover:bg-bolu-panel/60"
+      className="mt-3 flex w-full items-center justify-center gap-2.5 rounded border border-bolu-border bg-bolu-surface px-4 py-2.5 text-[15px] font-medium text-bolu-ink transition hover:bg-bolu-panel/60"
     >
       {/* The four-colour Google "G" mark, inlined so the button needs no icon package. */}
       <svg viewBox="0 0 48 48" aria-hidden="true" className="size-[18px] flex-none">

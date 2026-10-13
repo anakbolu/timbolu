@@ -9,7 +9,7 @@ export function FinalCta() {
       aria-labelledby="mulai-title"
       className="mx-auto w-full max-w-[1248px] px-6 pt-28"
     >
-      <div className="flex flex-wrap items-center justify-between gap-8 rounded-[40px] bg-bolu-ink px-9 py-12 text-white">
+      <div className="flex flex-wrap items-center justify-between gap-8 rounded bg-bolu-ink px-9 py-12 text-white">
         <div className="flex max-w-[560px] flex-col gap-3.5">
           <h2
             id="mulai-title"

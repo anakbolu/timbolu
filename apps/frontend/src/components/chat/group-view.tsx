@@ -91,7 +91,7 @@ export function GroupView() {
       {error ? (
         <p
           role="alert"
-          className="rounded-2xl border border-bolu-belum/30 bg-bolu-belum/5 px-4 py-3 text-[15px] text-bolu-belum"
+          className="rounded border border-bolu-belum/30 bg-bolu-belum/5 px-4 py-3 text-[15px] text-bolu-belum"
         >
           {error}
         </p>
@@ -99,17 +99,17 @@ export function GroupView() {
       {notice ? (
         <p
           role="status"
-          className="rounded-2xl border border-bolu-lunas/30 bg-bolu-lunas/5 px-4 py-3 text-[15px] text-bolu-lunas"
+          className="rounded border border-bolu-lunas/30 bg-bolu-lunas/5 px-4 py-3 text-[15px] text-bolu-lunas"
         >
           {notice}
         </p>
       ) : null}
 
       <div className="grid gap-[18px] lg:grid-cols-[1fr_360px]">
-        <section className="flex flex-col gap-2.5 rounded-[26px] border border-bolu-border bg-white p-5">
+        <section className="flex flex-col gap-2.5 rounded border border-bolu-border bg-white p-5">
           <h2 className="font-display text-[22px] font-semibold">Grup yang ada</h2>
           {groups.length === 0 ? (
-            <p className="rounded-2xl border border-dashed border-bolu-border px-4 py-6 text-[15px] text-bolu-muted">
+            <p className="rounded border border-dashed border-bolu-border px-4 py-6 text-[15px] text-bolu-muted">
               Belum ada grup. Buat satu di kanan.
             </p>
           ) : (
@@ -117,7 +117,7 @@ export function GroupView() {
               {groups.map((group) => (
                 <li
                   key={group.id}
-                  className="rounded-[18px] border border-bolu-line px-4 py-3"
+                  className="rounded border border-bolu-line px-4 py-3"
                 >
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <p className="font-semibold">{group.title || "Grup tanpa nama"}</p>
@@ -177,7 +177,7 @@ export function GroupView() {
           )}
         </section>
 
-        <section className="flex flex-col gap-2.5 rounded-[26px] border border-bolu-border bg-white p-5">
+        <section className="flex flex-col gap-2.5 rounded border border-bolu-border bg-white p-5">
           <h2 className="font-display text-[22px] font-semibold">Buat grup</h2>
           {agents.length === 0 ? (
             <p className="text-[15px] text-bolu-muted">
@@ -192,7 +192,7 @@ export function GroupView() {
                   onChange={(event) => setTitle(event.target.value)}
                   required
                   placeholder="mis. Grup operasional"
-                  className="min-h-11 w-full rounded-xl border border-bolu-border bg-white px-3.5 text-[15px] font-normal outline-none focus:border-bolu-accent"
+                  className="min-h-11 w-full rounded border border-bolu-border bg-white px-3.5 text-[15px] font-normal outline-none focus:border-bolu-accent"
                 />
               </label>
 

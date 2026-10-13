@@ -40,7 +40,7 @@ export function WorkspaceBoard() {
   }));
 
   return (
-    <div className="bolu-board flex flex-col gap-5 rounded-[36px] p-7">
+    <div className="bolu-board flex flex-col gap-5 rounded p-7">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 font-semibold">
           <span
@@ -58,18 +58,18 @@ export function WorkspaceBoard() {
           return (
             <li
               key={bot.name}
-              className="flex flex-col items-center gap-3 rounded-[24px] bg-white p-3.5 pb-4"
+              className="flex flex-col items-center gap-3 rounded bg-white p-3.5 pb-4"
             >
               <div
-                className="box-border flex min-h-[76px] w-full flex-col justify-between gap-2 rounded-2xl px-3 py-2.5"
+                className="box-border flex min-h-[76px] w-full flex-col justify-between gap-2 rounded px-3 py-2.5"
                 style={{ background: bot.tint }}
               >
                 <div key={act} className="pop text-[14px] font-semibold leading-[1.3]">
                   {act}
                 </div>
-                <div className="h-1.5 overflow-hidden rounded-[3px] bg-[rgb(30_27_46_/_0.1)]">
+                <div className="h-1.5 overflow-hidden rounded bg-[rgb(30_27_46_/_0.1)]">
                   <div
-                    className="bar h-full rounded-[3px]"
+                    className="bar h-full rounded"
                     style={{ width: "40%", background: bot.color, animationDelay: bot.delay }}
                   />
                 </div>
@@ -86,7 +86,7 @@ export function WorkspaceBoard() {
         })}
       </ul>
 
-      <div className="flex flex-wrap items-center gap-x-7 gap-y-2.5 rounded-[20px] bg-white px-[18px] py-3.5">
+      <div className="flex flex-wrap items-center gap-x-7 gap-y-2.5 rounded bg-white px-[18px] py-3.5">
         <div className="font-display font-semibold">Barusan selesai</div>
         {feed.map((item) => (
           <div

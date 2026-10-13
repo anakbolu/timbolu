@@ -44,10 +44,10 @@ import {
 
 import { useWorkspace } from "./workspace-data";
 
-const CARD = "rounded-[26px] border border-bolu-border bg-white";
+const CARD = "rounded border border-bolu-border bg-white";
 const HEADING = "font-display text-[22px] font-semibold";
 const BUTTON =
-  "min-h-10 cursor-pointer rounded-xl border border-bolu-border bg-white px-3.5 text-[14px] font-medium text-bolu-ink transition hover:border-bolu-accent disabled:cursor-default disabled:opacity-50";
+  "min-h-10 cursor-pointer rounded border border-bolu-border bg-white px-3.5 text-[14px] font-medium text-bolu-ink transition hover:border-bolu-accent disabled:cursor-default disabled:opacity-50";
 
 /** KIND_TONE is how each round reads at a glance: the model, a tool, or the answer. */
 const KIND_TONE: Record<string, string> = {
@@ -363,7 +363,7 @@ function Payload({ title, value }: { title: string; value: unknown }) {
   return (
     <div className="min-w-0">
       <div className="text-[12px] text-bolu-muted">{title}</div>
-      <pre className="mt-1 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl border border-bolu-line bg-bolu-panel/40 p-3 font-mono text-[12px] leading-relaxed">
+      <pre className="mt-1 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded border border-bolu-line bg-bolu-panel/40 p-3 font-mono text-[12px] leading-relaxed">
         {typeof value === "string" ? value : JSON.stringify(value, null, 2)}
       </pre>
     </div>

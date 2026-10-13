@@ -62,7 +62,7 @@ function RosterRow({ item }: { item: RosterItem }) {
   return (
     <Link
       href={`/chat?agent=${item.agent.id}`}
-      className="flex min-h-[60px] min-w-0 flex-[1_1_220px] items-center gap-3 rounded-2xl border-2 border-transparent p-[8px_10px] text-left text-bolu-ink no-underline hover:text-bolu-ink"
+      className="flex min-h-[60px] min-w-0 flex-[1_1_220px] items-center gap-3 rounded border-2 border-transparent p-[8px_10px] text-left text-bolu-ink no-underline hover:text-bolu-ink"
     >
       <div className="relative size-11 flex-none">
         <Bolu
@@ -121,7 +121,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           aria-label="Buka menu"
           aria-expanded={navOpen}
           onClick={() => setNavOpen(true)}
-          className="relative flex size-11 cursor-pointer items-center justify-center rounded-[14px] border-0 bg-bolu-bg"
+          className="relative flex size-11 cursor-pointer items-center justify-center rounded border-0 bg-bolu-bg"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1E1B2E" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
             <path d="M4 7h16M4 12h16M4 17h16" />
@@ -177,7 +177,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                 href={item.href}
                 aria-current={on ? "page" : undefined}
                 onClick={() => setNavOpen(false)}
-                className={`flex min-h-[52px] items-center gap-3 rounded-2xl px-3.5 text-[17px] font-bold no-underline hover:text-bolu-ink ${
+                className={`flex min-h-[52px] items-center gap-3 rounded px-3.5 text-[17px] font-bold no-underline hover:text-bolu-ink ${
                   on ? "bg-bolu-ink text-white hover:text-white" : "bg-transparent text-bolu-ink"
                 }`}
               >
@@ -228,7 +228,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
 
         <Link
           href="/settings/team"
-          className="mt-3 flex min-h-[46px] items-center gap-2.5 rounded-2xl border-2 border-dashed border-bolu-track px-3.5 font-semibold text-bolu-body no-underline hover:text-bolu-ink"
+          className="mt-3 flex min-h-[46px] items-center gap-2.5 rounded border-2 border-dashed border-bolu-track px-3.5 font-semibold text-bolu-body no-underline hover:text-bolu-ink"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
             <path d="M12 5v14M5 12h14" />
@@ -242,7 +242,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           <Link
             href="/dashboard/integrations"
             onClick={() => setNavOpen(false)}
-            className={`flex min-h-[52px] items-center gap-3 rounded-2xl px-3.5 text-[17px] font-bold no-underline hover:text-bolu-ink ${
+            className={`flex min-h-[52px] items-center gap-3 rounded px-3.5 text-[17px] font-bold no-underline hover:text-bolu-ink ${
               onIntegrations
                 ? "bg-bolu-ink text-white hover:text-white"
                 : "bg-transparent text-bolu-ink"
@@ -259,7 +259,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           <Link
             href="/settings"
             onClick={() => setNavOpen(false)}
-            className={`flex min-h-[52px] items-center gap-3 rounded-2xl px-3.5 text-[17px] font-bold no-underline hover:text-bolu-ink ${
+            className={`flex min-h-[52px] items-center gap-3 rounded px-3.5 text-[17px] font-bold no-underline hover:text-bolu-ink ${
               onSettings ? "bg-bolu-ink text-white hover:text-white" : "bg-transparent text-bolu-ink"
             }`}
           >
@@ -279,7 +279,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
         {error ? (
           <p
             role="alert"
-            className="m-[18px_20px_0] rounded-2xl border border-bolu-belum/30 bg-bolu-belum/5 px-4 py-3 text-[15px] text-bolu-belum"
+            className="m-[18px_20px_0] rounded border border-bolu-belum/30 bg-bolu-belum/5 px-4 py-3 text-[15px] text-bolu-belum"
           >
             {error}
           </p>

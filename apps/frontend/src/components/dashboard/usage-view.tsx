@@ -41,10 +41,10 @@ import {
 
 import { useWorkspace } from "./workspace-data";
 
-const CARD = "rounded-[26px] border border-bolu-border bg-white";
+const CARD = "rounded border border-bolu-border bg-white";
 const HEADING = "font-display text-[22px] font-semibold";
 const BUTTON =
-  "min-h-10 rounded-xl border border-bolu-border bg-white px-3.5 text-[14px] font-medium text-bolu-ink transition hover:border-bolu-accent disabled:opacity-50";
+  "min-h-10 rounded border border-bolu-border bg-white px-3.5 text-[14px] font-medium text-bolu-ink transition hover:border-bolu-accent disabled:opacity-50";
 
 /** The windows the screen offers, in days. */
 const WINDOWS = [7, 30, 90];

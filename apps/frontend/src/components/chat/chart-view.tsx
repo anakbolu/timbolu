@@ -58,7 +58,7 @@ export default function ChartView({ block }: { block: ChartBlock }) {
 
   if (error) {
     return (
-      <p className="rounded-xl border border-bolu-belum/30 bg-bolu-belum/8 px-3 py-2 text-sm text-bolu-belum">
+      <p className="rounded border border-bolu-belum/30 bg-bolu-belum/8 px-3 py-2 text-sm text-bolu-belum">
         {error}
       </p>
     );

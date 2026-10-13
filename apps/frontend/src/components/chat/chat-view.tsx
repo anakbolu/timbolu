@@ -156,7 +156,7 @@ export function ChatView({ agentId }: { agentId?: string }) {
                     <button
                       type="button"
                       onClick={() => chat.open(conversation)}
-                      className={`flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-[14px] ${
+                      className={`flex w-full cursor-pointer items-center gap-2.5 rounded px-2.5 py-2 text-left text-[14px] ${
                         chat.active?.id === conversation.id ? "bg-bolu-panel/70" : ""
                       }`}
                     >
@@ -193,7 +193,7 @@ export function ChatView({ agentId }: { agentId?: string }) {
 
         <section className="flex min-h-0 flex-col">
           {chat.error ? (
-            <p role="alert" className="mx-4 mt-3 rounded-xl border border-bolu-belum/30 bg-bolu-belum/8 px-3 py-2 text-sm text-bolu-belum">
+            <p role="alert" className="mx-4 mt-3 rounded border border-bolu-belum/30 bg-bolu-belum/8 px-3 py-2 text-sm text-bolu-belum">
               {chat.error}
             </p>
           ) : null}
@@ -363,7 +363,7 @@ function MessageRow({ message, name, face }: { message: ChatMessage; name: strin
           ))}
 
           {notice ? (
-            <p className="mt-2 rounded-lg border border-bolu-flag/30 bg-bolu-flag/8 px-2.5 py-1.5 text-xs text-bolu-flag">
+            <p className="mt-2 rounded border border-bolu-flag/30 bg-bolu-flag/8 px-2.5 py-1.5 text-xs text-bolu-flag">
               {notice}
             </p>
           ) : null}
