@@ -614,10 +614,11 @@ func (r *Repository) AllowedTools(ctx context.Context, scope domain.Scope, agent
 		tools = make([]domain.Tool, 0, len(rows))
 		for _, row := range rows {
 			tools = append(tools, domain.Tool{
-				Name:        row.Name,
-				Integration: row.IntegrationApp,
-				Label:       row.Label,
-				Description: row.Description,
+				Name:            row.Name,
+				Integration:     row.IntegrationApp,
+				Label:           row.Label,
+				Description:     row.Description,
+				NeedsConnection: row.NeedsConnection,
 			})
 		}
 		return nil
@@ -642,10 +643,11 @@ func (r *Repository) ToolCatalog(ctx context.Context) ([]domain.Tool, error) {
 		tools = make([]domain.Tool, 0, len(rows))
 		for _, row := range rows {
 			tools = append(tools, domain.Tool{
-				Name:        row.Name,
-				Integration: row.IntegrationApp,
-				Label:       row.Label,
-				Description: row.Description,
+				Name:            row.Name,
+				Integration:     row.IntegrationApp,
+				Label:           row.Label,
+				Description:     row.Description,
+				NeedsConnection: row.NeedsConnection,
 			})
 		}
 		return nil

@@ -21,12 +21,33 @@ import (
 // Handler serves the model endpoints.
 type Handler struct {
 	service domain.Gateway
-	log     *zap.Logger
+	// reporter is the usage screen's read. It is a second field rather than a wider Gateway
+	// because the two have different consumers: every module that reaches a model fakes the
+	// gateway, and none of them reports a period.
+	reporter domain.UsageReporter
+	log      *zap.Logger
 }
 
 // New builds the handler.
 func New(service domain.Gateway, log *zap.Logger) *Handler {
-	return &Handler{service: service, log: log}
+	handler := &Handler{service: service, log: log}
+	// The same object answers both when the deployment wired it: a gateway that reads usage can
+	// read a report about it.
+	if reporter, ok := service.(domain.UsageReporter); ok {
+		handler.reporter = reporter
+	}
+
+	return handler
+}
+
+// WithReporter installs the usage reporter, which the container calls after the service is built.
+//
+// It exists because the handler is constructed from the gateway interface and the container is the
+// only place that knows one object implements both — the same shape the auditors are installed with.
+func (h *Handler) WithReporter(reporter domain.UsageReporter) *Handler {
+	h.reporter = reporter
+
+	return h
 }
 
 // Routes registers the endpoints every member of the workspace may read.
@@ -34,6 +55,9 @@ func Routes(group fiber.Router, h *Handler) {
 	group.Get("/llm/providers", h.List)
 	group.Get("/llm/adapters", h.Adapters)
 	group.Get("/llm/usage", h.Usage)
+	// The usage screen's read, and the export an accountant takes away. Both are reads, so both
+	// sit behind the same guard as the rest of this group.
+	group.Get("/llm/usage/report", h.Report)
 	group.Get("/agents/:agentID/model", h.AgentModel)
 }
 

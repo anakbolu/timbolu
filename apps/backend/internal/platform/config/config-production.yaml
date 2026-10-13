@@ -1,0 +1,51 @@
+# Production values, stated explicitly.
+#
+# Every key here also has a value in `config.yaml`, and naming them again is the point: the base file
+# is shared with staging, so a value production depends on is one edit away from changing for
+# everybody. What production must be is written down where a reviewer of this file can see it.
+#
+# Secrets are never here. `JWT_SECRET`, `DATABASE_URL`, `REDIS_URL`, `TEMPORAL_API_KEY`,
+# `SECRET_ENCRYPTION_KEY`, `KMS_MASTER_KEY`, and the provider credentials all arrive from the
+# environment of the deployment.
+
+Application:
+  Environment: "production"
+
+JWT:
+  # Nothing in this file is a secret; this is the only value production is allowed to take from
+  # here, and the secret beside it comes from the environment.
+  ExpireHours: 24
+
+Auth:
+  # The refresh cookie travels over HTTPS only, which is what production is.
+  CookieSecure: true
+
+Logging:
+  # Structured logs, because production is read by a machine and correlated by trace id.
+  Level: "info"
+  Format: "json"
+
+Telemetry:
+  # A deployment that has not said where telemetry goes does not send it. Turning this on is a
+  # deliberate act in the environment: OTEL_EXPORTER=otlp and OTEL_METRICS_EXPORTER=otlp.
+  Exporter: "none"
+  MetricsExporter: "none"
+  SampleRatio: 1.0
+
+# The token allowance is enforced: a workspace with no subscription has none, and the ceiling on what
+# it may spend in a day is `PLAN_DAILY_COST_MICROS` or its package's.
+Llm:
+  QuotaEnabled: true
+
+Retention:
+  # Six hours rather than a day: the pass is bounded per workspace, so a tighter interval keeps the
+  # backlog small instead of catching up in one long run.
+  Interval: "6h"
+  AttachmentDays: 0
+  Batch: 500
+  SweepLimit: 200
+
+Billing:
+  # A quarter of an hour, matching the sweep that reconciles the allowance with the ledger.
+  SyncInterval: "15m"
+  SweepInterval: "15m"

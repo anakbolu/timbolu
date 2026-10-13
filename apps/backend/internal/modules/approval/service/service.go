@@ -26,7 +26,10 @@ const SummaryMaxRunes = 160
 
 // Deps are the service dependencies.
 type Deps struct {
-	Drafts domain.Repository
+	// Metrics reports what people did with the drafts, for the deployment's own charts.
+	// Optional: without it the decisions happen and nothing is charted.
+	Metrics domain.Metrics
+	Drafts  domain.Repository
 	// Sender carries an approved action out. Optional: without one a draft is
 	// approved and held, and the reason says so, rather than being recorded as
 	// sent when nothing left.
@@ -280,6 +283,14 @@ func (s *Service) decide(ctx context.Context, scope domain.Scope, decision domai
 			s.deps.Logger.Warn("could not rewrite the draft card",
 				zap.String("draft_id", draft.ID.String()), zap.Error(err))
 		}
+	}
+
+	// Recorded before the event, so a chart and a listener see the same decision in the same
+	// order. The revision flag is the draft's own count at decision time: a draft decided after
+	// a person sent it back is a different fact from one approved as written, and averaging the
+	// two would hide the correction rate that says whether the bot is producing usable work.
+	if s.deps.Metrics != nil {
+		s.deps.Metrics.DraftDecided(ctx, draft.Status, draft.Revision > 0)
 	}
 
 	s.emit(ctx, scope, draft, domain.EventDraftDecided)
@@ -536,13 +547,13 @@ func (s *Service) SetPolicy(ctx context.Context, scope domain.Scope, req domain.
 	return policy, nil
 }
 
-// Audit returns the workspace's approval trail, newest first.
-func (s *Service) Audit(ctx context.Context, scope domain.Scope, limit int) ([]domain.AuditRecord, error) {
+// Audit returns the trail the filter names, newest first.
+func (s *Service) Audit(ctx context.Context, scope domain.Scope, filter domain.AuditFilter) ([]domain.AuditRecord, error) {
 	if err := requireScope(scope); err != nil {
 		return nil, err
 	}
 
-	return s.deps.Drafts.AuditTrail(ctx, scope, limit)
+	return s.deps.Drafts.AuditTrail(ctx, scope, filter)
 }
 
 // effectivePolicy reads the policy in force for one action kind.

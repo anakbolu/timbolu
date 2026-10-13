@@ -196,10 +196,14 @@ func (s *Service) Add(ctx context.Context, scope domain.Scope, request domain.Ad
 		return domain.Memory{}, err
 	}
 
+	// The actor is the person who asked, taken from the scope rather than from the request body: a
+	// line saying what changed but not who changed it cannot answer the question the trail exists
+	// for, and the caller's identity is what the scope already carries.
 	s.audit(ctx, scope, domain.AuditEntry{
-		Action:     domain.ActionCreated,
-		ObjectType: "memory",
-		ObjectID:   memory.ID.String(),
+		Action:      domain.ActionCreated,
+		ObjectType:  "memory",
+		ObjectID:    memory.ID.String(),
+		ActorUserID: scope.UserID,
 		Metadata: map[string]any{
 			"layer":  memory.Layer(),
 			"kind":   memory.Kind,
@@ -268,9 +272,10 @@ func (s *Service) Edit(ctx context.Context, scope domain.Scope, request domain.E
 		action = domain.ActionMoved
 	}
 	s.audit(ctx, scope, domain.AuditEntry{
-		Action:     action,
-		ObjectType: "memory",
-		ObjectID:   updated.ID.String(),
+		Action:      action,
+		ObjectType:  "memory",
+		ObjectID:    updated.ID.String(),
+		ActorUserID: scope.UserID,
 		Metadata: map[string]any{
 			"layer":     updated.Layer(),
 			"from":      stored.Layer(),
@@ -302,10 +307,11 @@ func (s *Service) Forget(ctx context.Context, scope domain.Scope, id uuid.UUID) 
 	// because it should not be there, and writing it into another table would
 	// keep it.
 	s.audit(ctx, scope, domain.AuditEntry{
-		Action:     domain.ActionDeleted,
-		ObjectType: "memory",
-		ObjectID:   id.String(),
-		Metadata:   map[string]any{"layer": stored.Layer(), "kind": stored.Kind},
+		Action:      domain.ActionDeleted,
+		ObjectType:  "memory",
+		ObjectID:    id.String(),
+		ActorUserID: scope.UserID,
+		Metadata:    map[string]any{"layer": stored.Layer(), "kind": stored.Kind},
 	})
 
 	return nil
@@ -327,10 +333,11 @@ func (s *Service) ForgetKnowledge(ctx context.Context, scope domain.Scope, id uu
 	}
 
 	s.audit(ctx, scope, domain.AuditEntry{
-		Action:     domain.ActionKnowledgeDel,
-		ObjectType: "knowledge_item",
-		ObjectID:   id.String(),
-		Metadata:   map[string]any{"source": stored.Source, "chunk_index": stored.ChunkIndex},
+		Action:      domain.ActionKnowledgeDel,
+		ObjectType:  "knowledge_item",
+		ObjectID:    id.String(),
+		ActorUserID: scope.UserID,
+		Metadata:    map[string]any{"source": stored.Source, "chunk_index": stored.ChunkIndex},
 	})
 
 	return nil
@@ -404,9 +411,10 @@ func (s *Service) Ingest(ctx context.Context, scope domain.Scope, request domain
 	}
 
 	s.audit(ctx, scope, domain.AuditEntry{
-		Action:     domain.ActionIngested,
-		ObjectType: "knowledge_item",
-		ObjectID:   stored[0].ID.String(),
+		Action:      domain.ActionIngested,
+		ObjectType:  "knowledge_item",
+		ObjectID:    stored[0].ID.String(),
+		ActorUserID: scope.UserID,
 		Metadata: map[string]any{
 			"source": stored[0].Source,
 			"chunks": len(stored),

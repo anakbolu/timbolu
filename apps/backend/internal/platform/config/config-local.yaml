@@ -7,6 +7,8 @@ Application:
 
 Http:
   Address: ":8080"
+  # The workers serve their probes here when one is running them outside compose.
+  OpsAddress: ""
   ReadTimeout: "30s"
   WriteTimeout: "30s"
   ApiPrefix: "/api"
@@ -24,6 +26,7 @@ Redis:
 # Cloud (Singapore) and supply these values through the environment.
 Temporal:
   HostPort: "localhost:7233"
+  UIBaseURL: "http://localhost:8233"
   Namespace: "default"
   TaskQueueAgent: "bolu-agent"
   TaskQueueIntegration: "bolu-integration"
@@ -180,6 +183,31 @@ Billing:
     # Empty follows DUITKU_SANDBOX. A sandbox run that wants to verify its own wiring
     # points this at a stand-in.
     BaseURL: ""
+
+# Telemetry: local development reads its spans on standard output rather than sending them
+# anywhere, and every trace is kept — there are a handful of them and each one is being read.
+Telemetry:
+  ServiceName: ""
+  Exporter: "console"
+  Endpoint: ""
+  SampleRatio: 1.0
+  Insecure: true
+
+
+# Retention: what the deployment keeps, and for how long.
+#
+# The split is the design: a task's shape — which step, which tool, how many tokens — is kept
+# for good, and its raw payload is not. Local development keeps everything, because a stack
+# somebody is stepping through should not lose the payload they are reading.
+Retention:
+  # Zero takes the product default of thirty days.
+  StepDays: 0
+  # Zero keeps attachments as long as the message that carries them.
+  AttachmentDays: 0
+  # Zero disables the job, which is what local development wants.
+  Interval: 0s
+  Batch: 0
+  SweepLimit: 0
 
 Logging:
   Level: "debug"

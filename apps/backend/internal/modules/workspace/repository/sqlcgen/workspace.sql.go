@@ -65,6 +65,47 @@ func (q *Queries) CountOwners(ctx context.Context, workspaceID uuid.UUID) (int64
 	return column_1, err
 }
 
+const countWorkspaceRows = `-- name: CountWorkspaceRows :one
+SELECT COALESCE(sum(counted.rows), 0)::bigint AS rows
+FROM (
+    SELECT (
+        xpath(
+            '/row/c/text()',
+            query_to_xml(
+                format('SELECT count(*) AS c FROM %I.%I WHERE workspace_id = %L',
+                       c.table_schema, c.table_name, $1::text),
+                false, true, ''
+            )
+        )
+    )[1]::text::bigint AS rows
+    FROM information_schema.columns c
+    JOIN information_schema.tables t
+      ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+    WHERE c.column_name = 'workspace_id'
+      AND c.table_schema = current_schema()
+      AND t.table_type = 'BASE TABLE'
+      AND t.table_name <> 'data_erasures'
+) AS counted
+`
+
+// How many rows the cascade will take, counted from the schema rather than from a list.
+//
+// **This is the design.** A hand-written list of tables would be a list that drifts: a migration
+// adds a table with a `workspace_id` and whoever writes it has no reason to know a deletion walk
+// exists — and the failure is silent, because the row that was missed is still there and nothing
+// looks wrong. Reading `information_schema` means every table that declares the column is counted,
+// so a new one is included the day it is created.
+//
+// What it cannot see is a table that stores a workspace id *without* the reference — which is
+// exactly what `data_erasures` does deliberately, and the one case where the reference is absent
+// because the row must outlive the workspace.
+func (q *Queries) CountWorkspaceRows(ctx context.Context, workspaceID string) (int64, error) {
+	row := q.db.QueryRow(ctx, countWorkspaceRows, workspaceID)
+	var rows int64
+	err := row.Scan(&rows)
+	return rows, err
+}
+
 const createInvitation = `-- name: CreateInvitation :one
 INSERT INTO invitations (workspace_id, email, role, token_hash, invited_by, expires_at)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -224,6 +265,24 @@ type DeleteMemberParams struct {
 
 func (q *Queries) DeleteMember(ctx context.Context, arg DeleteMemberParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteMember, arg.WorkspaceID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteWorkspace = `-- name: DeleteWorkspace :execrows
+DELETE FROM workspaces WHERE id = $1
+`
+
+// Deletes the workspace, and with it every row that references it.
+//
+// One statement rather than twenty: the foreign keys are what carry the deletion, so a module that
+// adds a table is covered by the reference it declares. The row it removes is the tenant itself,
+// which is what makes this a deletion rather than a soft delete — a flag would leave every other
+// row in place and make "erased" a promise about a column.
+func (q *Queries) DeleteWorkspace(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteWorkspace, id)
 	if err != nil {
 		return 0, err
 	}
@@ -590,6 +649,18 @@ func (q *Queries) ListWorkspacesForUser(ctx context.Context, userID uuid.UUID) (
 	return items, nil
 }
 
+const requesterEmail = `-- name: RequesterEmail :one
+SELECT email FROM users WHERE id = $1
+`
+
+// The requester's address, read for the same reason.
+func (q *Queries) RequesterEmail(ctx context.Context, id uuid.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, requesterEmail, id)
+	var email string
+	err := row.Scan(&email)
+	return email, err
+}
+
 const updateMemberRole = `-- name: UpdateMemberRole :one
 UPDATE members
 SET role = $3, updated_at = now()
@@ -671,4 +742,19 @@ func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams
 		&i.WorkDays,
 	)
 	return i, err
+}
+
+const workspaceName = `-- name: WorkspaceName :one
+
+SELECT name FROM workspaces WHERE id = $1
+`
+
+// ------------------------------------------------------------- erasure
+// The name, read before the row that holds it is deleted: an erasure record that says a uuid was
+// removed cannot be shown to the person who asked for their data back.
+func (q *Queries) WorkspaceName(ctx context.Context, id uuid.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, workspaceName, id)
+	var name string
+	err := row.Scan(&name)
+	return name, err
 }

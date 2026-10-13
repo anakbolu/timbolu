@@ -1,0 +1,50 @@
+# A local stack that can actually think, for trying the product by hand.
+#
+# The base compose file leaves `LLM_DEFAULT_*` empty, which is the right default: a deployment that has
+# not been given a provider should not be calling one. It also means a task fails with "no provider is
+# configured" the moment somebody clicks around, so a person trying the product has nothing to watch.
+#
+# This file points the two backend processes that call a model at the stub on the host
+# (`scripts/order-stub.py`, started by `make demo`), over `host.docker.internal`. Nothing else changes:
+# the database, the queue, the workers, and the frontend are the real ones.
+#
+# It is a *override* rather than a change to `.env`, so `make up` stays exactly what it was and this is
+# only in play when it is named:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
+#
+# `make demo` does that and seeds a workspace with a catalogue and a Bolu to talk to.
+
+x-demo-env: &demo-env
+  # The stub speaks the OpenAI wire format, so the adapter is the one a real deployment would use. Only
+  # the address is different, and that is the point: the code path under test is the production one.
+  LLM_DEFAULT_ADAPTER: openai
+  LLM_DEFAULT_BASE_URL: "http://host.docker.internal:${DEMO_STUB_PORT:-11441}"
+  LLM_DEFAULT_MODEL: "stub"
+  LLM_DEFAULT_API_KEY: "stub-key"
+  # No token allowance and no daily cost ceiling: a person clicking around should not walk into the
+  # billing gate. Both are unbounded by default and the product's own defaults are what a deployment
+  # gets; see `.env.example`.
+  LLM_QUOTA_ENABLED: "false"
+  PLAN_DAILY_COST_MICROS: "0"
+
+services:
+  api:
+    environment:
+      <<: *demo-env
+    # Docker Desktop resolves `host.docker.internal` on its own; the entry makes it work on a Linux
+    # engine too, where it is not a built-in.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  agent-worker:
+    environment:
+      <<: *demo-env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  integration-worker:
+    environment:
+      <<: *demo-env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

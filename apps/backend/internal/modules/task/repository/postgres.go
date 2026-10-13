@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -339,6 +340,55 @@ func (r *Repository) CountLiveTasksForAgent(ctx context.Context, scope domain.Sc
 }
 
 // Append writes one step, assigning its sequence number in the statement.
+// PruneContents removes the raw input and output of steps older than a moment.
+//
+// The row is kept and marked, so a reader can tell a step whose payload was removed from one
+// that never had any — and re-running the same window updates nothing, which is what makes the
+// job safe to retry and safe on two instances at once.
+func (r *Repository) PruneContents(ctx context.Context, scope domain.Scope, olderThan time.Time, limit int) (domain.StepPrune, error) {
+	var result domain.StepPrune
+
+	err := r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
+		pruned, err := queries.PruneTaskSteps(ctx, sqlcgen.PruneTaskStepsParams{
+			WorkspaceID: scope.WorkspaceID,
+			OlderThan:   olderThan,
+			LimitCount:  int32(boundedLimit(limit)),
+		})
+		if err != nil {
+			return fmt.Errorf("prune step contents: %w", err)
+		}
+
+		result.Pruned = int(pruned)
+
+		remaining, err := queries.CountUnprunedSteps(ctx, sqlcgen.CountUnprunedStepsParams{
+			WorkspaceID: scope.WorkspaceID,
+			OlderThan:   olderThan,
+		})
+		if err != nil {
+			return fmt.Errorf("count unpruned steps: %w", err)
+		}
+
+		result.Remaining = int(remaining)
+
+		return nil
+	})
+	if err != nil {
+		return domain.StepPrune{}, err
+	}
+
+	return result, nil
+}
+
+// boundedLimit takes the caller's bound or the module's default.
+func boundedLimit(limit int) int {
+	if limit <= 0 {
+		return domain.DefaultPruneLimit
+	}
+
+	return limit
+}
+
+// Append writes one step, assigning its sequence number.
 func (r *Repository) Append(ctx context.Context, scope domain.Scope, step domain.Step) (domain.Step, error) {
 	var stored domain.Step
 

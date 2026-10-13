@@ -42,7 +42,8 @@ func (c *Container) openApproval(_ context.Context, _ *config.Config, o *options
 		// Only a test overrides this. The working-hours rule reads the clock, so a
 		// test that drives an approval through has to pin it, or the same test passes
 		// during Jakarta's working day and fails after 21:00.
-		Clock: o.clock,
+		Clock:   o.clock,
+		Metrics: c.metricsFor(),
 	})
 
 	// The approval repository is handed to the workspace repository as its second

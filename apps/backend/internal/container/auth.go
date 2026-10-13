@@ -74,7 +74,7 @@ func (c *Container) openAuth(ctx context.Context, cfg *config.Config) error {
 
 	var throttle authdomain.LoginThrottle
 	if c.Limiter != nil {
-		throttle = loginThrottle{limiter: c.Limiter}
+		throttle = loginThrottle{limiter: c.Limiter, metrics: c.Metrics}
 	}
 
 	var googleProviderPort authdomain.GoogleProvider

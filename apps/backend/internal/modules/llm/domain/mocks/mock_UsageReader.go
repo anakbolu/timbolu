@@ -144,6 +144,65 @@ func (_c *UsageReader_Daily_Call) RunAndReturn(run func(context.Context, uuid.UU
 	return _c
 }
 
+// Report provides a mock function with given fields: ctx, workspaceID, since, limit
+func (_m *UsageReader) Report(ctx context.Context, workspaceID uuid.UUID, since time.Time, limit int) (domain.UsageReport, error) {
+	ret := _m.Called(ctx, workspaceID, since, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Report")
+	}
+
+	var r0 domain.UsageReport
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uuid.UUID, time.Time, int) (domain.UsageReport, error)); ok {
+		return rf(ctx, workspaceID, since, limit)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uuid.UUID, time.Time, int) domain.UsageReport); ok {
+		r0 = rf(ctx, workspaceID, since, limit)
+	} else {
+		r0 = ret.Get(0).(domain.UsageReport)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uuid.UUID, time.Time, int) error); ok {
+		r1 = rf(ctx, workspaceID, since, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// UsageReader_Report_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Report'
+type UsageReader_Report_Call struct {
+	*mock.Call
+}
+
+// Report is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workspaceID uuid.UUID
+//   - since time.Time
+//   - limit int
+func (_e *UsageReader_Expecter) Report(ctx interface{}, workspaceID interface{}, since interface{}, limit interface{}) *UsageReader_Report_Call {
+	return &UsageReader_Report_Call{Call: _e.mock.On("Report", ctx, workspaceID, since, limit)}
+}
+
+func (_c *UsageReader_Report_Call) Run(run func(ctx context.Context, workspaceID uuid.UUID, since time.Time, limit int)) *UsageReader_Report_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uuid.UUID), args[2].(time.Time), args[3].(int))
+	})
+	return _c
+}
+
+func (_c *UsageReader_Report_Call) Return(_a0 domain.UsageReport, _a1 error) *UsageReader_Report_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *UsageReader_Report_Call) RunAndReturn(run func(context.Context, uuid.UUID, time.Time, int) (domain.UsageReport, error)) *UsageReader_Report_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // SumSince provides a mock function with given fields: ctx, workspaceID, since
 func (_m *UsageReader) SumSince(ctx context.Context, workspaceID uuid.UUID, since time.Time) (int64, error) {
 	ret := _m.Called(ctx, workspaceID, since)

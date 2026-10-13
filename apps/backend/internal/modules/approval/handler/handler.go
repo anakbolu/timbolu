@@ -301,9 +301,36 @@ func (h *Handler) SetPolicy(c *fiber.Ctx) error {
 	return response.OK(c, "policy saved", wirePolicy(policy))
 }
 
-// Audit returns the workspace's approval trail, newest first.
+// Audit returns the trail the query names, newest first.
+//
+// The filters are what makes a trail an answer rather than a table: "what did this Bolu
+// do", "who touched this thing", and "what happened in this window" are the three
+// questions an incident asks, and each is an axis of the same read.
 func (h *Handler) Audit(c *fiber.Ctx) error {
-	records, err := h.service.Audit(c.UserContext(), scope(c), c.QueryInt("limit", 0))
+	filter := domain.AuditFilter{
+		Action:     strings.TrimSpace(c.Query("action")),
+		ObjectType: strings.TrimSpace(c.Query("object_type")),
+		ObjectID:   strings.TrimSpace(c.Query("object_id")),
+		Limit:      c.QueryInt("limit", 0),
+	}
+
+	// Each id is parsed rather than passed through, so a malformed one is the caller's
+	// error instead of a filter that silently narrows nothing.
+	var err error
+	if filter.ActorAgentID, err = parseOptionalID(c.Query("agent_id")); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "agent_id is not a uuid", "invalid_input", nil)
+	}
+	if filter.ActorUserID, err = parseOptionalID(c.Query("actor_id")); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "actor_id is not a uuid", "invalid_input", nil)
+	}
+	if filter.Since, err = parseOptionalTime(c.Query("since")); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "since is not a timestamp", "invalid_input", nil)
+	}
+	if filter.Until, err = parseOptionalTime(c.Query("until")); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "until is not a timestamp", "invalid_input", nil)
+	}
+
+	records, err := h.service.Audit(c.UserContext(), scope(c), filter)
 	if err != nil {
 		return h.fail(c, "list audit", err)
 	}
@@ -314,6 +341,27 @@ func (h *Handler) Audit(c *fiber.Ctx) error {
 	}
 
 	return response.OKWithMeta(c, "ok", payload, fiber.Map{"count": len(payload)})
+}
+
+// parseOptionalID reads a query id, answering Nil for one nobody named.
+func parseOptionalID(value string) (uuid.UUID, error) {
+	text := strings.TrimSpace(value)
+	if text == "" {
+		return uuid.Nil, nil
+	}
+	return uuid.Parse(text)
+}
+
+// parseOptionalTime reads a query timestamp, answering the zero time for one nobody named.
+//
+// RFC 3339 is the format, because that is what a client has: it is what the API returns
+// everywhere else, and a second format would be a second thing to get wrong.
+func parseOptionalTime(value string) (time.Time, error) {
+	text := strings.TrimSpace(value)
+	if text == "" {
+		return time.Time{}, nil
+	}
+	return time.Parse(time.RFC3339, text)
 }
 
 func (h *Handler) fail(c *fiber.Ctx, operation string, err error) error {
@@ -348,13 +396,6 @@ func scope(c *fiber.Ctx) domain.Scope {
 }
 
 func parseID(value string) (uuid.UUID, error) {
-	return uuid.Parse(value)
-}
-
-func parseOptionalID(value string) (uuid.UUID, error) {
-	if strings.TrimSpace(value) == "" {
-		return uuid.Nil, nil
-	}
 	return uuid.Parse(value)
 }
 

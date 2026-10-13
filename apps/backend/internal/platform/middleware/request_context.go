@@ -144,9 +144,16 @@ func statusFromError(err error) int {
 	return fiber.StatusInternalServerError
 }
 
-// traceIDFrom reads a W3C traceparent header first, then X-Trace-Id, and
-// generates an id when neither is present, so a trace id is always available.
+// traceIDFrom reads the request's own span first, which is the identifier the trace in the
+// collector is filed under — the two must be the same string or the log line and the trace it
+// names are different requests. It falls back to a W3C traceparent header, then X-Trace-Id, and
+// generates an id when none is present, so a trace id is always available.
 func traceIDFrom(c *fiber.Ctx) string {
+	if span := SpanFrom(c); span != nil {
+		if id := span.SpanContext().TraceID(); id.IsValid() {
+			return id.String()
+		}
+	}
 	if matches := traceparentFormat.FindStringSubmatch(strings.ToLower(c.Get(HeaderTraceparent))); matches != nil {
 		return matches[1]
 	}

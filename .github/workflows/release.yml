@@ -1,0 +1,240 @@
+name: Release
+
+# Builds the four backend images and the frontend, and applies the migrations **before** the new
+# images serve traffic.
+#
+# Two jobs and not one, and the order between them is the design rather than a detail: a rollout that
+# starts a new image before the schema matches it is an outage that lasts as long as the migration
+# takes, and a rollback that reverts the image leaves the schema ahead of the code. So the migration
+# runs first, on its own, and only its success lets the rollout job run.
+#
+# What this workflow does NOT do is decide *where* the images go. The registry and its credentials are
+# a deployment fact — `vars.REGISTRY`, `vars.IMAGE_PREFIX`, and the `REGISTRY_USERNAME` /
+# `REGISTRY_PASSWORD` secrets — so the same file serves a laptop with a local registry and a
+# deployment on ECR, GHCR, or a self-hosted one.
+
+on:
+  # A release is a tag, which is what makes the versions in a deployment traceable to a commit.
+  push:
+    tags: ["v*"]
+  # And a manual run, for a rehearsal against staging — with the tag or branch named explicitly.
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to build for (staging or production)"
+        required: true
+        default: staging
+        type: choice
+        options: [staging, production]
+      rollout:
+        description: "Roll out after the images are pushed (needs the deploy secrets to be set)"
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  # One release at a time per environment: two rollouts racing would apply the same migration twice
+  # and start two sets of images.
+  group: release-${{ github.event.inputs.environment || 'production' }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ${{ vars.REGISTRY || 'ghcr.io' }}
+  IMAGE_PREFIX: ${{ vars.IMAGE_PREFIX || github.repository }}
+
+jobs:
+  # ---------------------------------------------------------------- gate
+  gate:
+    name: Gates
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: bolu
+          POSTGRES_PASSWORD: bolu_secret
+          POSTGRES_DB: bolu
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bolu -d bolu"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://bolu:bolu_secret@localhost:5432/bolu?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/backend/go.mod
+          cache-dependency-path: apps/backend/go.sum
+
+      - name: Tests with the race detector
+        run: go test ./... -race -count=1
+
+      - name: Coverage gate (80%)
+        env:
+          CGO_ENABLED: 0
+        run: ./scripts/coverage.sh
+
+  # ---------------------------------------------------------------- images
+  images:
+    name: Build ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    needs: gate
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        # The four processes the product runs. Each image carries one binary: they scale
+        # independently — the agent worker is the one that saturates — and a gateway image has no
+        # business carrying the API's code.
+        image: [api, agent-worker, integration-worker, wa-gateway]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME || github.actor }}
+          password: ${{ secrets.REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/backend
+          file: apps/backend/Dockerfile
+          build-args: |
+            BINARY=${{ matrix.image }}
+          push: true
+          # Two tags: the commit, which is what a rollback names, and the moving one, which is what a
+          # service definition points at. A rollback to a digest is not something a person types at
+          # three in the morning.
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.image }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.image }}:${{ github.ref_name }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max
+
+  frontend:
+    name: Build frontend
+    runs-on: ubuntu-latest
+    needs: gate
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME || github.actor }}
+          password: ${{ secrets.REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/frontend
+          file: apps/frontend/Dockerfile
+          push: true
+          # The API URL is inlined into the client bundle at build time, so it is a build argument
+          # rather than a runtime one: a frontend built for staging cannot be pointed at production.
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.STAGING_API_URL || 'http://localhost:8080' }}
+            NEXT_PUBLIC_CONTENT_ORIGIN=${{ vars.STAGING_CONTENT_ORIGIN || 'http://localhost:8080' }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/frontend:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/frontend:${{ github.ref_name }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
+
+  # ---------------------------------------------------------------- migrate
+  migrate:
+    name: Apply migrations
+    runs-on: ubuntu-latest
+    needs: [images, frontend]
+    # The environment this release is for, so the DATABASE_URL and the approval (if the environment is
+    # protected) come from the environment's own secrets rather than from the repository's.
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/backend/go.mod
+          cache-dependency-path: apps/backend/go.sum
+
+      - name: Apply up
+        working-directory: apps/backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: go run ./tools/migrate up
+
+      - name: Report the version
+        working-directory: apps/backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: go run ./tools/migrate version
+
+  # ---------------------------------------------------------------- rollout
+  rollout:
+    name: Roll out ${{ github.event.inputs.environment || 'production' }}
+    runs-on: ubuntu-latest
+    needs: migrate
+    # Only when a rollout was asked for. The default is to build and push — which is what a rehearsal
+    # or a pre-release needs — because "deploy" is a decision rather than a side effect of tagging.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.rollout }}
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Roll out
+        env:
+          DEPLOY_HOOK: ${{ secrets.DEPLOY_HOOK }}
+          RELEASED_SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$DEPLOY_HOOK" ]; then
+            echo "no DEPLOY_HOOK secret is set for this environment; see docs/deployment.md" >&2
+            exit 1
+          fi
+          # The hook is the deployment's own: a Kubernetes rollout, an ECS service update, or a
+          # script on a host. What the workflow owns is the *order* — gate, images, migrate, rollout —
+          # and the environment's hook owns how the images reach a running service.
+          curl --fail --silent --show-error -X POST "$DEPLOY_HOOK" \
+            -H 'Content-Type: application/json' \
+            -d "{\"sha\":\"$RELEASED_SHA\",\"registry\":\"${{ env.REGISTRY }}\",\"prefix\":\"${{ env.IMAGE_PREFIX }}\"}"
+
+      - name: Wait for health
+        env:
+          STAGING_API_URL: ${{ vars.STAGING_API_URL }}
+        run: |
+          # A rollout is not done when the images are up: it is done when the new process answers
+          # `/ready`. Until then the previous revision is still serving, which is what makes the
+          # window between them a wait rather than an outage.
+          if [ -z "$STAGING_API_URL" ]; then
+            echo "no STAGING_API_URL is set, so the health wait is skipped"
+            exit 0
+          fi
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent "$STAGING_API_URL/ready" > /dev/null; then
+              echo "ready after $attempt attempt(s)"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "the deployment never became ready; see docs/deployment.md for the rollback" >&2
+          exit 1

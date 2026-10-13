@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -234,11 +235,58 @@ func (m *memoryStore) RecordAudit(_ context.Context, _ domain.Scope, entry domai
 	return nil
 }
 
-func (m *memoryStore) AuditTrail(_ context.Context, _ domain.Scope, limit int) ([]domain.AuditRecord, error) {
-	if len(m.audit) > limit && limit > 0 {
-		return m.audit[len(m.audit)-limit:], nil
+// AuditTrail answers the filter the way the statement does: every field narrows, and a
+// value ending in a dot in Action is a prefix. The fake restates the *rule* rather than the
+// SQL, which is what makes it worth having: the filter's behaviour is a product decision,
+// and the statement is only one way of expressing it.
+func (m *memoryStore) AuditTrail(_ context.Context, _ domain.Scope, filter domain.AuditFilter) ([]domain.AuditRecord, error) {
+	matched := make([]domain.AuditRecord, 0, len(m.audit))
+	for _, record := range m.audit {
+		if !matchesAuditFilter(record, filter) {
+			continue
+		}
+		matched = append(matched, record)
 	}
-	return m.audit, nil
+
+	limit := filter.Limit
+	if limit <= 0 || limit > len(matched) {
+		limit = len(matched)
+	}
+	// Newest first, which is the order the statement returns.
+	return matched[len(matched)-limit:], nil
+}
+
+// matchesAuditFilter is the filter's rule, stated once.
+func matchesAuditFilter(record domain.AuditRecord, filter domain.AuditFilter) bool {
+	if filter.Action != "" {
+		prefix := strings.HasSuffix(filter.Action, ".")
+		if prefix && !strings.HasPrefix(record.Action, filter.Action) {
+			return false
+		}
+		if !prefix && record.Action != filter.Action {
+			return false
+		}
+	}
+	if filter.ObjectType != "" && record.ObjectType != filter.ObjectType {
+		return false
+	}
+	if filter.ObjectID != "" && record.ObjectID != filter.ObjectID {
+		return false
+	}
+	if filter.ActorAgentID != uuid.Nil && record.ActorAgentID != filter.ActorAgentID {
+		return false
+	}
+	if filter.ActorUserID != uuid.Nil && record.ActorUserID != filter.ActorUserID {
+		return false
+	}
+	if !filter.Since.IsZero() && record.CreatedAt.Before(filter.Since) {
+		return false
+	}
+	// Until is exclusive, so two windows that abut do not return the same entry twice.
+	if !filter.Until.IsZero() && !record.CreatedAt.Before(filter.Until) {
+		return false
+	}
+	return true
 }
 
 // actions returns the audit actions recorded, in order.
@@ -697,7 +745,7 @@ func TestDraftsAreRefusedWithoutAWorkspace(t *testing.T) {
 	_, err = h.service.CarryOut(ctx, domain.Scope{}, uuid.New())
 	require.ErrorIs(t, err, domain.ErrInvalidInput)
 
-	_, err = h.service.Audit(ctx, domain.Scope{}, 0)
+	_, err = h.service.Audit(ctx, domain.Scope{}, domain.AuditFilter{})
 	require.ErrorIs(t, err, domain.ErrInvalidInput)
 }
 
@@ -757,7 +805,7 @@ func TestTheAuditTrailRecordsEveryDecision(t *testing.T) {
 
 	require.Equal(t, []string{"draft.created", "draft.approved", "draft.sent"}, h.store.actions())
 
-	records, err := h.service.Audit(context.Background(), h.scope, 10)
+	records, err := h.service.Audit(context.Background(), h.scope, domain.AuditFilter{Limit: 10})
 	require.NoError(t, err)
 	require.Len(t, records, 3)
 

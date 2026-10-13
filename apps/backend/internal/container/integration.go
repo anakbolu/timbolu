@@ -85,7 +85,7 @@ func (c *Container) openIntegration(_ context.Context, cfg *config.Config, o *op
 
 	states := stateCodec(codec)
 
-	limits, err := newCallLimits(cfg, c.Limiter, c.Logger)
+	limits, err := newCallLimits(cfg, c.Limiter, c.Logger, c.Metrics)
 	if err != nil {
 		return err
 	}
@@ -133,7 +133,15 @@ func (c *Container) integrationAdapters(o *options, cfg *config.Config) []integr
 		return o.adapters
 	}
 
-	adapters := make([]integrationdomain.Adapter, 0, 2)
+	adapters := make([]integrationdomain.Adapter, 0, 3)
+
+	// The workspace's own data is an application this deployment speaks, and it is the first one that
+	// is not an account somebody connected: a catalogue belongs to the workspace itself. It is offered
+	// whenever there is storage to read it from — and the adapter resolves the module when a tool is
+	// called, because the module is assembled after this.
+	if c.Repositories != nil && c.Repositories.Order != nil {
+		adapters = append(adapters, adOrder(c))
+	}
 
 	// WhatsApp is offered when this deployment can reach a gateway. It is not
 	// conditional on a credential the way Gmail is: a linked number needs no OAuth

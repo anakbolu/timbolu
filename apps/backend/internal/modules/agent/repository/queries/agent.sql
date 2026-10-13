@@ -147,13 +147,27 @@ WHERE workspace_id = $1 AND agent_id = $2 AND integration_id = $3;
 -- The effective tool list: what the agent asks for, restricted to integrations
 -- it was actually granted. A read-only grant keeps only the tools that cannot
 -- touch anything outside Bolu.
-SELECT tc.name, tc.integration_app, tc.label, tc.description
+--
+-- A tool that belongs to the workspace itself — the catalogue and the order it records — needs no
+-- connection and no grant, which is what `needs_connection = false` says: there is no account to
+-- authorise and nothing outside this deployment to reach. The EXISTS is what keeps the two rules
+-- apart: a connected tool is offered only through a grant, and a workspace tool is offered to any
+-- Bolu whose profile asks for it.
+SELECT tc.name, tc.integration_app, tc.label, tc.description, tc.needs_connection
 FROM agents a
 JOIN tool_catalog tc ON tc.name IN (SELECT jsonb_array_elements_text(a.tools))
-JOIN integrations i ON i.workspace_id = a.workspace_id AND i.app = tc.integration_app
-JOIN agent_grants g ON g.agent_id = a.id AND g.integration_id = i.id
 WHERE a.id = $1 AND a.workspace_id = $2 AND a.deleted_at IS NULL
-  AND (g.permission = 'read_write' OR tc.label = 'read')
+  AND (
+    NOT tc.needs_connection
+    OR EXISTS (
+      SELECT 1
+      FROM integrations i
+      JOIN agent_grants g ON g.agent_id = a.id AND g.integration_id = i.id
+      WHERE i.workspace_id = a.workspace_id
+        AND i.app = tc.integration_app
+        AND (g.permission = 'read_write' OR tc.label = 'read')
+    )
+  )
 ORDER BY tc.name;
 
 -- name: ListToolCatalog :many

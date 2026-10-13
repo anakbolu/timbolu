@@ -369,17 +369,50 @@ func (q *Queries) InsertAuditEntry(ctx context.Context, arg InsertAuditEntryPara
 const listAuditEntries = `-- name: ListAuditEntries :many
 SELECT id, workspace_id, actor_user_id, actor_agent_id, action, object_type, object_id, metadata, created_at FROM audit_logs
 WHERE workspace_id = $1
+  AND ($2::text IS NULL
+       OR (right($2::text, 1) = '.'
+           AND action LIKE $2::text || '%')
+       OR action = $2::text)
+  AND ($3::text IS NULL OR object_type = $3::text)
+  AND ($4::text IS NULL OR object_id = $4::text)
+  AND ($5::uuid IS NULL OR actor_agent_id = $5::uuid)
+  AND ($6::uuid IS NULL OR actor_user_id = $6::uuid)
+  AND ($7::timestamptz IS NULL OR created_at >= $7::timestamptz)
+  AND ($8::timestamptz IS NULL OR created_at < $8::timestamptz)
 ORDER BY created_at DESC, id DESC
-LIMIT $2
+LIMIT $9
 `
 
 type ListAuditEntriesParams struct {
-	WorkspaceID uuid.UUID
-	Limit       int32
+	WorkspaceID  uuid.UUID
+	Action       *string
+	ObjectType   *string
+	ObjectID     *string
+	ActorAgentID *uuid.UUID
+	ActorUserID  *uuid.UUID
+	Since        *time.Time
+	Until        *time.Time
+	LimitCount   int32
 }
 
+// Every filter is optional, and each is written as "the argument is empty, or the row
+// matches it". That shape is what lets one statement answer the three questions an
+// incident asks — what did this Bolu do, who touched this thing, what happened in this
+// window — without three statements that can disagree about ordering.
+//
+// `sqlc.narg` is what makes an argument omittable: NULL means "do not narrow by this".
 func (q *Queries) ListAuditEntries(ctx context.Context, arg ListAuditEntriesParams) ([]AuditLog, error) {
-	rows, err := q.db.Query(ctx, listAuditEntries, arg.WorkspaceID, arg.Limit)
+	rows, err := q.db.Query(ctx, listAuditEntries,
+		arg.WorkspaceID,
+		arg.Action,
+		arg.ObjectType,
+		arg.ObjectID,
+		arg.ActorAgentID,
+		arg.ActorUserID,
+		arg.Since,
+		arg.Until,
+		arg.LimitCount,
+	)
 	if err != nil {
 		return nil, err
 	}

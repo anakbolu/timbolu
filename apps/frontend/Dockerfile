@@ -13,8 +13,16 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 # Inlined into the client bundle, so it must be present at build time.
+#
+# Both of them, and the second was missing until a release pipeline was written against this file:
+# `NEXT_PUBLIC_CONTENT_ORIGIN` is where sandboxed HTML documents are framed from, and it is a
+# different origin from the app in every real deployment. A bundle built without it silently falls
+# back to the API's own URL, which is the *sandbox escape* the separate origin exists to prevent —
+# and it fails open, so nothing anywhere reports it.
 ARG NEXT_PUBLIC_API_URL=http://localhost:8080
+ARG NEXT_PUBLIC_CONTENT_ORIGIN=
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_CONTENT_ORIGIN=$NEXT_PUBLIC_CONTENT_ORIGIN
 RUN npm run build
 
 FROM node:22-slim AS runner

@@ -49,6 +49,13 @@ type Store interface {
 	// Delete removes one key. Removing something absent is not an error, so a
 	// retry after a partial failure converges.
 	Delete(ctx context.Context, key string) error
+	// List returns every key under a prefix.
+	//
+	// It exists for the two operations that cannot work from a database row: erasing a workspace,
+	// whose bytes are in a bucket while the keys that name them are in Postgres, and a reconciliation
+	// that finds an object nothing points at. A driver without it would make "delete everything this
+	// tenant owns" a promise the deployment cannot keep.
+	List(ctx context.Context, prefix string) ([]string, error)
 	// Driver names the implementation, for logs and the readiness probe.
 	Driver() string
 }
@@ -121,6 +128,12 @@ func (l *LocalStore) Get(_ context.Context, key string) ([]byte, error) {
 }
 
 // Delete implements Store.
+//
+// It also prunes the directories the file was the last one in, and that is not tidiness: a driver
+// with no directories of its own — which is every S3-compatible one, and the deployments that matter
+// — has nothing left after this, so a local directory tree still naming the erased workspace's id
+// would be a trace the real driver cannot have. Emptying it here is what makes "the objects are gone"
+// the same statement about both drivers.
 func (l *LocalStore) Delete(_ context.Context, key string) error {
 	path, err := l.path(key)
 	if err != nil {
@@ -129,7 +142,66 @@ func (l *LocalStore) Delete(_ context.Context, key string) error {
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("storage: delete %s: %w", key, err)
 	}
+
+	l.pruneEmptyParents(filepath.Dir(path))
+
 	return nil
+}
+
+// pruneEmptyParents removes the directories that no longer hold anything, walking up until it
+// reaches one that does or the root. Only empty directories are removed, so a sibling object keeps
+// its parent exactly as it was.
+func (l *LocalStore) pruneEmptyParents(directory string) {
+	for directory != l.root && strings.HasPrefix(directory, l.root+string(os.PathSeparator)) {
+		// Remove is atomic and fails when the directory is not empty, which is the check itself:
+		// listing first and then removing would race with a concurrent write.
+		if err := os.Remove(directory); err != nil {
+			return
+		}
+
+		directory = filepath.Dir(directory)
+	}
+}
+
+// List implements Store, walking the directory the prefix resolves to.
+func (l *LocalStore) List(_ context.Context, prefix string) ([]string, error) {
+	path, err := l.path(strings.TrimSuffix(prefix, "/"))
+	if err != nil {
+		return nil, err
+	}
+
+	keys := []string{}
+	walkErr := filepath.WalkDir(path, func(current string, entry os.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				// A prefix nothing was ever stored under is an empty listing rather than a
+				// failure: the caller asked what is there and the answer is nothing.
+				return nil
+			}
+
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+
+		relative, err := filepath.Rel(l.root, current)
+		if err != nil {
+			return err
+		}
+		keys = append(keys, filepath.ToSlash(relative))
+
+		return nil
+	})
+	if walkErr != nil {
+		if errors.Is(walkErr, os.ErrNotExist) {
+			return keys, nil
+		}
+
+		return nil, fmt.Errorf("storage: list %s: %w", prefix, walkErr)
+	}
+
+	return keys, nil
 }
 
 // path resolves a key under the root and refuses anything that would land

@@ -461,6 +461,60 @@ func (r *Repository) ListForMessage(ctx context.Context, scope domain.Scope, mes
 	return attachments, nil
 }
 
+// boundedLimit takes the caller's bound or the module's default.
+func boundedLimit(limit int) int {
+	if limit <= 0 {
+		return domain.DefaultPruneLimit
+	}
+
+	return limit
+}
+
+// ListExpired returns the attachments past a moment, oldest first.
+func (r *Repository) ListExpired(ctx context.Context, scope domain.Scope, olderThan time.Time, limit int) ([]domain.Attachment, error) {
+	var attachments []domain.Attachment
+
+	err := r.read(ctx, scope, func(queries *sqlcgen.Queries) error {
+		rows, err := queries.ListExpiredAttachments(ctx, sqlcgen.ListExpiredAttachmentsParams{
+			WorkspaceID: scope.WorkspaceID,
+			CreatedAt:   olderThan,
+			Limit:       int32(boundedLimit(limit)),
+		})
+		if err != nil {
+			return fmt.Errorf("chat: list expired attachments: %w", err)
+		}
+
+		attachments = make([]domain.Attachment, 0, len(rows))
+		for _, row := range rows {
+			attachments = append(attachments, toAttachment(row))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return attachments, nil
+}
+
+// Delete removes one attachment's metadata row.
+//
+// A row that is already gone is not an error, for the same reason removing an object that is
+// absent is not: a retry after a partial failure has to converge rather than report a failure
+// that is really "this was already done".
+func (r *Repository) Delete(ctx context.Context, scope domain.Scope, id uuid.UUID) error {
+	return r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
+		if _, err := queries.DeleteAttachment(ctx, sqlcgen.DeleteAttachmentParams{
+			ID:          id,
+			WorkspaceID: scope.WorkspaceID,
+		}); err != nil {
+			return fmt.Errorf("chat: delete attachment: %w", err)
+		}
+
+		return nil
+	})
+}
+
 // AppendEvent writes one activity event and returns it with its assigned ID.
 func (r *Repository) AppendEvent(ctx context.Context, event domain.Event) (domain.Event, error) {
 	var stored domain.Event

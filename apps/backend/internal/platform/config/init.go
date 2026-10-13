@@ -4,11 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/spf13/viper"
+	"go.yaml.in/yaml/v3"
 )
 
 const (
@@ -37,35 +39,121 @@ func Load() (*Config, error) {
 }
 
 func loadFromFile(env string) (*Config, error) {
-	if env == localEnv {
-		viper.SetConfigName("config-local")
-	} else {
-		viper.SetConfigName("config")
+	// A viper instance of this call's own rather than the package-level one, because `Load` is called
+	// by tests and by several binaries in one process: the global instance accumulates every merge,
+	// so a second call would inherit the first's values and a test would depend on the one before it.
+	loader := viper.New()
+	loader.SetConfigType("yaml")
+	loader.AddConfigPath("./internal/platform/config/")
+	loader.AddConfigPath("./config/")
+	loader.AddConfigPath(".")
+	loader.AutomaticEnv()
+	loader.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+
+	// The base file supplies every default and `config-<environment>.yaml` overlays what differs, in
+	// that order so the overlay wins. Local is the one exception: it reads its own file alone, which
+	// is what a developer runs and what keeps a key added to the base from silently changing it.
+	merged := map[string]any{}
+	for _, name := range configNames(env) {
+		layer, err := readConfigLayer(name)
+		if err != nil {
+			return nil, err
+		}
+		if layer == nil {
+			continue
+		}
+		mergeLayer(merged, layer)
 	}
 
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath("./internal/platform/config/")
-	viper.AddConfigPath("./config/")
-	viper.AddConfigPath(".")
-	viper.AutomaticEnv()
-	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-
-	if err := viper.ReadInConfig(); err != nil {
-		// A missing config file is fine: environment variables can supply
-		// every required value. errors.As rather than a type assertion, so a
-		// wrapped ConfigFileNotFoundError is still recognised.
-		var notFound viper.ConfigFileNotFoundError
-		if !errors.As(err, &notFound) {
+	// A deployment with no config file at all is still valid: the environment can supply every
+	// required value, which is what the container images rely on.
+	if len(merged) > 0 {
+		if err := loader.MergeConfigMap(merged); err != nil {
 			return nil, err
 		}
 	}
 
 	var cfg Config
-	if err := viper.Unmarshal(&cfg); err != nil {
+	// UnmarshalExact rather than Unmarshal: a key that matches no field is a typo, and a config file
+	// with a typo in it is a setting that silently does nothing. That is how a staging deployment
+	// comes to run production's retention window while its YAML says otherwise.
+	if err := loader.UnmarshalExact(&cfg); err != nil {
 		return nil, err
 	}
 
 	return &cfg, nil
+}
+
+// configNames is the files an environment reads, base first.
+//
+// The overlay exists so staging and production carry only the values that differ — a log level, a
+// retention window, a quota — instead of two hundred-line copies of the base that drift apart the
+// first time somebody edits one of them.
+func configNames(env string) []string {
+	trimmed := strings.TrimSpace(env)
+	if trimmed == "" || trimmed == localEnv {
+		return []string{"config-local"}
+	}
+
+	return []string{"config", "config-" + trimmed}
+}
+
+// readConfigLayer reads one file into a map, or nil when it is absent.
+//
+// The file is parsed here rather than through a second viper instance, and that is not fussiness:
+// `AllSettings` re-reads every value through viper's own casting, so a number arrives as whatever
+// type viper inferred — an `int32` field filled from an overlay came back as `int32`, which then had
+// to be compared differently from the same field filled from the base. Parsing the YAML directly
+// gives the shapes the decoder expects, from both layers.
+func readConfigLayer(name string) (map[string]any, error) {
+	for _, dir := range configPaths {
+		path := filepath.Join(dir, name+".yaml")
+		content, err := os.ReadFile(path)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+
+			return nil, fmt.Errorf("read %s: %w", path, err)
+		}
+
+		layer := map[string]any{}
+		if err := yaml.Unmarshal(content, &layer); err != nil {
+			return nil, fmt.Errorf("parse %s: %w", path, err)
+		}
+
+		return layer, nil
+	}
+
+	return nil, nil
+}
+
+// configPaths is where a config file may live, in the order they are tried: beside the package for a
+// test, then the two layouts a binary runs in.
+var configPaths = []string{"./internal/platform/config/", "./config/", "."}
+
+// mergeLayer writes one file's values over another's, section by section.
+//
+// The merge is deep rather than whole-key: an overlay that names only `Http.ReadTimeout` must not
+// erase the rest of the `Http` block, which is exactly what a shallow assignment would do.
+func mergeLayer(into, layer map[string]any) {
+	for key, value := range layer {
+		nested, isMap := value.(map[string]any)
+		if !isMap {
+			into[key] = value
+
+			continue
+		}
+
+		existing, ok := into[key].(map[string]any)
+		if !ok {
+			into[key] = nested
+
+			continue
+		}
+
+		mergeLayer(existing, nested)
+	}
 }
 
 // loadFromEnv applies the supported environment variable overrides. Only
@@ -78,6 +166,7 @@ func loadFromEnv(cfg *Config) error {
 	overrides := map[string]*string{
 		"ENVIRONMENT":                     &cfg.Application.Environment,
 		"HTTP_ADDRESS":                    &cfg.Http.Address,
+		"OPS_ADDRESS":                     &cfg.Http.OpsAddress,
 		"DATABASE_URL":                    &cfg.Database.URL,
 		"REDIS_URL":                       &cfg.Redis.URL,
 		"TEMPORAL_HOST_PORT":              &cfg.Temporal.HostPort,
@@ -293,6 +382,85 @@ func loadFromEnv(cfg *Config) error {
 			return fmt.Errorf("parse PLAN_DAILY_COST_MICROS: %w", err)
 		}
 		cfg.Plan.DailyCostMicros = micros
+	}
+
+	// The Temporal UI link the task screen offers. It is a base URL rather than a built one,
+	// because the path below it is the UI's own and the deployment is the only thing that knows
+	// which UI it is.
+	if v := os.Getenv("TEMPORAL_UI_BASE_URL"); v != "" {
+		cfg.Temporal.UIBaseURL = v
+	}
+
+	if v := os.Getenv("OTEL_EXPORTER"); v != "" {
+		cfg.Telemetry.Exporter = v
+	}
+
+	if v := os.Getenv("OTEL_ENDPOINT"); v != "" {
+		cfg.Telemetry.Endpoint = v
+	}
+
+	if v := os.Getenv("OTEL_SERVICE_NAME"); v != "" {
+		cfg.Telemetry.ServiceName = v
+	}
+
+	if v := os.Getenv("OTEL_SAMPLE_RATIO"); v != "" {
+		ratio, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			return fmt.Errorf("parse OTEL_SAMPLE_RATIO: %w", err)
+		}
+		cfg.Telemetry.SampleRatio = ratio
+	}
+
+	if v := os.Getenv("OTEL_INSECURE"); v != "" {
+		cfg.Telemetry.Insecure = strings.EqualFold(v, "true") || v == "1"
+	}
+
+	if v := os.Getenv("OTEL_METRICS_EXPORTER"); v != "" {
+		cfg.Telemetry.MetricsExporter = v
+	}
+
+	if v := os.Getenv("OTEL_METRICS_ENDPOINT"); v != "" {
+		cfg.Telemetry.MetricsEndpoint = v
+	}
+
+	if v := os.Getenv("OTEL_METRICS_INTERVAL"); v != "" {
+		interval, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("parse OTEL_METRICS_INTERVAL: %w", err)
+		}
+		cfg.Telemetry.MetricsInterval = interval
+	}
+
+	if v := os.Getenv("RETENTION_STEP_DAYS"); v != "" {
+		days, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse RETENTION_STEP_DAYS: %w", err)
+		}
+		cfg.Retention.StepDays = days
+	}
+
+	if v := os.Getenv("RETENTION_ATTACHMENT_DAYS"); v != "" {
+		days, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse RETENTION_ATTACHMENT_DAYS: %w", err)
+		}
+		cfg.Retention.AttachmentDays = days
+	}
+
+	if v := os.Getenv("RETENTION_INTERVAL"); v != "" {
+		interval, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("parse RETENTION_INTERVAL: %w", err)
+		}
+		cfg.Retention.Interval = interval
+	}
+
+	if v := os.Getenv("RETENTION_BATCH"); v != "" {
+		batch, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse RETENTION_BATCH: %w", err)
+		}
+		cfg.Retention.Batch = batch
 	}
 
 	if v := os.Getenv("TASK_MAX_STEPS"); v != "" {

@@ -215,6 +215,96 @@ func TestLoadProductionRequiresSecrets(t *testing.T) {
 	require.Empty(t, cfg.Temporal.HostPort, "no Temporal endpoint may be committed to the repository")
 }
 
+// TestAnEnvironmentOverlaysTheBaseFile is what "a separate configuration per environment" means in
+// practice: the base supplies every default, the environment's own file wins where it names a key,
+// and a key it does not mention keeps the base's value rather than being erased.
+func TestAnEnvironmentOverlaysTheBaseFile(t *testing.T) {
+	clearOverrides(t)
+	t.Setenv("JWT_SECRET", "production-secret")
+	t.Setenv("ENVIRONMENT", "staging")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	// From the environment's own file.
+	require.Equal(t, "staging", cfg.Application.Environment)
+	require.Equal(t, "debug", cfg.Logging.Level, "staging is read by a person")
+	require.Equal(t, "console", cfg.Logging.Format)
+	require.Equal(t, int32(20), cfg.Database.MaxOpenConns)
+	require.Equal(t, 24*time.Hour, cfg.Retention.Interval)
+	require.Equal(t, 200, cfg.Retention.Batch)
+	require.False(t, cfg.Llm.QuotaEnabled, "a staging run must not be refused by an allowance")
+
+	// And from the base, which the overlay never mentions: a settings file that named only what
+	// differs must not blank everything else.
+	require.Equal(t, "/api", cfg.Http.ApiPrefix)
+	require.Equal(t, "bolu-agent", cfg.Temporal.TaskQueueAgent)
+	require.Equal(t, 24, cfg.JWT.ExpireHours)
+	require.Equal(t, time.Hour, cfg.Billing.SyncInterval, "the overlay's own value")
+	require.Equal(t, 3, cfg.Llm.ChainLimit)
+}
+
+// TestProductionNamesWhatItDependsOn: every key in the production overlay also exists in the base, and
+// naming it again is what stops an edit to the shared base from changing production by accident. This
+// test is the reason the file is not empty.
+func TestProductionNamesWhatItDependsOn(t *testing.T) {
+	clearOverrides(t)
+	t.Setenv("JWT_SECRET", "production-secret")
+	t.Setenv("ENVIRONMENT", "production")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	require.Equal(t, "json", cfg.Logging.Format)
+	require.Equal(t, "info", cfg.Logging.Level)
+	require.True(t, cfg.Llm.QuotaEnabled, "production enforces the allowance")
+	require.True(t, cfg.Auth.CookieSecure)
+	require.Equal(t, 6*time.Hour, cfg.Retention.Interval)
+	require.Equal(t, 500, cfg.Retention.Batch)
+	require.Equal(t, 200, cfg.Retention.SweepLimit)
+	require.Equal(t, 15*time.Minute, cfg.Billing.SweepInterval)
+
+	// And the base still supplies everything the overlay does not name.
+	require.Equal(t, "bolu-integration", cfg.Temporal.TaskQueueIntegration)
+	require.Equal(t, 100, int(cfg.Database.MaxOpenConns))
+}
+
+// TestAnUnknownEnvironmentStillLoadsTheBase: a deployment that mistypes its environment name gets the
+// base defaults and, if it named nothing else, a clear validation failure — rather than a process
+// that refuses to start because a file it invented does not exist.
+func TestAnUnknownEnvironmentStillLoadsTheBase(t *testing.T) {
+	clearOverrides(t)
+	t.Setenv("ENVIRONMENT", "qa")
+
+	cfg, err := loadFromFile("qa")
+	require.NoError(t, err)
+	require.Equal(t, "bolu-agent", cfg.Temporal.TaskQueueAgent)
+	require.Contains(t, configNames("qa"), "config-qa")
+}
+
+// TestAnOverlayTypoIsRefused is the gate that makes the overlay files trustworthy: a key that matches
+// no field is a setting that silently does nothing, and that is how a staging deployment comes to run
+// production's retention window while its own YAML says otherwise.
+func TestAnOverlayTypoIsRefused(t *testing.T) {
+	clearOverrides(t)
+
+	// The loader reads from the working directory, so a temporary one holds the fixture.
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"),
+		[]byte("Logging:\n  Level: \"info\"\n"), 0o600))
+	// The typo is deliberate, so the linter is told rather than the test being written around it.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config-staging.yaml"),
+		[]byte("Logging:\n  Levle: \"debug\"\n"), 0o600)) //nolint:misspell // the typo is the fixture
+
+	previous, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { _ = os.Chdir(previous) })
+
+	_, err = loadFromFile("staging")
+	require.Error(t, err, "a key that matches no field must fail rather than be ignored")
+}
+
 func TestValidate(t *testing.T) {
 	valid := func() *Config {
 		return &Config{

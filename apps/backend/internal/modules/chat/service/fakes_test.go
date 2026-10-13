@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -259,6 +260,39 @@ func (s *memoryStore) Open(_ context.Context, scope chatdomain.Scope, id uuid.UU
 
 func (s *memoryStore) ListForMessage(context.Context, chatdomain.Scope, uuid.UUID) ([]chatdomain.Attachment, error) {
 	return nil, nil
+}
+
+// ListExpired answers with the same rule the statement does: what is older than the moment,
+// oldest first, bounded by the limit.
+func (s *memoryStore) ListExpired(_ context.Context, _ chatdomain.Scope, olderThan time.Time, limit int) ([]chatdomain.Attachment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	expired := make([]chatdomain.Attachment, 0, len(s.attachments))
+	for _, attachment := range s.attachments {
+		if attachment.CreatedAt.Before(olderThan) {
+			expired = append(expired, attachment)
+		}
+	}
+
+	sort.Slice(expired, func(i, j int) bool {
+		return expired[i].CreatedAt.Before(expired[j].CreatedAt)
+	})
+
+	if limit > 0 && len(expired) > limit {
+		expired = expired[:limit]
+	}
+
+	return expired, nil
+}
+
+func (s *memoryStore) Delete(_ context.Context, _ chatdomain.Scope, id uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.attachments, id)
+
+	return nil
 }
 
 func (s *memoryStore) AppendEvent(_ context.Context, event chatdomain.Event) (chatdomain.Event, error) {
@@ -563,6 +597,18 @@ func (s *memoryStorage) Get(_ context.Context, key string) ([]byte, error) {
 func (s *memoryStorage) Delete(_ context.Context, key string) error {
 	delete(s.objects, key)
 	return nil
+}
+
+func (s *memoryStorage) List(_ context.Context, prefix string) ([]string, error) {
+	keys := []string{}
+	for key := range s.objects {
+		if strings.HasPrefix(key, prefix) {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+
+	return keys, nil
 }
 
 func (s *memoryStorage) Driver() string { return "memory" }

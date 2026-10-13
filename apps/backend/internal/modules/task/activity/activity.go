@@ -15,6 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"go.temporal.io/sdk/temporal"
 
 	"github.com/google/uuid"
@@ -59,6 +62,24 @@ type Deps struct {
 	Namer  domain.AgentNamer
 	Limits domain.Limits
 	Logger *zap.Logger
+	// Tracer starts the spans of one task's steps: its model calls and its tool calls, which
+	// are drawn under the activity span the Temporal interceptor opened. Optional: without it
+	// the task runs untraced, which is what a deployment with telemetry off does.
+	Tracer trace.Tracer
+	// Metrics reports what a task did, for the deployment's own charts. Optional: without it
+	// the work happens and nothing is charted.
+	Metrics domain.Metrics
+	// Clock is the source of "how long did this take", so a duration is testable.
+	Clock func() time.Time
+}
+
+// now is the activity set's clock, which a test pins.
+func (a *Activities) now() time.Time {
+	if a.deps.Clock != nil {
+		return a.deps.Clock()
+	}
+
+	return time.Now()
 }
 
 // Activities is the set the worker registers.
@@ -132,12 +153,9 @@ func (a *Activities) LoadTaskContext(ctx context.Context, input workflow.TaskInp
 			Query:   recallQuery(input, loaded.History),
 		})
 		if err != nil {
-			if a.deps.Logger != nil {
-				a.deps.Logger.Warn("memory could not be loaded for this task; it will answer without it",
-					zap.String("task_id", task.ID.String()),
-					zap.Error(err),
-				)
-			}
+			a.taskLogger(ctx, task).Warn("memory could not be loaded for this task; it will answer without it",
+				zap.Error(err),
+			)
 		} else {
 			loaded.Memory = recall
 		}
@@ -174,6 +192,17 @@ func (a *Activities) CallModel(ctx context.Context, request workflow.ModelReques
 	}
 	scope := scopeOf(task)
 
+	// The round's span, with the model call the gateway makes hanging under it. The prompt and
+	// the answer are not attributes: the round's size and its cost are what a trace is read for.
+	//
+	// It covers the budget check and the gateway's refusal as well as the call, so a round that
+	// never reached a provider still shows what it was and why it stopped.
+	ctx, span := a.span(ctx, "task.model_round", task,
+		attribute.Int("history_messages", len(request.Messages)),
+		attribute.Int("tool_count", len(request.Tools)),
+	)
+	defer func() { end(span, err) }()
+
 	// The budget is asked before every call rather than once per task: a workspace
 	// that ran out while this task worked must stop spending now.
 	if a.deps.Budget != nil {
@@ -189,6 +218,14 @@ func (a *Activities) CallModel(ctx context.Context, request workflow.ModelReques
 	if err != nil {
 		return workflow.ModelReply{}, err
 	}
+
+	span.SetAttributes(
+		attribute.String("model", response.Model),
+		attribute.String("provider", response.Provider),
+		attribute.Int("input_tokens", response.Usage.InputTokens),
+		attribute.Int("output_tokens", response.Usage.OutputTokens),
+		attribute.Int("tool_calls", len(response.ToolCalls)),
+	)
 
 	reply := workflow.ModelReply{
 		Text:         response.Text,
@@ -212,9 +249,7 @@ func (a *Activities) CallModel(ctx context.Context, request workflow.ModelReques
 // A `write_external` tool never reaches here: the workflow routes it to the draft
 // gate, so this only runs what is safe to run unattended.
 func (a *Activities) RunTool(ctx context.Context, request workflow.ToolRequest) (workflow.ToolOutcome, error) {
-	if a.deps.Executor == nil {
-		return workflow.ToolOutcome{}, fmt.Errorf("%w: %s", domain.ErrToolNotAvailable, request.Name)
-	}
+	a.retry(ctx, "RunTool")
 
 	task, err := a.load(ctx, workflow.TaskInput{TaskID: request.TaskID, WorkspaceID: request.WorkspaceID})
 	if err != nil {
@@ -222,7 +257,44 @@ func (a *Activities) RunTool(ctx context.Context, request workflow.ToolRequest) 
 	}
 	scope := scopeOf(task)
 
-	result, err := a.deps.Executor.Execute(ctx, scope, domain.ToolCall{
+	// The tool's span, named for the tool rather than for the call: "the slow one is
+	// whatsapp.list_messages" is the question, and a call id answers none of it. The
+	// arguments are deliberately not attributes — that is where a customer's data enters the
+	// run.
+	//
+	// It opens before the checks below rather than after them, so a call this deployment
+	// could not serve is *visible* as a span that failed: an activity that ran and refused is
+	// exactly the thing an incident is looking for, and a refusal that produced no span would
+	// be an unexplained gap in the trace.
+	ctx, span := a.toolSpan(ctx, task, request.Name)
+	// One deferred close for every way out: a failure recorded here and a span ended twice are
+	// both worse than a single place that decides.
+	defer func() { end(span, err) }()
+
+	started := a.now()
+
+	// The call is recorded however it ends, which is why it is deferred rather than written after
+	// the call: the integration travels with it — "which integration is failing" is the question,
+	// and a tool name alone answers it only for somebody who knows the registry by heart — and a
+	// call this deployment refused is a call that never reached the provider, which is exactly
+	// what a failure chart should show.
+	var result domain.ToolResult
+	defer func() {
+		if a.deps.Metrics == nil {
+			return
+		}
+
+		a.deps.Metrics.ToolCall(ctx, appOfTool(request.Name),
+			err != nil || result.IsError, a.now().Sub(started).Seconds())
+	}()
+
+	if a.deps.Executor == nil {
+		err = fmt.Errorf("%w: %s", domain.ErrToolNotAvailable, request.Name)
+
+		return workflow.ToolOutcome{}, err
+	}
+
+	result, err = a.deps.Executor.Execute(ctx, scope, domain.ToolCall{
 		TaskID:         task.ID,
 		AgentID:        task.AgentID,
 		CallID:         request.CallID,
@@ -232,6 +304,16 @@ func (a *Activities) RunTool(ctx context.Context, request workflow.ToolRequest) 
 	})
 	if err != nil {
 		return workflow.ToolOutcome{}, err
+	}
+
+	// An error the tool reported is not a failure of the runtime: the model is told what went
+	// wrong and decides what to do, so the span carries the fact without failing.
+	span.SetAttributes(
+		attribute.Int("result_bytes", len(result.Content)),
+		attribute.Bool("is_error", result.IsError),
+	)
+	if result.IsError {
+		span.SetStatus(codes.Error, "the tool reported an error")
 	}
 
 	content := result.Content
@@ -251,6 +333,8 @@ func (a *Activities) RunTool(ctx context.Context, request workflow.ToolRequest) 
 // RequestDraft turns a write_external call into a draft a human decides on, and
 // parks the task on it.
 func (a *Activities) RequestDraft(ctx context.Context, request workflow.ToolRequest) (workflow.DraftOutcome, error) {
+	a.retry(ctx, "RequestDraft")
+
 	task, err := a.load(ctx, workflow.TaskInput{TaskID: request.TaskID, WorkspaceID: request.WorkspaceID})
 	if err != nil {
 		return workflow.DraftOutcome{}, err
@@ -277,6 +361,13 @@ func (a *Activities) RequestDraft(ctx context.Context, request workflow.ToolRequ
 	})
 	if err != nil {
 		return workflow.DraftOutcome{}, err
+	}
+
+	// How long the bot took to produce something a person can read, measured from the moment
+	// the task opened rather than from this round: the promise is "the work is done, here it
+	// is", and a task that thought for three rounds before drafting took all three.
+	if a.deps.Metrics != nil && task.StartedAt != nil {
+		a.deps.Metrics.DraftReady(ctx, a.now().Sub(*task.StartedAt).Seconds())
 	}
 
 	// A policy that allowed the action unattended means there is nobody to wait
@@ -467,6 +558,8 @@ func (a *Activities) BeatTask(ctx context.Context, request workflow.Beat) (workf
 
 // CompleteTask writes the terminal state and the answer.
 func (a *Activities) CompleteTask(ctx context.Context, request workflow.CompleteRequest) (workflow.TaskOutcome, error) {
+	a.retry(ctx, "CompleteTask")
+
 	task, err := a.load(ctx, workflow.TaskInput{TaskID: request.TaskID, WorkspaceID: request.WorkspaceID})
 	if err != nil {
 		return workflow.TaskOutcome{}, err
@@ -500,12 +593,22 @@ func (a *Activities) CompleteTask(ctx context.Context, request workflow.Complete
 			Status:       status,
 			FinishReason: stored.StoppedReason,
 			TaskID:       stored.ID,
-		}); err != nil && a.deps.Logger != nil {
+		}); err != nil {
 			// A task whose answer could not be written is still finished: saying
 			// otherwise would leave it live forever.
-			a.deps.Logger.Warn("could not write the task's answer into the conversation",
-				zap.String("task_id", stored.ID.String()), zap.Error(err))
+			a.taskLogger(ctx, stored).Warn("could not write the task's answer into the conversation",
+				zap.Error(err))
 		}
+	}
+
+	// The task's own numbers, which is what the depth comes back down from and what "tokens and
+	// cost per task" is read from. They are taken from the stored row rather than from the
+	// request, so a task whose tokens the runtime recomputed is charted as it was stored — the
+	// same numbers the ledger holds and the dashboard shows.
+	if a.deps.Metrics != nil {
+		a.deps.Metrics.TaskSettled(ctx)
+		a.deps.Metrics.TaskFinished(ctx, stored.Trigger, stored.Status,
+			durationOf(stored, a.now()), stored.InputTokens, stored.OutputTokens, stored.CostMicros)
 	}
 
 	a.emit(ctx, scope, stored, workflow.EventTaskFinished)
@@ -519,11 +622,10 @@ func (a *Activities) CompleteTask(ctx context.Context, request workflow.Complete
 			Status:  stored.Status,
 			Summary: stored.Summary,
 			Reason:  stored.StoppedReason,
-		}); err != nil && !errors.Is(err, domain.ErrOutcomeUnclaimed) && a.deps.Logger != nil {
+		}); err != nil && !errors.Is(err, domain.ErrOutcomeUnclaimed) {
 			// A task whose outcome could not be reported is still finished: saying
 			// otherwise would leave it live forever.
-			a.deps.Logger.Warn("could not report the task's outcome",
-				zap.String("task_id", stored.ID.String()), zap.Error(err))
+			a.taskLogger(ctx, stored).Warn("could not report the task's outcome", zap.Error(err))
 		}
 	}
 
@@ -754,8 +856,8 @@ func (a *Activities) emit(ctx context.Context, scope domain.Scope, task domain.T
 		return
 	}
 
-	if err := a.deps.Events.Emit(ctx, workflow.TaskEvent(scope, task, eventType, payload)); err != nil && a.deps.Logger != nil {
-		a.deps.Logger.Warn("task event published only to the store",
+	if err := a.deps.Events.Emit(ctx, workflow.TaskEvent(scope, task, eventType, payload)); err != nil {
+		a.taskLogger(ctx, task).Warn("task event published only to the store",
 			zap.String("type", eventType), zap.Error(err))
 	}
 }

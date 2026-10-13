@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
@@ -23,7 +24,7 @@ import (
 )
 
 // latestMigration is the version of the newest migration file.
-const latestMigration = 16
+const latestMigration = 21
 
 const (
 	pgUser     = "postgres"
@@ -227,6 +228,14 @@ func TestSchemaObjectsExist(t *testing.T) {
 		SELECT count(*) FROM topup_packages WHERE active AND token_amount > 0 AND price_idr > 0`).Scan(&topups))
 	require.GreaterOrEqual(t, topups, 1, "at least one top-up pack must be seeded")
 
+	// The audit trail is append-only, enforced by the database rather than by every
+	// caller remembering. A row that can be rewritten answers "who changed this" with
+	// whatever the last writer wanted it to say, which is worse than having no trail.
+	//
+	// It is asserted here rather than only in the module's own test because it is a
+	// property of the schema: the trigger, not a service, is what refuses.
+	requireAuditTrailIsAppendOnly(t, pool, ctx)
+
 	// Every package bounds something, and the trial is short on purpose: a package
 	// nobody ever leaves is not a trial.
 	var days int
@@ -405,4 +414,61 @@ func insertUser(t *testing.T, ctx context.Context, dsn, email string) string {
 	require.NoError(t, pool.QueryRow(ctx,
 		"INSERT INTO users (email) VALUES ($1) RETURNING id", email).Scan(&id))
 	return id
+}
+
+// requireAuditTrailIsAppendOnly is the schema's own claim about the trail: a recorded action
+// cannot be rewritten or removed, and the one way to remove it — a workspace erasure — has
+// to say so explicitly.
+func requireAuditTrailIsAppendOnly(t *testing.T, pool *pgxpool.Pool, ctx context.Context) {
+	t.Helper()
+
+	var workspace uuid.UUID
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO workspaces (name, business_field, timezone)
+		VALUES ('Toko Jejak', 'Retail', 'Asia/Jakarta')
+		RETURNING id`).Scan(&workspace))
+
+	var entry int64
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO audit_logs (workspace_id, action, object_type, object_id, metadata)
+		VALUES ($1, 'draft.sent', 'draft', 'd-1', '{"to":"a@b.c"}'::jsonb)
+		RETURNING id`, workspace).Scan(&entry))
+
+	// The row is written, which is the precondition for the two refusals below: a trigger
+	// that refused everything would pass the rest of this for the wrong reason.
+	var recorded int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT count(*) FROM audit_logs WHERE id = $1`, entry).Scan(&recorded))
+	require.Equal(t, 1, recorded)
+
+	// Rewriting it is refused by the database.
+	_, err := pool.Exec(ctx,
+		`UPDATE audit_logs SET action = 'draft.approved' WHERE id = $1`, entry)
+	require.Error(t, err, "a recorded action cannot be rewritten")
+	require.Contains(t, err.Error(), "append-only")
+
+	// And so is removing it.
+	_, err = pool.Exec(ctx, `DELETE FROM audit_logs WHERE id = $1`, entry)
+	require.Error(t, err, "a recorded action cannot be removed")
+	require.Contains(t, err.Error(), "append-only")
+
+	// The one lawful way: a workspace erasure says so for the length of its transaction.
+	// Without that flag the statement above fails, which is what keeps "users cannot change
+	// the audit log" and "a person can have their data deleted" from being two rules that
+	// contradict each other.
+	tx, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `SELECT set_config('app.audit_erase', 'on', true)`); err != nil {
+		require.NoError(t, err)
+	}
+	_, err = tx.Exec(ctx, `DELETE FROM audit_logs WHERE id = $1`, entry)
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit(ctx))
+
+	var remaining int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT count(*) FROM audit_logs WHERE id = $1`, entry).Scan(&remaining))
+	require.Zero(t, remaining, "a workspace erasure is the one path that removes a line")
 }

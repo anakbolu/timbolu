@@ -323,8 +323,16 @@ func TestRestingBoluTakesNoNewWork(t *testing.T) {
 	require.False(t, ok, "a resting Bolu must not accept new tasks")
 }
 
-// TestGrantsDecideTheToolList is the E3.5 gate: no grant, no tools; a read grant
-// keeps only the read-labelled tools.
+// TestGrantsDecideTheToolList is the E3.5 gate: no grant, no *connected* tool; a
+// read grant keeps only the read-labelled ones.
+//
+// The rule is about the tools that reach a provider. A tool that belongs to the
+// workspace itself — the catalogue it sells from, the order it records — needs no
+// account to be granted and is offered to any Bolu whose profile asks for it, which
+// is what `needs_connection = false` says on the catalogue row. So the assertion is
+// per kind rather than "the list is empty": a list containing a connected tool the
+// Bolu was never granted is the failure this test exists for, and it would hide
+// behind an emptiness check that the workspace tools now break.
 func TestGrantsDecideTheToolList(t *testing.T) {
 	fixture := newAgentFixture(t, appDatabase(t))
 	ctx := t.Context()
@@ -344,11 +352,17 @@ func TestGrantsDecideTheToolList(t *testing.T) {
 	require.NotEmpty(t, oren.TemplateKey)
 	require.Contains(t, oren.Tools, "gmail.send", "the template asks for the send tool")
 
-	// Without a connected integration there is nothing to grant, and the tool
-	// list is empty.
+	// Without a connected integration there is nothing to grant, so no tool that
+	// reaches a provider may appear — and the workspace's own tools still do, because
+	// they need no account.
 	tools, err := fixture.service.AllowedTools(ctx, fixture.scope, oren.ID)
 	require.NoError(t, err)
-	require.Empty(t, tools, "without a grant no tool may reach the model")
+	for _, tool := range tools {
+		require.False(t, tool.NeedsConnection,
+			"without a grant only a workspace tool may reach the model, not %s", tool.Name)
+	}
+	require.Contains(t, toolNames(tools), "order.record_order",
+		"the workspace's own tools need no account and are offered anyway")
 
 	// Connect a Gmail integration and grant read-only access.
 	integrationID := uuid.New()
@@ -371,13 +385,13 @@ func TestGrantsDecideTheToolList(t *testing.T) {
 	require.NotEmpty(t, tools)
 
 	for _, tool := range tools {
+		if !tool.NeedsConnection {
+			continue
+		}
 		require.Equal(t, agentdomain.LabelRead, tool.Label,
 			"a read-only grant must not expose %s", tool.Name)
 	}
-	names := map[string]bool{}
-	for _, tool := range tools {
-		names[tool.Name] = true
-	}
+	names := toolNames(tools)
 	require.True(t, names["gmail.search"], "the read tool must be available")
 	require.False(t, names["gmail.send"], "the write_external tool must be withheld")
 	require.False(t, names["gmail.create_draft"], "a write tool must be withheld")
@@ -388,10 +402,7 @@ func TestGrantsDecideTheToolList(t *testing.T) {
 
 	tools, err = fixture.service.AllowedTools(ctx, fixture.scope, oren.ID)
 	require.NoError(t, err)
-	names = map[string]bool{}
-	for _, tool := range tools {
-		names[tool.Name] = true
-	}
+	names = toolNames(tools)
 	require.True(t, names["gmail.send"])
 
 	// Revoking takes them away again on the next read.
@@ -399,7 +410,22 @@ func TestGrantsDecideTheToolList(t *testing.T) {
 
 	tools, err = fixture.service.AllowedTools(ctx, fixture.scope, oren.ID)
 	require.NoError(t, err)
-	require.Empty(t, tools, "revoking the grant must remove the tools")
+	for _, tool := range tools {
+		require.False(t, tool.NeedsConnection,
+			"revoking the grant must remove every connected tool, including %s", tool.Name)
+	}
+	require.NotContains(t, toolNames(tools), "gmail.search")
+}
+
+// toolNames is the set of tool names in a list, which is what the assertions above
+// ask about: whether a tool is offered, not where it was in the order.
+func toolNames(tools []agentdomain.Tool) map[string]bool {
+	names := make(map[string]bool, len(tools))
+	for _, tool := range tools {
+		names[tool.Name] = true
+	}
+
+	return names
 }
 
 // TestAgentRepositoryWithoutAPool keeps the unconfigured state an error.

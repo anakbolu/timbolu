@@ -352,10 +352,81 @@ type UsageDaily struct {
 // Total is the billable token count of the day.
 func (d UsageDaily) Total() int64 { return d.InputTokens + d.OutputTokens }
 
+// UsageReport is what a workspace spent over a window, read three ways.
+//
+// The three are deliberately separate rather than one number and two breakdowns: `Totals` covers
+// every call the workspace made, including the ones made outside any task — a memory extraction, an
+// embedding, a routing decision — so a screen that presented the per-task rows as the whole of the
+// spend would be showing a smaller number than the invoice. That gap is a fact about the product
+// (work happens outside tasks) rather than a rounding error, and it is stated instead of hidden.
+type UsageReport struct {
+	// PeriodStartedAt is the first moment the window covers, in the deployment's own timezone
+	// (Asia/Jakarta). It is resolved where the window is resolved, so a screen cannot disagree
+	// with the totals about what the period was.
+	PeriodStartedAt time.Time
+	// Totals is every call in the window.
+	Totals UsageTotals
+	// ByAgent is the same spend grouped by the Bolu that made it, dearest first. A call made
+	// outside any Bolu — there are none today, and the ledger permits them — lands in the row
+	// whose AgentID is zero.
+	ByAgent []UsageByAgent
+	// ByTask is the same spend grouped by the task that caused it, dearest first. Calls made
+	// outside a task are absent, which is why Totals and the sum of these rows differ.
+	ByTask []UsageByTask
+}
+
+// UsageTotals is one window's spend.
+type UsageTotals struct {
+	Calls            int64
+	InputTokens      int64
+	OutputTokens     int64
+	CacheReadTokens  int64
+	CacheWriteTokens int64
+	CostMicros       int64
+}
+
+// Total is the billable token count of the window.
+func (t UsageTotals) Total() int64 { return t.InputTokens + t.OutputTokens }
+
+// DefaultReportPage is how many Bolu and how many tasks one report lists when the caller does not
+// say. It is a page rather than the whole of history: a workspace with ten thousand tasks has a
+// report whose *totals* are the answer and whose rows are examples.
+const DefaultReportPage = 50
+
+// UsageByAgent is one Bolu's share of a window.
+type UsageByAgent struct {
+	AgentID      uuid.UUID
+	AgentName    string
+	Calls        int64
+	InputTokens  int64
+	OutputTokens int64
+	CostMicros   int64
+}
+
+// Total is the billable token count for this Bolu.
+func (u UsageByAgent) Total() int64 { return u.InputTokens + u.OutputTokens }
+
+// UsageByTask is one task's share of a window.
+type UsageByTask struct {
+	TaskID       uuid.UUID
+	TaskTitle    string
+	TaskStatus   string
+	Calls        int64
+	InputTokens  int64
+	OutputTokens int64
+	CostMicros   int64
+}
+
+// Total is the billable token count for this task.
+func (u UsageByTask) Total() int64 { return u.InputTokens + u.OutputTokens }
+
 // UsageReader reads the aggregated usage of a workspace.
 type UsageReader interface {
 	// Daily returns per-day totals for the last days, most recent first.
 	Daily(ctx context.Context, workspaceID uuid.UUID, since time.Time) ([]UsageDaily, error)
+	// Report returns the period's totals over a window, with the per-Bolu and per-task
+	// breakdowns the usage screen shows.
+	Report(ctx context.Context, workspaceID uuid.UUID, since time.Time, limit int) (UsageReport, error)
 	// SumSince returns the tokens recorded since a moment, which is the durable
 	// fallback when the live counter is unavailable.
 	SumSince(ctx context.Context, workspaceID uuid.UUID, since time.Time) (int64, error)
@@ -363,6 +434,20 @@ type UsageReader interface {
 	// the durable fallback for the daily ceiling, and it reads the daily
 	// aggregation rather than scanning the ledger.
 	CostSince(ctx context.Context, workspaceID uuid.UUID, since time.Time) (int64, error)
+}
+
+// Metrics is where the model gateway reports the calls it made.
+//
+// It is a port because the module owns no telemetry: the container implements it over whatever the
+// deployment configured. What it carries is the provider, the purpose, and whether a fallback was
+// needed — never the prompt, the answer, or a workspace. The identities live in `usage_ledger`,
+// where the rows already are; a chart needs the *rate*: which provider is slow, and how often the
+// chain had to move on.
+type Metrics interface {
+	// ModelCall reports one call that reached a provider. seconds is how long the provider took,
+	// and fellBack is whether this deployment had already tried another one for the same
+	// request — which is the number that explains an unexpected bill.
+	ModelCall(ctx context.Context, provider, purpose string, fellBack bool, seconds float64)
 }
 
 // UsageRecorder persists what a call cost. Every provider call goes through it,
@@ -405,6 +490,26 @@ type QuotaPolicy interface {
 	Allowance(ctx context.Context, workspaceID uuid.UUID) (int64, error)
 	// DailyCostAllowance is the cost ceiling of one day, in micro-rupiah.
 	DailyCostAllowance(ctx context.Context, workspaceID uuid.UUID) (int64, error)
+}
+
+// Auditor records what a person did, for the trail the product answers "who changed this"
+// with. The approval module owns the table.
+//
+// A provider configuration holds an API key, so what this carries is deliberately narrow:
+// the name, the adapter, the model, and whether a key is stored. The key itself is never
+// passed here, which is why the entry is built from the redacted shape rather than from the
+// configuration that was written.
+type Auditor interface {
+	Record(ctx context.Context, scope Scope, entry AuditEntry) error
+}
+
+// AuditEntry is one thing that happened, for the record.
+type AuditEntry struct {
+	Action      string
+	ObjectType  string
+	ObjectID    string
+	ActorUserID uuid.UUID
+	Metadata    map[string]any
 }
 
 // Clock reports the time, so cost and expiry rules are testable.

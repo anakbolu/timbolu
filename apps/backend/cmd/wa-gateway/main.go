@@ -65,11 +65,21 @@ func run() error {
 
 	// The engine needs the database, the key ring, and Redis, so the container is
 	// assembled with everything except the HTTP surface.
+	//
+	// The gateway has an HTTP API of its own, but not the API's probes: it serves `/health` on that
+	// listener and nothing else. The operations listener adds `/ready`, which is the question a
+	// rollout asks — a gateway that cannot reach Postgres must not be told it is ready.
+	// This binary names itself in the traces, so the API and the workers are separate services
+	// in a collector rather than one process that appears everywhere.
+	cfg.Telemetry.DefaultServiceName("bolu-wa-gateway")
+
 	c, err := container.New(ctx, cfg, container.WithoutHTTP())
 	if err != nil {
 		return err
 	}
 	defer c.Close()
+
+	go c.RunOpsServer(ctx)
 
 	engine, gateway, err := c.OpenWhatsAppRuntime(cfg)
 	if err != nil {

@@ -198,6 +198,9 @@ func (s *Service) keep(
 			}
 			result.Merged++
 
+			// The actor here is the workflow, not a person: nobody asked for this line, and saying
+			// it was a person would make the trail lie about the one thing it is read for. The
+			// source in the metadata is what says where it came from.
 			s.audit(ctx, scope, domain.AuditEntry{
 				Action:     domain.ActionUpdated,
 				ObjectType: "memory",

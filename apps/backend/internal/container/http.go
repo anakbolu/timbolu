@@ -6,11 +6,31 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 	"go.uber.org/zap"
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/response"
 )
+
+// tracingMiddleware starts the request's span.
+//
+// It is a method rather than a free function because the tracer comes from the deployment's
+// provider, and a container built in a test traces into the test's provider rather than into
+// whatever is installed globally.
+func (c *Container) tracingMiddleware() fiber.Handler {
+	return middleware.Tracing(c.telemetryTracer())
+}
+
+// telemetryTracer is the process's tracer, or a no-op one when telemetry was never installed.
+func (c *Container) telemetryTracer() trace.Tracer {
+	if c == nil || c.Telemetry == nil {
+		return noop.NewTracerProvider().Tracer("bolu")
+	}
+
+	return c.Telemetry.Tracer()
+}
 
 // requestContextMiddleware attaches request_id, workspace_id and trace_id to
 // every request and to the request-scoped logger.

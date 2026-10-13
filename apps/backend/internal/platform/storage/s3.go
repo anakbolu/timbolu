@@ -76,6 +76,36 @@ func NewS3(ctx context.Context, cfg S3Config) (*S3Store, error) {
 // Driver implements Store.
 func (s *S3Store) Driver() string { return "s3" }
 
+// List implements Store, paging through the bucket under a prefix.
+func (s *S3Store) List(ctx context.Context, prefix string) ([]string, error) {
+	keys := []string{}
+	// A bucket listing is paged, so the walk continues while the provider says there is more: a
+	// single call would silently stop at a thousand objects, which for "delete everything this
+	// tenant owns" is the difference between erasing a workspace and erasing part of it.
+	continuation := ""
+
+	for {
+		options := minio.ListObjectsOptions{Prefix: prefix, Recursive: true}
+		if continuation != "" {
+			options.StartAfter = continuation
+		}
+
+		page := 0
+		for object := range s.client.ListObjects(ctx, s.bucket, options) {
+			if object.Err != nil {
+				return nil, fmt.Errorf("storage: list %s: %w", prefix, object.Err)
+			}
+			keys = append(keys, object.Key)
+			continuation = object.Key
+			page++
+		}
+
+		if page == 0 {
+			return keys, nil
+		}
+	}
+}
+
 // Put implements Store.
 func (s *S3Store) Put(ctx context.Context, key, contentType string, content []byte) (Object, error) {
 	contentType = strings.TrimSpace(contentType)

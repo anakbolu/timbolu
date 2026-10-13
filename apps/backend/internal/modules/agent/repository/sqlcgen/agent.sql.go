@@ -87,13 +87,21 @@ func (q *Queries) AgentActivityByID(ctx context.Context, arg AgentActivityByIDPa
 }
 
 const allowedToolsForAgent = `-- name: AllowedToolsForAgent :many
-SELECT tc.name, tc.integration_app, tc.label, tc.description
+SELECT tc.name, tc.integration_app, tc.label, tc.description, tc.needs_connection
 FROM agents a
 JOIN tool_catalog tc ON tc.name IN (SELECT jsonb_array_elements_text(a.tools))
-JOIN integrations i ON i.workspace_id = a.workspace_id AND i.app = tc.integration_app
-JOIN agent_grants g ON g.agent_id = a.id AND g.integration_id = i.id
 WHERE a.id = $1 AND a.workspace_id = $2 AND a.deleted_at IS NULL
-  AND (g.permission = 'read_write' OR tc.label = 'read')
+  AND (
+    NOT tc.needs_connection
+    OR EXISTS (
+      SELECT 1
+      FROM integrations i
+      JOIN agent_grants g ON g.agent_id = a.id AND g.integration_id = i.id
+      WHERE i.workspace_id = a.workspace_id
+        AND i.app = tc.integration_app
+        AND (g.permission = 'read_write' OR tc.label = 'read')
+    )
+  )
 ORDER BY tc.name
 `
 
@@ -103,15 +111,22 @@ type AllowedToolsForAgentParams struct {
 }
 
 type AllowedToolsForAgentRow struct {
-	Name           string
-	IntegrationApp string
-	Label          string
-	Description    string
+	Name            string
+	IntegrationApp  string
+	Label           string
+	Description     string
+	NeedsConnection bool
 }
 
 // The effective tool list: what the agent asks for, restricted to integrations
 // it was actually granted. A read-only grant keeps only the tools that cannot
 // touch anything outside Bolu.
+//
+// A tool that belongs to the workspace itself — the catalogue and the order it records — needs no
+// connection and no grant, which is what `needs_connection = false` says: there is no account to
+// authorise and nothing outside this deployment to reach. The EXISTS is what keeps the two rules
+// apart: a connected tool is offered only through a grant, and a workspace tool is offered to any
+// Bolu whose profile asks for it.
 func (q *Queries) AllowedToolsForAgent(ctx context.Context, arg AllowedToolsForAgentParams) ([]AllowedToolsForAgentRow, error) {
 	rows, err := q.db.Query(ctx, allowedToolsForAgent, arg.ID, arg.WorkspaceID)
 	if err != nil {
@@ -126,6 +141,7 @@ func (q *Queries) AllowedToolsForAgent(ctx context.Context, arg AllowedToolsForA
 			&i.IntegrationApp,
 			&i.Label,
 			&i.Description,
+			&i.NeedsConnection,
 		); err != nil {
 			return nil, err
 		}
@@ -584,7 +600,7 @@ func (q *Queries) ListIntegrations(ctx context.Context, workspaceID uuid.UUID) (
 }
 
 const listToolCatalog = `-- name: ListToolCatalog :many
-SELECT name, integration_app, label, description, created_at FROM tool_catalog ORDER BY integration_app, name
+SELECT name, integration_app, label, description, created_at, needs_connection FROM tool_catalog ORDER BY integration_app, name
 `
 
 func (q *Queries) ListToolCatalog(ctx context.Context) ([]ToolCatalog, error) {
@@ -602,6 +618,7 @@ func (q *Queries) ListToolCatalog(ctx context.Context) ([]ToolCatalog, error) {
 			&i.Label,
 			&i.Description,
 			&i.CreatedAt,
+			&i.NeedsConnection,
 		); err != nil {
 			return nil, err
 		}

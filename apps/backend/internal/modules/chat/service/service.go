@@ -12,6 +12,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -343,6 +344,108 @@ func (s *Service) AttachmentContent(ctx context.Context, scope chatdomain.Scope,
 		return chatdomain.Attachment{}, nil, fmt.Errorf("chat: read attachment: %w", err)
 	}
 	return attachment, content, nil
+}
+
+// PruneAttachments removes the attachments of one workspace that are past a moment, row and
+// object together, and reports what went.
+//
+// The order is the object first and the row second, which is the reverse of Attach and is for
+// the same reason it is: a row is what a user can see, so it is the half that must not point at
+// nothing. Removing the object first can leave a row whose bytes are gone — which the *next*
+// pass fixes, because removing an object that is absent is not an error and the row is deleted
+// then. Doing it the other way round would leak an object nothing points at, and no pass can
+// ever find it again: it is invisible to the database, and only a bucket audit would see it.
+//
+// The bytes counted are the ones whose row was actually removed, so the number a monitor reads
+// is storage that is really gone rather than storage that was attempted.
+func (s *Service) PruneAttachments(ctx context.Context, scope chatdomain.Scope, olderThan time.Time, limit int) (chatdomain.AttachmentPrune, error) {
+	if err := requireWorkspace(scope); err != nil {
+		return chatdomain.AttachmentPrune{}, err
+	}
+	if s.deps.Storage == nil {
+		return chatdomain.AttachmentPrune{}, chatdomain.ErrStorageUnavailable
+	}
+
+	expired, err := s.deps.Attachments.ListExpired(ctx, scope, olderThan, limit)
+	if err != nil {
+		return chatdomain.AttachmentPrune{}, err
+	}
+
+	var result chatdomain.AttachmentPrune
+	var failures []error
+
+	for _, attachment := range expired {
+		if ctx.Err() != nil {
+			failures = append(failures, ctx.Err())
+			break
+		}
+
+		if err := s.deps.Storage.Delete(ctx, attachment.StorageKey); err != nil {
+			// The row stays, so the attachment is still whole and still readable —
+			// and the next pass tries again rather than losing the file silently.
+			failures = append(failures, fmt.Errorf("chat: remove attachment object: %w", err))
+			continue
+		}
+
+		if err := s.deps.Attachments.Delete(ctx, scope, attachment.ID); err != nil {
+			failures = append(failures, fmt.Errorf("chat: remove attachment row: %w", err))
+			continue
+		}
+
+		result.Count++
+		result.BytesFreed += attachment.ByteSize
+	}
+
+	return result, errors.Join(failures...)
+}
+
+// EraseObjects removes every object this workspace owns and reports how many went.
+//
+// It walks the module's own prefixes rather than the attachment rows, and that distinction is the
+// whole point: a sandboxed HTML document a Bolu wrote is an object with no row at all, so a deletion
+// driven from the database would leave it in the bucket with nothing pointing at it — a copy of a
+// customer's work that survives the request to remove it and that no query will ever find again. The
+// prefixes are walked after the rows that name them are still there, so a failure is retryable.
+//
+// The bytes are removed one at a time and the failures are joined rather than swallowed: a single
+// object that cannot be deleted must not be reported as a successful erasure.
+func (s *Service) EraseObjects(ctx context.Context, workspaceID uuid.UUID) (int64, error) {
+	if workspaceID == uuid.Nil {
+		return 0, fmt.Errorf("%w: workspace id is required", chatdomain.ErrInvalidInput)
+	}
+	if s.deps.Storage == nil {
+		return 0, chatdomain.ErrStorageUnavailable
+	}
+
+	var removed int64
+	var failures []error
+
+	for _, prefix := range chatdomain.ObjectPrefixes {
+		keys, err := s.deps.Storage.List(ctx, chatdomain.WorkspaceObjectPrefix(prefix, workspaceID.String()))
+		if err != nil {
+			failures = append(failures, fmt.Errorf("chat: list %s objects: %w", prefix, err))
+
+			continue
+		}
+
+		for _, key := range keys {
+			if ctx.Err() != nil {
+				failures = append(failures, ctx.Err())
+
+				break
+			}
+
+			if err := s.deps.Storage.Delete(ctx, key); err != nil {
+				failures = append(failures, fmt.Errorf("chat: delete object: %w", err))
+
+				continue
+			}
+
+			removed++
+		}
+	}
+
+	return removed, errors.Join(failures...)
 }
 
 // Content returns one sandboxed HTML document by its reference.

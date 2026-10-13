@@ -11,6 +11,8 @@ import (
 	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
 	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 	memorydomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain"
+	orderdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/order/domain"
+	retentiondomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/retention/domain"
 	routinedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
 	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
 	whatsappdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/domain"
@@ -52,6 +54,16 @@ type Services struct {
 	// is built before the model gateway, because the gateway's quota policy is this
 	// module's answer.
 	Billing billingdomain.Service
+	// Retention is the content windows: what the deployment removes once it is old
+	// enough, and what it keeps. It is built after the chat service, whose attachments
+	// it removes, and after the task repository, whose step contents it removes.
+	Retention retentiondomain.Service
+	// Order is the workspace's own commerce data: the catalogue a person maintains,
+	// the customers it talks to, and the orders a Bolu recorded. It is reached both
+	// ways — a screen maintains the catalogue over HTTP, and a tool reads it and
+	// writes an order — which is why it is a module rather than a route or an
+	// adapter.
+	Order orderdomain.Service
 }
 
 // newServices builds every service. Optional dependencies (Redis today) are

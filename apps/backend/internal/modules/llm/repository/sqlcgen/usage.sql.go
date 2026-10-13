@@ -109,6 +109,131 @@ func (q *Queries) ListDailyUsage(ctx context.Context, arg ListDailyUsageParams) 
 	return items, nil
 }
 
+const listUsageByAgent = `-- name: ListUsageByAgent :many
+SELECT COALESCE(a.id, '00000000-0000-0000-0000-000000000000'::uuid) AS agent_id,
+       COALESCE(a.name, '')                                          AS agent_name,
+       sum(u.input_tokens)::bigint                                   AS input_tokens,
+       sum(u.output_tokens)::bigint                                  AS output_tokens,
+       sum(u.cost_micros)::bigint                                    AS cost_micros,
+       count(*)::bigint                                              AS calls
+FROM usage_ledger u
+LEFT JOIN agents a ON a.id = u.agent_id AND a.workspace_id = u.workspace_id
+WHERE u.workspace_id = $1 AND u.created_at >= $2
+GROUP BY 1, 2
+ORDER BY 5 DESC, 3 DESC
+LIMIT $3
+`
+
+type ListUsageByAgentParams struct {
+	WorkspaceID uuid.UUID
+	CreatedAt   time.Time
+	LimitCount  int32
+}
+
+type ListUsageByAgentRow struct {
+	AgentID      uuid.UUID
+	AgentName    string
+	InputTokens  int64
+	OutputTokens int64
+	CostMicros   int64
+	Calls        int64
+}
+
+// One row per Bolu, over a window. The name is joined so the report says which bot rather than
+// which id, and a deleted Bolu keeps its rows: `agent_id` is ON DELETE SET NULL, so its spend
+// moves to the unattributed row rather than disappearing from the workspace's total.
+func (q *Queries) ListUsageByAgent(ctx context.Context, arg ListUsageByAgentParams) ([]ListUsageByAgentRow, error) {
+	rows, err := q.db.Query(ctx, listUsageByAgent, arg.WorkspaceID, arg.CreatedAt, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUsageByAgentRow{}
+	for rows.Next() {
+		var i ListUsageByAgentRow
+		if err := rows.Scan(
+			&i.AgentID,
+			&i.AgentName,
+			&i.InputTokens,
+			&i.OutputTokens,
+			&i.CostMicros,
+			&i.Calls,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUsageByTask = `-- name: ListUsageByTask :many
+SELECT u.task_id,
+       COALESCE(t.title, '')           AS task_title,
+       COALESCE(t.status, '')          AS task_status,
+       sum(u.input_tokens)::bigint     AS input_tokens,
+       sum(u.output_tokens)::bigint    AS output_tokens,
+       sum(u.cost_micros)::bigint      AS cost_micros,
+       count(*)::bigint                AS calls
+FROM usage_ledger u
+LEFT JOIN tasks t ON t.id = u.task_id AND t.workspace_id = u.workspace_id
+WHERE u.workspace_id = $1 AND u.created_at >= $2 AND u.task_id IS NOT NULL
+GROUP BY 1, 2, 3
+ORDER BY 6 DESC, 4 DESC
+LIMIT $3
+`
+
+type ListUsageByTaskParams struct {
+	WorkspaceID uuid.UUID
+	CreatedAt   time.Time
+	LimitCount  int32
+}
+
+type ListUsageByTaskRow struct {
+	TaskID       *uuid.UUID
+	TaskTitle    string
+	TaskStatus   string
+	InputTokens  int64
+	OutputTokens int64
+	CostMicros   int64
+	Calls        int64
+}
+
+// One row per task, most expensive first, over a window.
+//
+// Only tasks are grouped: a call made outside a task is in the workspace's total and has no row
+// here, which is why the report shows both numbers rather than presenting the rows as a complete
+// breakdown.
+func (q *Queries) ListUsageByTask(ctx context.Context, arg ListUsageByTaskParams) ([]ListUsageByTaskRow, error) {
+	rows, err := q.db.Query(ctx, listUsageByTask, arg.WorkspaceID, arg.CreatedAt, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUsageByTaskRow{}
+	for rows.Next() {
+		var i ListUsageByTaskRow
+		if err := rows.Scan(
+			&i.TaskID,
+			&i.TaskTitle,
+			&i.TaskStatus,
+			&i.InputTokens,
+			&i.OutputTokens,
+			&i.CostMicros,
+			&i.Calls,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const sumTokensSince = `-- name: SumTokensSince :one
 SELECT COALESCE(sum(input_tokens + output_tokens), 0)::bigint AS tokens
 FROM usage_ledger
@@ -127,4 +252,52 @@ func (q *Queries) SumTokensSince(ctx context.Context, arg SumTokensSinceParams) 
 	var tokens int64
 	err := row.Scan(&tokens)
 	return tokens, err
+}
+
+const sumUsageSince = `-- name: SumUsageSince :one
+
+SELECT COALESCE(sum(input_tokens), 0)::bigint       AS input_tokens,
+       COALESCE(sum(output_tokens), 0)::bigint      AS output_tokens,
+       COALESCE(sum(cache_read_tokens), 0)::bigint  AS cache_read_tokens,
+       COALESCE(sum(cache_write_tokens), 0)::bigint AS cache_write_tokens,
+       COALESCE(sum(cost_micros), 0)::bigint        AS cost_micros,
+       count(*)::bigint                             AS calls
+FROM usage_ledger
+WHERE workspace_id = $1 AND created_at >= $2
+`
+
+type SumUsageSinceParams struct {
+	WorkspaceID uuid.UUID
+	CreatedAt   time.Time
+}
+
+type SumUsageSinceRow struct {
+	InputTokens      int64
+	OutputTokens     int64
+	CacheReadTokens  int64
+	CacheWriteTokens int64
+	CostMicros       int64
+	Calls            int64
+}
+
+// ---------------------------------------------------------------- the report
+// The period's totals, over the ledger rather than the daily view.
+//
+// It is read from the ledger because a period is a *window*, not a set of whole days: a report that
+// covered "the last seven days" by summing seven rows of `usage_daily` would count a day that is
+// still running as if it were finished, and would miss the part of the first day that falls outside
+// the window. The bound is the caller's, so the report and the row it is compared against are the
+// same interval.
+func (q *Queries) SumUsageSince(ctx context.Context, arg SumUsageSinceParams) (SumUsageSinceRow, error) {
+	row := q.db.QueryRow(ctx, sumUsageSince, arg.WorkspaceID, arg.CreatedAt)
+	var i SumUsageSinceRow
+	err := row.Scan(
+		&i.InputTokens,
+		&i.OutputTokens,
+		&i.CacheReadTokens,
+		&i.CacheWriteTokens,
+		&i.CostMicros,
+		&i.Calls,
+	)
+	return i, err
 }

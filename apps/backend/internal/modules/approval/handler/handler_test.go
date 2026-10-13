@@ -113,7 +113,7 @@ func (s *stubService) SetPolicy(_ context.Context, _ domain.Scope, req domain.Po
 	return s.policy, s.err
 }
 
-func (s *stubService) Audit(context.Context, domain.Scope, int) ([]domain.AuditRecord, error) {
+func (s *stubService) Audit(context.Context, domain.Scope, domain.AuditFilter) ([]domain.AuditRecord, error) {
 	return s.audit, s.err
 }
 

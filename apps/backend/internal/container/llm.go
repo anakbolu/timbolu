@@ -49,6 +49,10 @@ func (c *Container) openLLM(_ context.Context, cfg *config.Config) error {
 	c.Costs = pricing.New(pricing.Default(), pricing.DefaultFallback)
 
 	deps := llmservice.Deps{
+		// The tracer is the process's provider, so a model call made inside a workflow is a
+		// child of that workflow's span rather than a new trace per call.
+		Tracer:   c.telemetryTracer(),
+		Metrics:  c.metricsFor(),
 		Store:    c.Repositories.LLM,
 		Agents:   c.Repositories.LLMAgents,
 		Factory:  llm.Factory{},

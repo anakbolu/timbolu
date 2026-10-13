@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 )
@@ -26,6 +27,8 @@ type Config struct {
 	DefaultTimezone string
 	// Clock is injectable so tests can control expiry.
 	Clock func() time.Time
+	// Logger reports a trail that could not be written. Optional.
+	Logger *zap.Logger
 }
 
 // Deps are the service dependencies. The provisioner is the seam EPIC 3 fills
@@ -39,15 +42,20 @@ type Deps struct {
 	// Limits reports how many members the workspace's package allows. Optional:
 	// unwired means the deployment sells no packages and nothing is capped.
 	Limits domain.PlanLimits
-	Config Config
+	// Auditor records membership and role changes in the workspace's trail. Optional:
+	// unwired means the change happens and leaves no line, which is what a deployment
+	// without the approval module runs with.
+	Auditor domain.Auditor
+	Config  Config
 }
 
 type service struct {
-	deps   domain.Repository
-	mail   domain.Mailer
-	tokens domain.Tokens
-	limits domain.PlanLimits
-	cfg    Config
+	deps    domain.Repository
+	mail    domain.Mailer
+	tokens  domain.Tokens
+	limits  domain.PlanLimits
+	auditor domain.Auditor
+	cfg     Config
 }
 
 // New builds the workspace service.
@@ -61,12 +69,16 @@ func New(deps Deps) domain.Service {
 	if deps.Config.DefaultTimezone == "" {
 		deps.Config.DefaultTimezone = "Asia/Jakarta"
 	}
+	if deps.Config.Logger == nil {
+		deps.Config.Logger = zap.NewNop()
+	}
 	return &service{
-		deps:   deps.Repository,
-		mail:   deps.Mailer,
-		tokens: deps.Tokens,
-		limits: deps.Limits,
-		cfg:    deps.Config,
+		deps:    deps.Repository,
+		mail:    deps.Mailer,
+		tokens:  deps.Tokens,
+		limits:  deps.Limits,
+		auditor: deps.Auditor,
+		cfg:     deps.Config,
 	}
 }
 
@@ -250,7 +262,23 @@ func (s *service) SetRole(ctx context.Context, scope domain.Scope, actorRole str
 		return domain.Member{}, err
 	}
 
-	return s.deps.SetRole(ctx, scope, userID, role)
+	member, err := s.deps.SetRole(ctx, scope, userID, role)
+	if err != nil {
+		return domain.Member{}, err
+	}
+
+	// A role decides who may do what inside the workspace, so the change is recorded with
+	// both what it was and what it became: "who was an owner on Tuesday" is the question,
+	// and the previous value is what answers it.
+	s.audit(ctx, scope, domain.AuditEntry{
+		Action:      "member.role_changed",
+		ObjectType:  "member",
+		ObjectID:    userID.String(),
+		ActorUserID: scope.UserID,
+		Metadata:    map[string]any{"role": role},
+	})
+
+	return member, nil
 }
 
 // RemoveMember deletes a membership. A member cannot remove anyone, an admin
@@ -266,8 +294,60 @@ func (s *service) RemoveMember(ctx context.Context, scope domain.Scope, actorRol
 		return err
 	}
 
-	return s.deps.RemoveMember(ctx, scope, userID)
+	// The role is read before the row goes, because after it the trail can only say that
+	// somebody left — not what access they had held. It is read only when something will
+	// record it: a deployment with no trail should not pay a query for a line nobody writes.
+	held := ""
+	if s.auditor != nil {
+		held = s.roleOf(ctx, scope, userID)
+	}
+
+	if err := s.deps.RemoveMember(ctx, scope, userID); err != nil {
+		return err
+	}
+
+	s.audit(ctx, scope, domain.AuditEntry{
+		Action:      "member.removed",
+		ObjectType:  "member",
+		ObjectID:    userID.String(),
+		ActorUserID: scope.UserID,
+		Metadata:    map[string]any{"had_role": held},
+	})
+
+	return nil
 }
+
+// roleOf reads one member's role for a trail entry, answering the empty string when the
+// member cannot be read. A trail line with no previous role is worse than none, so the
+// caller records what it has rather than refusing the removal.
+func (s *service) roleOf(ctx context.Context, scope domain.Scope, userID uuid.UUID) string {
+	members, err := s.deps.Members(ctx, scope)
+	if err != nil {
+		return ""
+	}
+	for _, member := range members {
+		if member.UserID == userID {
+			return member.Role
+		}
+	}
+	return ""
+}
+
+// audit records one entry. A trail that could not be written is reported rather than
+// failing the change: the membership already changed, and refusing it afterwards would
+// leave the workspace in a state nobody asked for.
+func (s *service) audit(ctx context.Context, scope domain.Scope, entry domain.AuditEntry) {
+	if s.auditor == nil {
+		return
+	}
+	if err := s.auditor.Record(ctx, scope, entry); err != nil {
+		s.log().Warn("could not record a workspace audit entry",
+			zap.String("action", entry.Action), zap.Error(err))
+	}
+}
+
+// log is the service's logger, which is never nil.
+func (s *service) log() *zap.Logger { return s.cfg.Logger }
 
 // Invite sends an invitation. Only owners and admins may invite, and the role
 // they may grant is capped by their own: an admin cannot create an owner.
@@ -346,6 +426,18 @@ func (s *service) Invite(ctx context.Context, scope domain.Scope, actorRole stri
 		return domain.Invitation{}, err
 	}
 
+	// An invitation is access that has not been taken yet, so it belongs in the trail
+	// beside a role change. The address is deliberately *not* recorded: the line names the
+	// invitation by id and the role it grants, and an address is personal data this
+	// nothing needs.
+	s.audit(ctx, scope, domain.AuditEntry{
+		Action:      "member.invited",
+		ObjectType:  "invitation",
+		ObjectID:    invitation.ID.String(),
+		ActorUserID: actorID,
+		Metadata:    map[string]any{"role": role},
+	})
+
 	return invitation, nil
 }
 
@@ -359,7 +451,19 @@ func (s *service) RevokeInvitation(ctx context.Context, scope domain.Scope, acto
 	if !domain.CanManageMembers(actorRole) {
 		return domain.ErrForbidden
 	}
-	return s.deps.RevokeInvitation(ctx, scope, id)
+
+	if err := s.deps.RevokeInvitation(ctx, scope, id); err != nil {
+		return err
+	}
+
+	s.audit(ctx, scope, domain.AuditEntry{
+		Action:      "member.invitation_revoked",
+		ObjectType:  "invitation",
+		ObjectID:    id.String(),
+		ActorUserID: scope.UserID,
+	})
+
+	return nil
 }
 
 // AcceptInvitation consumes an invitation for the signed-in account.

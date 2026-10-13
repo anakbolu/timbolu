@@ -13,8 +13,12 @@ import (
 	chathandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/handler"
 	healthhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/handler"
 	integrationhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/handler"
+	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 	llmhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/handler"
 	memoryhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/handler"
+	orderhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/order/handler"
+	retentiondomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/retention/domain"
+	retentionhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/retention/handler"
 	routinehandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/handler"
 	taskhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/handler"
 	whatsapphandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/handler"
@@ -35,6 +39,9 @@ type Handlers struct {
 	LLM       *llmhandler.Handler
 	Chat      *chathandler.Handler
 	Task      *taskhandler.Handler
+	// Retention serves the erasure endpoints: a workspace owner asking for their data to be
+	// removed, and reading back the record of what was removed.
+	Retention *retentionhandler.Handler
 	Approval  *approvalhandler.Handler
 	// Integration serves the connected accounts and the authorization flow.
 	Integration *integrationhandler.Handler
@@ -46,6 +53,9 @@ type Handlers struct {
 	WhatsApp *whatsapphandler.Handler
 	// Billing serves the package, the allowance, and the invoices.
 	Billing *billinghandler.Handler
+	// Order serves the workspace's own commerce data: the catalogue a person maintains and the orders
+	// a Bolu recorded.
+	Order *orderhandler.Handler
 }
 
 // newHandlers builds every handler from the service set. Handlers receive the
@@ -73,7 +83,16 @@ func newHandlers(services *Services, log *zap.Logger, cfg *config.Config) *Handl
 		handlers.Agent = agenthandler.New(services.Agent, log)
 	}
 	if services.LLM != nil {
+		// The usage screen's read is installed explicitly: the handler is built from the
+		// gateway interface, and the container is the only place that knows the same object
+		// answers the reporting port too.
 		handlers.LLM = llmhandler.New(services.LLM, log)
+		if reporter, ok := services.LLM.(llmdomain.UsageReporter); ok {
+			handlers.LLM = handlers.LLM.WithReporter(reporter)
+		}
+	}
+	if erasure, ok := services.Retention.(retentiondomain.ErasureService); ok {
+		handlers.Retention = retentionhandler.New(erasure, log)
 	}
 	if services.Chat != nil {
 		handlers.Chat = chathandler.New(services.Chat, log).WithContent(chathandler.ContentConfig{
@@ -81,7 +100,11 @@ func newHandlers(services *Services, log *zap.Logger, cfg *config.Config) *Handl
 		})
 	}
 	if services.Task != nil {
-		handlers.Task = taskhandler.New(services.Task, log)
+		// The deployment's Temporal UI: a stuck task's link is a deployment fact, and this is
+		// the only place that knows it. An empty base leaves the link off the payload rather
+		// than pointing at a host that does not answer.
+		handlers.Task = taskhandler.New(services.Task, log).
+			WithTemporalUI(cfg.Temporal.UIBaseURL, cfg.Temporal.Namespace)
 	}
 	if services.Approval != nil {
 		handlers.Approval = approvalhandler.New(services.Approval, log)
@@ -96,6 +119,9 @@ func newHandlers(services *Services, log *zap.Logger, cfg *config.Config) *Handl
 	}
 	if services.WhatsApp != nil {
 		handlers.WhatsApp = whatsapphandler.New(services.WhatsApp, log)
+	}
+	if services.Order != nil {
+		handlers.Order = orderhandler.New(services.Order, log)
 	}
 	if services.Billing != nil {
 		handlers.Billing = billinghandler.New(services.Billing, log)
@@ -197,6 +223,17 @@ func (c *Container) registerRoutes() {
 	owners := api.Group("", c.requireUser(), c.requireTenant(), c.requireActiveSubscription(), requireRole(domain.RoleOwner))
 	workspacehandler.OwnerRoutes(owners, c.Handlers.Workspace)
 
+	// Erasing a workspace's data is the most destructive thing this API offers, so it sits on the
+	// owner group with the other settings — one role, an active subscription, and an active
+	// workspace, which is what makes "who asked" answerable from the session rather than from the
+	// body of the request.
+	if c.Handlers.Retention != nil {
+		retentionhandler.OwnerRoutes(owners, c.Handlers.Retention)
+	} else {
+		owners.All("/workspaces/current/erasure", unavailable(
+			"penghapusan data tidak dikonfigurasi di deployment ini", "erasure_not_configured"))
+	}
+
 	if c.Handlers.Agent == nil {
 		registerAgentFallback(tenant)
 	} else {
@@ -281,6 +318,16 @@ func (c *Container) registerRoutes() {
 		integrationhandler.Routes(tenant, c.Handlers.Integration)
 	}
 
+	// The catalogue and the orders: every member reads them, because the person
+	// answering "what did we sell today" is not always the owner. Maintaining the
+	// catalogue needs a managing role, the way the provider keys do — a price is
+	// what every quote to every customer will be based on.
+	if c.Handlers.Order == nil {
+		registerOrderFallback(tenant)
+	} else {
+		orderhandler.Routes(tenant, c.Handlers.Order)
+	}
+
 	// Model configuration is read by every member, because the Bolu screens show
 	// which model a Bolu uses, and written by a managing role, because it holds
 	// the provider keys.
@@ -303,6 +350,9 @@ func (c *Container) registerRoutes() {
 	}
 	if c.Handlers.LLM != nil {
 		llmhandler.ManagerRoutes(registry, c.Handlers.LLM)
+	}
+	if c.Handlers.Order != nil {
+		orderhandler.ManagerRoutes(registry, c.Handlers.Order)
 	}
 }
 
@@ -410,6 +460,16 @@ func registerApprovalFallback(router fiber.Router) {
 	router.All("/drafts*", unavailable(message, "approval_not_configured"))
 	router.All("/approval-policies*", unavailable(message, "approval_not_configured"))
 	router.All("/audit*", unavailable(message, "approval_not_configured"))
+}
+
+// registerOrderFallback answers 503 for the catalogue and order routes.
+//
+// It is a fallback rather than an omission because the frontend ships against these endpoints: a
+// screen that asks for the catalogue should be told the deployment has no storage, not that the route
+// does not exist.
+func registerOrderFallback(router fiber.Router) {
+	message := "the catalogue is not configured"
+	router.All("/orders*", unavailable(message, "order_not_configured"))
 }
 
 // registerIntegrationFallback answers 503 for the integration routes.

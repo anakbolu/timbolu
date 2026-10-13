@@ -162,6 +162,23 @@ SELECT * FROM message_attachments
 WHERE workspace_id = $1 AND message_id = $2
 ORDER BY created_at;
 
+-- name: ListExpiredAttachments :many
+-- The retention job's read: the attachments of one workspace that are past their
+-- window, oldest first.
+--
+-- It runs in the workspace's scope like every other statement here, and it answers
+-- the storage key the bytes live under, because the row and the object are two
+-- halves of one attachment and a row removed without its object is a leak the
+-- database cannot see.
+SELECT * FROM message_attachments
+WHERE workspace_id = $1 AND created_at < $2
+ORDER BY created_at
+LIMIT $3;
+
+-- name: DeleteAttachment :execrows
+DELETE FROM message_attachments
+WHERE id = $1 AND workspace_id = $2;
+
 -- ------------------------------------------------------------ activity feed
 
 -- name: AppendEvent :one

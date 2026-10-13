@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 )
@@ -25,14 +26,22 @@ func (s *Service) Embed(ctx context.Context, scope domain.Scope, req domain.Embe
 		return domain.EmbedResponse{}, err
 	}
 
+	ctx, span := s.startEmbedSpan(ctx, scope, req)
+
 	chain, err := s.Resolve(ctx, scope)
 	if err != nil {
+		failChatSpan(span, 0, err)
+
 		return domain.EmbedResponse{}, err
 	}
 
 	var lastErr error
+	attempts := 0
+	started := time.Now()
 
 	for _, cfg := range chain {
+		attempts++
+
 		provider, err := s.deps.Factory.Build(cfg)
 		if err != nil {
 			// A configuration this deployment cannot serve is not something the
@@ -68,15 +77,26 @@ func (s *Service) Embed(ctx context.Context, scope domain.Scope, req domain.Embe
 			Model: response.Model,
 			Usage: response.Usage,
 		}, req.Metadata); err != nil {
+			failChatSpan(span, attempts, err)
+
 			return domain.EmbedResponse{}, err
 		}
+
+		s.metric(ctx, cfg.Adapter, req.Metadata, attempts, time.Since(started))
+		finishChatSpan(span, domain.ChatResponse{
+			Model:    response.Model,
+			Provider: response.Provider,
+			Usage:    response.Usage,
+		}, attempts)
 
 		return response, nil
 	}
 
 	if lastErr == nil {
-		return domain.EmbedResponse{}, domain.ErrNoProvider
+		lastErr = domain.ErrNoProvider
 	}
+	failChatSpan(span, attempts, lastErr)
+
 	return domain.EmbedResponse{}, lastErr
 }
 

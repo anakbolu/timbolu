@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 )
@@ -76,7 +78,19 @@ type Deps struct {
 	// and the workspace supplies only the key. Empty means a provider's own
 	// configured model is used, which only works when that model embeds.
 	EmbeddingModel string
-	Settings       Config
+	// Auditor records model configuration changes in the workspace's trail. Optional:
+	// unwired means the change happens and leaves no line, which is what a deployment
+	// without the approval module runs with.
+	Auditor domain.Auditor
+	// Logger reports a trail that could not be written. Optional.
+	Logger *zap.Logger
+	// Tracer starts the spans of a model call. Optional: without it the calls run
+	// untraced, which is what a deployment with telemetry off does.
+	Tracer trace.Tracer
+	// Metrics reports what a call was and how long it took. Optional: without it the calls
+	// happen and nothing is charted.
+	Metrics  domain.Metrics
+	Settings Config
 }
 
 // Service is the gateway implementation. It satisfies the domain's Gateway, the
@@ -181,7 +195,41 @@ func (s *Service) Upsert(ctx context.Context, scope domain.Scope, req domain.Ups
 		return domain.Redacted{}, err
 	}
 
-	return saved.Redact(), nil
+	redacted := saved.Redact()
+	action := "provider.created"
+	if cfg.ID != uuid.Nil {
+		action = "provider.updated"
+	}
+	// The line is built from the redacted shape, so the key cannot reach it even by
+	// accident: what is recorded is what a screen shows.
+	s.audit(ctx, scope, domain.AuditEntry{
+		Action:      action,
+		ObjectType:  "provider",
+		ObjectID:    redacted.ID.String(),
+		ActorUserID: scope.UserID,
+		Metadata: map[string]any{
+			"name":        redacted.Name,
+			"adapter":     redacted.Adapter,
+			"model":       redacted.Model,
+			"has_api_key": redacted.HasAPIKey,
+			"is_default":  redacted.IsDefault,
+		},
+	})
+
+	return redacted, nil
+}
+
+// audit records one entry. A trail that could not be written is reported rather than
+// failing the change: the configuration already changed, and refusing it afterwards would
+// leave the workspace with a provider nobody can see.
+func (s *Service) audit(ctx context.Context, scope domain.Scope, entry domain.AuditEntry) {
+	if s.deps.Auditor == nil {
+		return
+	}
+	if err := s.deps.Auditor.Record(ctx, scope, entry); err != nil {
+		s.deps.Logger.Warn("could not record a model configuration audit entry",
+			zap.String("action", entry.Action), zap.Error(err))
+	}
 }
 
 // Delete removes one configuration.
@@ -193,7 +241,34 @@ func (s *Service) Delete(ctx context.Context, scope domain.Scope, id uuid.UUID) 
 		return fmt.Errorf("%w: provider id is required", domain.ErrInvalidRequest)
 	}
 
-	return s.deps.Store.Delete(ctx, scope.WorkspaceID, id)
+	// The name is read before the row goes, because after it the trail can only say that a
+	// provider was removed — not which one. Read only when something will record it, so a
+	// deployment with no trail does not pay a query for a line nobody writes.
+	name := ""
+	if s.deps.Auditor != nil {
+		if providers, err := s.deps.Store.List(ctx, scope.WorkspaceID); err == nil {
+			for _, provider := range providers {
+				if provider.ID == id {
+					name = provider.Name
+					break
+				}
+			}
+		}
+	}
+
+	if err := s.deps.Store.Delete(ctx, scope.WorkspaceID, id); err != nil {
+		return err
+	}
+
+	s.audit(ctx, scope, domain.AuditEntry{
+		Action:      "provider.deleted",
+		ObjectType:  "provider",
+		ObjectID:    id.String(),
+		ActorUserID: scope.UserID,
+		Metadata:    map[string]any{"name": name},
+	})
+
+	return nil
 }
 
 // Test calls the provider once and reports what it can do, which is how the
@@ -278,7 +353,37 @@ func (s *Service) SetAgentModel(ctx context.Context, scope domain.Scope, overrid
 		}
 	}
 
-	return s.deps.Agents.SetAgentModel(ctx, scope.WorkspaceID, scope.AgentID, override)
+	if err := s.deps.Agents.SetAgentModel(ctx, scope.WorkspaceID, scope.AgentID, override); err != nil {
+		return err
+	}
+
+	// Which model a Bolu thinks with is a cost decision, so the change is recorded. The
+	// entry names the shape of the override rather than a key: a per-Bolu override may
+	// carry its own endpoint and key, and neither belongs in a trail.
+	s.audit(ctx, scope, domain.AuditEntry{
+		Action:      "agent_model.changed",
+		ObjectType:  "agent",
+		ObjectID:    scope.AgentID.String(),
+		ActorUserID: scope.UserID,
+		Metadata: map[string]any{
+			"adapter":     override.Adapter,
+			"model":       override.Model,
+			"provider_id": idOrEmpty(override.ProviderID),
+			"has_own_key": len(override.APIKey) > 0,
+			"max_tokens":  override.MaxTokens,
+		},
+	})
+
+	return nil
+}
+
+// idOrEmpty renders an optional id, because a metadata field that carried the zero uuid
+// would name a provider that is not there.
+func idOrEmpty(id uuid.UUID) string {
+	if id == uuid.Nil {
+		return ""
+	}
+	return id.String()
 }
 
 // Usage returns the aggregated spend of the workspace, most recent day first.
@@ -301,6 +406,40 @@ func (s *Service) Usage(ctx context.Context, scope domain.Scope, days int) ([]do
 		AddDate(0, 0, -(days - 1))
 
 	return s.deps.Reader.Daily(ctx, scope.WorkspaceID, since)
+}
+
+// Report returns what the workspace spent over a window, read three ways.
+//
+// The window is expressed in days and resolved in Jakarta, exactly like the daily report, so the two
+// screens cannot disagree about what "the last seven days" means. What differs is the granularity:
+// the daily rows are whole days and this is the interval itself, which is what makes a total here
+// comparable to a period's allowance rather than to a day's.
+func (s *Service) Report(ctx context.Context, scope domain.Scope, days, limit int) (domain.UsageReport, error) {
+	if err := requireWorkspace(scope); err != nil {
+		return domain.UsageReport{}, err
+	}
+
+	if days <= 0 {
+		days = DefaultUsageDays
+	}
+	if days > MaxUsageDays {
+		days = MaxUsageDays
+	}
+
+	today := s.now().In(Jakarta)
+	since := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, Jakarta).
+		AddDate(0, 0, -(days - 1))
+
+	report, err := s.deps.Reader.Report(ctx, scope.WorkspaceID, since, limit)
+	if err != nil {
+		return domain.UsageReport{}, err
+	}
+
+	// The moment is set here rather than in the repository: the window is this module's answer to
+	// "the last seven days", and a storage layer that recomputed it could answer a different one.
+	report.PeriodStartedAt = since
+
+	return report, nil
 }
 
 func (s *Service) validate(cfg domain.ProviderConfig) error {

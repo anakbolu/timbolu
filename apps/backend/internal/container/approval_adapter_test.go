@@ -84,7 +84,7 @@ func (s *stubApproval) SetPolicy(context.Context, approvaldomain.Scope, approval
 	return approvaldomain.Policy{}, errors.New("not used")
 }
 
-func (s *stubApproval) Audit(context.Context, approvaldomain.Scope, int) ([]approvaldomain.AuditRecord, error) {
+func (s *stubApproval) Audit(context.Context, approvaldomain.Scope, approvaldomain.AuditFilter) ([]approvaldomain.AuditRecord, error) {
 	return nil, errors.New("not used")
 }
 

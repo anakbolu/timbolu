@@ -66,6 +66,28 @@ var (
 	ErrPlanLimit = errors.New("integration: paket workspace tidak mengizinkan koneksi baru")
 )
 
+// Auditor records what a person did, for the trail the product answers "who changed
+// this" with. The approval module owns the table.
+//
+// It is a port rather than a call into that module for the reason the plan ports are: this
+// module does not know what a draft is. Changing who a Bolu may act as is one of the
+// sensitive actions the epic lists, and it is recorded through here.
+type Auditor interface {
+	Record(ctx context.Context, scope Scope, entry AuditEntry) error
+}
+
+// AuditEntry is one thing that happened, for the record.
+type AuditEntry struct {
+	Action     string
+	ObjectType string
+	ObjectID   string
+	// ActorUserID is who did it, when a person did.
+	ActorUserID uuid.UUID
+	// Metadata is the detail: which Bolu, which connection, which permission. Never a
+	// token, and never anything read out of one.
+	Metadata map[string]any
+}
+
 // PlanLimits reports how many connections a workspace's package allows.
 //
 // It is a port for the reason the other plan ports are: this module does not know
@@ -80,6 +102,13 @@ type PlanLimits interface {
 type Scope struct {
 	UserID      uuid.UUID
 	WorkspaceID uuid.UUID
+	// AgentID and TaskID are who the call is being made for, when it is made for somebody. They are
+	// not part of the tenancy — a call is scoped by the workspace above — but an adapter that records
+	// what it did needs to attribute it: an order a Bolu took belongs to that Bolu and to the task it
+	// was working on, and reading them off the scope is what lets the tool write them without the hub
+	// having to know what they are for.
+	AgentID uuid.UUID
+	TaskID  uuid.UUID
 }
 
 // LinkInput is a connection this deployment holds the credential for.
