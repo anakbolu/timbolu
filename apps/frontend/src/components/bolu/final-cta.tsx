@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { BotSvg } from "@/components/bolu/bot-svg";
+import { StartLink } from "@/components/bolu/start-link";
 import { CREW } from "@/lib/crew";
 
 export function FinalCta() {
@@ -22,12 +22,9 @@ export function FinalCta() {
             anggota tim kapan saja.
           </p>
           <div className="mt-1.5 flex flex-wrap gap-3">
-            <Link
-              href="/dashboard"
-              className="inline-flex min-h-12 items-center rounded-full bg-bolu-accent px-[26px] py-3.5 text-[18px] font-bold text-white no-underline hover:text-white"
-            >
+            <StartLink className="inline-flex min-h-12 items-center rounded-full bg-bolu-accent px-[26px] py-3.5 text-[18px] font-bold text-white no-underline hover:text-white">
               Coba gratis
-            </Link>
+            </StartLink>
             <a
               href="#mulai"
               className="inline-flex min-h-12 items-center rounded-full border-2 border-white px-6 py-3 text-[18px] font-semibold text-white no-underline hover:text-white"
