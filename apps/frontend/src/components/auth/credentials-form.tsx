@@ -31,9 +31,18 @@ export function CredentialsForm({ mode }: { mode: "signup" | "login" }) {
   const [password, setPassword] = useState("");
   const params = useSearchParams();
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(
-    params.get("verified") === "1" ? "Email terverifikasi. Masuk untuk melanjutkan." : null,
-  );
+  // Two things bring somebody here with something to say: a link that just verified
+  // their address, and a session that ended underneath them. Both are said above the
+  // form rather than as a refusal, because neither is the visitor's mistake.
+  const [notice, setNotice] = useState<string | null>(() => {
+    if (params.get("verified") === "1") {
+      return "Email terverifikasi. Masuk untuk melanjutkan.";
+    }
+    if (params.get("sesi") === "berakhir") {
+      return "Sesi berakhir. Masuk lagi.";
+    }
+    return null;
+  });
   const [pending, setPending] = useState(false);
 
   async function onSubmit(event: React.FormEvent) {

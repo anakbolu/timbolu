@@ -434,6 +434,21 @@ export function SettingsView() {
 
       <section className={`${CARD} flex flex-wrap items-center justify-between gap-3.5 p-[22px]`}>
         <div>
+          <h2 className={HEADING}>Pemakaian</h2>
+          <div className="text-bolu-muted">
+            Token dan biaya ruang kerja ini, per periode, per Bolu, dan per tugas.
+          </div>
+        </div>
+        <a
+          href="/settings/usage"
+          className="flex min-h-11 items-center rounded-full border-2 border-bolu-ink px-5 font-bold text-bolu-ink no-underline hover:text-bolu-ink"
+        >
+          Buka pemakaian
+        </a>
+      </section>
+
+      <section className={`${CARD} flex flex-wrap items-center justify-between gap-3.5 p-[22px]`}>
+        <div>
           <h2 className={HEADING}>Paket dan tagihan</h2>
           <div className="text-bolu-muted">
             Paket workspace, pemakaian token periode ini, paket tambahan, dan tagihan yang harus dibayar.

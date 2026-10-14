@@ -16,6 +16,7 @@
  */
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Alert } from "@/components/auth/auth-shell";
@@ -70,6 +71,7 @@ function formatDate(value: string): string {
 const MAIN = "main";
 
 export function MemoryView() {
+  const router = useRouter();
   const [memories, setMemories] = useState<Memory[]>([]);
   const [knowledge, setKnowledge] = useState<KnowledgeItem[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -83,7 +85,10 @@ export function MemoryView() {
   const load = useCallback(async () => {
     const session = await refreshSession();
     if (!session.ok) {
-      setError("Sesi berakhir. Masuk lagi.");
+      // A refresh that fails leaves no token behind, so there is no session to
+      // read this screen against: the door is where the person belongs, and it
+      // says why.
+      router.replace("/login?sesi=berakhir");
       return;
     }
 
@@ -108,7 +113,7 @@ export function MemoryView() {
     setMemories(memoryResult.data);
     setKnowledge(knowledgeResult.ok ? knowledgeResult.data : []);
     setAgents(teamResult.ok ? teamResult.data.flatMap((team) => team.agents) : []);
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     void (async () => {

@@ -11,12 +11,12 @@
 
 import {
   Bot,
-  ChartColumn,
   ChevronDown,
   Clock,
   LayoutGrid,
   ListChecks,
   Menu,
+  MessageCircle,
   Plus,
   Plug,
   Settings,
@@ -58,12 +58,6 @@ const NAV = [
     matches: (pathname: string) => pathname === "/routines",
   },
   {
-    href: "/dashboard/usage",
-    label: "Pemakaian",
-    icon: ChartColumn,
-    matches: (pathname: string) => pathname === "/dashboard/usage",
-  },
-  {
     href: "/tasks",
     label: "Tugas",
     icon: ListChecks,
@@ -72,6 +66,11 @@ const NAV = [
     matches: (pathname: string) => pathname === "/tasks" || pathname.startsWith("/tasks/"),
   },
 ];
+
+/** The settings screens that carry a name of their own in the mobile bar. */
+const SETTINGS_TITLES: Record<string, string> = {
+  "/settings/usage": "Pemakaian",
+};
 
 /** One sidebar row for a Bolu: it opens that Bolu's chat. */
 function RosterRow({ item }: { item: RosterItem }) {
@@ -151,13 +150,17 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   const onSettings = pathname.startsWith("/settings");
   const screenTitle =
     NAV.find((item) => item.matches(pathname))?.label ??
-    (onIntegrations ? "Integrasi" : onSettings ? "Pengaturan" : "Kantor Tim Bolu");
+    (onIntegrations
+      ? "Integrasi"
+      : onSettings
+        ? (SETTINGS_TITLES[pathname] ?? "Pengaturan")
+        : "Kantor Tim Bolu");
 
   return (
-    <div className="flex h-dvh flex-wrap items-stretch overflow-hidden bg-bolu-bg text-bolu-ink">
+    <div className="flex h-dvh flex-col overflow-hidden bg-bolu-bg text-bolu-ink min-[761px]:flex-row">
       {/* Mobile bar: the design hides the sidebar below 760px and puts the
           current screen's name here instead. */}
-      <div className="sticky top-0 z-30 flex flex-[1_1_100%] items-center gap-2.5 border-b border-bolu-border bg-white px-3 py-2 min-[761px]:hidden">
+      <div className="z-30 flex flex-none items-center gap-2.5 border-b border-bolu-border bg-white px-3 py-2 min-[761px]:hidden">
         <button
           type="button"
           aria-label="Buka menu"
@@ -276,18 +279,10 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           </>
         ) : null}
 
-        <Link
-          href="/groups"
-          onClick={() => setNavOpen(false)}
-          className="mt-2.5 flex min-h-[40px] items-center gap-2.5 rounded-md border-2 border-dashed border-bolu-track px-3 text-[14px] font-semibold text-bolu-body no-underline hover:text-bolu-ink"
-        >
-          <Plus size={18} strokeWidth={2.5} aria-hidden="true" />
-          Buat grup
-        </Link>
-
-        {/* One button rather than two links: making a Bolu is the everyday act and
-            making a team is the rare one, so the menu opens on the common case. */}
-        <div className="mt-3 flex flex-col gap-1">
+        {/* One button rather than three: making a Bolu is the everyday act, and
+            making a team or a group are the rare ones, so the menu opens on the
+            common case. */}
+        <div className="mt-2.5 flex flex-col gap-1">
           <button
             type="button"
             aria-expanded={addOpen}
@@ -332,6 +327,17 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                 <Users size={16} strokeWidth={2} aria-hidden="true" />
                 <span className="flex-1 text-left">Buat tim</span>
               </Link>
+              <Link
+                href="/groups"
+                onClick={() => {
+                  setAddOpen(false);
+                  setNavOpen(false);
+                }}
+                className="flex min-h-[38px] items-center gap-2.5 rounded-md px-3 text-[14px] font-semibold text-bolu-body no-underline hover:bg-bolu-panel/60 hover:text-bolu-ink"
+              >
+                <MessageCircle size={16} strokeWidth={2} aria-hidden="true" />
+                <span className="flex-1 text-left">Buat grup</span>
+              </Link>
             </div>
           ) : null}
         </div>
@@ -367,7 +373,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
         </div>
       </nav>
 
-      <div className="box-border flex min-h-0 min-w-0 flex-[999_1_640px] flex-col overflow-y-auto">
+      <div className="box-border flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
         {/* A failed load is said here rather than inside one screen: the reason is
             the same for every screen, and a screen that only shows its own empty
             state would read as "nothing here" instead of "nothing loaded". */}
