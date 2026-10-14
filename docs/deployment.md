@@ -157,6 +157,41 @@ listener.
 - **Workers stop polling before the container closes.** An activity already running finishes; a task
   that was not picked up stays in the queue for the next worker, because Temporal owns it.
 
+## Deploying on push to `main`
+
+`.github/workflows/deployment.yml` is the everyday path: a push to `main` redeploys whichever
+services the commit touched, by calling each service's Easypanel deploy webhook (`/api/deploy/<token>`).
+There are no tests in it — the gates are a separate concern — and the mapping is path -> service,
+because a path is what a service builds from:
+
+| Changed | Redeployed |
+| --- | --- |
+| `apps/frontend/**` | `timbolu` (the web app) |
+| `apps/backend/**` | `timbolu-backend`, `timbolu-agent-worker`, `timbolu-integration-worker`, `timbolu-wa-gateway` |
+| `apps/backend/migrations/**` | `timbolu-migrate`, applied first |
+
+The migration job runs before the others and they wait for it, so the schema is applied before a new
+image serves traffic — the same order as the release flow, and for the same reason. Note what the wait
+covers: the workflow waits for the migration to be *triggered*, not for it to finish, because the
+deploy hooks are fire-and-forget.
+
+`timbolu-temporal` and `timbolu-temporal-ui` run upstream images and have no path in this repository,
+so nothing in the workflow triggers them.
+
+What this workflow needs, once — six repository secrets, one per service:
+
+| Name | What it is |
+| --- | --- |
+| `TIMBOLU_FRONTEND_DEPLOY_HOOK` | The `timbolu` service's deploy webhook URL |
+| `TIMBOLU_BACKEND_DEPLOY_HOOK` | `timbolu-backend` |
+| `TIMBOLU_AGENT_WORKER_DEPLOY_HOOK` | `timbolu-agent-worker` |
+| `TIMBOLU_INTEGRATION_WORKER_DEPLOY_HOOK` | `timbolu-integration-worker` |
+| `TIMBOLU_WA_GATEWAY_DEPLOY_HOOK` | `timbolu-wa-gateway` |
+| `TIMBOLU_MIGRATE_DEPLOY_HOOK` | `timbolu-migrate` |
+
+Each URL is the service's own, from its Easypanel page (Deploy Webhook), and it is a credential:
+whoever holds it can trigger a deployment.
+
 ## Releasing
 
 `.github/workflows/release.yml` runs on a tag (`v*`) or on demand, in this order:
