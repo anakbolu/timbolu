@@ -1,15 +1,14 @@
 # Testing and quality gates
 
-Everything in this document is enforced by `make ci` locally and by
-`.github/workflows/ci.yml` on every pull request.
+Everything in this document is enforced by `make ci` locally.
 
-**The workflow does not currently run.** Every CI run since the first commit has
-failed in about three seconds without producing a step log, which is the shape of
-an account that cannot execute workflows rather than of a failing gate — nothing
-in this document can fail that fast. The red check on a pull request therefore says
-nothing about the change, and the merge button is not blocked by it. Until that is
-resolved, **run `make ci` locally and say so in the pull request**, because the
-automated gates are not enforcing anything.
+**No workflow enforces them.** The CI workflow was replaced by
+`.github/workflows/deployment.yml`, which calls the Easypanel deploy webhooks on a
+push to `main` and runs no tests, and `release.yml` is disabled. Every CI run before
+that had already failed in about three seconds without producing a step log, which is
+the shape of an account that cannot execute workflows rather than of a failing gate.
+So **run `make ci` locally and say so in the pull request**, because nothing automated
+is enforcing the gates.
 
 ## The gates
 
