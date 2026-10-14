@@ -642,9 +642,15 @@ export function listModelProviders(workspaceId: string): Promise<ApiResult<Model
   return request<ModelProvider[]>("/llm/providers", { workspace: workspaceId });
 }
 
-/** listModelAdapters returns the wire formats the backend can serve. */
-export function listModelAdapters(): Promise<ApiResult<{ adapters: string[] }>> {
-  return request<{ adapters: string[] }>("/llm/adapters");
+/**
+ * listModelAdapters returns the wire formats the backend can serve.
+ *
+ * The route sits in the workspace guard with the rest of the model screen's reads, so the active
+ * workspace travels with the call. Without it the backend answers 400 `invalid_workspace`, which the
+ * caller reads as "the adapters are unavailable" and silently replaces with the fallback list.
+ */
+export function listModelAdapters(workspaceId: string): Promise<ApiResult<{ adapters: string[] }>> {
+  return request<{ adapters: string[] }>("/llm/adapters", { workspace: workspaceId });
 }
 
 /** createModelProvider adds a provider to the fallback chain. */
