@@ -31,6 +31,10 @@ type Config struct {
 	// per-IP login buckets.
 	LoginThrottleCapacity int
 	LoginThrottleRefill   float64
+	// RequireEmailVerification makes a new account confirm its address before it
+	// may use the product. When false, Register marks the address verified at
+	// once and sends no link: signing up is the whole of the gate.
+	RequireEmailVerification bool
 	// Clock is injectable so tests can control expiry.
 	Clock func() time.Time
 }
@@ -108,6 +112,12 @@ func (s *service) Register(ctx context.Context, req domain.RegisterRequest) (dom
 		return domain.User{}, err
 	}
 
+	if !s.deps.Config.RequireEmailVerification {
+		// Verification is off in this deployment: the account is usable the moment
+		// it exists, so the address is marked verified rather than left pending.
+		return s.deps.Repository.MarkEmailVerified(ctx, user.ID)
+	}
+
 	if err := s.sendVerification(ctx, user); err != nil {
 		return domain.User{}, err
 	}
@@ -118,6 +128,12 @@ func (s *service) Register(ctx context.Context, req domain.RegisterRequest) (dom
 // ResendVerification sends a fresh verification link. It succeeds even when the
 // account does not exist, so the endpoint cannot be used to discover addresses.
 func (s *service) ResendVerification(ctx context.Context, email string) error {
+	if !s.deps.Config.RequireEmailVerification {
+		// There is nothing to verify in this deployment, and answering as if a
+		// link were sent would be a lie the caller cannot see through.
+		return nil
+	}
+
 	normalized, err := normalizeEmail(email)
 	if err != nil {
 		// A malformed address is answered like an unknown one, so the response
@@ -195,6 +211,17 @@ func (s *service) Login(ctx context.Context, req domain.LoginRequest) (domain.Se
 	}
 	if !ok {
 		return domain.Session{}, domain.ErrInvalidCredentials
+	}
+
+	if !s.deps.Config.RequireEmailVerification && !user.EmailVerified {
+		// This deployment does not ask for a confirmed address, so an account that
+		// predates the switch is healed at sign-in rather than left able to
+		// authenticate but refused everywhere afterwards.
+		verified, err := s.deps.Repository.MarkEmailVerified(ctx, user.ID)
+		if err != nil {
+			return domain.Session{}, err
+		}
+		user = verified
 	}
 
 	session, err := s.openSession(ctx, user, req.UserAgent, req.IP, nil)

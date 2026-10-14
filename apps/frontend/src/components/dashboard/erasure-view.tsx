@@ -28,7 +28,7 @@ import { ensureActiveWorkspace, eraseWorkspaceData } from "@/lib/api";
 
 import { useWorkspace } from "./workspace-data";
 
-const CARD = "rounded border border-bolu-border bg-white";
+const CARD = "rounded-md border border-bolu-border bg-white";
 const HEADING = "font-display text-[22px] font-semibold";
 const BUTTON =
   "min-h-11 rounded-full px-5 font-bold transition disabled:opacity-50";
@@ -121,7 +121,7 @@ export function ErasureView() {
   }, [workspace?.id, name, storedName, requestedBy]);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 p-[24px_28px_48px] max-[760px]:p-[18px_14px_36px]">
       <header>
         <h1 className={HEADING}>Data</h1>
         <p className="mt-1 text-[15px] text-bolu-muted">
@@ -206,7 +206,7 @@ export function ErasureView() {
             onChange={(event) => setConfirmation(event.target.value)}
             placeholder={name || "nama workspace"}
             aria-label="Konfirmasi nama workspace"
-            className="min-h-11 rounded border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-belum"
+            className="min-h-11 rounded-md border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-belum"
           />
         </label>
 

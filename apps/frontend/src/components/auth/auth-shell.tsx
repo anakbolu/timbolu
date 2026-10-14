@@ -12,7 +12,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Bolu } from "@/components/bolu/bolu";
-import { LOGO } from "@/lib/crew";
+import { bot } from "@/lib/crew";
 
 type AuthShellProps = {
   title: string;
@@ -27,14 +27,19 @@ export function AuthShell({ title, subtitle, children, footer, scene }: AuthShel
   return (
     <main className="mx-auto flex w-full max-w-[1120px] flex-1 flex-col justify-center gap-10 px-5 py-12 lg:flex-row lg:items-center lg:justify-center lg:gap-16">
       <div className="mx-auto flex w-full max-w-[460px] flex-col lg:mx-0 lg:flex-none">
-        <Link href="/" className="mb-8 flex items-center gap-2.5 text-sm font-semibold text-bolu-muted">
-          <span aria-hidden className="inline-flex flex-none items-center justify-center">
-            <Bolu member={LOGO} size={32} />
+        <Link href="/" className="mx-auto mb-8 flex flex-col items-center gap-2 text-bolu-ink no-underline">
+          {/* The whole crew crowded together above the wordmark, each in its own colour and mood. */}
+          <span aria-hidden className="flex items-end -space-x-3">
+            <Bolu member={bot("Ijo")} expression="senang" size={30} />
+            <Bolu member={bot("Pinky")} expression="gemas" size={36} />
+            <Bolu member={bot("Oren")} expression="mikir" size={48} className="relative z-10" />
+            <Bolu member={bot("Lila")} expression="kaget" size={36} />
+            <Bolu member={bot("Biru")} expression="cinta" size={30} />
           </span>
-          Keluarga Bolu
+          <span className="font-display text-[26px] font-bold">Keluarga Bolu</span>
         </Link>
 
-        <div className="rounded border border-bolu-border bg-bolu-surface p-7 shadow-[0_1px_2px_rgb(30_27_46_/_0.04)]">
+        <div className="rounded-md border border-bolu-border bg-bolu-surface p-7 shadow-[0_1px_2px_rgb(30_27_46_/_0.04)]">
           <h1 className="font-display text-2xl font-semibold text-bolu-ink">{title}</h1>
           <p className="mt-2 text-sm text-bolu-muted">{subtitle}</p>
           <div className="mt-6">{children}</div>
@@ -43,7 +48,8 @@ export function AuthShell({ title, subtitle, children, footer, scene }: AuthShel
         {footer ? <div className="mt-6 text-center text-sm text-bolu-muted">{footer}</div> : null}
       </div>
 
-      {scene ? <div className="w-full lg:min-w-0 lg:flex-1">{scene}</div> : null}
+      {/* The room is a wide-screen treat: on phones it would only push the form down. */}
+      {scene ? <div className="hidden w-full lg:block lg:min-w-0 lg:flex-1">{scene}</div> : null}
     </main>
   );
 }
@@ -58,7 +64,8 @@ type FieldProps = {
   autoComplete?: string;
   required?: boolean;
   minLength?: number;
-  hint?: string;
+  /** Extra guidance under the field, e.g. the password policy checklist. */
+  hint?: ReactNode;
 };
 
 export function Field({
@@ -88,9 +95,9 @@ export function Field({
         autoComplete={autoComplete}
         required={required}
         minLength={minLength}
-        className="w-full rounded border border-bolu-border bg-bolu-surface px-3.5 py-2.5 text-[15px] text-bolu-ink outline-none transition focus:border-bolu-accent focus:ring-2 focus:ring-bolu-accent/20"
+        className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3.5 py-2.5 text-[15px] text-bolu-ink outline-none transition focus:border-bolu-accent focus:ring-2 focus:ring-bolu-accent/20"
       />
-      {hint ? <p className="mt-1.5 text-xs text-bolu-muted">{hint}</p> : null}
+      {hint ? <div className="mt-1.5 text-xs text-bolu-muted">{hint}</div> : null}
     </div>
   );
 }
@@ -99,16 +106,19 @@ export function SubmitButton({
   label,
   pending,
   pendingLabel,
+  disabled = false,
 }: {
   label: string;
   pending: boolean;
   pendingLabel: string;
+  /** Blocks submission while the form is not yet valid, e.g. a weak password. */
+  disabled?: boolean;
 }) {
   return (
     <button
       type="submit"
-      disabled={pending}
-      className="w-full rounded bg-bolu-accent px-4 py-2.5 text-[15px] font-semibold text-white transition hover:bg-[#1a6cba] disabled:cursor-not-allowed disabled:opacity-60"
+      disabled={pending || disabled}
+      className="w-full rounded-md bg-bolu-accent px-4 py-2.5 text-[15px] font-semibold text-white transition hover:bg-[#1a6cba] disabled:cursor-not-allowed disabled:opacity-60"
     >
       {pending ? pendingLabel : label}
     </button>
@@ -123,7 +133,7 @@ export function Alert({ tone, children }: { tone: "error" | "success" | "info"; 
   } as const;
 
   return (
-    <p role={tone === "error" ? "alert" : "status"} className={`mb-4 rounded border px-3.5 py-2.5 text-sm ${styles[tone]}`}>
+    <p role={tone === "error" ? "alert" : "status"} className={`mb-4 rounded-md border px-3.5 py-2.5 text-sm ${styles[tone]}`}>
       {children}
     </p>
   );
@@ -133,7 +143,7 @@ export function GoogleButton({ href }: { href: string }) {
   return (
     <a
       href={href}
-      className="mt-3 flex w-full items-center justify-center gap-2.5 rounded border border-bolu-border bg-bolu-surface px-4 py-2.5 text-[15px] font-medium text-bolu-ink transition hover:bg-bolu-panel/60"
+      className="mt-3 flex w-full items-center justify-center gap-2.5 rounded-md border border-bolu-border bg-bolu-surface px-4 py-2.5 text-[15px] font-medium text-bolu-ink transition hover:bg-bolu-panel/60"
     >
       {/* The four-colour Google "G" mark, inlined so the button needs no icon package. */}
       <svg viewBox="0 0 48 48" aria-hidden="true" className="size-[18px] flex-none">

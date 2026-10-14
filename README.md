@@ -39,7 +39,9 @@ Indonesia dulu: transfer bank / virtual account. **Tidak ada Stripe.**
 │   ├── adr/           # architecture decision records
 │   ├── testing.md     # test layers and CI gates
 │   ├── deployment.md  # the images, the migration step, and the environments
-│   └── e2e-mvp.md     # the MVP flow's end-to-end scenario and its measured cost per task
+│   ├── e2e-mvp.md     # the MVP flow's end-to-end scenario and its measured cost per task
+│   ├── riset-tool-kantor.md # the office tools offices actually use, and which to connect next
+│   └── riset-heartbeat.md   # the five heartbeats Bolu already has, and where they lie
 ├── go.work            # the three-module dev workspace
 ├── docker-compose.yml
 ├── Makefile
@@ -176,7 +178,7 @@ note that payment is by bank transfer or virtual account rather than Stripe — 
 from the navigation, which it was not before). The signed-in workspace lives under
 `apps/frontend/src/app/(workspace)`:
 `/dashboard` (the front door — the roster, the live activity feed, the drafts waiting,
-and the week's finished work), `/dashboard/routines` (the routines screen: the form
+and the week's finished work), `/routines` (the routines screen: the form
 that sets a cadence, the routines per Bolu with their next run in the workspace's own
 zone, the pause switch, and the run history), `/dashboard/integrations` (the hub: connected
 accounts, grants per Bolu, MCP servers), `/settings` (workspace profile, working

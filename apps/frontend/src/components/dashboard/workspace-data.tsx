@@ -245,8 +245,6 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     // how a load ends up holding a token the server has already retired.
     const id = await ensureActiveWorkspace();
     if (!id) {
-      setReady(true);
-      setError("Sesi berakhir. Masuk lagi.");
       // `ensureActiveWorkspace` refreshes first, so returning nothing means either
       // that the refresh failed or that the account has no workspace yet — and the
       // two want opposite answers. Only the first is sent to the door: bouncing the
@@ -256,8 +254,16 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       // The token says which happened. A failed refresh stores nothing, while a
       // refresh that succeeded but found no workspace leaves a live token.
       if (getAccessToken() === null) {
-        router.replace("/login");
+        // There is no session to load a screen against, so the door is where the
+        // person belongs — and the door is the screen that can say why: it reads
+        // `sesi` off the URL and explains above the form.
+        router.replace("/login?sesi=berakhir");
+        return;
       }
+      // The session is alive, so the account simply has no workspace yet. That is
+      // a state of this shell, not a reason to sign in again.
+      setReady(true);
+      setError("Pilih workspace dulu.");
       return;
     }
     setWorkspaceID(id);
@@ -275,13 +281,11 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     if (account.ok) setUser(account.data);
     else if (account.status === 401) {
       // The API rejected the token, so the session in hand is not one. Dropping it
-      // clears the gate's hint with it, and the next navigation is turned away
-      // before this shell is sent a second time — which is why this branch leaves
-      // the message on screen rather than redirecting: the redirect belongs to the
-      // gate, and a second one from here could outrun the cookie write.
+      // clears the gate's hint with it — the cookie write is synchronous, so it has
+      // landed before the navigation below — and the person is sent to the door
+      // with the reason, rather than left on a screen they may no longer read.
       setAccessToken(null);
-      setReady(true);
-      setError("Sesi berakhir. Masuk lagi.");
+      router.replace("/login?sesi=berakhir");
       return;
     }
 

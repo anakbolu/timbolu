@@ -38,6 +38,14 @@ sandboxed HTML documents are framed from and it must be a different origin from 
 built without it falls back to the API's own URL, which is the sandbox escape the separate origin
 exists to prevent.
 
+`NEXT_PUBLIC_GOOGLE_LOGIN_ENABLED` is a third build argument, and it decides whether the sign-in
+pages render the Google button at all. It is `false` unless a deployment has registered a Google
+client, because a button that leads to a `google_not_configured` answer is worse than no button.
+On the backend the matching rollout switch is `AUTH_REQUIRE_EMAIL_VERIFICATION`: it is `true` by
+default, and setting it `false` lets a fresh account use the product without confirming its address
+(see [api.md](./api.md)). Both are deployment decisions, so they belong in the environment rather
+than in the shared config files.
+
 ## The migration step
 
 **Migrations are applied before the new images serve traffic, by a separate step.** That ordering is
@@ -156,6 +164,46 @@ listener.
   holding one WhatsApp session.
 - **Workers stop polling before the container closes.** An activity already running finishes; a task
   that was not picked up stays in the queue for the next worker, because Temporal owns it.
+
+## Deploying on push to `main`
+
+`.github/workflows/deployment.yml` is the everyday path: a push to `main` redeploys whichever
+services the commit touched, by calling each service's Easypanel deploy webhook (`/api/deploy/<token>`).
+There are no tests in it — the gates are a separate concern — and the mapping is path -> service,
+because a path is what a service builds from:
+
+| Changed | Redeployed |
+| --- | --- |
+| `apps/frontend/**` | `timbolu` (the web app) |
+| `apps/backend/**` | `timbolu-backend`, `timbolu-agent-worker`, `timbolu-integration-worker` |
+| `apps/whatsapp-gw/**` | `timbolu-wa-gateway` |
+| `packages/**` | every Go service — `timbolu-backend`, the two workers, and `timbolu-wa-gateway` |
+| `apps/backend/migrations/**` | `timbolu-migrate`, applied first |
+
+`apps/whatsapp-gw` is a module of its own, so a change to it rolls only the gateway; `packages/` is
+the module both Go processes import, so a change there rolls all four Go services.
+
+The migration job runs before the others and they wait for it, so the schema is applied before a new
+image serves traffic — the same order as the release flow, and for the same reason. Note what the wait
+covers: the workflow waits for the migration to be *triggered*, not for it to finish, because the
+deploy hooks are fire-and-forget.
+
+`timbolu-temporal` and `timbolu-temporal-ui` run upstream images and have no path in this repository,
+so nothing in the workflow triggers them.
+
+What this workflow needs, once — six repository secrets, one per service:
+
+| Name | What it is |
+| --- | --- |
+| `TIMBOLU_FRONTEND_DEPLOY_HOOK` | The `timbolu` service's deploy webhook URL |
+| `TIMBOLU_BACKEND_DEPLOY_HOOK` | `timbolu-backend` |
+| `TIMBOLU_AGENT_WORKER_DEPLOY_HOOK` | `timbolu-agent-worker` |
+| `TIMBOLU_INTEGRATION_WORKER_DEPLOY_HOOK` | `timbolu-integration-worker` |
+| `TIMBOLU_WA_GATEWAY_DEPLOY_HOOK` | `timbolu-wa-gateway` |
+| `TIMBOLU_MIGRATE_DEPLOY_HOOK` | `timbolu-migrate` |
+
+Each URL is the service's own, from its Easypanel page (Deploy Webhook), and it is a credential:
+whoever holds it can trigger a deployment.
 
 ## Releasing
 

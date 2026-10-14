@@ -27,7 +27,7 @@ import { TIMEZONES, crewFor, expressionOf, stateOf } from "@/lib/dashboard-view"
 
 import { useWorkspace } from "./workspace-data";
 
-const CARD = "rounded border border-bolu-border bg-white";
+const CARD = "rounded-md border border-bolu-border bg-white";
 const HEADING = "font-display text-[22px] font-semibold";
 
 const LANGUAGES = [
@@ -180,7 +180,7 @@ export function SettingsView() {
       </div>
 
       {error ? (
-        <p role="alert" className="rounded border border-bolu-belum/30 bg-bolu-belum/5 px-4 py-3 text-[15px] text-bolu-belum">
+        <p role="alert" className="rounded-md border border-bolu-belum/30 bg-bolu-belum/5 px-4 py-3 text-[15px] text-bolu-belum">
           {error}
         </p>
       ) : null}
@@ -198,7 +198,7 @@ export function SettingsView() {
                 setEdit((previous) => ({ ...previous, name: value }));
               }}
               onBlur={() => void save({})}
-              className="min-h-11 rounded border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
+              className="min-h-11 rounded-md border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
             />
           </label>
           <label className="flex min-w-[180px] flex-[0_1_240px] flex-col gap-1.5 text-[14px] font-semibold">
@@ -206,7 +206,7 @@ export function SettingsView() {
             <select
               value={shown.timezone ?? TIMEZONES[0].value}
               onChange={(event) => void save({ timezone: event.target.value })}
-              className="min-h-11 cursor-pointer rounded border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
+              className="min-h-11 cursor-pointer rounded-md border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
             >
               {TIMEZONES.map((zone) => (
                 <option key={zone.value} value={zone.value}>
@@ -220,7 +220,7 @@ export function SettingsView() {
             <select
               value={shown.language ?? "id"}
               onChange={(event) => void save({ language: event.target.value })}
-              className="min-h-11 cursor-pointer rounded border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
+              className="min-h-11 cursor-pointer rounded-md border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
             >
               {LANGUAGES.map((language) => (
                 <option key={language.value} value={language.value}>
@@ -245,7 +245,7 @@ export function SettingsView() {
               type="time"
               value={shown.work_hours_start || "08:00"}
               onChange={(event) => void save({ work_hours_start: event.target.value })}
-              className="min-h-11 rounded border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
+              className="min-h-11 rounded-md border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
             />
           </label>
           <label className="flex flex-col gap-1.5 text-[14px] font-semibold">
@@ -254,7 +254,7 @@ export function SettingsView() {
               type="time"
               value={shown.work_hours_end || "21:00"}
               onChange={(event) => void save({ work_hours_end: event.target.value })}
-              className="min-h-11 rounded border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
+              className="min-h-11 rounded-md border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
             />
           </label>
           <div className="flex flex-wrap gap-1.5">
@@ -429,6 +429,21 @@ export function SettingsView() {
           className="flex min-h-11 items-center rounded-full border-2 border-bolu-ink px-5 font-bold text-bolu-ink no-underline hover:text-bolu-ink"
         >
           Buka kebijakan data
+        </a>
+      </section>
+
+      <section className={`${CARD} flex flex-wrap items-center justify-between gap-3.5 p-[22px]`}>
+        <div>
+          <h2 className={HEADING}>Pemakaian</h2>
+          <div className="text-bolu-muted">
+            Token dan biaya ruang kerja ini, per periode, per Bolu, dan per tugas.
+          </div>
+        </div>
+        <a
+          href="/settings/usage"
+          className="flex min-h-11 items-center rounded-full border-2 border-bolu-ink px-5 font-bold text-bolu-ink no-underline hover:text-bolu-ink"
+        >
+          Buka pemakaian
         </a>
       </section>
 

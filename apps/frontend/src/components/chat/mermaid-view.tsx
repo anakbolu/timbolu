@@ -81,7 +81,7 @@ function MermaidDiagram({ block }: { block: MermaidBlock }) {
       ) : null}
 
       {state === "failed" ? (
-        <p className="rounded border border-bolu-flag/30 bg-bolu-flag/8 px-3 py-2 text-sm text-bolu-flag">
+        <p className="rounded-md border border-bolu-flag/30 bg-bolu-flag/8 px-3 py-2 text-sm text-bolu-flag">
           Diagram ini belum bisa digambar. Bolu sedang memperbaikinya.
           <span className="mt-0.5 block text-xs text-bolu-muted">{message}</span>
         </p>

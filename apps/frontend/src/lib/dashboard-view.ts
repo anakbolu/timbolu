@@ -37,7 +37,7 @@ export const STATE_EXPRESSION: Record<string, BoluExpressionName> = {
   working: "senang",
   thinking: "mikir",
   waiting: "iseng",
-  idle: "senang",
+  idle: "bosan",
   resting: "capek",
 };
 

@@ -16,6 +16,7 @@
  */
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Alert } from "@/components/auth/auth-shell";
@@ -70,6 +71,7 @@ function formatDate(value: string): string {
 const MAIN = "main";
 
 export function MemoryView() {
+  const router = useRouter();
   const [memories, setMemories] = useState<Memory[]>([]);
   const [knowledge, setKnowledge] = useState<KnowledgeItem[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -83,7 +85,10 @@ export function MemoryView() {
   const load = useCallback(async () => {
     const session = await refreshSession();
     if (!session.ok) {
-      setError("Sesi berakhir. Masuk lagi.");
+      // A refresh that fails leaves no token behind, so there is no session to
+      // read this screen against: the door is where the person belongs, and it
+      // says why.
+      router.replace("/login?sesi=berakhir");
       return;
     }
 
@@ -108,7 +113,7 @@ export function MemoryView() {
     setMemories(memoryResult.data);
     setKnowledge(knowledgeResult.ok ? knowledgeResult.data : []);
     setAgents(teamResult.ok ? teamResult.data.flatMap((team) => team.agents) : []);
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     void (async () => {
@@ -373,7 +378,7 @@ export function MemoryView() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="cari isi memori…"
-            className="w-full rounded border border-bolu-border bg-bolu-surface px-3 py-2"
+            className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3 py-2"
           />
         </label>
         <label className="flex items-center gap-2 text-sm text-bolu-body">
@@ -448,7 +453,7 @@ export function MemoryView() {
             </div>
 
             {knowledge.length === 0 ? (
-              <p className="rounded border border-dashed border-bolu-border px-4 py-6 text-sm text-bolu-muted">
+              <p className="rounded-md border border-dashed border-bolu-border px-4 py-6 text-sm text-bolu-muted">
                 Belum ada dokumen. Tempel teks di kanan untuk mulai.
               </p>
             ) : (
@@ -456,7 +461,7 @@ export function MemoryView() {
                 {knowledge.map((chunk) => (
                   <li
                     key={chunk.id}
-                    className="rounded border border-bolu-border bg-bolu-surface px-4 py-3"
+                    className="rounded-md border border-bolu-border bg-bolu-surface px-4 py-3"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -478,7 +483,7 @@ export function MemoryView() {
                         type="button"
                         onClick={() => void removeChunk(chunk)}
                         disabled={busy}
-                        className="shrink-0 rounded border border-bolu-border px-2.5 py-1 text-sm text-bolu-belum transition hover:bg-bolu-belum/8 disabled:opacity-50"
+                        className="shrink-0 rounded-md border border-bolu-border px-2.5 py-1 text-sm text-bolu-belum transition hover:bg-bolu-belum/8 disabled:opacity-50"
                       >
                         Hapus
                       </button>
@@ -491,7 +496,7 @@ export function MemoryView() {
         </div>
 
         <aside className="space-y-8">
-          <form onSubmit={add} className="rounded border border-bolu-border bg-bolu-surface p-4">
+          <form onSubmit={add} className="rounded-md border border-bolu-border bg-bolu-surface p-4">
             <h2 className="mb-3 font-display text-lg font-semibold">Tambah memori</h2>
 
             <label className="mb-3 block text-sm">
@@ -500,13 +505,13 @@ export function MemoryView() {
                 name="content"
                 rows={3}
                 placeholder="Ongkir Bandung 18 ribu"
-                className="w-full rounded border border-bolu-border bg-white px-3 py-2"
+                className="w-full rounded-md border border-bolu-border bg-white px-3 py-2"
               />
             </label>
 
             <label className="mb-3 block text-sm">
               <span className="mb-1 block text-bolu-muted">Jenis</span>
-              <select name="kind" className="w-full rounded border border-bolu-border bg-white px-3 py-2">
+              <select name="kind" className="w-full rounded-md border border-bolu-border bg-white px-3 py-2">
                 {KIND_ORDER.map((kind) => (
                   <option key={kind} value={kind}>
                     {KIND_LABEL[kind]}
@@ -517,7 +522,7 @@ export function MemoryView() {
 
             <label className="mb-3 block text-sm">
               <span className="mb-1 block text-bolu-muted">Lapisan</span>
-              <select name="layer" className="w-full rounded border border-bolu-border bg-white px-3 py-2">
+              <select name="layer" className="w-full rounded-md border border-bolu-border bg-white px-3 py-2">
                 <option value={MAIN}>Memori utama (semua Bolu)</option>
                 {agents.map((agent) => (
                   <option key={agent.id} value={agent.id}>
@@ -544,7 +549,7 @@ export function MemoryView() {
             </p>
           </form>
 
-          <form onSubmit={ingest} className="rounded border border-bolu-border bg-bolu-surface p-4">
+          <form onSubmit={ingest} className="rounded-md border border-bolu-border bg-bolu-surface p-4">
             <h2 className="mb-3 font-display text-lg font-semibold">Tambah dokumen</h2>
 
             <label className="mb-3 block text-sm">
@@ -552,7 +557,7 @@ export function MemoryView() {
               <input
                 name="source"
                 placeholder="katalog-ongkir.txt"
-                className="w-full rounded border border-bolu-border bg-white px-3 py-2"
+                className="w-full rounded-md border border-bolu-border bg-white px-3 py-2"
               />
             </label>
 
@@ -562,13 +567,13 @@ export function MemoryView() {
                 name="text"
                 rows={5}
                 placeholder="Tempel teks dokumen di sini."
-                className="w-full rounded border border-bolu-border bg-white px-3 py-2"
+                className="w-full rounded-md border border-bolu-border bg-white px-3 py-2"
               />
             </label>
 
             <label className="mb-3 block text-sm">
               <span className="mb-1 block text-bolu-muted">Lapisan</span>
-              <select name="layer" className="w-full rounded border border-bolu-border bg-white px-3 py-2">
+              <select name="layer" className="w-full rounded-md border border-bolu-border bg-white px-3 py-2">
                 <option value={MAIN}>Berlaku untuk seluruh workspace</option>
                 {agents.map((agent) => (
                   <option key={agent.id} value={agent.id}>
@@ -663,7 +668,7 @@ function MemoryList({
 
   if (memories.length === 0) {
     return (
-      <p className="rounded border border-dashed border-bolu-border px-4 py-6 text-sm text-bolu-muted">
+      <p className="rounded-md border border-dashed border-bolu-border px-4 py-6 text-sm text-bolu-muted">
         {emptyNote}
       </p>
     );
@@ -672,7 +677,7 @@ function MemoryList({
   return (
     <ul className="space-y-2">
       {memories.map((memory) => (
-        <li key={memory.id} className="rounded border border-bolu-border bg-bolu-surface px-4 py-3">
+        <li key={memory.id} className="rounded-md border border-bolu-border bg-bolu-surface px-4 py-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -709,12 +714,12 @@ function MemoryList({
                     name="content"
                     rows={3}
                     defaultValue={memory.content}
-                    className="w-full rounded border border-bolu-border bg-white px-3 py-2 text-sm"
+                    className="w-full rounded-md border border-bolu-border bg-white px-3 py-2 text-sm"
                   />
                   <select
                     name="kind"
                     defaultValue={memory.kind}
-                    className="rounded border border-bolu-border bg-white px-3 py-2 text-sm"
+                    className="rounded-md border border-bolu-border bg-white px-3 py-2 text-sm"
                   >
                     {KIND_ORDER.map((kind) => (
                       <option key={kind} value={kind}>
@@ -761,7 +766,7 @@ function MemoryList({
               <button
                 type="button"
                 onClick={() => setEditing(editing === memory.id ? null : memory.id)}
-                className="rounded border border-bolu-border px-2.5 py-1 transition hover:bg-bolu-panel/60"
+                className="rounded-md border border-bolu-border px-2.5 py-1 transition hover:bg-bolu-panel/60"
               >
                 {editing === memory.id ? "Tutup" : "Ubah"}
               </button>
@@ -769,7 +774,7 @@ function MemoryList({
                 type="button"
                 onClick={() => void onPin(memory)}
                 disabled={busy}
-                className="rounded border border-bolu-border px-2.5 py-1 transition hover:bg-bolu-panel/60 disabled:opacity-50"
+                className="rounded-md border border-bolu-border px-2.5 py-1 transition hover:bg-bolu-panel/60 disabled:opacity-50"
               >
                 {memory.pinned ? "Lepas" : "Sematkan"}
               </button>
@@ -777,7 +782,7 @@ function MemoryList({
                 type="button"
                 onClick={() => void onForget(memory)}
                 disabled={busy}
-                className="rounded border border-bolu-border px-2.5 py-1 text-bolu-belum transition hover:bg-bolu-belum/8 disabled:opacity-50"
+                className="rounded-md border border-bolu-border px-2.5 py-1 text-bolu-belum transition hover:bg-bolu-belum/8 disabled:opacity-50"
               >
                 Hapus
               </button>

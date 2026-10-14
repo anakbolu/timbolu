@@ -1,0 +1,176 @@
+name: Deployment
+
+# A push to `main` redeploys the services the commit touched, by calling each service's Easypanel
+# deploy webhook (`/api/deploy/<token>`). There are no tests here on purpose: the quality gates are a
+# separate concern, and this workflow owns one thing — turning "these paths changed" into "the
+# services that build from those paths are redeployed".
+#
+# The mapping is path -> service, because a path is what a service actually builds from:
+#
+#   apps/frontend/**            -> timbolu                     (the web app)
+#   apps/backend/**             -> timbolu-backend             (the API)
+#                                  timbolu-agent-worker        (the agent queue)
+#                                  timbolu-integration-worker  (the integration queue)
+#   apps/whatsapp-gw/**         -> timbolu-wa-gateway          (the WhatsApp gateway)
+#   apps/backend/migrations/**  -> timbolu-migrate             (the schema, applied first)
+#
+# The gateway is its own module and its own image, so it is triggered by its own path rather than by
+# `apps/backend/**`. `packages/**` is the module both Go processes import, so a change there is a
+# change to both and triggers both.
+#
+# `timbolu-temporal` and `timbolu-temporal-ui` are upstream images with no path in this repository, so
+# nothing here triggers them.
+#
+# The migration is applied before anything else rolls out, and both the backend services and the
+# frontend wait for it: a rollout that starts a new image before the schema matches it is an outage
+# for as long as the migration takes. That ordering is why `migrate` is its own job rather than one
+# more entry in the backend matrix.
+#
+# What each service needs, once — repository secrets, see docs/deployment.md:
+#
+#   TIMBOLU_FRONTEND_DEPLOY_HOOK, TIMBOLU_BACKEND_DEPLOY_HOOK, TIMBOLU_AGENT_WORKER_DEPLOY_HOOK,
+#   TIMBOLU_INTEGRATION_WORKER_DEPLOY_HOOK, TIMBOLU_WA_GATEWAY_DEPLOY_HOOK, TIMBOLU_MIGRATE_DEPLOY_HOOK
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  # One deployment at a time per branch: two runs racing would apply the same migration twice and
+  # start two sets of images.
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------- what changed
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.filter.outputs.backend }}
+      gateway: ${{ steps.filter.outputs.gateway }}
+      migrations: ${{ steps.filter.outputs.migrations }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'apps/frontend/**'
+            backend:
+              - 'apps/backend/**'
+              - 'packages/**'
+            gateway:
+              - 'apps/whatsapp-gw/**'
+              - 'packages/**'
+            migrations:
+              - 'apps/backend/migrations/**'
+
+  # ---------------------------------------------------------------- schema first
+  migrate:
+    name: Apply migrations
+    needs: changes
+    if: needs.changes.outputs.migrations == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy timbolu-migrate
+        env:
+          DEPLOY_HOOK: ${{ secrets.TIMBOLU_MIGRATE_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$DEPLOY_HOOK" ]; then
+            echo "TIMBOLU_MIGRATE_DEPLOY_HOOK is not set; see docs/deployment.md" >&2
+            exit 1
+          fi
+          # The hook is Easypanel's own; what this workflow owns is the *order* — migrate, then roll
+          # the new images out.
+          curl --fail --silent --show-error --retry 3 --retry-connrefused -X POST "$DEPLOY_HOOK"
+
+  # ---------------------------------------------------------------- backend
+  backend:
+    name: Deploy ${{ matrix.service }}
+    needs: [changes, migrate]
+    # `always()` so a *skipped* `migrate` (no new migration) does not skip the rollout, and the
+    # explicit result check so a *failed* migration still blocks it.
+    if: >-
+      always() &&
+      !cancelled() &&
+      needs.changes.outputs.backend == 'true' &&
+      (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
+    runs-on: ubuntu-latest
+    strategy:
+      # One service failing must not stop the others: they are separate processes, and a bad
+      # agent-worker image is no reason to leave the API on the previous one.
+      fail-fast: false
+      matrix:
+        include:
+          - service: timbolu-backend
+            hook: BACKEND
+          - service: timbolu-agent-worker
+            hook: AGENT_WORKER
+          - service: timbolu-integration-worker
+            hook: INTEGRATION_WORKER
+    env:
+      # `secrets` cannot be indexed by an expression, so every hook is exposed and the step picks the
+      # one its matrix entry names.
+      HOOK_BACKEND: ${{ secrets.TIMBOLU_BACKEND_DEPLOY_HOOK }}
+      HOOK_AGENT_WORKER: ${{ secrets.TIMBOLU_AGENT_WORKER_DEPLOY_HOOK }}
+      HOOK_INTEGRATION_WORKER: ${{ secrets.TIMBOLU_INTEGRATION_WORKER_DEPLOY_HOOK }}
+    steps:
+      - name: Deploy ${{ matrix.service }}
+        env:
+          HOOK_NAME: HOOK_${{ matrix.hook }}
+        run: |
+          hook="${!HOOK_NAME}"
+          if [ -z "$hook" ]; then
+            echo "TIMBOLU_${{ matrix.hook }}_DEPLOY_HOOK is not set; see docs/deployment.md" >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --retry 3 --retry-connrefused -X POST "$hook"
+
+  # ---------------------------------------------------------------- gateway
+  gateway:
+    name: Deploy timbolu-wa-gateway
+    needs: [changes, migrate]
+    # Its own job rather than a fourth matrix entry, because it is its own module: a change to
+    # `apps/whatsapp-gw/**` should roll the gateway and nothing else. `packages/**` counts as a
+    # change here too, since the gateway imports it.
+    if: >-
+      always() &&
+      !cancelled() &&
+      needs.changes.outputs.gateway == 'true' &&
+      (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy timbolu-wa-gateway
+        env:
+          DEPLOY_HOOK: ${{ secrets.TIMBOLU_WA_GATEWAY_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$DEPLOY_HOOK" ]; then
+            echo "TIMBOLU_WA_GATEWAY_DEPLOY_HOOK is not set; see docs/deployment.md" >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --retry 3 --retry-connrefused -X POST "$DEPLOY_HOOK"
+
+  # ---------------------------------------------------------------- frontend
+  frontend:
+    name: Deploy timbolu
+    needs: [changes, migrate]
+    if: >-
+      always() &&
+      !cancelled() &&
+      needs.changes.outputs.frontend == 'true' &&
+      (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy timbolu
+        env:
+          DEPLOY_HOOK: ${{ secrets.TIMBOLU_FRONTEND_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$DEPLOY_HOOK" ]; then
+            echo "TIMBOLU_FRONTEND_DEPLOY_HOOK is not set; see docs/deployment.md" >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --retry 3 --retry-connrefused -X POST "$DEPLOY_HOOK"

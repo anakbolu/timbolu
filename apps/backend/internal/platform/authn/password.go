@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -122,8 +123,9 @@ func HashToken(raw string) string {
 // minimum keeps the validation message honest.
 const MinPasswordLength = 8
 
-// ValidatePassword enforces the password policy: long enough and not only
-// whitespace.
+// ValidatePassword enforces the password policy: long enough, mixed case, at
+// least one digit, and not only whitespace. The register and reset screens
+// mirror these rules as a checklist, so a change here must reach them too.
 func ValidatePassword(password string) error {
 	if len([]rune(password)) < MinPasswordLength {
 		return fmt.Errorf("authn: password must be at least %d characters", MinPasswordLength)
@@ -131,5 +133,25 @@ func ValidatePassword(password string) error {
 	if strings.TrimSpace(password) == "" {
 		return errors.New("authn: password must not be only whitespace")
 	}
+
+	var upper, lower, digit bool
+	for _, r := range password {
+		switch {
+		case unicode.IsUpper(r):
+			upper = true
+		case unicode.IsLower(r):
+			lower = true
+		case unicode.IsDigit(r):
+			digit = true
+		}
+	}
+
+	if !upper || !lower {
+		return errors.New("authn: password must mix uppercase and lowercase letters")
+	}
+	if !digit {
+		return errors.New("authn: password must contain at least one digit")
+	}
+
 	return nil
 }

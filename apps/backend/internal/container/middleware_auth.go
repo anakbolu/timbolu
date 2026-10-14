@@ -223,6 +223,12 @@ func (c *Container) requireVerified() fiber.Handler {
 			return response.Unavailable(ctx, "authentication is not configured", "auth_not_configured")
 		}
 
+		// A deployment that has turned verification off admits the account as
+		// soon as it exists: the gate is registering, not confirming an address.
+		if c.Config != nil && !c.Config.Auth.RequireEmailVerification {
+			return ctx.Next()
+		}
+
 		if err := c.Services.Auth.AssertVerified(ctx.UserContext(), middleware.CurrentUserID(ctx)); err != nil {
 			if errors.Is(err, authdomain.ErrEmailNotVerified) {
 				return response.Error(ctx, fiber.StatusForbidden, "verify your email first", "email_not_verified", nil)

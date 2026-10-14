@@ -5,10 +5,19 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Alert, AuthShell, Field, GoogleButton, SubmitButton } from "@/components/auth/auth-shell";
+import { PasswordRules, passwordMeetsPolicy } from "@/components/auth/password-rules";
 import { AuthScene } from "@/components/auth/auth-scene";
 import { useSearchParams } from "next/navigation";
 
 import { googleStartURL, login, register } from "@/lib/api";
+
+/**
+ * Whether this deployment shows the Google button. It is a build-time flag
+ * because the value is inlined into the client bundle, and it is off unless the
+ * deployment says otherwise — a button that leads to a "not configured" page is
+ * worse than no button.
+ */
+const GOOGLE_LOGIN_ENABLED = process.env.NEXT_PUBLIC_GOOGLE_LOGIN_ENABLED === "true";
 
 /**
  * One page for both entry points, because they share every field and only
@@ -22,9 +31,18 @@ export function CredentialsForm({ mode }: { mode: "signup" | "login" }) {
   const [password, setPassword] = useState("");
   const params = useSearchParams();
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(
-    params.get("verified") === "1" ? "Email terverifikasi. Masuk untuk melanjutkan." : null,
-  );
+  // Two things bring somebody here with something to say: a link that just verified
+  // their address, and a session that ended underneath them. Both are said above the
+  // form rather than as a refusal, because neither is the visitor's mistake.
+  const [notice, setNotice] = useState<string | null>(() => {
+    if (params.get("verified") === "1") {
+      return "Email terverifikasi. Masuk untuk melanjutkan.";
+    }
+    if (params.get("sesi") === "berakhir") {
+      return "Sesi berakhir. Masuk lagi.";
+    }
+    return null;
+  });
   const [pending, setPending] = useState(false);
 
   async function onSubmit(event: React.FormEvent) {
@@ -35,14 +53,31 @@ export function CredentialsForm({ mode }: { mode: "signup" | "login" }) {
 
     if (isRegister) {
       const result = await register(email, password);
-      setPending(false);
 
       if (!result.ok) {
+        setPending(false);
         setError(result.message);
         return;
       }
+
+      // A deployment with verification off creates the account already usable, so
+      // there is no link to wait for: sign in and land where the account belongs.
+      // The register response carries the answer, which is what keeps the two
+      // sides from having to agree on a second flag.
+      if (result.data.email_verified) {
+        const session = await login(email, password);
+        setPending(false);
+        if (!session.ok) {
+          setError(session.message);
+          return;
+        }
+        router.push(session.data.user.onboarded ? "/dashboard" : "/onboarding");
+        return;
+      }
+
       // The account exists but is not verified yet: the next step is the link
       // that was just emailed.
+      setPending(false);
       router.push(`/verify?email=${encodeURIComponent(email)}`);
       return;
     }
@@ -104,17 +139,18 @@ export function CredentialsForm({ mode }: { mode: "signup" | "login" }) {
           placeholder="Minimal 8 karakter"
           autoComplete={isRegister ? "new-password" : "current-password"}
           minLength={8}
-          hint={isRegister ? "Minimal 8 karakter." : undefined}
+          hint={isRegister ? <PasswordRules value={password} /> : undefined}
         />
 
         <SubmitButton
           label={isRegister ? "Daftar" : "Masuk"}
           pending={pending}
           pendingLabel={isRegister ? "Mendaftarkan…" : "Masuk…"}
+          disabled={isRegister && !passwordMeetsPolicy(password)}
         />
       </form>
 
-      <GoogleButton href={googleStartURL()} />
+      {GOOGLE_LOGIN_ENABLED ? <GoogleButton href={googleStartURL()} /> : null}
 
       {!isRegister ? (
         <p className="mt-4 text-center text-sm">

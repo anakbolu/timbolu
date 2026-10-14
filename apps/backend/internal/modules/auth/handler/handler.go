@@ -119,7 +119,14 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 		return h.fail(c, "register", err)
 	}
 
-	return response.Created(c, "account created, check your email to verify it", toUserPayload(user))
+	// The message follows the account's state: a deployment that has turned
+	// verification off creates an account that is already usable, and telling its
+	// owner to check their email would send them to a link that does not exist.
+	message := "account created, check your email to verify it"
+	if user.EmailVerified {
+		message = "account created"
+	}
+	return response.Created(c, message, toUserPayload(user))
 }
 
 // VerifyEmail consumes the one-time verification token.

@@ -66,7 +66,7 @@ export function Block({ block }: { block: MessageBlock }) {
       // A block type this client does not know is shown as such rather than
       // dropped: a message that silently loses part of itself is worse.
       return (
-        <p className="rounded border border-dashed border-bolu-border px-3 py-2 text-sm text-bolu-muted">
+        <p className="rounded-md border border-dashed border-bolu-border px-3 py-2 text-sm text-bolu-muted">
           Jenis blok yang belum dikenal aplikasi ini.
         </p>
       );
@@ -222,7 +222,7 @@ function DraftCard({ block }: { block: DraftBlock }) {
   }
 
   return (
-    <div className="my-1 rounded border border-bolu-border bg-bolu-surface px-4 py-3">
+    <div className="my-1 rounded-md border border-bolu-border bg-bolu-surface px-4 py-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs uppercase tracking-wide text-bolu-muted">
@@ -251,7 +251,7 @@ function DraftCard({ block }: { block: DraftBlock }) {
       {/* A held action says why and until when, which is what answers "why has
           this not gone out" without leaving the thread. */}
       {block.blocked_reason ? (
-        <p className="mt-2 rounded bg-bolu-panel px-3 py-2 text-sm text-bolu-body">
+        <p className="mt-2 rounded-md bg-bolu-panel px-3 py-2 text-sm text-bolu-body">
           {block.blocked_reason}
           {block.not_before ? ` · ${new Date(block.not_before).toLocaleString("id-ID")}` : null}
         </p>
@@ -272,7 +272,7 @@ function DraftCard({ block }: { block: DraftBlock }) {
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
                 rows={2}
-                className="mt-1 w-full rounded border border-bolu-border bg-bolu-page px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-md border border-bolu-border bg-bolu-page px-3 py-2 text-sm"
                 placeholder="Mis. penerimanya salah, harusnya Budi"
               />
             </label>
@@ -400,7 +400,7 @@ function HTMLView({ block }: { block: HTMLBlock }) {
         <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
-          className="rounded border border-bolu-border px-2.5 py-1 text-xs transition hover:bg-bolu-panel/60"
+          className="rounded-md border border-bolu-border px-2.5 py-1 text-xs transition hover:bg-bolu-panel/60"
         >
           {expanded ? "Perkecil" : "Layar penuh"}
         </button>
@@ -415,7 +415,7 @@ function HTMLView({ block }: { block: HTMLBlock }) {
         sandbox="allow-scripts"
         referrerPolicy="no-referrer"
         loading="lazy"
-        className="w-full rounded border border-bolu-border bg-white"
+        className="w-full rounded-md border border-bolu-border bg-white"
         style={{ height: expanded ? "80vh" : height }}
       />
 

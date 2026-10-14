@@ -45,9 +45,9 @@ import { crewFor, expressionOf, relativeAge, stateOf } from "@/lib/dashboard-vie
 
 import { useWorkspace } from "./workspace-data";
 
-const CARD = "rounded border border-bolu-border bg-white";
+const CARD = "rounded-md border border-bolu-border bg-white";
 const FIELD =
-  "min-h-11 rounded border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent";
+  "min-h-11 rounded-md border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent";
 const LABEL = "flex flex-col gap-1.5 text-[14px] font-semibold";
 
 /** STATUS_LABEL says what a number's state means, in the user's words. */
@@ -103,7 +103,7 @@ function QrCode({ matrix }: { matrix: string[] }) {
       viewBox={`0 0 ${side} ${side}`}
       width={side}
       height={side}
-      className="rounded bg-white p-1"
+      className="rounded-md bg-white p-1"
     >
       {matrix.flatMap((row, y) =>
         [...row].map((dark, x) =>
@@ -382,7 +382,7 @@ export function WhatsAppPanel() {
         <div className="flex items-center gap-3">
           <span
             aria-hidden
-            className="flex size-10 flex-none items-center justify-center rounded font-display text-[15px] font-bold text-white"
+            className="flex size-10 flex-none items-center justify-center rounded-md font-display text-[15px] font-bold text-white"
             style={{ backgroundColor: "#1E7D4A" }}
           >
             WA
@@ -417,7 +417,7 @@ export function WhatsAppPanel() {
         <div className="flex flex-col gap-3">
           {/* The warning is read before anything is linked, and what it says is the
               reason the product has no blast feature. */}
-          <div className="rounded border border-bolu-border bg-bolu-panel/60 p-[14px_16px]">
+          <div className="rounded-md border border-bolu-border bg-bolu-panel/60 p-[14px_16px]">
             <div className="text-[14px] font-semibold">Sebelum menautkan nomor</div>
             <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5 text-[13px] text-bolu-muted">
               {WARN.map((line) => (
@@ -489,7 +489,7 @@ export function WhatsAppPanel() {
             </label>
           ) : null}
 
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded bg-bolu-panel/60 p-[14px_16px]">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-bolu-panel/60 p-[14px_16px]">
             <div className="min-w-0">
               <div className="font-display text-[16px] font-semibold">{current?.label}</div>
               <div className="text-[13px] text-bolu-muted">
@@ -522,7 +522,7 @@ export function WhatsAppPanel() {
               unblocks the QR. Nothing else does: a number linked without somebody
               reading this is a risk nobody took. */}
           {current && !current.terms_accepted ? (
-            <div className="flex flex-col gap-3 rounded border border-bolu-border bg-bolu-panel/60 p-[14px_16px]">
+            <div className="flex flex-col gap-3 rounded-md border border-bolu-border bg-bolu-panel/60 p-[14px_16px]">
               <div className="text-[14px] font-semibold">Baca dulu sebelum menautkan</div>
               <ul className="flex list-disc flex-col gap-1.5 pl-5 text-[13px] text-bolu-muted">
                 {WARN.map((line) => (
@@ -543,7 +543,7 @@ export function WhatsAppPanel() {
           ) : null}
 
           {current?.terms_accepted && !current.linked ? (
-            <div className="flex flex-col gap-3 rounded border border-bolu-border p-[14px_16px]">
+            <div className="flex flex-col gap-3 rounded-md border border-bolu-border p-[14px_16px]">
               {pairing && link ? (
                 <>
                   {link.state === "code" && link.qr_matrix ? (

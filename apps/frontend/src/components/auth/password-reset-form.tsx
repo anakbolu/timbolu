@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import { Alert, AuthShell, Field, SubmitButton } from "@/components/auth/auth-shell";
+import { PasswordRules, passwordMeetsPolicy } from "@/components/auth/password-rules";
 import { forgotPassword, resetPassword } from "@/lib/api";
 
 /**
@@ -79,9 +80,14 @@ export function PasswordResetForm() {
             onChange={setPassword}
             autoComplete="new-password"
             minLength={8}
-            hint="Minimal 8 karakter."
+            hint={<PasswordRules value={password} />}
           />
-          <SubmitButton label="Simpan kata sandi" pending={pending} pendingLabel="Menyimpan…" />
+          <SubmitButton
+            label="Simpan kata sandi"
+            pending={pending}
+            pendingLabel="Menyimpan…"
+            disabled={!passwordMeetsPolicy(password)}
+          />
         </form>
       </AuthShell>
     );

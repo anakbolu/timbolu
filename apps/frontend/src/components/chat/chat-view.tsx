@@ -11,7 +11,7 @@
 import { ArrowUp } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Bolu } from "@/components/bolu/bolu";
 import { useWorkspace } from "@/components/dashboard/workspace-data";
@@ -65,15 +65,11 @@ export function ChatView({
   const { agents } = useWorkspace();
   const [draft, setDraft] = useState("");
   const opened = useRef<string | null>(null);
-  const thread = useRef<HTMLDivElement | null>(null);
 
-  // The newest message is what a person came to read, so the thread follows it: on
-  // open, when a message is added, and as a streamed reply grows.
-  const newest = chat.messages.at(-1);
-  useEffect(() => {
-    const box = thread.current;
-    if (box) box.scrollTop = box.scrollHeight;
-  }, [chat.active?.id, newest?.message_id, newest?.blocks]);
+  // The newest message is what a person came to read, so the thread is kept at the
+  // bottom instead of the browser: on open, as a reply streams in, and when a block
+  // renders late. See useStickToBottom.
+  const { thread, content, pin } = useStickToBottom(chat.active?.id);
 
   // Opening by Bolu is what a click in the sidebar does. A link opened before the
   // store has the workspace cannot be answered yet, so it waits for the id rather
@@ -129,6 +125,9 @@ export function ChatView({
       return;
     }
     setDraft("");
+    // Sending is a person looking for the answer, so the thread returns to its
+    // newest message even if they had scrolled up to read something older.
+    pin();
     await chat.send(text);
   }
 
@@ -168,12 +167,15 @@ export function ChatView({
       <div className="flex min-h-0 flex-1 flex-col">
         <section className="flex min-h-0 flex-1 flex-col">
           {chat.error ? (
-            <p role="alert" className="mx-4 mt-3 rounded border border-bolu-belum/30 bg-bolu-belum/8 px-3 py-2 text-sm text-bolu-belum">
+            <p role="alert" className="mx-4 mt-3 rounded-md border border-bolu-belum/30 bg-bolu-belum/8 px-3 py-2 text-sm text-bolu-belum">
               {chat.error}
             </p>
           ) : null}
 
-          <div ref={thread} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4">
+          <div
+            ref={thread}
+            className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4"
+          >
             {chat.hasMore ? (
               <button
                 type="button"
@@ -193,7 +195,7 @@ export function ChatView({
               </p>
             ) : null}
 
-            <div className="mx-auto mt-auto flex w-full max-w-[760px] flex-col gap-3">
+            <div ref={content} className="mx-auto mt-auto flex w-full max-w-[760px] flex-col gap-3">
               {chat.messages.map((message) => (
                 <MessageRow
                   key={message.message_id}
@@ -256,6 +258,101 @@ export function ChatView({
       </div>
     </div>
   );
+}
+
+/**
+ * useStickToBottom keeps a thread at its newest message.
+ *
+ * The scroll lives inside the thread rather than on the page, so the composer is
+ * always where it was and a reply never has to be chased down the window. Height
+ * is what is watched rather than the messages: a chart, a diagram, and a streamed
+ * paragraph all arrive *after* the render that added them, and each one would
+ * otherwise push the newest message below the fold.
+ *
+ * A reader who scrolled up is left where they are — the place they chose is not
+ * taken from them — which is why the pin follows them only while they are near the
+ * bottom.
+ */
+function useStickToBottom(conversationId?: string) {
+  const thread = useRef<HTMLDivElement | null>(null);
+  const content = useRef<HTMLDivElement | null>(null);
+  const sticky = useRef(true);
+  // The position this hook last wrote, or null when it has not written since the
+  // last scroll event. A scroll event is not always somebody scrolling — a thread
+  // switch and a late-rendering block both move the position from here — so an
+  // event that arrives at the position this hook just wrote is its own echo and is
+  // not read as intent. Everything else is a person, and is.
+  const wrote = useRef<number | null>(null);
+
+  const pin = useCallback(() => {
+    const box = thread.current;
+    if (!box) {
+      return;
+    }
+    sticky.current = true;
+    wrote.current = box.scrollHeight - box.clientHeight;
+    box.scrollTop = box.scrollHeight;
+  }, []);
+
+  // Opening a thread is a request for its newest message.
+  useEffect(() => {
+    pin();
+  }, [conversationId, pin]);
+
+  useEffect(() => {
+    const box = thread.current;
+    const inner = content.current;
+    if (!box || !inner) {
+      return;
+    }
+
+    const stick = () => {
+      if (sticky.current) {
+        wrote.current = box.scrollHeight - box.clientHeight;
+        box.scrollTop = box.scrollHeight;
+      }
+    };
+    // Both: the content grows when a block renders late, and the box shrinks when
+    // the window does. Either one leaves the newest message below the fold.
+    const observer = new ResizeObserver(stick);
+    observer.observe(inner);
+    observer.observe(box);
+
+    // Scrolling up is a person reading history, and it is taken from the gesture:
+    // a reply that is still arriving changes the height under a scroll that is
+    // already in flight, and reading that scroll as intent would pull the reader
+    // back down mid-sentence.
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) {
+        sticky.current = false;
+      }
+      // The gesture is the intent itself, so a write from before it can no longer
+      // be mistaken for one: without this a reader who dragged the scrollbar back
+      // to a position this hook once wrote could be read as its own echo.
+      wrote.current = null;
+    };
+
+    // The nearest few pixels still count as the bottom: a person who scrolled with
+    // a trackpad lands a little short of it, and that is not them reading history.
+    const onScroll = () => {
+      const expected = wrote.current;
+      wrote.current = null;
+      if (expected !== null && box.scrollTop === expected) {
+        return;
+      }
+      sticky.current = box.scrollHeight - box.scrollTop - box.clientHeight < 64;
+    };
+
+    box.addEventListener("scroll", onScroll, { passive: true });
+    box.addEventListener("wheel", onWheel, { passive: true });
+    return () => {
+      observer.disconnect();
+      box.removeEventListener("scroll", onScroll);
+      box.removeEventListener("wheel", onWheel);
+    };
+  }, []);
+
+  return { thread, content, pin };
 }
 
 /**
@@ -336,7 +433,7 @@ function MessageRow({ message, name, face }: { message: ChatMessage; name: strin
           ))}
 
           {notice ? (
-            <p className="mt-2 rounded border border-bolu-flag/30 bg-bolu-flag/8 px-2.5 py-1.5 text-xs text-bolu-flag">
+            <p className="mt-2 rounded-md border border-bolu-flag/30 bg-bolu-flag/8 px-2.5 py-1.5 text-xs text-bolu-flag">
               {notice}
             </p>
           ) : null}

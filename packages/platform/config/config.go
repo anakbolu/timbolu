@@ -399,6 +399,11 @@ type AuthConfig struct {
 	// LoginThrottleRefill the steady rate in attempts per second.
 	LoginThrottleCapacity int     `mapstructure:"LoginThrottleCapacity" validate:"optional"`
 	LoginThrottleRefill   float64 `mapstructure:"LoginThrottleRefill" validate:"optional"`
+	// RequireEmailVerification makes a new account confirm its address before it
+	// may use the product. It is on by default; a deployment that turns it off
+	// lets a fresh account in immediately, which is what a private rollout wants
+	// before the mail path is dependable.
+	RequireEmailVerification bool `mapstructure:"RequireEmailVerification" validate:"optional"`
 }
 
 // GoogleConfig holds the Google OAuth client registration. An empty ClientID

@@ -27,6 +27,7 @@ func clearOverrides(t *testing.T) {
 		"DUITKU_PAYMENT_METHOD", "DUITKU_EXPIRY_MINUTES", "DUITKU_CALLBACK_URL",
 		"DUITKU_RETURN_URL", "DUITKU_BASE_URL",
 		"BILLING_GRACE_DAYS", "BILLING_SYNC_INTERVAL", "BILLING_SWEEP_INTERVAL",
+		"AUTH_REQUIRE_EMAIL_VERIFICATION",
 	} {
 		t.Setenv(key, "")
 	}
@@ -267,6 +268,28 @@ func TestProductionNamesWhatItDependsOn(t *testing.T) {
 	// And the base still supplies everything the overlay does not name.
 	require.Equal(t, "bolu-integration", cfg.Temporal.TaskQueueIntegration)
 	require.Equal(t, 100, int(cfg.Database.MaxOpenConns))
+}
+
+// TestRequireEmailVerificationIsOnByDefaultAndCanBeTurnedOff: requiring a confirmed address is the
+// product's default, and the environment is where a rollout that has not finished its mail path opts
+// out of it. A value that is not a boolean is refused rather than read as "false", which is the
+// mistake that would open the gate by accident.
+func TestRequireEmailVerificationIsOnByDefaultAndCanBeTurnedOff(t *testing.T) {
+	clearOverrides(t)
+	t.Setenv("ENVIRONMENT", "local")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.True(t, cfg.Auth.RequireEmailVerification, "verification is the default")
+
+	t.Setenv("AUTH_REQUIRE_EMAIL_VERIFICATION", "false")
+	cfg, err = Load()
+	require.NoError(t, err)
+	require.False(t, cfg.Auth.RequireEmailVerification)
+
+	t.Setenv("AUTH_REQUIRE_EMAIL_VERIFICATION", "not-a-bool")
+	_, err = Load()
+	require.Error(t, err)
 }
 
 // TestAnUnknownEnvironmentStillLoadsTheBase: a deployment that mistypes its environment name gets the

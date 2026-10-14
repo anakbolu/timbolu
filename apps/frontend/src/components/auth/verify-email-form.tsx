@@ -89,7 +89,7 @@ export function VerifyEmailForm() {
                 onChange={(event) => setAddress(event.target.value)}
                 placeholder="nama@usaha.com"
                 required
-                className="mb-3 w-full rounded border border-bolu-border px-3.5 py-2.5 text-[15px] outline-none focus:border-bolu-accent focus:ring-2 focus:ring-bolu-accent/20"
+                className="mb-3 w-full rounded-md border border-bolu-border px-3.5 py-2.5 text-[15px] outline-none focus:border-bolu-accent focus:ring-2 focus:ring-bolu-accent/20"
               />
               <SubmitButton label="Kirim tautan baru" pending={pending} pendingLabel="Mengirim…" />
             </form>
@@ -118,7 +118,7 @@ export function VerifyEmailForm() {
           onChange={(event) => setAddress(event.target.value)}
           placeholder="nama@usaha.com"
           required
-          className="mb-3 w-full rounded border border-bolu-border px-3.5 py-2.5 text-[15px] outline-none focus:border-bolu-accent focus:ring-2 focus:ring-bolu-accent/20"
+          className="mb-3 w-full rounded-md border border-bolu-border px-3.5 py-2.5 text-[15px] outline-none focus:border-bolu-accent focus:ring-2 focus:ring-bolu-accent/20"
         />
         <SubmitButton label="Kirim ulang tautan" pending={pending} pendingLabel="Mengirim…" />
       </form>
