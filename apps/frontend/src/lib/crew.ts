@@ -16,7 +16,7 @@ export type ShapeName =
 export type MouthName = "open" | "smile" | "focus" | "w" | "o" | "sleep" | "chill";
 
 /** The expressions the bolu generator draws; re-exported so callers name one. */
-import type { BoluExpressionName } from "@/components/bolu/characters";
+import type { BoluExpressionName, BoluShapeName } from "@/components/bolu/characters";
 
 export type { BoluExpressionName };
 
@@ -136,8 +136,12 @@ export type BotShape = {
 export type CrewMember = {
   name: string;
   role: string;
-  /** Body shape; every name here also exists in `BOLU_SHAPES`. */
-  shape: ShapeName;
+  /**
+   * Body shape. A seeded member carries its own from `SHAPES`; a Bolu the
+   * workspace made carries whatever the registry stored, which is why this is
+   * the generator's wider set rather than the design's nine.
+   */
+  shape: BoluShapeName;
   /** Card background tint. */
   tint: string;
   bio: string;

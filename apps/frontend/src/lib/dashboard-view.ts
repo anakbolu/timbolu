@@ -7,6 +7,7 @@
  * row — a label, a value, and the note under it — because that is the UI.
  */
 
+import { BOLU_SHAPES, type BoluShapeName } from "@/components/bolu/characters";
 import type { ActivityEvent, Agent, Draft, Task } from "@/lib/api";
 import { ALL_BOTS, type BoluExpressionName, type CrewMember } from "@/lib/crew";
 
@@ -127,6 +128,18 @@ export function expressionOf(state: string): BoluExpressionName {
  * keeps the same body across reloads.
  */
 export function crewFor(agent: Agent): CrewMember {
+  const member = seededFor(agent);
+  const shape = agent.shape as BoluShapeName;
+
+  // A shape the registry stored is drawn, but only when the generator knows it:
+  // the database's own default is not one of the bodies, and a row that predates
+  // the choice carries it, so an unknown name falls back to the member's own
+  // rather than drawing nothing.
+  return BOLU_SHAPES[shape] ? { ...member, shape } : member;
+}
+
+/** seededFor is the crew member a Bolu is drawn as when it has no shape of its own. */
+function seededFor(agent: Agent): CrewMember {
   const seeded = ALL_BOTS.find((member) => member.name === agent.name);
   if (seeded) return seeded;
 

@@ -508,7 +508,18 @@ export function listIntegrations(workspaceId: string): Promise<ApiResult<Integra
 /** createAgent adds a Bolu, from a template, from a copy, or from scratch. */
 export function createAgent(
   workspaceId: string,
-  input: { team_id: string; name?: string; template_key?: string; copy_from?: string; persona?: string; role?: string },
+  input: {
+    team_id: string;
+    name?: string;
+    template_key?: string;
+    copy_from?: string;
+    persona?: string;
+    role?: string;
+    /** Body shape, named from the generator's own set. */
+    shape?: string;
+    /** Body colour; feet and ink are derived from it. */
+    color?: string;
+  },
 ): Promise<ApiResult<Agent>> {
   return request<Agent>("/agents", { method: "POST", body: input, workspace: workspaceId });
 }

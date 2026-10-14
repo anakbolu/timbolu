@@ -57,6 +57,15 @@ export type ChatState = {
   routerNotice: RouterNotice | null;
   open: (conversation: ChatConversation) => void;
   openByAgent: (agentId: string) => Promise<void>;
+  /**
+   * openByID opens a conversation the workspace already listed.
+   *
+   * A group is addressed by its own id rather than by a Bolu, and the sidebar
+   * holds the same list, so opening one is a lookup rather than a call. It
+   * reports whether the id was found, which is what lets a screen retry once
+   * the store's first read lands.
+   */
+  openByID: (conversationId: string) => boolean;
   send: (text: string, agentId?: string) => Promise<void>;
   loadOlder: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -137,6 +146,18 @@ export function useChat(): ChatState {
       await reloadConversations();
     },
     [workspaceId, open, reloadConversations],
+  );
+
+  const openByID = useCallback(
+    (conversationId: string) => {
+      const conversation = store.conversations.find((item) => item.id === conversationId);
+      if (!conversation) {
+        return false;
+      }
+      open(conversation);
+      return true;
+    },
+    [store.conversations, open],
   );
 
   const loadOlder = useCallback(async () => {
@@ -236,6 +257,7 @@ export function useChat(): ChatState {
     routerNotice,
     open,
     openByAgent,
+    openByID,
     send,
     loadOlder,
     refresh,

@@ -161,7 +161,10 @@ and the week's finished work), `/dashboard/routines` (the routines screen: the f
 that sets a cadence, the routines per Bolu with their next run in the workspace's own
 zone, the pause switch, and the run history), `/dashboard/integrations` (the hub: connected
 accounts, grants per Bolu, MCP servers), `/settings` (workspace profile, working
-hours, approval policies), `/settings/team`, `/settings/model`, `/chat`, `/groups`, `/dashboard/usage` (what the
+hours, approval policies), `/settings/team`, `/settings/model`, `/chat` (one thread
+rather than a thread list — the sidebar's roster and groups are the way in, and a
+link carries the Bolu or the group in the query), `/bolu/new` (the one screen that
+makes a Bolu: the body it is drawn as, its name, and its job), `/groups`, `/dashboard/usage` (what the
 workspace spent, read three ways over one window, with the tasks that need a person),
 and `/tasks` with `/tasks/[taskID]` (the task history, and one task's rounds and
 hand-offs). `/tasks/[taskID]` is the app's first dynamic route: the layout above it

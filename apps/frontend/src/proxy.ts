@@ -41,6 +41,7 @@ export default function proxy(request: NextRequest) {
  */
 export const config = {
   matcher: [
+    "/bolu/:path*",
     "/dashboard/:path*",
     "/chat/:path*",
     "/groups/:path*",

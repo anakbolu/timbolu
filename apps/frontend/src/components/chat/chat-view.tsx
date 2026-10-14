@@ -17,7 +17,7 @@ import { Bolu } from "@/components/bolu/bolu";
 import { useWorkspace } from "@/components/dashboard/workspace-data";
 import type { Agent, ChatConversation, ChatMessage } from "@/lib/api";
 import { allBot, type CrewMember } from "@/lib/crew";
-import { crewFor, expressionOf, relativeAge, stateOf } from "@/lib/dashboard-view";
+import { crewFor, expressionOf, stateOf } from "@/lib/dashboard-view";
 
 import { Block } from "./blocks";
 import { describeResult, isBusy, useChat } from "./use-chat";
@@ -39,17 +39,28 @@ const STATUS_CLASS: Record<string, string> = {
 /**
  * ChatScreen opens the conversation the query names.
  *
- * The sidebar roster links to `?agent=<id>`, which is what makes clicking a Bolu
- * open its thread: the id travels in the URL rather than through shared state, so
- * a link to one Bolu works from anywhere.
+ * The sidebar links to `?agent=<id>` for a Bolu and to `?conversation=<id>` for a
+ * group, which is what makes a click open that thread: the id travels in the URL
+ * rather than through shared state, so a link works from anywhere.
  */
 export function ChatScreen() {
   const params = useSearchParams();
-  return <ChatView agentId={params.get("agent") ?? undefined} />;
+  return (
+    <ChatView
+      agentId={params.get("agent") ?? undefined}
+      conversationId={params.get("conversation") ?? undefined}
+    />
+  );
 }
 
-/** ChatView is the whole screen: thread list, one thread, and the composer. */
-export function ChatView({ agentId }: { agentId?: string }) {
+/** ChatView is the whole screen: one thread and its composer. */
+export function ChatView({
+  agentId,
+  conversationId,
+}: {
+  agentId?: string;
+  conversationId?: string;
+}) {
   const chat = useChat();
   const { agents } = useWorkspace();
   const [draft, setDraft] = useState("");
@@ -64,9 +75,11 @@ export function ChatView({ agentId }: { agentId?: string }) {
     if (box) box.scrollTop = box.scrollHeight;
   }, [chat.active?.id, newest?.message_id, newest?.blocks]);
 
-  // Opening by Bolu is what a click in the sidebar does.
+  // Opening by Bolu is what a click in the sidebar does. A link opened before the
+  // store has the workspace cannot be answered yet, so it waits for the id rather
+  // than marking itself opened and leaving the screen empty.
   useEffect(() => {
-    if (!agentId || opened.current === agentId) {
+    if (!agentId || !chat.workspaceId || opened.current === agentId) {
       return;
     }
     opened.current = agentId;
@@ -74,6 +87,19 @@ export function ChatView({ agentId }: { agentId?: string }) {
       await chat.openByAgent(agentId);
     })();
   }, [agentId, chat]);
+
+  // A group is addressed by its own id, and the store's list may not have arrived
+  // yet, so an id that is not found is left for the next render rather than
+  // marked as opened.
+  useEffect(() => {
+    if (!conversationId || opened.current === conversationId) {
+      return;
+    }
+    if (!chat.openByID(conversationId)) {
+      return;
+    }
+    opened.current = conversationId;
+  }, [conversationId, chat]);
 
   const title = useMemo(() => {
     if (!chat.active) {
@@ -87,9 +113,10 @@ export function ChatView({ agentId }: { agentId?: string }) {
   }, [chat.active]);
 
   // The header shows the one Bolu a direct thread is with: its face, its role, and
-  // what it is doing right now.
+  // what it is doing right now. A group has no single partner, so it names its
+  // members instead of borrowing the first one's face.
   const partner = useMemo(() => {
-    if (!chat.active) return null;
+    if (!chat.active || chat.active.kind !== "direct") return null;
     const participant = chat.active.participants.find((item) => item.is_agent);
     if (!participant) return null;
     return agents.find((agent) => agent.id === participant.agent_id) ?? null;
@@ -138,68 +165,15 @@ export function ChatView({ agentId }: { agentId?: string }) {
         </span>
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[260px_1fr]">
-        <aside className="hidden min-h-0 overflow-y-auto border-r border-bolu-border bg-white px-3 py-3 lg:block">
-          <p className="px-1 pb-2 text-[13px] font-bold uppercase tracking-wide text-bolu-muted">
-            Obrolan
-          </p>
-          {chat.conversations.length === 0 ? (
-            <p className="px-1 text-[14px] text-bolu-muted">
-              Belum ada obrolan. Klik salah satu Bolu di kiri.
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-1">
-              {chat.conversations.map((conversation) => {
-                const participant = conversation.participants.find((item) => item.is_agent);
-                const agent = agents.find((item) => item.id === participant?.agent_id);
-                return (
-                  <li key={conversation.id}>
-                    <button
-                      type="button"
-                      onClick={() => chat.open(conversation)}
-                      className={`flex w-full cursor-pointer items-center gap-2.5 rounded px-2.5 py-2 text-left text-[14px] ${
-                        chat.active?.id === conversation.id ? "bg-bolu-panel/70" : ""
-                      }`}
-                    >
-                      {agent ? (
-                        <Bolu
-                          member={crewFor(agent)}
-                          expression={expressionOf(stateOf(agent))}
-                          color={agent.color || undefined}
-                          size={32}
-                          className="flex-none"
-                        />
-                      ) : null}
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate font-semibold">
-                          {conversation.title || participant?.name || "Obrolan"}
-                        </span>
-                        <span className="block truncate text-[12px] text-bolu-muted">
-                          {conversation.kind === "group"
-                            ? `${conversation.participants.filter((item) => item.is_agent).length} Bolu`
-                            : participant?.role || "langsung"}{" "}
-                          · {relativeAge(conversation.last_activity_at)}
-                        </span>
-                      </span>
-                      <span className="shrink-0 text-[12px] text-bolu-muted">
-                        {conversation.message_count}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </aside>
-
-        <section className="flex min-h-0 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <section className="flex min-h-0 flex-1 flex-col">
           {chat.error ? (
             <p role="alert" className="mx-4 mt-3 rounded border border-bolu-belum/30 bg-bolu-belum/8 px-3 py-2 text-sm text-bolu-belum">
               {chat.error}
             </p>
           ) : null}
 
-          <div ref={thread} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+          <div ref={thread} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4">
             {chat.hasMore ? (
               <button
                 type="button"
@@ -219,7 +193,7 @@ export function ChatView({ agentId }: { agentId?: string }) {
               </p>
             ) : null}
 
-            <div className="mx-auto flex max-w-[760px] flex-col gap-3">
+            <div className="mx-auto mt-auto flex w-full max-w-[760px] flex-col gap-3">
               {chat.messages.map((message) => (
                 <MessageRow
                   key={message.message_id}
