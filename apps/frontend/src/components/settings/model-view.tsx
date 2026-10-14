@@ -111,7 +111,7 @@ export function ModelView() {
 
     const [providerResult, adapterResult, teamResult, usageResult] = await Promise.all([
       listModelProviders(active),
-      listModelAdapters(),
+      listModelAdapters(active),
       listAgentTeams(active),
       modelUsage(active, 30),
     ]);
