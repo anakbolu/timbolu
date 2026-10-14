@@ -16,9 +16,9 @@ import (
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain/mocks"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/response"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // newTestApp mounts the memory routes behind the identity the container's

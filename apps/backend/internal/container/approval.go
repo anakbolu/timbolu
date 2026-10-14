@@ -15,9 +15,9 @@ import (
 	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
 	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
 	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/pubsub"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/temporal"
+	"github.com/robzlabz/employeebot/packages/platform/config"
 )
 
 // openApproval builds the approval runtime: the draft gate, the policy screen,

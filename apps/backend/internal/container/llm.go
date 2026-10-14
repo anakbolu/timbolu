@@ -9,11 +9,11 @@ import (
 
 	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 	llmservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/service"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/crypto"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/pricing"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/quota"
+	"github.com/robzlabz/employeebot/packages/platform/config"
+	"github.com/robzlabz/employeebot/packages/platform/crypto"
 )
 
 // openLLM builds the model gateway: the provider configuration, the adapters,

@@ -2,6 +2,12 @@
 
 Go modular monolith: one codebase, one Postgres, three deployable processes.
 
+The WhatsApp *gateway* is not one of them: it is a module of its own under
+[`apps/whatsapp-gw`](../whatsapp-gw/README.md). This module owns the product's
+WhatsApp records — who is linked, who answers, what was sent — and reaches the
+gateway over an internal seam; the gateway owns the socket. The two share the
+contract in `packages/whatsapp`.
+
 ## Layout
 
 ```
@@ -12,12 +18,16 @@ cmd/
 internal/
   container/            # the only place that calls constructors
   modules/<name>/       # domain · repository · service · handler
-  platform/             # config, database, redis, temporal, logger, middleware,
-                        # response, llm adapters
+  platform/             # temporal, logger, middleware, response, llm adapters
+                        # (config, database, redis, kms, crypto, storage moved to packages/)
+  migrate/              # golang-migrate runner over the embedded migrations
 migrations/             # golang-migrate .up.sql / .down.sql, embedded in the binary
 test/integration/       # cross-module tests with testcontainers-go
 tools/                  # archcheck (dependency rules), migrate (schema runner)
 ```
+
+Everything under `packages/` — config, database, redis, kms, crypto, storage,
+logger, telemetry, and the WhatsApp contract — is shared with the gateway module.
 
 Rules (checked by `make archcheck` in CI):
 
@@ -31,14 +41,14 @@ Rules (checked by `make archcheck` in CI):
 ## Commands
 
 ```bash
-make up              # full stack: postgres+pgvector, redis, temporal, api, workers
+make up              # full stack: postgres+pgvector, redis, temporal, api, workers, gateway
 make backend         # API on the host
-make test            # go test ./... (integration tests need Docker)
-make cover           # tests + the 80% coverage gate
-make lint            # golangci-lint
-make archcheck       # dependency rules
-make sqlc            # regenerate the query code
-make mocks           # regenerate the domain mocks
+make test            # every module's go test ./... (integration tests need Docker)
+make cover           # every module's tests + its 80% coverage gate
+make lint            # golangci-lint, per module
+make archcheck       # the backend's dependency rules
+make sqlc            # regenerate the query code (backend and gateway)
+make mocks           # regenerate the domain mocks (packages and backend)
 make migrate-up      # apply migrations to $DATABASE_URL
 make smoke-task      # the task runtime end to end against the compose stack
 make smoke-order     # the MVP flow: an order priced from the catalogue, an invoice that waits
@@ -585,11 +595,20 @@ read back inside the transaction that creates it.
 
 ### WhatsApp (EPIC 9)
 
-- **The connection is a separate process, and that is not a preference.** A WhatsApp
+- **The connection is a separate module, and that is not a preference.** A WhatsApp
   session is a socket that stays open. The API serves requests and is replaced at
   any moment; a number whose socket died with the request that touched it is a
-  number that is never online. `cmd/wa-gateway` owns the sockets, and the API
-  reaches it over an internal address it is not publicly reachable at.
+  number that is never online. [`apps/whatsapp-gw`](../whatsapp-gw/README.md) owns the
+  sockets, and the API reaches it over an internal address it is not publicly
+  reachable at. This module keeps the product half — the numbers, the messages, the
+  outbox — and serves the gateway's effects back over a second internal seam.
+- **Two internal seams, one secret, one status table.** The API reaches the gateway
+  through `WA_GATEWAY_URL` to send and link; the gateway reaches the API through
+  `WA_API_URL` to record what arrived, claim the outbox, and report a number's
+  status. Both authenticate with `WA_GATEWAY_TOKEN` and the same header, and both
+  map an error to a status through one table in `packages/whatsapp/seam`, so a
+  refusal reads the same whichever way it crosses. The API's own listener
+  (`INTERNAL_ADDRESS`) is never published.
 - **One number has one owner, and the owner has a deadline.** Two processes on one
   session send every message twice, which is how a number gets restricted. A lease
   in Redis decides, it is renewed on an interval, and a failed renewal makes the
@@ -738,7 +757,7 @@ got to.
 
 ## Configuration
 
-Configuration is read from `internal/platform/config/config.yaml` (or
+Configuration is read from `packages/platform/config/config.yaml` (or
 `config-local.yaml` when `ENVIRONMENT=local`) and then overridden by environment
 variables. Secrets never live in the YAML files: `DATABASE_URL`, `REDIS_URL`,
 `TEMPORAL_HOST_PORT`, `TEMPORAL_API_KEY`, and `JWT_SECRET` all come from the
@@ -781,6 +800,12 @@ each binary names itself), `OTEL_SAMPLE_RATIO` (the share of root traces kept), 
 `prometheus` for the `/metrics` scrape endpoint, `otlp` for a collector, `console` for a
 development run), `OTEL_METRICS_ENDPOINT`, and `OTEL_METRICS_INTERVAL` for the pushing ones —
 a separate switch from the traces, because the two are asked for separately in practice.
+
+The WhatsApp seam is `WA_GATEWAY_URL` (how the API reaches the gateway),
+`WA_GATEWAY_TOKEN` (the shared secret both directions authenticate with), and
+`INTERNAL_ADDRESS` (where the API serves the gateway's own calls; empty means no
+internal listener, which is what a deployment without a gateway wants). The
+gateway's own process is configured by [`apps/whatsapp-gw`](../whatsapp-gw/README.md).
 
 Deployment and region decisions: `docs/adr/0001-temporal-dan-region.md`.
 Test strategy and gates: `docs/testing.md`.

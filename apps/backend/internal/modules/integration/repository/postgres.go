@@ -22,7 +22,7 @@ import (
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/repository/sqlcgen"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // Repository is the Postgres-backed implementation of the integration ports.

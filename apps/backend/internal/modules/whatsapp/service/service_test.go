@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/domain/mocks"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/service"
+	"github.com/robzlabz/employeebot/packages/whatsapp/domain"
+	"github.com/robzlabz/employeebot/packages/whatsapp/domain/mocks"
 )
 
 // The module's own rules are this file: who may link a number, what a customer's
@@ -26,9 +26,8 @@ import (
 type harness struct {
 	service     *service.Service
 	store       *mocks.Store
-	sessions    *mocks.SessionStore
+	sessions    *mocks.SessionForgetter
 	transport   *mocks.Transport
-	sealer      *mocks.Sealer
 	connections *mocks.Connections
 	activity    *mocks.Activity
 	alerter     *mocks.Alerter
@@ -54,9 +53,8 @@ func newHarness(t *testing.T) *harness {
 
 	h := &harness{
 		store:       mocks.NewStore(t),
-		sessions:    mocks.NewSessionStore(t),
+		sessions:    mocks.NewSessionForgetter(t),
 		transport:   mocks.NewTransport(t),
-		sealer:      mocks.NewSealer(t),
 		connections: mocks.NewConnections(t),
 		activity:    mocks.NewActivity(t),
 		alerter:     mocks.NewAlerter(t),
@@ -73,7 +71,6 @@ func newHarness(t *testing.T) *harness {
 		Repository:  h.store,
 		Sessions:    h.sessions,
 		Transport:   h.transport,
-		Sealer:      h.sealer,
 		Connections: h.connections,
 		Activity:    h.activity,
 		Alerter:     h.alerter,
@@ -1020,7 +1017,6 @@ func TestALinkWithoutAGatewaySaysSo(t *testing.T) {
 	h.service = service.New(service.Deps{
 		Repository: h.store,
 		Sessions:   h.sessions,
-		Sealer:     h.sealer,
 		Now:        h.clock.now,
 	})
 

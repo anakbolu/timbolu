@@ -16,8 +16,8 @@ import (
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/workflow"
 	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
 	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
 	routinetemporal "github.com/robzlabz/employeebot/apps/backend/internal/platform/routine/temporal"
+	"github.com/robzlabz/employeebot/packages/platform/config"
 )
 
 // openRoutine builds the routine runtime: the routines a Bolu runs on its own, the

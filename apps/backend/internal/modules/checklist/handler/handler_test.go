@@ -16,9 +16,9 @@ import (
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/domain/mocks"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/response"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // This file is the wire and nothing else: the fields a screen reads, the query a filter becomes, and

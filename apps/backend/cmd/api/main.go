@@ -15,7 +15,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/container"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
+	"github.com/robzlabz/employeebot/packages/platform/config"
 )
 
 const shutdownTimeout = 10 * time.Second
@@ -79,6 +79,11 @@ func run() error {
 	// The retention pass shares the process for the reason the billing sweep does: it is a
 	// loop with nothing to wait for. A deployment sets RETENTION_INTERVAL=0 to switch it off.
 	go c.RunRetention(ctx)
+	// The internal listener is the half of the WhatsApp seam the gateway calls:
+	// it records what arrived, hands out what is due, and takes back what left. It
+	// is off unless the deployment names an address, so an API with no gateway is
+	// unchanged.
+	go c.RunInternalServer(ctx)
 
 	serverErr := make(chan error, 1)
 	go func() {

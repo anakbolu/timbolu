@@ -18,8 +18,8 @@ import (
 	chathandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/handler"
 	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	workspacemocks "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain/mocks"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 	"go.uber.org/zap"
 )
 

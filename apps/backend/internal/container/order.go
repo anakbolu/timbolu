@@ -13,7 +13,7 @@ import (
 	orderdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/order/domain"
 	orderservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/order/service"
 	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
+	"github.com/robzlabz/employeebot/packages/platform/config"
 )
 
 // openOrder builds the module that holds the workspace's own commerce data: the catalogue a person

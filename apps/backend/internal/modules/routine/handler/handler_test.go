@@ -16,9 +16,9 @@ import (
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain/mocks"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/response"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // newTestApp mounts the routine routes behind the identity the container's middlewares

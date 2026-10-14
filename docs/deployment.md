@@ -7,21 +7,29 @@ repository can do it from this file alone, and so that every step that is still 
 
 Five images come out of one repository, and each carries one process:
 
-| Image | Build arg | What it is |
-| --- | --- | --- |
-| `api` | `BINARY=api` | The HTTP and WebSocket surface, plus the billing sweep and the retention pass |
-| `agent-worker` | `BINARY=agent-worker` | Polls the `bolu-agent` Temporal queue and runs tasks |
-| `integration-worker` | `BINARY=integration-worker` | Polls the `bolu-integration` queue and runs the hub's own workflows |
-| `wa-gateway` | `BINARY=wa-gateway` | Holds the WhatsApp sockets; the only process that may |
-| `frontend` | — | The web app, from `apps/frontend/Dockerfile` |
+| Image | Dockerfile | Build arg | What it is |
+| --- | --- | --- | --- |
+| `api` | `apps/backend/Dockerfile` | `BINARY=api` | The HTTP and WebSocket surface, plus the billing sweep and the retention pass |
+| `agent-worker` | `apps/backend/Dockerfile` | `BINARY=agent-worker` | Polls the `bolu-agent` Temporal queue and runs tasks |
+| `integration-worker` | `apps/backend/Dockerfile` | `BINARY=integration-worker` | Polls the `bolu-integration` queue and runs the hub's own workflows |
+| `wa-gateway` | `apps/whatsapp-gw/Dockerfile` | — | Holds the WhatsApp sockets, the sealed sessions, and the media bytes |
+| `frontend` | `apps/frontend/Dockerfile` | — | The web app |
 
 ```bash
-# One image, one binary: the same Dockerfile with a different build argument.
+# The backend is one image, one binary: the same Dockerfile with a different build argument.
 docker build -f apps/backend/Dockerfile --build-arg BINARY=agent-worker -t bolu/agent-worker .
+
+# The gateway is a module of its own, so it has its own Dockerfile and one binary.
+docker build -f apps/whatsapp-gw/Dockerfile -t bolu/wa-gateway .
 ```
 
+The backend and the gateway both import the shared `packages/` module, and a Docker build does not read
+`go.work`, so **both build with the repository root as the context** and resolve `packages/` through the
+`replace` directive in their own `go.mod`.
+
 They scale separately: the agent worker is the one that saturates, and a gateway image has no business
-carrying the API's code. `docker-compose.yml` builds all of them for local development.
+carrying the API's code or its Temporal client. `docker-compose.yml` builds all of them for local
+development.
 
 The frontend is built with `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_CONTENT_ORIGIN` **as build
 arguments**, because `NEXT_PUBLIC_*` values are inlined into the client bundle: a frontend built for
@@ -153,9 +161,9 @@ listener.
 
 `.github/workflows/release.yml` runs on a tag (`v*`) or on demand, in this order:
 
-1. **Gates** — the full test suite with the race detector, plus the 80% coverage gate.
-2. **Images** — the four backend images and the frontend, pushed to `$REGISTRY/$IMAGE_PREFIX` tagged
-   with both the commit sha and the ref.
+1. **Gates** — each module's test suite with the race detector, plus its own 80% coverage gate.
+2. **Images** — the three backend images, the gateway, and the frontend, pushed to
+   `$REGISTRY/$IMAGE_PREFIX` tagged with both the commit sha and the ref.
 3. **Migrations** — `tools/migrate up` against the environment's `DATABASE_URL`.
 4. **Rollout** — only when asked for. It calls the environment's `DEPLOY_HOOK`, then polls `/ready`.
 

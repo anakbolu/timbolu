@@ -31,19 +31,31 @@ Indonesia dulu: transfer bank / virtual account. **Tidak ada Stripe.**
 ```
 .
 ├── apps/
-│   ├── backend/     # Go modular monolith — Fiber, pgx + sqlc, Temporal, Zap
-│   └── frontend/    # Next.js (App Router) + TypeScript + Tailwind v4
+│   ├── backend/       # Go modular monolith — Fiber, pgx + sqlc, Temporal, Zap
+│   ├── whatsapp-gw/   # Go — the WhatsApp gateway: whatsmeow, sessions, media
+│   └── frontend/      # Next.js (App Router) + TypeScript + Tailwind v4
+├── packages/          # the shared module both Go processes import
 ├── docs/
-│   ├── adr/         # architecture decision records
-│   ├── testing.md   # test layers and CI gates
-│   ├── deployment.md # the three images, the migration step, and the environments
-│   └── e2e-mvp.md   # the MVP flow's end-to-end scenario and its measured cost per task
+│   ├── adr/           # architecture decision records
+│   ├── testing.md     # test layers and CI gates
+│   ├── deployment.md  # the images, the migration step, and the environments
+│   └── e2e-mvp.md     # the MVP flow's end-to-end scenario and its measured cost per task
+├── go.work            # the three-module dev workspace
 ├── docker-compose.yml
 ├── Makefile
 └── .env.example
 ```
 
+The Go code is three modules. `apps/backend` is the product: workspaces, agents, tasks,
+approvals, and the WhatsApp *records* — who is linked, who answers, what was sent. `apps/whatsapp-gw`
+is the gateway: it owns the WhatsApp socket (whatsmeow), the sealed device state, the fleet
+directory, and the media bytes. They are separate processes that talk over two internal HTTP seams —
+the API tells the gateway to send or link, and the gateway tells the API what arrived and what left —
+and neither imports the other. `packages/` is the code they share: the WhatsApp contract, the two
+seams, and the platform libraries (config, database, redis, kms, crypto, storage, logger, telemetry).
+
 Backend layout, dependency rules, and commands: [`apps/backend/README.md`](apps/backend/README.md).
+Gateway layout: [`apps/whatsapp-gw/README.md`](apps/whatsapp-gw/README.md).
 
 ## How to run
 
@@ -90,21 +102,25 @@ workspace's own catalogue, and the invoice that follows is a draft a person appr
 is where the numbers in [`docs/e2e-mvp.md`](docs/e2e-mvp.md) come from.
 
 `make up` starts Postgres (with pgvector), Redis, Temporal and its UI, runs the
-migrations, then starts the API, both Temporal workers, and the frontend.
+migrations, then starts the API, both Temporal workers, the WhatsApp gateway, and the frontend.
 
 | Service      | URL                              |
 | ------------ | -------------------------------- |
 | Frontend     | http://localhost:3000            |
 | Backend      | http://localhost:8080/health     |
 | Readiness    | http://localhost:8080/ready      |
+| Gateway      | http://localhost:8090/health     |
 | Temporal UI  | http://localhost:8233            |
 | Postgres     | `localhost:5432` (`employeebot` / `employeebot_secret` / `employeebot`) |
+
+The API's internal seam listener — the one the gateway calls — is on `:8091` and is never published.
 
 ### Running without Docker
 
 ```bash
 make frontend   # cd apps/frontend && npm run dev
 make backend    # cd apps/backend && go run ./cmd/api
+make wa-gateway # cd apps/whatsapp-gw && go run ./cmd/wa-gateway
 ```
 
 Install frontend dependencies inside `apps/frontend` (`npm ci`) — there is no
@@ -112,16 +128,17 @@ root `package.json`, so `npm install` at the repo root does nothing.
 
 ## Make targets
 
-| Target                   | Description                                          |
-| ------------------------ | ---------------------------------------------------- |
-| `up` / `down` / `logs`   | Manage the local stack                               |
-| `frontend` / `backend`   | Run one process on the host                          |
-| `test` / `cover`         | Test suite, and tests plus the 80% coverage gate     |
-| `lint` / `archcheck`     | golangci-lint, and the module dependency rules       |
-| `sqlc` / `mocks`         | Regenerate the query code and the domain mocks       |
-| `migrate-up` / `-down`   | Apply or revert migrations against `$DATABASE_URL`   |
-| `ci`                     | Run the same gates as CI locally                     |
-| `help`                   | List every target                                    |
+| Target                        | Description                                          |
+| ----------------------------- | ---------------------------------------------------- |
+| `up` / `down` / `logs`        | Manage the local stack                               |
+| `frontend` / `backend` / `wa-gateway` | Run one process on the host                   |
+| `test` / `cover`              | Every module's suite, and the tests plus each 80% coverage gate |
+| `test-backend` / `test-gateway` / `test-packages` | One module's suite        |
+| `lint` / `archcheck`          | golangci-lint per module, and the backend's dependency rules |
+| `sqlc` / `mocks`              | Regenerate the query code and the domain mocks, per module |
+| `migrate-up` / `-down`        | Apply or revert migrations against `$DATABASE_URL`   |
+| `ci`                          | Run the same gates as CI locally                     |
+| `help`                        | List every target                                    |
 
 ## Roadmap
 
@@ -147,8 +164,10 @@ erasure flow, which is also a screen at `/settings/data`.
   Redis, Zap, PostgreSQL 16 + pgvector.
 - **Frontend:** Next.js 16 (App Router) + TypeScript, Tailwind CSS v4, animasi
   murni CSS/SVG — tanpa file gambar, tanpa library animasi.
+- **Gateway:** Go 1.26, whatsmeow, Redis lease, object storage for media,
+  PostgreSQL for the sealed sessions.
 - **Local infra:** Docker Compose (`postgres`, `redis`, `temporal`, `migrate`,
-  `api`, `agent-worker`, `integration-worker`, `frontend`).
+  `api`, `agent-worker`, `integration-worker`, `wa-gateway`, `frontend`).
 
 Frontend routes today: `/` (the marketing page — a hero, the crew, how it works, a
 look at the workspace, the FAQ, and the closing call to action) and `/pricing` (the

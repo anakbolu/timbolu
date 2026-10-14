@@ -29,7 +29,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/domain"
+	"github.com/robzlabz/employeebot/packages/whatsapp/domain"
 )
 
 // App is the application key a linked number appears under in the hub.
@@ -53,11 +53,10 @@ const linkStateTTL = 2 * time.Minute
 // Deps are the service dependencies.
 type Deps struct {
 	Repository domain.Store
-	// Sessions persists the sealed device state. The repository implements it;
-	// it is a separate field because the engine's port is narrower than the
-	// repository's.
-	Sessions domain.SessionStore
-	Sealer   domain.Sealer
+	// Sessions forgets a device when a number is unlinked. The repository
+	// implements it; it is a separate field because the gateway owns reading and
+	// writing the sealed state, and only the forgetting half stays here.
+	Sessions domain.SessionForgetter
 	// Transport is the WhatsApp side. Optional in the sense that the module
 	// still serves its reads without one: a deployment with no gateway shows the
 	// numbers it has and refuses to link new ones rather than failing when

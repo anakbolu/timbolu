@@ -20,7 +20,8 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
+	"github.com/robzlabz/employeebot/apps/backend/internal/platform/migrate"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // latestMigration is the version of the newest migration file.
@@ -142,7 +143,7 @@ func migratedDatabase(t *testing.T) string {
 	dsn := postgresDSN(t)
 	ctx := t.Context()
 
-	require.NoError(t, database.MigrateUp(ctx, dsn))
+	require.NoError(t, migrate.MigrateUp(ctx, dsn))
 
 	return dsn
 }
@@ -167,13 +168,13 @@ func TestMigrationsRunBothWays(t *testing.T) {
 	dsn := postgresDSN(t)
 	ctx := t.Context()
 
-	version, dirty, err := database.MigrateVersion(ctx, dsn)
+	version, dirty, err := migrate.MigrateVersion(ctx, dsn)
 	require.NoError(t, err)
 	require.Equal(t, uint(0), version, "a fresh database must have no version")
 	require.False(t, dirty)
 
-	require.NoError(t, database.MigrateUp(ctx, dsn))
-	version, dirty, err = database.MigrateVersion(ctx, dsn)
+	require.NoError(t, migrate.MigrateUp(ctx, dsn))
+	version, dirty, err = migrate.MigrateVersion(ctx, dsn)
 	require.NoError(t, err)
 	// latestMigration is the version of the newest file in migrations/. Bump it
 	// when a migration is added: this assertion is what catches a migration that
@@ -181,14 +182,14 @@ func TestMigrationsRunBothWays(t *testing.T) {
 	require.Equal(t, uint(latestMigration), version)
 	require.False(t, dirty)
 
-	require.NoError(t, database.MigrateUp(ctx, dsn), "up must be idempotent")
+	require.NoError(t, migrate.MigrateUp(ctx, dsn), "up must be idempotent")
 
-	require.NoError(t, database.MigrateDown(ctx, dsn))
-	version, _, err = database.MigrateVersion(ctx, dsn)
+	require.NoError(t, migrate.MigrateDown(ctx, dsn))
+	version, _, err = migrate.MigrateVersion(ctx, dsn)
 	require.NoError(t, err)
 	require.Equal(t, uint(0), version, "down must remove the schema again")
 
-	require.NoError(t, database.MigrateUp(ctx, dsn), "up after down must work")
+	require.NoError(t, migrate.MigrateUp(ctx, dsn), "up after down must work")
 }
 
 // TestSchemaObjectsExist proves the bootstrap migration created the pgvector

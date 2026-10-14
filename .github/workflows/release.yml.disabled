@@ -1,7 +1,7 @@
 name: Release
 
-# Builds the four backend images and the frontend, and applies the migrations **before** the new
-# images serve traffic.
+# Builds the three backend images, the WhatsApp gateway, and the frontend, and applies the
+# migrations **before** the new images serve traffic.
 #
 # Two jobs and not one, and the order between them is the design rather than a detail: a rollout that
 # starts a new image before the schema matches it is an outage that lasts as long as the migration
@@ -47,9 +47,6 @@ jobs:
   gate:
     name: Gates
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/backend
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -71,19 +68,36 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
+          # The gateway's go.mod is the same Go version; naming one is enough.
           go-version-file: apps/backend/go.mod
-          cache-dependency-path: apps/backend/go.sum
+          cache-dependency-path: |
+            apps/backend/go.sum
+            apps/whatsapp-gw/go.sum
+            packages/go.sum
 
-      - name: Tests with the race detector
+      # Each module is gated on its own. The gateway's repository tests start
+      # their own Postgres through testcontainers, which the runner provides.
+      - name: Shared module
+        working-directory: packages
         run: go test ./... -race -count=1
 
-      - name: Coverage gate (80%)
+      - name: Backend
+        working-directory: apps/backend
+        run: go test ./... -race -count=1
+
+      - name: Gateway
+        working-directory: apps/whatsapp-gw
+        run: go test ./... -race -count=1
+
+      - name: Coverage gates (80% each)
         env:
           CGO_ENABLED: 0
-        run: ./scripts/coverage.sh
+        run: |
+          (cd apps/backend && ./scripts/coverage.sh)
+          (cd apps/whatsapp-gw && ./scripts/coverage.sh)
 
   # ---------------------------------------------------------------- images
-  images:
+  backend-images:
     name: Build ${{ matrix.image }}
     runs-on: ubuntu-latest
     needs: gate
@@ -93,10 +107,9 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        # The four processes the product runs. Each image carries one binary: they scale
-        # independently — the agent worker is the one that saturates — and a gateway image has no
-        # business carrying the API's code.
-        image: [api, agent-worker, integration-worker, wa-gateway]
+        # The three processes the backend runs. Each image carries one binary: they scale
+        # independently, and the agent worker is the one that saturates.
+        image: [api, agent-worker, integration-worker]
     steps:
       - uses: actions/checkout@v4
 
@@ -112,7 +125,9 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: apps/backend
+          # The repository root, because the backend imports the shared `packages/`
+          # module and a Docker build does not read `go.work`.
+          context: .
           file: apps/backend/Dockerfile
           build-args: |
             BINARY=${{ matrix.image }}
@@ -125,6 +140,39 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.image }}:${{ github.ref_name }}
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,scope=${{ matrix.image }},mode=max
+
+  gateway-image:
+    name: Build wa-gateway
+    runs-on: ubuntu-latest
+    needs: gate
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME || github.actor }}
+          password: ${{ secrets.REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          # The gateway is a module of its own with its own Dockerfile and one binary.
+          # It imports `packages/` too, so its context is the repository root as well.
+          context: .
+          file: apps/whatsapp-gw/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/wa-gateway:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/wa-gateway:${{ github.ref_name }}
+          cache-from: type=gha,scope=wa-gateway
+          cache-to: type=gha,scope=wa-gateway,mode=max
 
   frontend:
     name: Build frontend
@@ -166,7 +214,7 @@ jobs:
   migrate:
     name: Apply migrations
     runs-on: ubuntu-latest
-    needs: [images, frontend]
+    needs: [backend-images, gateway-image, frontend]
     # The environment this release is for, so the DATABASE_URL and the approval (if the environment is
     # protected) come from the environment's own secrets rather than from the repository's.
     environment: ${{ github.event.inputs.environment || 'production' }}

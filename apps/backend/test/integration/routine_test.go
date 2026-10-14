@@ -24,10 +24,10 @@ import (
 	routineworkflow "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/workflow"
 	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
 	routinetemporal "github.com/robzlabz/employeebot/apps/backend/internal/platform/routine/temporal"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/temporal"
+	"github.com/robzlabz/employeebot/packages/platform/config"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // This file is EPIC 11's proof, against a real Postgres and a real Temporal

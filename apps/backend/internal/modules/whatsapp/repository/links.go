@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/repository/sqlcgen"
+	"github.com/robzlabz/employeebot/packages/whatsapp/domain"
 )
 
 // The two statements the link flow and the retry path need, kept apart from the

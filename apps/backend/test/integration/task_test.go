@@ -19,7 +19,7 @@ import (
 	taskservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/service"
 	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // taskFixture is one onboarded workspace with the task runtime.

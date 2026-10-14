@@ -9,7 +9,7 @@ import (
 	agentdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
 	agentrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/repository"
 	agentservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/service"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // A workspace is created empty, so a test that needs Bolu creates them the way a

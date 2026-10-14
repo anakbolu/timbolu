@@ -214,8 +214,10 @@ services:
 
   api:
     build:
-      context: ./apps/backend
-      dockerfile: Dockerfile
+      # The context is the repository root because the backend imports the shared
+      # packages/ module, and a Docker build does not read go.work.
+      context: .
+      dockerfile: apps/backend/Dockerfile
       args:
         BINARY: api
     container_name: bolu-api
@@ -223,6 +225,10 @@ services:
     environment:
       <<: *backend-env
       HTTP_ADDRESS: ":8080"
+      # The second half of the seam: the gateway records what arrived and pulls
+      # what is due over this address. It is never published, because it speaks
+      # for every tenant at once and authenticates with one shared secret.
+      INTERNAL_ADDRESS: ${INTERNAL_ADDRESS:-:8091}
     volumes:
       # Attachments and sandboxed content documents. The workers mount the same
       # volume, so a file the API stores is one a worker can read.
@@ -241,8 +247,8 @@ services:
 
   agent-worker:
     build:
-      context: ./apps/backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/backend/Dockerfile
       args:
         BINARY: agent-worker
     container_name: bolu-agent-worker
@@ -267,13 +273,18 @@ services:
   # nothing, and a number whose socket died with it is a number that is offline.
   wa-gateway:
     build:
-      context: ./apps/backend
-      dockerfile: Dockerfile
-      args:
-        BINARY: wa-gateway
+      # Its own Dockerfile and its own module: the gateway imports the shared
+      # packages/ module and nothing of the backend's, and it carries no Temporal
+      # client. It needs no Temporal to run, so it does not wait for one.
+      context: .
+      dockerfile: apps/whatsapp-gw/Dockerfile
     container_name: bolu-wa-gateway
     restart: unless-stopped
-    environment: *backend-env
+    environment:
+      <<: *backend-env
+      # The other direction of the seam: the gateway reaches the API's internal
+      # listener to record what arrived, pull what is due, and report status.
+      WA_API_URL: ${WA_API_URL:-http://api:8091}
     volumes:
       # The same directory the API writes to: an attachment the gateway downloads
       # is read back by the API that serves it.
@@ -287,11 +298,13 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      api:
+        condition: service_started
 
   integration-worker:
     build:
-      context: ./apps/backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/backend/Dockerfile
       args:
         BINARY: integration-worker
     container_name: bolu-integration-worker

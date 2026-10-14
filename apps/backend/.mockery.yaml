@@ -79,25 +79,6 @@ packages:
       WorkQueue:
       Auditor:
       WorkspaceClock:
-  github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/domain:
-    interfaces:
-      Service:
-      Store:
-      SessionStore:
-      Transport:
-      Sealer:
-      Directory:
-      Lease:
-      Activity:
-      Alerter:
-      Replies:
-      Watchers:
-      Connections:
-      MediaStore:
-      Inbox:
-      Drain:
-      Status:
-      LinkSink:
   github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain:
     interfaces:
       Service:

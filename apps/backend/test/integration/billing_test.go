@@ -23,7 +23,7 @@ import (
 	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
 	workspaceservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/service"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // This file is EPIC 12's proof against a real Postgres. The claims are the ones a mock

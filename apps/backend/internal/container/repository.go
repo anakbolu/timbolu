@@ -19,7 +19,7 @@ import (
 	taskrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/repository"
 	whatsapprepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/repository"
 	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // Repositories aggregates the data access layer. Modules register their

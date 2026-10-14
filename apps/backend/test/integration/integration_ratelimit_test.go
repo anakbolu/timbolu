@@ -11,8 +11,8 @@ import (
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/container"
 	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
-	platformredis "github.com/robzlabz/employeebot/apps/backend/internal/platform/redis"
+	"github.com/robzlabz/employeebot/packages/platform/config"
+	platformredis "github.com/robzlabz/employeebot/packages/platform/redis"
 )
 
 // These tests cover the E8.5 gate: a per-integration ceiling is respected even

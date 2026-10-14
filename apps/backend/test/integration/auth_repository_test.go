@@ -10,7 +10,7 @@ import (
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain"
 	authrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // newAuthRepo opens a repository against a migrated database.

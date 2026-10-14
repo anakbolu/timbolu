@@ -16,8 +16,8 @@ import (
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/container"
 	authhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/handler"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/mail"
+	"github.com/robzlabz/employeebot/packages/platform/config"
 )
 
 // These tests drive the real API over a real Postgres: the container assembles

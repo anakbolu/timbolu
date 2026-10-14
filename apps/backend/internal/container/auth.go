@@ -11,10 +11,10 @@ import (
 	authservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/service"
 	workspaceservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/service"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/authn"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/mail"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/oauth/google"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/ratelimit"
+	"github.com/robzlabz/employeebot/packages/platform/config"
 )
 
 // Access-token defaults, used when the configuration omits a value.

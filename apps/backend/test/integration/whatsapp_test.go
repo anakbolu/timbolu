@@ -14,12 +14,12 @@ import (
 	agentrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/repository"
 	agentservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/service"
 	authrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository"
-	whatsappdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/domain"
 	whatsapprepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/repository"
 	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
+	"github.com/robzlabz/employeebot/packages/platform/config"
+	"github.com/robzlabz/employeebot/packages/platform/database"
+	whatsappdomain "github.com/robzlabz/employeebot/packages/whatsapp/domain"
 )
 
 // This file is EPIC 9's proof against a real Postgres. The claims are the ones a
@@ -122,6 +122,29 @@ func (f *whatsappFixture) createConnection(t *testing.T) uuid.UUID {
 	return id
 }
 
+// seedSession writes a sealed session row the way the gateway would.
+//
+// The product no longer reads or writes the device state — that is the gateway's
+// alone — so a test that needs a session row present writes it directly rather
+// than through a repository method this module does not have. What is under test
+// is what the product does with the row, not how it was stored.
+func (f *whatsappFixture) seedSession(t *testing.T) {
+	t.Helper()
+
+	require.NoError(t, f.pool.InScope(t.Context(), database.Scope{
+		UserID:      f.userID,
+		WorkspaceID: f.workspace,
+	}, func(tx pgx.Tx) error {
+		_, err := tx.Exec(t.Context(), `
+			INSERT INTO whatsapp_sessions (number_id, workspace_id, sealed_device, jid)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT (number_id) DO UPDATE
+				SET sealed_device = EXCLUDED.sealed_device, jid = EXCLUDED.jid`,
+			f.number.ID, f.workspace, []byte("sealed"), "628123456789:12@s.whatsapp.net")
+		return err
+	}))
+}
+
 // countInTenant reads a count inside a tenant scope, because every WhatsApp table
 // carries Row Level Security: a count outside a scope returns zero whatever the
 // table holds, which would make an assertion pass for the wrong reason.
@@ -200,48 +223,6 @@ func TestANumberCanBePreparedBeforeItIsLinked(t *testing.T) {
 	found, err := fixture.repository.ByPhone(ctx, fixture.scope, prepared.Phone)
 	require.NoError(t, err)
 	require.Equal(t, prepared.ID, found.ID)
-}
-
-// TestASessionBelongsToOneWorkspace is E9.1's second gate: the session blob of one
-// workspace is not readable from another, and the table is what enforces it rather
-// than the query.
-func TestASessionBelongsToOneWorkspace(t *testing.T) {
-	dsn := appDatabase(t)
-	mine := newWhatsAppFixture(t, dsn)
-	theirs := newWhatsAppFixture(t, dsn)
-	ctx := t.Context()
-
-	sealed := []byte{0x01, 0x02, 0x03, 0x00, 0xff, 0xfe}
-	require.NoError(t, mine.repository.Save(ctx, mine.scope, whatsappdomain.Session{
-		NumberID:    mine.number.ID,
-		WorkspaceID: mine.workspace,
-		Sealed:      sealed,
-		JID:         "628123456789:12@s.whatsapp.net",
-	}))
-
-	// It reads back byte for byte, which is what a device document needs: a
-	// truncated blob is a session that cannot be restored.
-	loaded, err := mine.repository.Load(ctx, mine.scope, mine.number.ID)
-	require.NoError(t, err)
-	require.Equal(t, sealed, loaded.Sealed)
-	require.Equal(t, "628123456789:12@s.whatsapp.net", loaded.JID)
-
-	// The other workspace cannot name it, because the row is not in its scope.
-	_, err = theirs.repository.Load(ctx, theirs.scope, mine.number.ID)
-	require.ErrorIs(t, err, whatsappdomain.ErrNotFound)
-
-	// And it cannot write over it either: the policy refuses a row that names
-	// somebody else's workspace.
-	err = theirs.repository.Save(ctx, theirs.scope, whatsappdomain.Session{
-		NumberID:    mine.number.ID,
-		WorkspaceID: mine.workspace,
-		Sealed:      []byte("someone else's session"),
-	})
-	require.Error(t, err)
-
-	loaded, err = mine.repository.Load(ctx, mine.scope, mine.number.ID)
-	require.NoError(t, err)
-	require.Equal(t, sealed, loaded.Sealed, "the session was not replaced from outside its workspace")
 }
 
 // TestANumberIsInvisibleToAnotherWorkspace: the number, its messages, its queue, and
@@ -549,43 +530,6 @@ func TestAMessageADeadGatewayLeftIsReturned(t *testing.T) {
 	require.Contains(t, returned[0].LastError, "terputus")
 }
 
-// TestTheDirectoryIsReadWithoutATenant is the one unscoped read in the codebase, and
-// this is what justifies it: a gateway has to discover which tenants have a number
-// before it can open any workspace's scope at all.
-func TestTheDirectoryIsReadWithoutATenant(t *testing.T) {
-	fixture := newWhatsAppFixture(t, appDatabase(t))
-	ctx := t.Context()
-
-	before, err := fixture.repository.Serving(ctx)
-	require.NoError(t, err)
-	for _, assignment := range before {
-		require.NotEqual(t, fixture.number.ID, assignment.NumberID)
-	}
-
-	require.NoError(t, fixture.repository.Publish(ctx, fixture.scope, fixture.number.ID, true))
-
-	after, err := fixture.repository.Serving(ctx)
-	require.NoError(t, err)
-
-	found := false
-	for _, assignment := range after {
-		if assignment.NumberID == fixture.number.ID {
-			found = true
-			require.Equal(t, fixture.workspace, assignment.WorkspaceID, "the row names the tenant to scope under")
-		}
-	}
-	require.True(t, found, "a published number is served by the fleet")
-
-	// Disabling it takes it out of the fleet's view without deleting the number.
-	require.NoError(t, fixture.repository.Publish(ctx, fixture.scope, fixture.number.ID, false))
-
-	after, err = fixture.repository.Serving(ctx)
-	require.NoError(t, err)
-	for _, assignment := range after {
-		require.NotEqual(t, fixture.number.ID, assignment.NumberID)
-	}
-}
-
 // TestAPhoneNumberBelongsToOneWorkspace is why the uniqueness is deployment-wide
 // rather than per tenant: a WhatsApp session belongs to the number, so a second
 // workspace linking it would take the first one's line over. The conflict arrives as
@@ -654,18 +598,14 @@ func TestForgettingASessionKeepsTheNumber(t *testing.T) {
 	fixture := newWhatsAppFixture(t, appDatabase(t))
 	ctx := t.Context()
 
-	require.NoError(t, fixture.repository.Save(ctx, fixture.scope, whatsappdomain.Session{
-		NumberID:    fixture.number.ID,
-		WorkspaceID: fixture.workspace,
-		Sealed:      []byte("sealed"),
-	}))
+	fixture.seedSession(t)
 	_, _, err := fixture.repository.Record(ctx, fixture.scope, fixture.inbound("msg-kept"))
 	require.NoError(t, err)
 
 	require.NoError(t, fixture.repository.ForgetSession(ctx, fixture.scope, fixture.number.ID))
 
-	_, err = fixture.repository.Load(ctx, fixture.scope, fixture.number.ID)
-	require.ErrorIs(t, err, whatsappdomain.ErrNotFound)
+	require.Equal(t, 0, countInTenant(t, fixture, `SELECT count(*) FROM whatsapp_sessions`),
+		"the device state is gone")
 
 	// The number and its history are untouched.
 	kept, err := fixture.repository.Get(ctx, fixture.scope, fixture.number.ID)
@@ -696,10 +636,6 @@ func TestTheGatewayCannotWriteOutsideATenant(t *testing.T) {
 	require.ErrorIs(t, err, whatsappdomain.ErrInvalidInput)
 
 	require.ErrorIs(t, fixture.repository.ForgetSession(ctx, empty, fixture.number.ID), whatsappdomain.ErrInvalidInput)
-
-	// The unscoped read is the one that needs no tenant, and it is the fleet's.
-	_, err = fixture.repository.Serving(ctx)
-	require.NoError(t, err)
 }
 
 // TestTheModuleServesItsReadsWithoutAGateway: the container is what decides whether
@@ -721,9 +657,7 @@ func TestADeletedNumberTakesItsSessionAndQueueWithIt(t *testing.T) {
 	fixture := newWhatsAppFixture(t, appDatabase(t))
 	ctx := t.Context()
 
-	require.NoError(t, fixture.repository.Save(ctx, fixture.scope, whatsappdomain.Session{
-		NumberID: fixture.number.ID, WorkspaceID: fixture.workspace, Sealed: []byte("sealed"),
-	}))
+	fixture.seedSession(t)
 	_, err := fixture.repository.Enqueue(ctx, fixture.scope, whatsappdomain.Outbox{
 		NumberID: fixture.number.ID, ToJID: "628999888777@s.whatsapp.net",
 		Kind: whatsappdomain.KindText, Text: "halo", Status: whatsappdomain.OutboxQueued,
@@ -766,7 +700,7 @@ func TestTheContainerWiresTheModule(t *testing.T) {
 	require.NotNil(t, app.Services.WhatsApp, "the module must be wired whenever there is a database")
 
 	// It answers its own reads.
-	_, err := app.Services.WhatsApp.Assignments(ctx)
+	_, err := app.Services.WhatsApp.Numbers(ctx, whatsappdomain.Scope{WorkspaceID: uuid.New()})
 	require.NoError(t, err)
 
 	// And it reports a missing workspace rather than running against whatever the
@@ -776,71 +710,6 @@ func TestTheContainerWiresTheModule(t *testing.T) {
 
 	// The handler is mounted, so the routes a screen calls exist in a deployment.
 	require.NotNil(t, app.Handlers.WhatsApp, "the routes must be mounted")
-}
-
-// TestASessionIsSealedWithItsWorkspacesOwnKey is the confidentiality half of E9.1
-// at the level only the wired sealer can prove: the same bytes sealed under one
-// workspace's data key do not open under another's, because the workspace is the
-// associated data of the seal.
-func TestASessionIsSealedWithItsWorkspacesOwnKey(t *testing.T) {
-	dsn := appDatabase(t)
-	mine := newWhatsAppFixture(t, dsn)
-	theirs := newWhatsAppFixture(t, dsn)
-
-	app := newWhatsAppContainer(t, dsn)
-	ctx := t.Context()
-
-	sealer := app.WhatsAppSealer()
-	require.NotNil(t, sealer, "the container must seal sessions with the workspace key ring")
-
-	sealed, err := sealer.Seal(ctx, mine.workspace, []byte("the device document"))
-	require.NoError(t, err)
-
-	opened, err := sealer.Open(ctx, mine.workspace, sealed)
-	require.NoError(t, err)
-	require.Equal(t, []byte("the device document"), opened)
-
-	// The other workspace's key does not open it. The key ring derives a separate
-	// data key per workspace and binds the id into the seal, so this fails rather
-	// than returning the bytes.
-	_, err = sealer.Open(ctx, theirs.workspace, sealed)
-	require.Error(t, err, "a session sealed for one workspace must not open for another")
-
-	// And a byte changed in the ciphertext is refused rather than returned.
-	tampered := append([]byte{}, sealed...)
-	tampered[len(tampered)-1] ^= 0xff
-	_, err = sealer.Open(ctx, mine.workspace, tampered)
-	require.Error(t, err, "a tampered session must not open")
-}
-
-// TestTheSessionOfADeadGatewayIsNotServable is where E9.1's two halves meet: a blob
-// stored in one workspace's row is not readable through another's scope, so the row
-// and the key both have to belong to the same tenant.
-func TestTheSessionOfOneWorkspaceIsNotOnAnothersRows(t *testing.T) {
-	dsn := appDatabase(t)
-	mine := newWhatsAppFixture(t, dsn)
-	theirs := newWhatsAppFixture(t, dsn)
-	app := newWhatsAppContainer(t, dsn)
-	ctx := t.Context()
-
-	sealer := app.WhatsAppSealer()
-	sealed, err := sealer.Seal(ctx, mine.workspace, []byte("mine"))
-	require.NoError(t, err)
-
-	// The blob is written on MY row, and MY scope opens it.
-	require.NoError(t, mine.repository.Save(ctx, mine.scope, whatsappdomain.Session{
-		NumberID: mine.number.ID, WorkspaceID: mine.workspace, Sealed: sealed,
-	}))
-	loaded, err := mine.repository.Load(ctx, mine.scope, mine.number.ID)
-	require.NoError(t, err)
-	opened, err := sealer.Open(ctx, mine.workspace, loaded.Sealed)
-	require.NoError(t, err)
-	require.Equal(t, []byte("mine"), opened)
-
-	// The other tenant cannot even reach the row, so the pair cannot be assembled
-	// from outside.
-	_, err = theirs.repository.Load(ctx, theirs.scope, mine.number.ID)
-	require.ErrorIs(t, err, whatsappdomain.ErrNotFound)
 }
 
 // newWhatsAppContainer builds the container the API process would: the module's

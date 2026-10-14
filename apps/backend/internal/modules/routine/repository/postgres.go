@@ -15,7 +15,7 @@ import (
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/repository/sqlcgen"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // Repository is the Postgres-backed implementation of the routine ports.

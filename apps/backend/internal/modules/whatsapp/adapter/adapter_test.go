@@ -10,7 +10,7 @@ import (
 
 	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/adapter"
-	whatsappdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/domain"
+	whatsappdomain "github.com/robzlabz/employeebot/packages/whatsapp/domain"
 )
 
 // The adapter is where the approval gate's involvement is decided, so that is what

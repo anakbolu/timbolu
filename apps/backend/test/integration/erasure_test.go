@@ -14,7 +14,7 @@ import (
 	memorydomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/retention/domain"
 	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // EPIC 13's E13.6 gate: **a request to erase a workspace removes all of it**, verified by asking the

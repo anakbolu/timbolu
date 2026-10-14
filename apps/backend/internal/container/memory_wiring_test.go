@@ -26,9 +26,9 @@ import (
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain/mocks"
 	memoryhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/handler"
 	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/temporal"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // The wiring tests for the memory module cover what only the container can get
