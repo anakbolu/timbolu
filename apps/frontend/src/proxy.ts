@@ -43,6 +43,7 @@ export const config = {
   matcher: [
     "/bolu/:path*",
     "/dashboard/:path*",
+    "/routines/:path*",
     "/chat/:path*",
     "/groups/:path*",
     "/settings/:path*",

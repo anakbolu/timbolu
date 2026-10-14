@@ -52,10 +52,10 @@ const NAV = [
     matches: (pathname: string) => pathname === "/dashboard",
   },
   {
-    href: "/dashboard/routines",
+    href: "/routines",
     label: "Rutinitas",
     icon: Clock,
-    matches: (pathname: string) => pathname === "/dashboard/routines",
+    matches: (pathname: string) => pathname === "/routines",
   },
   {
     href: "/dashboard/usage",

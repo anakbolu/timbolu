@@ -159,7 +159,7 @@ note that payment is by bank transfer or virtual account rather than Stripe — 
 from the navigation, which it was not before). The signed-in workspace lives under
 `apps/frontend/src/app/(workspace)`:
 `/dashboard` (the front door — the roster, the live activity feed, the drafts waiting,
-and the week's finished work), `/dashboard/routines` (the routines screen: the form
+and the week's finished work), `/routines` (the routines screen: the form
 that sets a cadence, the routines per Bolu with their next run in the workspace's own
 zone, the pause switch, and the run history), `/dashboard/integrations` (the hub: connected
 accounts, grants per Bolu, MCP servers), `/settings` (workspace profile, working
