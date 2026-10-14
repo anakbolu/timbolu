@@ -415,6 +415,10 @@ func (c *Container) registerStreamRoutes() {
 // registerUnavailableModules registers the fallbacks for the modules that are
 // not configured in this deployment, so every documented route exists and
 // answers 503 rather than 404.
+//
+// The order mirrors the tenant group in registerRoutes, which is what keeps the
+// two lists comparable: a module added there but forgotten here answers 404 and
+// looks like a typo to the screen that asked for it.
 func (c *Container) registerUnavailableModules(api fiber.Router) {
 	if c.Handlers.Workspace == nil {
 		api.All("/workspaces*", unavailable("workspaces are not configured", "workspace_not_configured"))
@@ -422,9 +426,6 @@ func (c *Container) registerUnavailableModules(api fiber.Router) {
 	}
 	if c.Handlers.Agent == nil {
 		registerAgentFallback(api)
-	}
-	if c.Handlers.LLM == nil {
-		registerModelFallback(api)
 	}
 	if c.Handlers.Chat == nil {
 		registerChatFallback(api)
@@ -438,11 +439,26 @@ func (c *Container) registerUnavailableModules(api fiber.Router) {
 	if c.Handlers.Routine == nil {
 		registerRoutineFallback(api)
 	}
+	if c.Handlers.WhatsApp == nil {
+		registerWhatsAppFallback(api)
+	}
+	if c.Handlers.Billing == nil {
+		registerBillingFallback(api)
+	}
 	if c.Handlers.Approval == nil {
 		registerApprovalFallback(api)
 	}
 	if c.Handlers.Integration == nil {
 		registerIntegrationFallback(api)
+	}
+	if c.Handlers.Order == nil {
+		registerOrderFallback(api)
+	}
+	if c.Handlers.Checklist == nil {
+		registerChecklistFallback(api)
+	}
+	if c.Handlers.LLM == nil {
+		registerModelFallback(api)
 	}
 }
 
