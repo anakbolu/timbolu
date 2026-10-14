@@ -78,7 +78,7 @@ function RosterRow({ item }: { item: RosterItem }) {
   return (
     <Link
       href={`/chat?agent=${item.agent.id}`}
-      className="flex min-h-[60px] min-w-0 flex-[1_1_220px] items-center gap-3 rounded border-2 border-transparent p-[8px_10px] text-left text-bolu-ink no-underline hover:text-bolu-ink"
+      className="flex min-h-[60px] min-w-0 flex-[1_1_220px] items-center gap-3 rounded-md border-2 border-transparent p-[8px_10px] text-left text-bolu-ink no-underline hover:text-bolu-ink"
     >
       <div className="relative size-11 flex-none">
         <Bolu
@@ -111,9 +111,9 @@ function GroupRow({ conversation }: { conversation: ChatConversation }) {
   return (
     <Link
       href={`/chat?conversation=${conversation.id}`}
-      className="flex min-h-[60px] min-w-0 flex-[1_1_220px] items-center gap-3 rounded border-2 border-transparent p-[8px_10px] text-left text-bolu-ink no-underline hover:text-bolu-ink"
+      className="flex min-h-[60px] min-w-0 flex-[1_1_220px] items-center gap-3 rounded-md border-2 border-transparent p-[8px_10px] text-left text-bolu-ink no-underline hover:text-bolu-ink"
     >
-      <div className="flex size-11 flex-none items-center justify-center rounded bg-bolu-panel text-bolu-body">
+      <div className="flex size-11 flex-none items-center justify-center rounded-md bg-bolu-panel text-bolu-body">
         <Users size={20} strokeWidth={2} aria-hidden="true" />
       </div>
       <div className="flex min-w-0 flex-1 flex-col text-left">
@@ -163,7 +163,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           aria-label="Buka menu"
           aria-expanded={navOpen}
           onClick={() => setNavOpen(true)}
-          className="relative flex size-11 cursor-pointer items-center justify-center rounded border-0 bg-bolu-bg"
+          className="relative flex size-11 cursor-pointer items-center justify-center rounded-md border-0 bg-bolu-bg"
         >
           <Menu size={20} strokeWidth={2.5} aria-hidden="true" />
           {pending > 0 ? (
@@ -215,7 +215,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                 href={item.href}
                 aria-current={on ? "page" : undefined}
                 onClick={() => setNavOpen(false)}
-                className={`flex min-h-[52px] items-center gap-3 rounded px-3.5 text-[17px] font-bold no-underline hover:text-bolu-ink ${
+                className={`flex min-h-[52px] items-center gap-3 rounded-md px-3.5 text-[17px] font-bold no-underline hover:text-bolu-ink ${
                   on ? "bg-bolu-ink text-white hover:text-white" : "bg-transparent text-bolu-ink"
                 }`}
               >
@@ -279,7 +279,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
         <Link
           href="/groups"
           onClick={() => setNavOpen(false)}
-          className="mt-3 flex min-h-[46px] items-center gap-2.5 rounded border-2 border-dashed border-bolu-track px-3.5 font-semibold text-bolu-body no-underline hover:text-bolu-ink"
+          className="mt-3 flex min-h-[46px] items-center gap-2.5 rounded-md border-2 border-dashed border-bolu-track px-3.5 font-semibold text-bolu-body no-underline hover:text-bolu-ink"
         >
           <Plus size={20} strokeWidth={2.5} aria-hidden="true" />
           Buat grup
@@ -293,7 +293,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
             aria-expanded={addOpen}
             aria-controls="tambah-bolu-menu"
             onClick={() => setAddOpen((open) => !open)}
-            className="flex min-h-[46px] cursor-pointer items-center gap-2.5 rounded border-2 border-dashed border-bolu-track bg-transparent px-3.5 font-semibold text-bolu-body hover:text-bolu-ink"
+            className="flex min-h-[46px] cursor-pointer items-center gap-2.5 rounded-md border-2 border-dashed border-bolu-track bg-transparent px-3.5 font-semibold text-bolu-body hover:text-bolu-ink"
           >
             <Plus size={20} strokeWidth={2.5} aria-hidden="true" />
             <span className="flex-1 text-left">Tambah Bolu</span>
@@ -308,7 +308,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           {addOpen ? (
             <div
               id="tambah-bolu-menu"
-              className="flex flex-col gap-1 rounded border border-bolu-line p-1"
+              className="flex flex-col gap-1 rounded-md border border-bolu-line p-1"
             >
               <Link
                 href="/bolu/new"
@@ -316,7 +316,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                   setAddOpen(false);
                   setNavOpen(false);
                 }}
-                className="flex min-h-[44px] items-center gap-2.5 rounded px-3 font-semibold text-bolu-body no-underline hover:bg-bolu-panel/60 hover:text-bolu-ink"
+                className="flex min-h-[44px] items-center gap-2.5 rounded-md px-3 font-semibold text-bolu-body no-underline hover:bg-bolu-panel/60 hover:text-bolu-ink"
               >
                 <Bot size={18} strokeWidth={2} aria-hidden="true" />
                 <span className="flex-1 text-left">Tambah Bolu</span>
@@ -327,7 +327,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                   setAddOpen(false);
                   setNavOpen(false);
                 }}
-                className="flex min-h-[44px] items-center gap-2.5 rounded px-3 font-semibold text-bolu-body no-underline hover:bg-bolu-panel/60 hover:text-bolu-ink"
+                className="flex min-h-[44px] items-center gap-2.5 rounded-md px-3 font-semibold text-bolu-body no-underline hover:bg-bolu-panel/60 hover:text-bolu-ink"
               >
                 <Users size={18} strokeWidth={2} aria-hidden="true" />
                 <span className="flex-1 text-left">Buat tim</span>
@@ -342,7 +342,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           <Link
             href="/dashboard/integrations"
             onClick={() => setNavOpen(false)}
-            className={`flex min-h-[52px] items-center gap-3 rounded px-3.5 text-[17px] font-bold no-underline hover:text-bolu-ink ${
+            className={`flex min-h-[52px] items-center gap-3 rounded-md px-3.5 text-[17px] font-bold no-underline hover:text-bolu-ink ${
               onIntegrations
                 ? "bg-bolu-ink text-white hover:text-white"
                 : "bg-transparent text-bolu-ink"
@@ -357,7 +357,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           <Link
             href="/settings"
             onClick={() => setNavOpen(false)}
-            className={`flex min-h-[52px] items-center gap-3 rounded px-3.5 text-[17px] font-bold no-underline hover:text-bolu-ink ${
+            className={`flex min-h-[52px] items-center gap-3 rounded-md px-3.5 text-[17px] font-bold no-underline hover:text-bolu-ink ${
               onSettings ? "bg-bolu-ink text-white hover:text-white" : "bg-transparent text-bolu-ink"
             }`}
           >
@@ -374,7 +374,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
         {error ? (
           <p
             role="alert"
-            className="m-[18px_20px_0] rounded border border-bolu-belum/30 bg-bolu-belum/5 px-4 py-3 text-[15px] text-bolu-belum"
+            className="m-[18px_20px_0] rounded-md border border-bolu-belum/30 bg-bolu-belum/5 px-4 py-3 text-[15px] text-bolu-belum"
           >
             {error}
           </p>

@@ -41,7 +41,7 @@ export function SignOutButton({ className }: { className?: string }) {
       disabled={busy}
       className={
         className ??
-        "flex min-h-[52px] cursor-pointer items-center gap-3 rounded border-0 bg-transparent px-3.5 text-[17px] font-bold text-bolu-ink disabled:opacity-60"
+        "flex min-h-[52px] cursor-pointer items-center gap-3 rounded-md border-0 bg-transparent px-3.5 text-[17px] font-bold text-bolu-ink disabled:opacity-60"
       }
     >
       <LogOut size={22} strokeWidth={2} aria-hidden="true" />

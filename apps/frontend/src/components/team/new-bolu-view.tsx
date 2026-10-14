@@ -26,10 +26,10 @@ import {
 import { useWorkspace } from "@/components/dashboard/workspace-data";
 import { createAgent } from "@/lib/api";
 
-const CARD = "rounded border border-bolu-border bg-white";
+const CARD = "rounded-md border border-bolu-border bg-white";
 const HEADING = "font-display text-[22px] font-semibold";
 const FIELD =
-  "min-h-11 w-full rounded border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent";
+  "min-h-11 w-full rounded-md border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent";
 const LABEL = "flex flex-col gap-1.5 text-[14px] font-semibold";
 
 export function NewBoluView() {
@@ -119,7 +119,7 @@ export function NewBoluView() {
                     aria-label={BOLU_SHAPES[candidate].label}
                     title={BOLU_SHAPES[candidate].label}
                     onClick={() => setShape(candidate)}
-                    className={`flex size-[54px] cursor-pointer items-center justify-center rounded border-2 ${
+                    className={`flex size-[54px] cursor-pointer items-center justify-center rounded-md border-2 ${
                       candidate === shape
                         ? "border-bolu-ink bg-bolu-panel"
                         : "border-bolu-line bg-white hover:border-bolu-track"
@@ -145,7 +145,7 @@ export function NewBoluView() {
                     }`}
                   />
                 ))}
-                <label className="flex min-h-8 cursor-pointer items-center gap-2 rounded border border-bolu-border px-2.5 text-[14px] font-normal">
+                <label className="flex min-h-8 cursor-pointer items-center gap-2 rounded-md border border-bolu-border px-2.5 text-[14px] font-normal">
                   <input
                     type="color"
                     value={color}
