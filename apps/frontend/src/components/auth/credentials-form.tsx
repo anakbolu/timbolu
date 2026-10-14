@@ -11,6 +11,14 @@ import { useSearchParams } from "next/navigation";
 import { googleStartURL, login, register } from "@/lib/api";
 
 /**
+ * Whether this deployment shows the Google button. It is a build-time flag
+ * because the value is inlined into the client bundle, and it is off unless the
+ * deployment says otherwise — a button that leads to a "not configured" page is
+ * worse than no button.
+ */
+const GOOGLE_LOGIN_ENABLED = process.env.NEXT_PUBLIC_GOOGLE_LOGIN_ENABLED === "true";
+
+/**
  * One page for both entry points, because they share every field and only
  * differ in which endpoint they call and where they land afterwards.
  */
@@ -35,14 +43,31 @@ export function CredentialsForm({ mode }: { mode: "signup" | "login" }) {
 
     if (isRegister) {
       const result = await register(email, password);
-      setPending(false);
 
       if (!result.ok) {
+        setPending(false);
         setError(result.message);
         return;
       }
+
+      // A deployment with verification off creates the account already usable, so
+      // there is no link to wait for: sign in and land where the account belongs.
+      // The register response carries the answer, which is what keeps the two
+      // sides from having to agree on a second flag.
+      if (result.data.email_verified) {
+        const session = await login(email, password);
+        setPending(false);
+        if (!session.ok) {
+          setError(session.message);
+          return;
+        }
+        router.push(session.data.user.onboarded ? "/dashboard" : "/onboarding");
+        return;
+      }
+
       // The account exists but is not verified yet: the next step is the link
       // that was just emailed.
+      setPending(false);
       router.push(`/verify?email=${encodeURIComponent(email)}`);
       return;
     }
@@ -114,7 +139,7 @@ export function CredentialsForm({ mode }: { mode: "signup" | "login" }) {
         />
       </form>
 
-      <GoogleButton href={googleStartURL()} />
+      {GOOGLE_LOGIN_ENABLED ? <GoogleButton href={googleStartURL()} /> : null}
 
       {!isRegister ? (
         <p className="mt-4 text-center text-sm">

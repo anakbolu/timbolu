@@ -241,6 +241,14 @@ func loadFromEnv(cfg *Config) error {
 		cfg.Llm.QuotaEnabled = enabled
 	}
 
+	if v := os.Getenv("AUTH_REQUIRE_EMAIL_VERIFICATION"); v != "" {
+		required, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("parse AUTH_REQUIRE_EMAIL_VERIFICATION: %w", err)
+		}
+		cfg.Auth.RequireEmailVerification = required
+	}
+
 	if v := os.Getenv("LLM_TOKENS_PER_PERIOD"); v != "" {
 		tokens, err := strconv.ParseInt(v, 10, 64)
 		if err != nil {

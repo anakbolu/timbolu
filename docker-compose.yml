@@ -18,6 +18,10 @@ x-backend-env: &backend-env
   # UI's mapped port, which is what a browser on the host can reach.
   TEMPORAL_UI_BASE_URL: ${TEMPORAL_UI_BASE_URL:-http://localhost:8233}
   JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
+  # Whether a new account must confirm its email address before it may use the
+  # product. Off locally so a developer reaches the dashboard without a mail
+  # server; production turns it on.
+  AUTH_REQUIRE_EMAIL_VERIFICATION: ${AUTH_REQUIRE_EMAIL_VERIFICATION:-false}
   # Base URL of the web app: where verification, reset, and invitation links
   # point, and where the Google callback returns the browser.
   FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
@@ -323,6 +327,9 @@ services:
         # different origin from the app, which is what makes the sandbox
         # meaningful; locally the API serves them.
         NEXT_PUBLIC_CONTENT_ORIGIN: ${CONTENT_ORIGIN:-http://localhost:8080}
+        # Whether the sign-in pages offer Google. Off until a Google client is
+        # registered for this deployment.
+        NEXT_PUBLIC_GOOGLE_LOGIN_ENABLED: ${NEXT_PUBLIC_GOOGLE_LOGIN_ENABLED:-false}
     container_name: bolu-frontend
     restart: unless-stopped
     ports:

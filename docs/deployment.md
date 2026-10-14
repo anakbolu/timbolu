@@ -30,6 +30,14 @@ sandboxed HTML documents are framed from and it must be a different origin from 
 built without it falls back to the API's own URL, which is the sandbox escape the separate origin
 exists to prevent.
 
+`NEXT_PUBLIC_GOOGLE_LOGIN_ENABLED` is a third build argument, and it decides whether the sign-in
+pages render the Google button at all. It is `false` unless a deployment has registered a Google
+client, because a button that leads to a `google_not_configured` answer is worse than no button.
+On the backend the matching rollout switch is `AUTH_REQUIRE_EMAIL_VERIFICATION`: it is `true` by
+default, and setting it `false` lets a fresh account use the product without confirming its address
+(see [api.md](./api.md)). Both are deployment decisions, so they belong in the environment rather
+than in the shared config files.
+
 ## The migration step
 
 **Migrations are applied before the new images serve traffic, by a separate step.** That ordering is
