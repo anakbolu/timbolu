@@ -27,7 +27,7 @@ export function SiteNavMenu({
         aria-label="Buka menu"
         aria-expanded={open}
         onClick={() => setOpen(true)}
-        className="flex size-11 cursor-pointer items-center justify-center rounded-md border border-bolu-border bg-white text-bolu-ink min-[761px]:hidden"
+        className="flex size-11 cursor-pointer items-center justify-center rounded-xl border border-bolu-border bg-white text-bolu-ink min-[761px]:hidden"
       >
         <Menu size={22} strokeWidth={2} aria-hidden="true" />
       </button>
@@ -63,7 +63,7 @@ export function SiteNavMenu({
               key={link.href}
               href={link.href}
               onClick={() => setOpen(false)}
-              className="min-h-[52px] rounded-md px-3.5 text-[17px] font-bold text-bolu-ink no-underline hover:bg-bolu-panel/60"
+              className="min-h-[52px] rounded-xl px-3.5 text-[17px] font-bold text-bolu-ink no-underline hover:bg-bolu-panel/60"
             >
               {link.label}
             </Link>

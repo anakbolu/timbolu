@@ -14,7 +14,7 @@ import {
 
 function InvoiceMock() {
   return (
-    <div className="flex flex-col gap-[18px] rounded-md bg-white p-7">
+    <div className="flex flex-col gap-[18px] rounded-xl bg-white p-7">
       <div className="flex flex-wrap justify-between gap-3">
         <div>
           <div className="font-display text-[28px] font-bold">Invoice</div>
@@ -74,7 +74,7 @@ function InvoiceMock() {
 
 function WhatsAppMock() {
   return (
-    <div className="flex max-w-[520px] flex-col overflow-hidden rounded-md bg-white">
+    <div className="flex max-w-[520px] flex-col overflow-hidden rounded-xl bg-white">
       <div className="flex items-center gap-3 bg-bolu-ink px-5 py-3.5 text-white">
         <div className="flex size-9 items-center justify-center rounded-full bg-[#F59ABF] font-bold text-bolu-ink">
           R
@@ -110,14 +110,14 @@ function WhatsAppMock() {
 
 function RekapMock() {
   return (
-    <div className="flex flex-col gap-3.5 rounded-md bg-white p-6">
+    <div className="flex flex-col gap-3.5 rounded-xl bg-white p-6">
       <div className="flex flex-wrap justify-between gap-2">
         <div className="font-display text-[24px] font-bold">Rekap pesanan minggu ini</div>
         <div className="text-[14px] text-bolu-muted">diperbarui Ijo barusan</div>
       </div>
       <div className="overflow-x-auto">
         <div className="flex min-w-[520px] flex-col text-[15px]">
-          <div className="grid grid-cols-[1fr_1.4fr_1.6fr_1.2fr_1fr] gap-2.5 rounded-md bg-[#F3F4F9] px-3 py-2.5 font-semibold">
+          <div className="grid grid-cols-[1fr_1.4fr_1.6fr_1.2fr_1fr] gap-2.5 rounded-xl bg-[#F3F4F9] px-3 py-2.5 font-semibold">
             <span>Tanggal</span>
             <span>Pelanggan</span>
             <span>Barang</span>
@@ -150,14 +150,14 @@ function RekapMock() {
 
 function ArsipMock() {
   return (
-    <div className="flex flex-col gap-3 rounded-md bg-white p-6">
+    <div className="flex flex-col gap-3 rounded-xl bg-white p-6">
       <div className="font-display text-[24px] font-bold">
         Folder Unduhan → Arsip/2026/Oktober
       </div>
       {ARSIP_FILES.map((file) => (
         <div
           key={file.from}
-          className="flex flex-wrap items-center gap-x-3.5 gap-y-2 rounded-md border border-bolu-border px-3.5 py-3 text-[15px]"
+          className="flex flex-wrap items-center gap-x-3.5 gap-y-2 rounded-xl border border-bolu-border px-3.5 py-3 text-[15px]"
         >
           <span className="text-bolu-muted line-through">{file.from}</span>
           <MoveRight size={20} strokeWidth={2.5} aria-hidden="true" />
@@ -217,7 +217,7 @@ export function WorkspaceTabs() {
         role="tabpanel"
         aria-labelledby={`tab-${tab}`}
         tabIndex={0}
-        className="flex flex-wrap items-start gap-7 rounded-md p-7"
+        className="flex flex-wrap items-start gap-7 rounded-xl p-7"
         style={{ background: current.tint }}
       >
         <div className="min-w-0 flex-[999_1_460px]">
@@ -234,7 +234,7 @@ export function WorkspaceTabs() {
               return (
                 <li
                   key={`${current.id}-${step.who}-${step.text}`}
-                  className="flex items-center gap-3.5 rounded-md border border-bolu-border bg-white py-3 pl-3 pr-4"
+                  className="flex items-center gap-3.5 rounded-xl border border-bolu-border bg-white py-3 pl-3 pr-4"
                 >
                   <BotSvg bot={member} className="size-12 flex-none" />
                   <div className="flex min-w-0 flex-col gap-0.5">

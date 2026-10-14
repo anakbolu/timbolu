@@ -25,10 +25,10 @@ export function Team() {
         {CREW.map((bot) => (
           <li
             key={bot.name}
-            className="flex items-start gap-[18px] rounded-md border border-bolu-border bg-white p-[22px]"
+            className="flex items-start gap-[18px] rounded-xl border border-bolu-border bg-white p-[22px]"
           >
             <div
-              className="box-border size-[92px] flex-none rounded-md p-2"
+              className="box-border size-[92px] flex-none rounded-xl p-2"
               style={{ background: bot.tint }}
             >
               <BotSvg bot={bot} className="size-full" />
