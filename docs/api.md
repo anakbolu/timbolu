@@ -42,6 +42,14 @@ Two endpoints answer identically whether or not the address exists
 (`resend-verification`, `password/forgot`), so they cannot be used to discover
 accounts.
 
+**Email verification is a deployment switch.** With `AUTH_REQUIRE_EMAIL_VERIFICATION=true` (the
+default) `register` creates a pending account and emails a link; `register` returns
+`email_verified:false` and the account cannot use onboarding or accept an invitation until the link
+is consumed. With the flag `false`, `register` marks the address verified at once, sends no mail, and
+returns `email_verified:true` — so a client can sign in straight after registering. A sign-in by an
+account that was created before the switch is healed the same way. The flag is read from the
+environment, never from a request.
+
 ## Tenancy
 
 `X-Workspace-Id` (or `?workspace_id=`) selects the active workspace. The value
