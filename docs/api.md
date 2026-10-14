@@ -818,7 +818,7 @@ every later quote to every customer is based on. Duplicate names are refused cas
 | --- | --- | --- |
 | `invalid_request` | 400 | Malformed body |
 | `invalid_input` | 400 | A field is wrong (blank name, unknown timezone, bad address) |
-| `weak_password` | 400 | Password policy not met |
+| `weak_password` | 400 | Password policy not met: at least 8 characters, mixing upper- and lowercase, with a digit |
 | `invalid_token` | 400 | Token unknown, expired, or already used |
 | `invalid_invitation` | 400 | Invitation unknown, expired, or already accepted |
 | `unauthenticated` | 401 | Missing, malformed, expired, or revoked access token |

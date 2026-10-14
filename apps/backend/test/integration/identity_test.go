@@ -209,7 +209,7 @@ func TestSignupFlowThroughTheAPI(t *testing.T) {
 	api := newIdentityAPI(t, migratedDatabase(t))
 
 	const email = "owner@example.com"
-	const password = "a-good-password"
+	const password = "A-good-password1"
 
 	token := api.register(t, email, password)
 
@@ -286,7 +286,7 @@ func TestOnboardingIsWhatTellsTheSessionItIsDone(t *testing.T) {
 	api := newIdentityAPI(t, migratedDatabase(t))
 
 	const email = "onboard-flag@example.com"
-	const password = "a-good-password"
+	const password = "A-good-password1"
 
 	api.verifyEmail(t, api.register(t, email, password))
 
@@ -326,7 +326,7 @@ func TestAnAccountWithAWorkspaceButNoFlagIsHealed(t *testing.T) {
 	api := newIdentityAPI(t, dsn)
 
 	const email = "legacy-onboard@example.com"
-	const password = "a-good-password"
+	const password = "A-good-password1"
 
 	api.verifyEmail(t, api.register(t, email, password))
 	accessToken, _ := api.login(t, email, password)
@@ -367,7 +367,7 @@ func TestSigningOutEndsTheSession(t *testing.T) {
 	api := newIdentityAPI(t, migratedDatabase(t))
 
 	const email = "signout@example.com"
-	const password = "a-good-password"
+	const password = "A-good-password1"
 
 	api.verifyEmail(t, api.register(t, email, password))
 
@@ -410,7 +410,7 @@ func TestInvitationFlow(t *testing.T) {
 
 	const ownerEmail = "owner@example.com"
 	const memberEmail = "teammate@example.com"
-	const password = "a-good-password"
+	const password = "A-good-password1"
 
 	api.verifyEmail(t, api.register(t, ownerEmail, password))
 	ownerToken, _ := api.login(t, ownerEmail, password)
@@ -491,7 +491,7 @@ func TestOwnerProtection(t *testing.T) {
 	api := newIdentityAPI(t, migratedDatabase(t))
 
 	const email = "owner@example.com"
-	const password = "a-good-password"
+	const password = "A-good-password1"
 
 	api.verifyEmail(t, api.register(t, email, password))
 	token, _ := api.login(t, email, password)
@@ -523,8 +523,8 @@ func TestPasswordResetFlow(t *testing.T) {
 	api := newIdentityAPI(t, migratedDatabase(t))
 
 	const email = "owner@example.com"
-	const password = "a-good-password"
-	const newPassword = "a-brand-new-password"
+	const password = "A-good-password1"
+	const newPassword = "A-brand-new-password1"
 
 	api.verifyEmail(t, api.register(t, email, password))
 	accessToken, _ := api.login(t, email, password)
@@ -566,7 +566,7 @@ func TestRefreshRotationThroughTheAPI(t *testing.T) {
 	api := newIdentityAPI(t, migratedDatabase(t))
 
 	const email = "owner@example.com"
-	const password = "a-good-password"
+	const password = "A-good-password1"
 
 	api.verifyEmail(t, api.register(t, email, password))
 	_, refreshCookie := api.login(t, email, password)
@@ -586,7 +586,7 @@ func TestRefreshRotationThroughTheAPI(t *testing.T) {
 // provider: an existing account is linked, not duplicated.
 func TestGoogleSignInThroughTheAPI(t *testing.T) {
 	const email = "owner@example.com"
-	const password = "a-good-password"
+	const password = "A-good-password1"
 
 	provider := newGoogleStub(t, email)
 	api := newIdentityAPI(t, migratedDatabase(t), container.WithGoogle(provider.client(t)))
@@ -629,7 +629,7 @@ func TestSessionCookieIsHttpOnly(t *testing.T) {
 	api := newIdentityAPI(t, migratedDatabase(t))
 
 	const email = "owner@example.com"
-	const password = "a-good-password"
+	const password = "A-good-password1"
 
 	api.verifyEmail(t, api.register(t, email, password))
 

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Alert, AuthShell, Field, GoogleButton, SubmitButton } from "@/components/auth/auth-shell";
+import { PasswordRules, passwordMeetsPolicy } from "@/components/auth/password-rules";
 import { AuthScene } from "@/components/auth/auth-scene";
 import { useSearchParams } from "next/navigation";
 
@@ -104,13 +105,14 @@ export function CredentialsForm({ mode }: { mode: "signup" | "login" }) {
           placeholder="Minimal 8 karakter"
           autoComplete={isRegister ? "new-password" : "current-password"}
           minLength={8}
-          hint={isRegister ? "Minimal 8 karakter." : undefined}
+          hint={isRegister ? <PasswordRules value={password} /> : undefined}
         />
 
         <SubmitButton
           label={isRegister ? "Daftar" : "Masuk"}
           pending={pending}
           pendingLabel={isRegister ? "Mendaftarkan…" : "Masuk…"}
+          disabled={isRegister && !passwordMeetsPolicy(password)}
         />
       </form>
 

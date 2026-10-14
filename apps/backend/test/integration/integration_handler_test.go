@@ -100,7 +100,7 @@ func signedIn(t *testing.T, api *identityAPI) (token, workspace string) {
 	t.Helper()
 
 	const email = "hub@example.com"
-	const password = "a-good-password"
+	const password = "A-good-password1"
 
 	api.verifyEmail(t, api.register(t, email, password))
 	token, _ = api.login(t, email, password)

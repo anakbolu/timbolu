@@ -64,7 +64,8 @@ type FieldProps = {
   autoComplete?: string;
   required?: boolean;
   minLength?: number;
-  hint?: string;
+  /** Extra guidance under the field, e.g. the password policy checklist. */
+  hint?: ReactNode;
 };
 
 export function Field({
@@ -96,7 +97,7 @@ export function Field({
         minLength={minLength}
         className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3.5 py-2.5 text-[15px] text-bolu-ink outline-none transition focus:border-bolu-accent focus:ring-2 focus:ring-bolu-accent/20"
       />
-      {hint ? <p className="mt-1.5 text-xs text-bolu-muted">{hint}</p> : null}
+      {hint ? <div className="mt-1.5 text-xs text-bolu-muted">{hint}</div> : null}
     </div>
   );
 }
@@ -105,15 +106,18 @@ export function SubmitButton({
   label,
   pending,
   pendingLabel,
+  disabled = false,
 }: {
   label: string;
   pending: boolean;
   pendingLabel: string;
+  /** Blocks submission while the form is not yet valid, e.g. a weak password. */
+  disabled?: boolean;
 }) {
   return (
     <button
       type="submit"
-      disabled={pending}
+      disabled={pending || disabled}
       className="w-full rounded-md bg-bolu-accent px-4 py-2.5 text-[15px] font-semibold text-white transition hover:bg-[#1a6cba] disabled:cursor-not-allowed disabled:opacity-60"
     >
       {pending ? pendingLabel : label}

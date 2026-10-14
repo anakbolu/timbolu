@@ -82,7 +82,7 @@ func TestVerifyPasswordRejectsMalformedHash(t *testing.T) {
 }
 
 func TestValidatePassword(t *testing.T) {
-	valid := []string{"12345678", "longer-password-value", "       8"}
+	valid := []string{"Passw0rd", "longer-Password-value1", "Abcdefgh1"}
 	for _, password := range valid {
 		if err := ValidatePassword(password); err != nil {
 			t.Errorf("%q must be accepted: %v", password, err)
@@ -90,9 +90,14 @@ func TestValidatePassword(t *testing.T) {
 	}
 
 	invalid := map[string]string{
-		"too short":   "short",
-		"empty":       "",
-		"only spaces": "         ",
+		"too short":      "Ab1",
+		"empty":          "",
+		"only spaces":    "         ",
+		"no uppercase":   "password1",
+		"no lowercase":   "PASSWORD1",
+		"no digit":       "Passworddd",
+		"only digits":    "12345678",
+		"only uppercase": "PASSWORD",
 	}
 	for name, password := range invalid {
 		t.Run(name, func(t *testing.T) {
