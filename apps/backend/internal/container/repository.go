@@ -8,6 +8,7 @@ import (
 	authrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository"
 	billingrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/repository"
 	chatrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/repository"
+	checklistrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/repository"
 	healthrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/repository"
 	integrationrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/repository"
 	llmrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/repository"
@@ -58,6 +59,10 @@ type Repositories struct {
 	// whose tables are the workspace's business rather than a provider's cache of
 	// something that lives elsewhere.
 	Order *orderrepo.Repository
+	// Checklist holds the plans Bolus keep for themselves: the tasks they wrote
+	// down and the ticks they made. It is the first repository whose subject is
+	// the Bolu's own work rather than work somebody gave it.
+	Checklist *checklistrepo.Repository
 	// Billing holds the packages sold, the subscription a workspace is on, the
 	// invoices it owes, the periods its allowance is counted over, and the sweep
 	// queue. It is filled in by openBilling.
@@ -139,6 +144,11 @@ func newRepositories(pool *database.Pool) *Repositories {
 		// while the hub is assembled, and a deployment without storage offers no
 		// catalogue tools — which is a question about this repository, answered here.
 		repositories.Order = orderrepo.New(pool)
+
+		// The checklist module holds the plans Bolus write for themselves, and it is
+		// built here for the same reason the order module is: the hub decides which
+		// tools exist from this repository, before the module itself is assembled.
+		repositories.Checklist = checklistrepo.New(pool)
 	}
 	return repositories
 }

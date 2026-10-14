@@ -6,6 +6,7 @@ import (
 	authdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain"
 	billingdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/domain"
 	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
+	checklistdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/domain"
 	healthdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/domain"
 	healthservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/service"
 	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
@@ -64,6 +65,10 @@ type Services struct {
 	// writes an order — which is why it is a module rather than a route or an
 	// adapter.
 	Order orderdomain.Service
+	// Checklist is the plan a Bolu keeps for itself, built by openChecklist. The
+	// integration adapter resolves it when a tool is called, because the adapter is
+	// registered with the hub before this module is assembled.
+	Checklist checklistdomain.Service
 }
 
 // newServices builds every service. Optional dependencies (Redis today) are

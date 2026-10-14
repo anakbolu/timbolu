@@ -812,6 +812,79 @@ every later quote to every customer is based on. Duplicate names are refused cas
 `Kopi Arabika` and `kopi arabika` are the same product to everybody except a database — with
 `duplicate_product`.
 
+## The plan a Bolu keeps for itself (EPIC 15)
+
+Every other table in this schema is about work somebody gave a Bolu. This one is about work a Bolu
+gave itself: a short list of tasks, each with optional subtasks, that it writes down before it starts
+and ticks off as it goes. It exists because a multi-step job otherwise lives entirely inside one model
+round, and a Bolu that restarts — or simply runs out of a step allowance — has no record of where it
+had got to.
+
+```
+GET    /api/checklists                     the workspace's plans, newest first (?agent_id=, ?status=, ?limit=)
+```
+
+That is the whole HTTP surface, and it is read-only. A plan is written, ticked, and thrown away by the
+Bolu through five tools:
+
+| Tool | Label | What it does |
+| --- | --- | --- |
+| `checklist.create` | `write_internal` | Writes the plan: a title and a list of tasks, each with optional subtasks |
+| `checklist.check` | `write_internal` | Ticks one task or subtask, by id |
+| `checklist.remove` | `write_internal` | Drops one task, and its subtasks with it |
+| `checklist.clear` | `write_internal` | Throws the whole plan away |
+| `checklist.read` | `read` | Reads the plan back: the ids, the titles, and what is already ticked |
+
+None of the five needs a connected account — `needs_connection` is false on their catalogue rows — so
+they are offered to any Bolu whose profile asks for them, the same way the catalogue tools are. Every
+template carries them, and the migration appended them to every Bolu that already existed: a notebook
+reaches nothing outside the workspace, and a Bolu that cannot write down what it is doing is the state
+this module exists to end. A workspace that does not want it can still edit a Bolu's tools on the Bolu
+screen.
+
+### One plan at a time
+
+A Bolu holds exactly one active plan, and a second `checklist.create` is refused — and the refusal
+names what is still open. The rule is what makes the list a goal rather than a scratchpad: a model
+with three open lists has three things it is "working on" and no answer to "what are you doing".
+
+It is a partial unique index on `(workspace_id, agent_id) WHERE status = 'active'`, not a check the
+service remembers to make — a second writer would not have the service's memory. The refusal carries
+the open tasks, and the open subtasks of each, because that list is the one thing that tells the model
+what to do next: "you still have a plan" on its own leaves it nothing to act on.
+
+`checklist.clear` is the escape hatch the rule needs. A model that wrote a plan the job turned out not
+to need would otherwise be holding it until every line was ticked, which is a rule that punishes
+writing anything down.
+
+### Completion is derived, never declared
+
+A plan is `done` when every top-level task is ticked, and the tick that closes the last one settles the
+plan in the same transaction — so a plan whose work is finished cannot be left open with the Bolu
+unable to start the next one. There is no tool that marks a plan finished: a status a model could set
+while items were open would be a status that lies about what happened.
+
+A task with unfinished subtasks cannot be ticked at all. The service refuses it with the subtasks that
+are open, and a trigger on `checklist_items` refuses it again underneath — so the state cannot exist
+even if a future writer forgets to ask. A subtask cannot have subtasks of its own: the plan is a list a
+person scans, not a project tree.
+
+Removing the last open task settles the plan too, rather than leaving an empty one open. The model
+removed the work because it decided it was not to be done, and that is an ending.
+
+### A plan is the Bolu's, and a client only reads it
+
+There is no endpoint that writes a plan, for the reason there is no endpoint that inserts an order: a
+client that could tick a line could make a Bolu believe work was done that nobody did. The Bolu is the
+only thing that moves its list; a screen shows it.
+
+A plan is a list a person reads, so it is bounded — twenty tasks, ten subtasks each, two hundred
+characters a title — and the bounds are the service's, refused with the place the mistake was in
+("tugas ke-3 belum punya judul") rather than as a driver error.
+
+`GET /api/checklists` returns each plan with `done_count`, `total_count`, and its items nested one
+level deep, so a screen that shows progress reads it rather than counting for itself.
+
 ## Error codes
 
 | Code | Status | Meaning |
@@ -838,6 +911,7 @@ every later quote to every customer is based on. Duplicate names are refused cas
 | `auth_not_configured` / `workspace_not_configured` | 503 | Module not wired (no database) |
 | `google_not_configured` | 503 | Google client not configured |
 | `agent_not_found` | 404 | No such Bolu in this workspace |
+| `checklist_not_configured` | 503 | Module not wired (no database) |
 | `team_not_found` | 404 | No such team in this workspace |
 | `integration_not_found` | 404 | No such integration, or no such grant |
 | `invalid_status` | 400 | Status is not `active` or `resting` |
