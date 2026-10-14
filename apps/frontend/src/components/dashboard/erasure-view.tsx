@@ -121,7 +121,7 @@ export function ErasureView() {
   }, [workspace?.id, name, storedName, requestedBy]);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 p-[24px_28px_48px] max-[760px]:p-[18px_14px_36px]">
       <header>
         <h1 className={HEADING}>Data</h1>
         <p className="mt-1 text-[15px] text-bolu-muted">
