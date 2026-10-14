@@ -37,7 +37,8 @@ Indonesia dulu: transfer bank / virtual account. **Tidak ada Stripe.**
 │   ├── adr/         # architecture decision records
 │   ├── testing.md   # test layers and CI gates
 │   ├── deployment.md # the three images, the migration step, and the environments
-│   └── e2e-mvp.md   # the MVP flow's end-to-end scenario and its measured cost per task
+│   ├── e2e-mvp.md   # the MVP flow's end-to-end scenario and its measured cost per task
+│   └── riset-tool-kantor.md # the office tools offices actually use, and which to connect next
 ├── docker-compose.yml
 ├── Makefile
 └── .env.example
