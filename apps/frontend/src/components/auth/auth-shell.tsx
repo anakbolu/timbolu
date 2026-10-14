@@ -12,7 +12,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Bolu } from "@/components/bolu/bolu";
-import { LOGO } from "@/lib/crew";
+import { bot } from "@/lib/crew";
 
 type AuthShellProps = {
   title: string;
@@ -27,11 +27,16 @@ export function AuthShell({ title, subtitle, children, footer, scene }: AuthShel
   return (
     <main className="mx-auto flex w-full max-w-[1120px] flex-1 flex-col justify-center gap-10 px-5 py-12 lg:flex-row lg:items-center lg:justify-center lg:gap-16">
       <div className="mx-auto flex w-full max-w-[460px] flex-col lg:mx-0 lg:flex-none">
-        <Link href="/" className="mb-8 flex items-center gap-2.5 text-sm font-semibold text-bolu-muted">
-          <span aria-hidden className="inline-flex flex-none items-center justify-center">
-            <Bolu member={LOGO} size={32} />
+        <Link href="/" className="mx-auto mb-8 flex flex-col items-center gap-2 text-bolu-ink no-underline">
+          {/* The whole crew crowded together above the wordmark, each in its own colour and mood. */}
+          <span aria-hidden className="flex items-end -space-x-3">
+            <Bolu member={bot("Ijo")} expression="senang" size={30} />
+            <Bolu member={bot("Pinky")} expression="gemas" size={36} />
+            <Bolu member={bot("Oren")} expression="mikir" size={48} className="relative z-10" />
+            <Bolu member={bot("Lila")} expression="kaget" size={36} />
+            <Bolu member={bot("Biru")} expression="cinta" size={30} />
           </span>
-          Keluarga Bolu
+          <span className="font-display text-[26px] font-bold">Keluarga Bolu</span>
         </Link>
 
         <div className="rounded-md border border-bolu-border bg-bolu-surface p-7 shadow-[0_1px_2px_rgb(30_27_46_/_0.04)]">
@@ -43,7 +48,8 @@ export function AuthShell({ title, subtitle, children, footer, scene }: AuthShel
         {footer ? <div className="mt-6 text-center text-sm text-bolu-muted">{footer}</div> : null}
       </div>
 
-      {scene ? <div className="w-full lg:min-w-0 lg:flex-1">{scene}</div> : null}
+      {/* The room is a wide-screen treat: on phones it would only push the form down. */}
+      {scene ? <div className="hidden w-full lg:block lg:min-w-0 lg:flex-1">{scene}</div> : null}
     </main>
   );
 }
