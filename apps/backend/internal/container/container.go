@@ -386,6 +386,15 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Container, e
 		return nil, err
 	}
 
+	// The checklist module comes after the integration hub for the same reason the order module
+	// does — its adapter is registered while the hub is assembled — and before the task runtime's
+	// calls reach it: a plan is written, ticked, and thrown away through the tools, and the runtime is
+	// assembled with the executor that makes those calls.
+	if err := c.openChecklist(ctx, cfg); err != nil {
+		c.Close()
+		return nil, err
+	}
+
 	// Conversations come after the runtime: they answer with the gateway, address
 	// the Bolu the registry owns, and hand a message to the task runtime, so all
 	// three must be assembled first.

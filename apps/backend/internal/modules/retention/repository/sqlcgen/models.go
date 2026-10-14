@@ -129,6 +129,31 @@ type BillingPaymentReference struct {
 	CreatedAt   time.Time
 }
 
+type Checklist struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	AgentID     uuid.UUID
+	Title       string
+	Status      string
+	TaskID      *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	CompletedAt *time.Time
+}
+
+type ChecklistItem struct {
+	ID          uuid.UUID
+	ChecklistID uuid.UUID
+	WorkspaceID uuid.UUID
+	ParentID    *uuid.UUID
+	Title       string
+	Done        bool
+	Position    int32
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	DoneAt      *time.Time
+}
+
 type Conversation struct {
 	ID          uuid.UUID
 	WorkspaceID uuid.UUID

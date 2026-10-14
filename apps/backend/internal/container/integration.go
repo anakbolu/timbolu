@@ -133,7 +133,7 @@ func (c *Container) integrationAdapters(o *options, cfg *config.Config) []integr
 		return o.adapters
 	}
 
-	adapters := make([]integrationdomain.Adapter, 0, 3)
+	adapters := make([]integrationdomain.Adapter, 0, 4)
 
 	// The workspace's own data is an application this deployment speaks, and it is the first one that
 	// is not an account somebody connected: a catalogue belongs to the workspace itself. It is offered
@@ -141,6 +141,14 @@ func (c *Container) integrationAdapters(o *options, cfg *config.Config) []integr
 	// called, because the module is assembled after this.
 	if c.Repositories != nil && c.Repositories.Order != nil {
 		adapters = append(adapters, adOrder(c))
+	}
+
+	// The plan a Bolu keeps for itself is an application this deployment speaks, and like the
+	// catalogue it is not an account somebody connected: there is no provider, no token, and nothing
+	// outside this deployment to reach. It is offered whenever there is storage to keep a plan in, and
+	// the adapter resolves the module when a tool is called because the module is assembled after this.
+	if c.Repositories != nil && c.Repositories.Checklist != nil {
+		adapters = append(adapters, adChecklist(c))
 	}
 
 	// WhatsApp is offered when this deployment can reach a gateway. It is not

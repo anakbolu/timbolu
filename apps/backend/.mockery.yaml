@@ -114,3 +114,7 @@ packages:
     interfaces:
       Repository:
       Service:
+  github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/domain:
+    interfaces:
+      Repository:
+      Service:

@@ -11,6 +11,7 @@ import (
 	authhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/handler"
 	billinghandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/handler"
 	chathandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/handler"
+	checklisthandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/handler"
 	healthhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/handler"
 	integrationhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/handler"
 	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
@@ -56,6 +57,9 @@ type Handlers struct {
 	// Order serves the workspace's own commerce data: the catalogue a person maintains and the orders
 	// a Bolu recorded.
 	Order *orderhandler.Handler
+	// Checklist serves the plans Bolus keep for themselves, which is a read: the tools are how one is
+	// written and moved, and the Bolu is the only thing that moves it.
+	Checklist *checklisthandler.Handler
 }
 
 // newHandlers builds every handler from the service set. Handlers receive the
@@ -122,6 +126,9 @@ func newHandlers(services *Services, log *zap.Logger, cfg *config.Config) *Handl
 	}
 	if services.Order != nil {
 		handlers.Order = orderhandler.New(services.Order, log)
+	}
+	if services.Checklist != nil {
+		handlers.Checklist = checklisthandler.New(services.Checklist, log)
 	}
 	if services.Billing != nil {
 		handlers.Billing = billinghandler.New(services.Billing, log)
@@ -328,6 +335,16 @@ func (c *Container) registerRoutes() {
 		orderhandler.Routes(tenant, c.Handlers.Order)
 	}
 
+	// The plans Bolus keep: every member reads them, because the person who notices a Bolu going
+	// round in circles is not always the owner. Nothing is written here — a plan is written and moved
+	// by the Bolu through its tools, and a client that could tick a line could make it believe work
+	// was done that nobody did.
+	if c.Handlers.Checklist == nil {
+		registerChecklistFallback(tenant)
+	} else {
+		checklisthandler.Routes(tenant, c.Handlers.Checklist)
+	}
+
 	// Model configuration is read by every member, because the Bolu screens show
 	// which model a Bolu uses, and written by a managing role, because it holds
 	// the provider keys.
@@ -467,6 +484,12 @@ func registerApprovalFallback(router fiber.Router) {
 // It is a fallback rather than an omission because the frontend ships against these endpoints: a
 // screen that asks for the catalogue should be told the deployment has no storage, not that the route
 // does not exist.
+// registerChecklistFallback answers 503 for the checklist routes.
+func registerChecklistFallback(router fiber.Router) {
+	message := "the checklist module is not configured"
+	router.All("/checklists*", unavailable(message, "checklist_not_configured"))
+}
+
 func registerOrderFallback(router fiber.Router) {
 	message := "the catalogue is not configured"
 	router.All("/orders*", unavailable(message, "order_not_configured"))

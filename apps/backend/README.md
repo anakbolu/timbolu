@@ -64,6 +64,7 @@ make demo            # a clickable stack: model stub, seeded workspace, mailbox 
 | `whatsapp` | `/api/whatsapp/*` | The number the shop answers on: the link flow, who answers it, what customers wrote, and the queue that paces what leaves. The connection itself lives in the `wa-gateway` process |
 | `billing` | `/api/billing/*` | The package a workspace is on, the allowance it grants, the tokens it bought on top, and what it owes. Payments go through Duitku; the quota is what gates every model call |
 | `order` | `/api/orders*`, `/api/orders/products*` | The workspace's own data: the catalogue a person maintains, the customers it talks to, and the orders a Bolu recorded. It is also the first application whose tools need no connected account |
+| `checklist` | `/api/checklists` | The plan a Bolu keeps for itself: the tasks it wrote down, their subtasks, and the ticks. Read-only over HTTP — the Bolu is the only thing that moves its list |
 
 ### Authentication
 
@@ -697,6 +698,43 @@ to a connected account.
   workspace rewrites the text rather than waiting for one. Existing Bolus are deliberately not
   changed by the migration: adding tools to somebody's Bolu would be granting permissions nobody
   asked for.
+
+### The plan a Bolu keeps (EPIC 15)
+
+Every other table is about work somebody gave a Bolu. This one is about work a Bolu gave itself: a
+short list of tasks, each with optional subtasks, that it writes down before it starts and ticks off
+as it goes. It exists because a multi-step job otherwise lives entirely inside one model round — a
+Bolu that restarts, or simply runs out of its step allowance, would have no record of where it had
+got to.
+
+- **One plan at a time, and the database says so.** A partial unique index on
+  `(workspace_id, agent_id) WHERE status = 'active'` is the rule, not a check the service remembers
+  to make: a second writer would not have the service's memory. The rule is what makes the list a
+  goal rather than a scratchpad — a model with three open lists has three things it is "working on"
+  and no answer to "what are you doing".
+- **The refusal carries the list.** A `checklist.create` while a plan is open is refused with the
+  tasks that are still open and the subtasks of each, because a model told only "you still have a
+  plan" has nothing to act on, and the plan it wrote is the one thing that could have told it.
+- **Completion is derived, never declared.** A plan is `done` when every top-level task is ticked,
+  and the tick that closes the last one settles the plan in the same transaction — so a finished
+  plan cannot be left open with the Bolu unable to start the next. There is no tool that marks a
+  plan finished: a status a model could set while items were open would be a status that lies.
+- **A task with open subtasks cannot be ticked.** The service refuses it with the subtasks that are
+  open, and a trigger on `checklist_items` refuses it again underneath, so the state cannot exist
+  even if a future writer forgets to ask. A subtask cannot have subtasks of its own: the plan is a
+  list a person scans, not a project tree.
+- **`checklist.clear` is the escape hatch the rule needs.** A model that wrote a plan the job turned
+  out not to need would otherwise hold it until every line was ticked, which is a rule that punishes
+  writing anything down. Clearing is a delete rather than a status: what the Bolu *did* is in
+  `task_steps`, and a plan it decided was wrong is not history worth keeping.
+- **The tools need no connection, and every Bolu is born with them.** A notebook reaches nothing
+  outside the workspace, so the five tools carry `needs_connection = false` and the migration
+  appended them to every template and every Bolu that already existed. That is the one place in the
+  codebase where a migration grants something nobody asked for, and the reason it is right here is
+  that it is not a permission — it is the Bolu's own notebook.
+- **A plan is the Bolu's, and a client only reads it.** There is no endpoint that writes one, for the
+  reason there is no endpoint that inserts an order: a client that could tick a line could make a
+  Bolu believe work was done that nobody did. The Tugas screen shows the list; the Bolu moves it.
 
 ## Configuration
 
