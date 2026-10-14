@@ -38,7 +38,8 @@ Indonesia dulu: transfer bank / virtual account. **Tidak ada Stripe.**
 │   ├── testing.md   # test layers and CI gates
 │   ├── deployment.md # the three images, the migration step, and the environments
 │   ├── e2e-mvp.md   # the MVP flow's end-to-end scenario and its measured cost per task
-│   └── riset-tool-kantor.md # the office tools offices actually use, and which to connect next
+│   ├── riset-tool-kantor.md # the office tools offices actually use, and which to connect next
+│   └── riset-heartbeat.md # the five heartbeats Bolu already has, and where they lie
 ├── docker-compose.yml
 ├── Makefile
 └── .env.example
