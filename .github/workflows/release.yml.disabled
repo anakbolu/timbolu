@@ -153,9 +153,13 @@ jobs:
           push: true
           # The API URL is inlined into the client bundle at build time, so it is a build argument
           # rather than a runtime one: a frontend built for staging cannot be pointed at production.
+          # NEXT_PUBLIC_GOOGLE_LOGIN_ENABLED obeys the same rule. It is off unless a deployment that
+          # has registered a Google client names STAGING_GOOGLE_LOGIN_ENABLED, so turning the button
+          # back on means rebuilding the image rather than restarting the container.
           build-args: |
             NEXT_PUBLIC_API_URL=${{ vars.STAGING_API_URL || 'http://localhost:8080' }}
             NEXT_PUBLIC_CONTENT_ORIGIN=${{ vars.STAGING_CONTENT_ORIGIN || 'http://localhost:8080' }}
+            NEXT_PUBLIC_GOOGLE_LOGIN_ENABLED=${{ vars.STAGING_GOOGLE_LOGIN_ENABLED || 'false' }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/frontend:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/frontend:${{ github.ref_name }}
