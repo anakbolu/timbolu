@@ -49,7 +49,7 @@ adalah yang tercantum di dokumen ini pada tanggal di atas.
 ## Cara meminta datamu dihapus
 
 Penghapusan dilakukan oleh **owner workspace**, dan menghapus workspace beserta seluruh isinya: pesan,
-memori, embedding, lampiran, tugas, dan jejak audit.
+memori, embedding, lampiran, tugas, rencana Bolu, dan jejak audit.
 
 1. Masuk sebagai owner, buka **Pengaturan → Data**, lalu pilih **Hapus semua data workspace**.
 2. Konfirmasi. Permintaan dijalankan seketika — tidak ada antrean dan tidak ada masa tunggu.
