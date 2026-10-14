@@ -48,6 +48,10 @@ Auth:
   CookieSecure: false
   LoginThrottleCapacity: 5
   LoginThrottleRefill: 0.2
+  # Local development reads this file alone, so the product default is repeated
+  # here. docker-compose turns it off for the stack; a bare `go run` keeps the
+  # verification flow, whose links the log mailer prints.
+  RequireEmailVerification: true
 
 # Google sign-in stays disabled until a client is registered; the endpoints then
 # report it as not configured instead of failing the whole API.

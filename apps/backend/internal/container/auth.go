@@ -92,12 +92,13 @@ func (c *Container) openAuth(ctx context.Context, cfg *config.Config) error {
 		Passwords:  passwords{},
 		Tokens:     tokens{},
 		Config: authservice.Config{
-			RefreshTTL:            durationHours(cfg.Auth.RefreshHours, defaultRefreshTTL),
-			VerificationTTL:       durationHours(cfg.Auth.VerificationHours, defaultVerifyTTL),
-			ResetTTL:              durationMinutes(cfg.Auth.ResetMinutes, defaultResetTTL),
-			FrontendURL:           cfg.Application.FrontendURL,
-			LoginThrottleCapacity: cfg.Auth.LoginThrottleCapacity,
-			LoginThrottleRefill:   cfg.Auth.LoginThrottleRefill,
+			RefreshTTL:               durationHours(cfg.Auth.RefreshHours, defaultRefreshTTL),
+			VerificationTTL:          durationHours(cfg.Auth.VerificationHours, defaultVerifyTTL),
+			ResetTTL:                 durationMinutes(cfg.Auth.ResetMinutes, defaultResetTTL),
+			FrontendURL:              cfg.Application.FrontendURL,
+			LoginThrottleCapacity:    cfg.Auth.LoginThrottleCapacity,
+			LoginThrottleRefill:      cfg.Auth.LoginThrottleRefill,
+			RequireEmailVerification: cfg.Auth.RequireEmailVerification,
 		},
 	})
 

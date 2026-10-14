@@ -59,11 +59,12 @@ func newHarness(t *testing.T, opts ...func(*Deps)) *harness {
 		Passwords:  passwordsAdapter{},
 		Tokens:     tokensAdapter{},
 		Config: Config{
-			RefreshTTL:      30 * 24 * time.Hour,
-			VerificationTTL: 24 * time.Hour,
-			ResetTTL:        time.Hour,
-			FrontendURL:     "https://app.example.com",
-			Clock:           func() time.Time { return h.now },
+			RefreshTTL:               30 * 24 * time.Hour,
+			VerificationTTL:          24 * time.Hour,
+			ResetTTL:                 time.Hour,
+			FrontendURL:              "https://app.example.com",
+			RequireEmailVerification: true,
+			Clock:                    func() time.Time { return h.now },
 		},
 	}
 	for _, opt := range opts {
@@ -169,6 +170,23 @@ func TestRegister(t *testing.T) {
 		require.NotEqual(t, "a-good-password", storedHash)
 		require.NotEmpty(t, tokenHash, "a verification token must be stored")
 		require.NotContains(t, tokenHash, "verify?token=", "only the hash is stored, not the link")
+	})
+
+	t.Run("marks the account verified and sends nothing when verification is off", func(t *testing.T) {
+		h := newHarness(t, func(d *Deps) { d.Config.RequireEmailVerification = false })
+		user := domain.User{ID: uuid.New(), Email: "owner@example.com"}
+
+		h.repo.EXPECT().CreateUser(mock.Anything, "owner@example.com", mock.Anything).
+			Return(user, nil).Once()
+		h.repo.EXPECT().MarkEmailVerified(mock.Anything, user.ID).
+			Return(domain.User{ID: user.ID, Email: user.Email, EmailVerified: true}, nil).Once()
+
+		created, err := h.service.Register(context.Background(), domain.RegisterRequest{
+			Email:    "owner@example.com",
+			Password: "a-good-password",
+		})
+		require.NoError(t, err)
+		require.True(t, created.EmailVerified, "a deployment without verification creates a usable account")
 	})
 
 	t.Run("rejects a weak password before touching the database", func(t *testing.T) {
@@ -338,6 +356,28 @@ func TestLogin(t *testing.T) {
 		// The features that need verification stay closed.
 		h.repo.EXPECT().UserByID(mock.Anything, user.ID).Return(user, nil).Once()
 		require.ErrorIs(t, h.service.AssertVerified(context.Background(), user.ID), domain.ErrEmailNotVerified)
+	})
+
+	t.Run("heals an unverified account when the deployment does not require verification", func(t *testing.T) {
+		h := newHarness(t, func(d *Deps) { d.Config.RequireEmailVerification = false })
+		h.allowLogin()
+
+		user := domain.User{ID: uuid.New(), Email: "owner@example.com", HasPassword: true}
+		verified := domain.User{ID: user.ID, Email: user.Email, EmailVerified: true, HasPassword: true}
+
+		h.repo.EXPECT().UserByEmail(mock.Anything, mock.Anything).Return(user, nil).Once()
+		h.repo.EXPECT().PasswordHash(mock.Anything, user.ID).Return(mustHash(t, password), nil).Once()
+		h.repo.EXPECT().MarkEmailVerified(mock.Anything, user.ID).Return(verified, nil).Once()
+		h.repo.EXPECT().CreateSession(mock.Anything, mock.Anything).
+			Return(domain.SessionRecord{ID: uuid.New(), UserID: user.ID, ExpiresAt: h.now.Add(time.Hour)}, nil).Once()
+		h.throttle.EXPECT().Reset(mock.Anything, mock.Anything).Return(nil).Maybe()
+
+		session, err := h.service.Login(context.Background(), domain.LoginRequest{
+			Email:    "owner@example.com",
+			Password: password,
+		})
+		require.NoError(t, err)
+		require.True(t, session.User.EmailVerified, "an account that predates the switch is healed at sign-in")
 	})
 
 	t.Run("too many attempts are refused", func(t *testing.T) {

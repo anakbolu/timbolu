@@ -53,6 +53,10 @@ Auth:
   CookieSecure: true
   LoginThrottleCapacity: 5
   LoginThrottleRefill: 0.2
+  # A new account must confirm its address before it may use the product. A
+  # deployment that has not finished its mail path turns this off in the
+  # environment (AUTH_REQUIRE_EMAIL_VERIFICATION=false).
+  RequireEmailVerification: true
 
 Google:
   ClientID: ""
