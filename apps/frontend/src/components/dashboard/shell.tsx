@@ -9,18 +9,33 @@
  * back button does what a person expects; the visual result is identical.
  */
 
-import { ChartColumn, Clock, LayoutGrid, ListChecks, Menu, Plus, Plug, Settings, X } from "lucide-react";
+import {
+  Bot,
+  ChartColumn,
+  ChevronDown,
+  Clock,
+  LayoutGrid,
+  ListChecks,
+  Menu,
+  Plus,
+  Plug,
+  Settings,
+  Users,
+  X,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 import { Bolu } from "@/components/bolu/bolu";
+import type { ChatConversation } from "@/lib/api";
 import { LOGO } from "@/lib/crew";
 import {
   buildRoster,
   countPending,
   crewFor,
   expressionOf,
+  relativeAge,
   stateOf,
   type RosterItem,
 } from "@/lib/dashboard-view";
@@ -90,6 +105,30 @@ function RosterRow({ item }: { item: RosterItem }) {
   );
 }
 
+/** One sidebar row for a group: it opens that group's thread. */
+function GroupRow({ conversation }: { conversation: ChatConversation }) {
+  const members = conversation.participants.filter((participant) => participant.is_agent).length;
+  return (
+    <Link
+      href={`/chat?conversation=${conversation.id}`}
+      className="flex min-h-[60px] min-w-0 flex-[1_1_220px] items-center gap-3 rounded border-2 border-transparent p-[8px_10px] text-left text-bolu-ink no-underline hover:text-bolu-ink"
+    >
+      <div className="flex size-11 flex-none items-center justify-center rounded bg-bolu-panel text-bolu-body">
+        <Users size={20} strokeWidth={2} aria-hidden="true" />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col text-left">
+        <span className="font-display text-[17px] font-semibold leading-[1.2]">
+          {conversation.title || "Grup"}
+        </span>
+        <span className="truncate text-[13px] text-bolu-muted">
+          {members} Bolu · {relativeAge(conversation.last_activity_at)}
+        </span>
+      </div>
+      <span className="shrink-0 text-[12px] text-bolu-muted">{conversation.message_count}</span>
+    </Link>
+  );
+}
+
 /**
  * WorkspaceShell is the frame: a mobile bar, the sidebar, and the active screen.
  *
@@ -97,11 +136,13 @@ function RosterRow({ item }: { item: RosterItem }) {
  * would have to remember to pass.
  */
 export function WorkspaceShell({ children }: { children: React.ReactNode }) {
-  const { drafts, teams, hub, ready, error } = useWorkspace();
+  const { conversations, drafts, teams, hub, ready, error } = useWorkspace();
   const [navOpen, setNavOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const pathname = usePathname();
 
   const roster = teams[0]?.agents ?? [];
+  const groups = conversations.filter((conversation) => conversation.kind === "group");
   const otherTeams = teams.slice(1);
   const pending = countPending(drafts);
   const connected = hub.connections.length;
@@ -221,13 +262,79 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           </p>
         ) : null}
 
+        {groups.length > 0 ? (
+          <>
+            <div className="flex items-center justify-between px-2.5 pb-0.5 pt-4 text-[13px] font-bold text-bolu-muted">
+              <span>Grup</span>
+              <span className="font-medium">{groups.length}</span>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {groups.map((conversation) => (
+                <GroupRow key={conversation.id} conversation={conversation} />
+              ))}
+            </div>
+          </>
+        ) : null}
+
         <Link
-          href="/settings/team"
+          href="/groups"
+          onClick={() => setNavOpen(false)}
           className="mt-3 flex min-h-[46px] items-center gap-2.5 rounded border-2 border-dashed border-bolu-track px-3.5 font-semibold text-bolu-body no-underline hover:text-bolu-ink"
         >
           <Plus size={20} strokeWidth={2.5} aria-hidden="true" />
-          Buat tim atau grup
+          Buat grup
         </Link>
+
+        {/* One button rather than two links: making a Bolu is the everyday act and
+            making a team is the rare one, so the menu opens on the common case. */}
+        <div className="mt-3 flex flex-col gap-1">
+          <button
+            type="button"
+            aria-expanded={addOpen}
+            aria-controls="tambah-bolu-menu"
+            onClick={() => setAddOpen((open) => !open)}
+            className="flex min-h-[46px] cursor-pointer items-center gap-2.5 rounded border-2 border-dashed border-bolu-track bg-transparent px-3.5 font-semibold text-bolu-body hover:text-bolu-ink"
+          >
+            <Plus size={20} strokeWidth={2.5} aria-hidden="true" />
+            <span className="flex-1 text-left">Tambah Bolu</span>
+            <ChevronDown
+              size={18}
+              strokeWidth={2.5}
+              aria-hidden="true"
+              className={`transition-transform ${addOpen ? "rotate-180" : ""}`}
+            />
+          </button>
+
+          {addOpen ? (
+            <div
+              id="tambah-bolu-menu"
+              className="flex flex-col gap-1 rounded border border-bolu-line p-1"
+            >
+              <Link
+                href="/bolu/new"
+                onClick={() => {
+                  setAddOpen(false);
+                  setNavOpen(false);
+                }}
+                className="flex min-h-[44px] items-center gap-2.5 rounded px-3 font-semibold text-bolu-body no-underline hover:bg-bolu-panel/60 hover:text-bolu-ink"
+              >
+                <Bot size={18} strokeWidth={2} aria-hidden="true" />
+                <span className="flex-1 text-left">Tambah Bolu</span>
+              </Link>
+              <Link
+                href="/settings/team"
+                onClick={() => {
+                  setAddOpen(false);
+                  setNavOpen(false);
+                }}
+                className="flex min-h-[44px] items-center gap-2.5 rounded px-3 font-semibold text-bolu-body no-underline hover:bg-bolu-panel/60 hover:text-bolu-ink"
+              >
+                <Users size={18} strokeWidth={2} aria-hidden="true" />
+                <span className="flex-1 text-left">Buat tim</span>
+              </Link>
+            </div>
+          ) : null}
+        </div>
 
         <div className="min-h-3 flex-1" />
 
