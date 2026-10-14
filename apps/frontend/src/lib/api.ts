@@ -1,11 +1,15 @@
 /**
  * API client for the Bolu backend.
  *
- * Two details matter here:
+ * Three details matter here:
  * - every request sends credentials, because the refresh token lives in an
  *   httpOnly cookie that JavaScript must not read;
  * - the access token is kept in memory only. A reload calls /auth/refresh,
- *   which reads the cookie and returns a fresh access token.
+ *   which reads the cookie and returns a fresh access token;
+ * - the token outlives neither a break nor a second tab, so `authorizedFetch`
+ *   renews before a call whose token is spent and once more when the API
+ *   refuses one. Without that, a screen opened after an idle spell answers with
+ *   the API's 401 instead of the workspace.
  */
 
 import { SESSION_HINT_COOKIE, SESSION_HINT_MAX_AGE } from "@/lib/session-hint";
@@ -91,9 +95,38 @@ export type OnboardResult = {
 const WORKSPACE_KEY = "bolu.workspace_id";
 
 let accessToken: string | null = null;
+/** When the token above stops being accepted, as epoch milliseconds. */
+let accessTokenExpiresAt: number | null = null;
+
+/**
+ * How long before its expiry a token is treated as spent.
+ *
+ * A call that leaves just inside the last moment would arrive after it, so the
+ * window is the cost of a round trip rather than zero: renewing a little early
+ * is cheaper than a 401 that has to be answered with a second call.
+ */
+const REFRESH_SKEW_MS = 30_000;
 
 export function getAccessToken(): string | null {
   return accessToken;
+}
+
+/**
+ * tokenIsSpent reports whether the token in memory is missing, or close enough
+ * to its expiry that a call sent now would arrive after it.
+ *
+ * An unknown expiry is not spent: the API is still the authority, and refusing to
+ * use a token because the clock was not recorded would turn a missing field into a
+ * refresh loop.
+ */
+function tokenIsSpent(): boolean {
+  if (!accessToken) {
+    return true;
+  }
+  if (accessTokenExpiresAt === null) {
+    return false;
+  }
+  return Date.now() >= accessTokenExpiresAt - REFRESH_SKEW_MS;
 }
 
 /**
@@ -109,9 +142,20 @@ export function getAccessToken(): string | null {
  * never looks at it. It exists so the gate can answer before the dashboard shell
  * is sent, which the refresh cookie cannot do because the backend scopes it to
  * the auth endpoints on purpose.
+ *
+ * `expiresAt` is the `access_expires_at` the session carried. It is stored beside
+ * the token rather than derived from it, because the only thing that knows when
+ * the token dies is the issuer — a decoded `exp` would be a second answer to the
+ * same question, and the client must not hold the JWT's payload to read it.
  */
-export function setAccessToken(token: string | null): void {
+export function setAccessToken(token: string | null, expiresAt?: string | null): void {
   accessToken = token;
+  accessTokenExpiresAt = token && expiresAt ? Date.parse(expiresAt) : null;
+  if (accessTokenExpiresAt !== null && Number.isNaN(accessTokenExpiresAt)) {
+    // An unparsable date is treated as unknown, which keeps the token usable and
+    // leaves the API as the authority rather than trusting a broken clock.
+    accessTokenExpiresAt = null;
+  }
 
   if (typeof document === "undefined") {
     return;
@@ -186,22 +230,108 @@ function apiHeaders(workspace: string | null): Record<string, string> {
   return headers;
 }
 
+/**
+ * refreshInFlight is the renewal one tab is currently running.
+ *
+ * The refresh cookie is single-use — the server revokes the session it was spent
+ * on — so two renewals racing would each rotate the token and the loser would
+ * revoke the winner's. A screen that loads through `Promise.all` asks several
+ * times at once, and without this the answer would be a session destroyed by its
+ * own tab. Callers share one attempt instead.
+ */
+let refreshInFlight: Promise<ApiResult<Session>> | null = null;
+
+/**
+ * refreshSession exchanges the refresh cookie for a new access token, at most one
+ * attempt at a time.
+ *
+ * This is *the* question "is my session still alive", so its answer is what the
+ * token and the gate are set from — including the answer "no". A failed renewal
+ * that left the hint standing would keep admitting a browser whose session is
+ * gone, and the gate would be advice rather than a gate.
+ *
+ * Callers share one attempt because the cookie is single-use: two racing
+ * renewals would each rotate the session and the second would revoke the first.
+ * Screens that load through `Promise.all` — and the automatic renewal below —
+ * therefore collapse into one exchange.
+ */
+export function refreshSession(): Promise<ApiResult<Session>> {
+  if (!refreshInFlight) {
+    refreshInFlight = request<Session>("/auth/refresh", { method: "POST", authenticated: false })
+      .then((result) => {
+        setAccessToken(result.ok ? result.data.access_token : null, result.ok ? result.data.access_expires_at : null);
+        return result;
+      })
+      .finally(() => {
+        refreshInFlight = null;
+      });
+  }
+  return refreshInFlight;
+}
+
+/**
+ * authorizedFetch sends one request with the bearer token, renewing the session
+ * when the token in hand is spent and once more when the API refuses it.
+ *
+ * This is what keeps an idle tab signed in. The access token lives fifteen
+ * minutes and the refresh cookie thirty days, so a tab left open holds a token
+ * the API will reject long before the session is over; without a renewal here the
+ * first call after a break comes back 401 and the screen treats it as a dead
+ * session. Renewing before the call, and once on a 401, turns that into a
+ * fresh token instead of the sign-in page.
+ *
+ * `headers` is a factory rather than a value because the retry must carry the
+ * token the renewal just stored. At most one renewal is spent per request: a
+ * second 401 is the API's answer, not a race to keep retrying.
+ */
+async function authorizedFetch(
+  url: string,
+  init: RequestInit,
+  headers: () => Record<string, string>,
+  authenticated: boolean,
+): Promise<Response> {
+  let renewed = false;
+  if (authenticated && tokenIsSpent()) {
+    renewed = true;
+    await refreshSession();
+  }
+
+  let response = await fetch(url, { ...init, headers: headers() });
+
+  if (response.status === 401 && authenticated && !renewed) {
+    const renewal = await refreshSession();
+    if (renewal.ok) {
+      response = await fetch(url, { ...init, headers: headers() });
+    }
+  }
+
+  return response;
+}
+
 /** request performs one API call and normalises the envelope. */
 async function request<T>(path: string, options: RequestOptions = {}): Promise<ApiResult<T>> {
-  const headers = apiHeaders(options.workspace ?? null);
-  if (options.authenticated === false) {
-    delete headers.Authorization;
-  }
+  const authenticated = options.authenticated !== false;
+  const buildHeaders = () => {
+    const headers = apiHeaders(options.workspace ?? null);
+    if (!authenticated) {
+      delete headers.Authorization;
+    }
+    return headers;
+  };
 
   let response: Response;
   try {
-    response = await fetch(`${API_URL}/api${path}`, {
-      method: options.method ?? "GET",
-      headers,
-      credentials: "include",
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
-      cache: "no-store",
-    });
+    response = await authorizedFetch(
+      `${API_URL}/api${path}`,
+      {
+        method: options.method ?? "GET",
+        credentials: "include",
+        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        cache: "no-store",
+      },
+      buildHeaders,
+      authenticated,
+    );
   } catch {
     return {
       ok: false,
@@ -251,20 +381,8 @@ export function resendVerification(email: string): Promise<ApiResult<null>> {
 export async function login(email: string, password: string): Promise<ApiResult<Session>> {
   const result = await request<Session>("/auth/login", { method: "POST", body: { email, password }, authenticated: false });
   if (result.ok) {
-    setAccessToken(result.data.access_token);
+    setAccessToken(result.data.access_token, result.data.access_expires_at);
   }
-  return result;
-}
-
-/** refreshSession exchanges the refresh cookie for a new access token. */
-export async function refreshSession(): Promise<ApiResult<Session>> {
-  const result = await request<Session>("/auth/refresh", { method: "POST", authenticated: false });
-
-  // This is *the* question "is my session still alive", so its answer is what the
-  // token and the gate are set from — including the answer "no". A failed refresh
-  // that left the hint standing would keep admitting a browser whose session is
-  // gone, and the gate would be advice rather than a gate.
-  setAccessToken(result.ok ? result.data.access_token : null);
   return result;
 }
 
@@ -984,19 +1102,23 @@ export async function uploadAttachment(
     form.append("message_id", messageId);
   }
 
-  const headers: Record<string, string> = { "X-Workspace-Id": workspaceId };
-  if (accessToken) {
-    headers.Authorization = `Bearer ${accessToken}`;
-  }
+  // No Content-Type: the browser sets it with the multipart boundary.
+  const buildHeaders = () => {
+    const headers: Record<string, string> = { "X-Workspace-Id": workspaceId };
+    if (accessToken) {
+      headers.Authorization = `Bearer ${accessToken}`;
+    }
+    return headers;
+  };
 
   let response: Response;
   try {
-    response = await fetch(`${API_URL}/api/conversations/${conversationId}/attachments`, {
-      method: "POST",
-      headers,
-      credentials: "include",
-      body: form,
-    });
+    response = await authorizedFetch(
+      `${API_URL}/api/conversations/${conversationId}/attachments`,
+      { method: "POST", credentials: "include", body: form },
+      buildHeaders,
+      true,
+    );
   } catch {
     return { ok: false, status: 0, message: "Tidak bisa menghubungi server." };
   }
@@ -1315,11 +1437,12 @@ export function usageReport(
  */
 export async function usageReportCSV(workspaceId: string, days = 30): Promise<{ ok: boolean; message: string }> {
   try {
-    const response = await fetch(`${API_URL}/api/llm/usage/report?days=${days}&format=csv`, {
-      headers: apiHeaders(workspaceId),
-      credentials: "include",
-      cache: "no-store",
-    });
+    const response = await authorizedFetch(
+      `${API_URL}/api/llm/usage/report?days=${days}&format=csv`,
+      { credentials: "include", cache: "no-store" },
+      () => apiHeaders(workspaceId),
+      true,
+    );
 
     if (!response.ok) {
       return { ok: false, message: "Ekspor tidak bisa diunduh. Coba lagi." };
