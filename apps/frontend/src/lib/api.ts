@@ -1192,6 +1192,48 @@ export function listTaskSteps(workspaceId: string, taskID: string): Promise<ApiR
   return request<TaskStep[]>(`/tasks/${taskID}/steps`, { workspace: workspaceId });
 }
 
+/**
+ * A plan a Bolu keeps for itself: a short list of tasks, each with optional subtasks.
+ *
+ * It is read-only from here. The Bolu writes, ticks, and throws its list away through its own tools,
+ * and a screen that could tick a line could make it believe work was done that nobody did.
+ */
+export type Checklist = {
+  checklist_id: string;
+  agent_id: string;
+  /** The task the Bolu was working on when it wrote the plan down, when there was one. */
+  task_id?: string;
+  title: string;
+  status: "active" | "done";
+  /** How much of the plan is ticked, counted over tasks and subtasks together. */
+  done_count: number;
+  total_count: number;
+  items: ChecklistItem[];
+  created_at: string;
+  completed_at?: string;
+};
+
+/** One line of a plan: a task, or a subtask of one. A subtask is never nested further. */
+export type ChecklistItem = {
+  item_id: string;
+  title: string;
+  done: boolean;
+  subtasks?: ChecklistItem[];
+};
+
+/** listChecklists returns the plans Bolus keep, newest first. */
+export function listChecklists(
+  workspaceId: string,
+  filter: { agent_id?: string; status?: string; limit?: number } = {},
+): Promise<ApiResult<Checklist[]>> {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(filter)) {
+    if (value !== undefined && value !== "") query.set(key, String(value));
+  }
+  const suffix = query.toString() ? `?${query}` : "";
+  return request<Checklist[]>(`/checklists${suffix}`, { workspace: workspaceId });
+}
+
 /** What one window cost, read three ways. */
 export type UsageReport = {
   days: number;

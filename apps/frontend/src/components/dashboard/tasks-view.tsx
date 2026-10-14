@@ -29,6 +29,7 @@ import { Alert } from "@/components/auth/auth-shell";
 import { type Task, ensureActiveWorkspace, listTasks } from "@/lib/api";
 import { relativeAge, taskState, taskTriggerLabel } from "@/lib/dashboard-view";
 
+import { ChecklistsView } from "./checklists-view";
 import { useWorkspace } from "./workspace-data";
 
 const CARD = "rounded border border-bolu-border bg-white";
@@ -142,7 +143,8 @@ export function TasksView() {
         <div>
           <h1 className={HEADING}>Tugas</h1>
           <p className="mt-1 text-[15px] text-bolu-muted">
-            Semua pekerjaan yang pernah dijalankan workspace ini, terbaru di atas.
+            Semua pekerjaan yang pernah dijalankan workspace ini, terbaru di atas — dan rencana yang
+            sedang dipegang tiap Bolu.
           </p>
         </div>
 
@@ -152,6 +154,8 @@ export function TasksView() {
       </header>
 
       {message ? <Alert tone="error">{message}</Alert> : null}
+
+      <ChecklistsView />
 
       <section className={`${CARD} flex flex-col gap-3 p-5`}>
         <div className="flex flex-wrap items-center gap-2">
