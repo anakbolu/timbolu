@@ -28,7 +28,8 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 import { Bolu } from "@/components/bolu/bolu";
-import type { ChatConversation } from "@/lib/api";
+import { GroupIcon } from "@/components/bolu/group-icon";
+import type { Agent, ChatConversation } from "@/lib/api";
 import { LOGO } from "@/lib/crew";
 import {
   buildRoster,
@@ -105,16 +106,14 @@ function RosterRow({ item }: { item: RosterItem }) {
 }
 
 /** One sidebar row for a group: it opens that group's thread. */
-function GroupRow({ conversation }: { conversation: ChatConversation }) {
+function GroupRow({ conversation, agents }: { conversation: ChatConversation; agents: Agent[] }) {
   const members = conversation.participants.filter((participant) => participant.is_agent).length;
   return (
     <Link
       href={`/chat?conversation=${conversation.id}`}
       className="flex min-h-[46px] min-w-0 flex-[1_1_200px] items-center gap-2.5 rounded-md border-2 border-transparent p-[5px_8px] text-left text-bolu-ink no-underline hover:text-bolu-ink"
     >
-      <div className="flex size-9 flex-none items-center justify-center rounded-md bg-bolu-panel text-bolu-body">
-        <Users size={18} strokeWidth={2} aria-hidden="true" />
-      </div>
+      <GroupIcon participants={conversation.participants} agents={agents} size={36} />
       <div className="flex min-w-0 flex-1 flex-col text-left">
         <span className="truncate font-display text-[15px] font-semibold leading-[1.2]">
           {conversation.title || "Grup"}
@@ -135,7 +134,7 @@ function GroupRow({ conversation }: { conversation: ChatConversation }) {
  * would have to remember to pass.
  */
 export function WorkspaceShell({ children }: { children: React.ReactNode }) {
-  const { conversations, drafts, teams, hub, ready, error } = useWorkspace();
+  const { conversations, drafts, teams, agents, hub, ready, error } = useWorkspace();
   const [navOpen, setNavOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const pathname = usePathname();
@@ -273,7 +272,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
             </div>
             <div className="flex flex-wrap gap-1">
               {groups.map((conversation) => (
-                <GroupRow key={conversation.id} conversation={conversation} />
+                <GroupRow key={conversation.id} conversation={conversation} agents={agents} />
               ))}
             </div>
           </>
