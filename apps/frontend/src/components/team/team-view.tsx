@@ -260,7 +260,7 @@ export function TeamView() {
               </div>
 
               {team.agents.length === 0 ? (
-                <p className="rounded border border-dashed border-bolu-border px-4 py-6 text-sm text-bolu-muted">
+                <p className="rounded-md border border-dashed border-bolu-border px-4 py-6 text-sm text-bolu-muted">
                   Belum ada Bolu di tim ini.
                 </p>
               ) : (
@@ -270,7 +270,7 @@ export function TeamView() {
                       <button
                         type="button"
                         onClick={() => void open(agent)}
-                        className={`flex w-full items-center gap-3 rounded border px-4 py-3 text-left transition hover:bg-bolu-panel/50 ${
+                        className={`flex w-full items-center gap-3 rounded-md border px-4 py-3 text-left transition hover:bg-bolu-panel/50 ${
                           selected?.id === agent.id ? "border-bolu-accent bg-bolu-panel/50" : "border-bolu-border bg-bolu-surface"
                         }`}
                       >
@@ -301,9 +301,9 @@ export function TeamView() {
                   name="name"
                   placeholder="Nama Bolu baru"
                   required
-                  className="min-w-[160px] flex-1 rounded border border-bolu-border px-3 py-2 text-sm"
+                  className="min-w-[160px] flex-1 rounded-md border border-bolu-border px-3 py-2 text-sm"
                 />
-                <select name="template_key" className="rounded border border-bolu-border px-3 py-2 text-sm">
+                <select name="template_key" className="rounded-md border border-bolu-border px-3 py-2 text-sm">
                   <option value="">Profil kosong</option>
                   {templates.map((template) => (
                     <option key={template.key} value={template.key}>
@@ -314,7 +314,7 @@ export function TeamView() {
                 <button
                   type="submit"
                   disabled={busy}
-                  className="rounded bg-bolu-accent px-3.5 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                  className="rounded-md bg-bolu-accent px-3.5 py-2 text-sm font-semibold text-white disabled:opacity-60"
                 >
                   Tambah
                 </button>
@@ -325,7 +325,7 @@ export function TeamView() {
 
         <aside>
           {selected ? (
-            <div className="rounded border border-bolu-border bg-bolu-surface p-5">
+            <div className="rounded-md border border-bolu-border bg-bolu-surface p-5">
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <h2 className="font-display text-lg font-semibold">{selected.name}</h2>
@@ -343,7 +343,7 @@ export function TeamView() {
               </div>
 
               {selected.reason ? (
-                <p className="mb-4 rounded bg-bolu-panel/60 px-3 py-2 text-sm text-bolu-body">
+                <p className="mb-4 rounded-md bg-bolu-panel/60 px-3 py-2 text-sm text-bolu-body">
                   {selected.reason.kind === "task" ? "Sedang mengerjakan" : "Menunggu persetujuanmu"}:{" "}
                   {selected.reason.title || selected.reason.status}
                 </p>
@@ -358,7 +358,7 @@ export function TeamView() {
                   name="name"
                   defaultValue={selected.name}
                   required
-                  className="mb-3 w-full rounded border border-bolu-border px-3 py-2 text-sm"
+                  className="mb-3 w-full rounded-md border border-bolu-border px-3 py-2 text-sm"
                 />
 
                 <label className="mb-1 block text-sm font-medium" htmlFor="agent-role">
@@ -368,7 +368,7 @@ export function TeamView() {
                   id="agent-role"
                   name="role"
                   defaultValue={selected.role}
-                  className="mb-3 w-full rounded border border-bolu-border px-3 py-2 text-sm"
+                  className="mb-3 w-full rounded-md border border-bolu-border px-3 py-2 text-sm"
                 />
 
                 <label className="mb-1 block text-sm font-medium" htmlFor="agent-tone">
@@ -378,7 +378,7 @@ export function TeamView() {
                   id="agent-tone"
                   name="tone"
                   defaultValue={selected.tone}
-                  className="mb-3 w-full rounded border border-bolu-border px-3 py-2 text-sm"
+                  className="mb-3 w-full rounded-md border border-bolu-border px-3 py-2 text-sm"
                 />
 
                 <label className="mb-1 block text-sm font-medium" htmlFor="agent-persona">
@@ -389,13 +389,13 @@ export function TeamView() {
                   name="persona"
                   defaultValue={selected.persona}
                   rows={5}
-                  className="mb-4 w-full rounded border border-bolu-border px-3 py-2 text-sm"
+                  className="mb-4 w-full rounded-md border border-bolu-border px-3 py-2 text-sm"
                 />
 
                 <button
                   type="submit"
                   disabled={busy}
-                  className="w-full rounded bg-bolu-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                  className="w-full rounded-md bg-bolu-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
                 >
                   Simpan profil
                 </button>
@@ -406,7 +406,7 @@ export function TeamView() {
                   type="button"
                   disabled={busy}
                   onClick={() => void toggleRest(selected)}
-                  className="flex-1 rounded border border-bolu-border px-3 py-2 text-sm font-medium disabled:opacity-60"
+                  className="flex-1 rounded-md border border-bolu-border px-3 py-2 text-sm font-medium disabled:opacity-60"
                 >
                   {selected.status === "resting" ? "Aktifkan lagi" : "Istirahatkan"}
                 </button>
@@ -414,7 +414,7 @@ export function TeamView() {
                   type="button"
                   disabled={busy}
                   onClick={() => void remove(selected)}
-                  className="rounded border border-bolu-belum/30 px-3 py-2 text-sm font-medium text-bolu-belum disabled:opacity-60"
+                  className="rounded-md border border-bolu-belum/30 px-3 py-2 text-sm font-medium text-bolu-belum disabled:opacity-60"
                 >
                   Keluarkan
                 </button>
@@ -440,7 +440,7 @@ export function TeamView() {
                             value={grant?.permission ?? ""}
                             disabled={busy}
                             onChange={(event) => void saveGrant(selected, integration.id, event.target.value)}
-                            className="rounded border border-bolu-border px-2 py-1 text-sm"
+                            className="rounded-md border border-bolu-border px-2 py-1 text-sm"
                           >
                             <option value="" disabled>
                               Tanpa akses
@@ -476,7 +476,7 @@ export function TeamView() {
               </section>
             </div>
           ) : (
-            <p className="rounded border border-dashed border-bolu-border px-4 py-6 text-sm text-bolu-muted">
+            <p className="rounded-md border border-dashed border-bolu-border px-4 py-6 text-sm text-bolu-muted">
               Pilih satu Bolu untuk melihat dan mengubah profilnya.
             </p>
           )}

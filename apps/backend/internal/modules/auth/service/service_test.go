@@ -160,14 +160,14 @@ func TestRegister(t *testing.T) {
 
 		created, err := h.service.Register(context.Background(), domain.RegisterRequest{
 			Email:    "  Owner@Example.com ",
-			Password: "a-good-password",
+			Password: "A-good-password1",
 		})
 		require.NoError(t, err)
 		require.Equal(t, user.ID, created.ID)
 
 		require.NotEmpty(t, storedHash)
 		require.True(t, strings.HasPrefix(storedHash, "$argon2id$"), "the password must be argon2id hashed")
-		require.NotEqual(t, "a-good-password", storedHash)
+		require.NotEqual(t, "A-good-password1", storedHash)
 		require.NotEmpty(t, tokenHash, "a verification token must be stored")
 		require.NotContains(t, tokenHash, "verify?token=", "only the hash is stored, not the link")
 	})
@@ -204,7 +204,7 @@ func TestRegister(t *testing.T) {
 
 		_, err := h.service.Register(context.Background(), domain.RegisterRequest{
 			Email:    "not-an-address",
-			Password: "a-good-password",
+			Password: "A-good-password1",
 		})
 		require.Error(t, err)
 	})
@@ -216,7 +216,7 @@ func TestRegister(t *testing.T) {
 
 		_, err := h.service.Register(context.Background(), domain.RegisterRequest{
 			Email:    "owner@example.com",
-			Password: "a-good-password",
+			Password: "A-good-password1",
 		})
 		require.ErrorIs(t, err, domain.ErrEmailTaken)
 	})
@@ -255,7 +255,7 @@ func TestVerifyEmail(t *testing.T) {
 }
 
 func TestLogin(t *testing.T) {
-	const password = "a-good-password"
+	const password = "A-good-password1"
 
 	t.Run("opens a session on correct credentials", func(t *testing.T) {
 		h := newHarness(t)
@@ -532,11 +532,11 @@ func TestPasswordReset(t *testing.T) {
 
 		err := h.service.ResetPassword(context.Background(), domain.ResetPasswordRequest{
 			Token:       "reset-token",
-			NewPassword: "the-new-password",
+			NewPassword: "The-new-password1",
 		})
 		require.NoError(t, err)
 
-		ok, err := authn.VerifyPassword(newHash, "the-new-password")
+		ok, err := authn.VerifyPassword(newHash, "The-new-password1")
 		require.NoError(t, err)
 		require.True(t, ok, "the stored hash must match the new password")
 	})
@@ -548,7 +548,7 @@ func TestPasswordReset(t *testing.T) {
 
 		err := h.service.ResetPassword(context.Background(), domain.ResetPasswordRequest{
 			Token:       "used",
-			NewPassword: "the-new-password",
+			NewPassword: "The-new-password1",
 		})
 		require.ErrorIs(t, err, domain.ErrInvalidToken)
 	})

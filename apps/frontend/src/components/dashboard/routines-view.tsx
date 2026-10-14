@@ -42,9 +42,9 @@ import { TIMEZONES, crewFor, expressionOf, relativeAge, stateOf } from "@/lib/da
 
 import { useWorkspace } from "./workspace-data";
 
-const CARD = "rounded border border-bolu-border bg-white";
+const CARD = "rounded-md border border-bolu-border bg-white";
 const HEADING = "font-display text-[22px] font-semibold";
-const FIELD = "min-h-11 rounded border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent";
+const FIELD = "min-h-11 rounded-md border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent";
 const LABEL = "flex flex-col gap-1.5 text-[14px] font-semibold";
 
 /** The cadences the form offers, in the words the design uses. */
@@ -647,12 +647,12 @@ export function RoutinesView() {
                 rows={3}
                 placeholder="Buka dokumen baru di folder Pesanan, catat pesanannya, lalu ringkas."
                 onChange={(event) => setForm({ ...form, instruction: event.target.value })}
-                className="rounded border border-bolu-border bg-white p-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
+                className="rounded-md border border-bolu-border bg-white p-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
               />
             </label>
 
             {/* What the cadence will actually do, from the server that registers it. */}
-            <div className="rounded bg-bolu-panel/60 p-[14px_16px]">
+            <div className="rounded-md bg-bolu-panel/60 p-[14px_16px]">
               <div className="text-[14px] font-semibold">
                 {KINDS.find((option) => option.value === form.kind)?.label} ·{" "}
                 {form.kind === "trigger"

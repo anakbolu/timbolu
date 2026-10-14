@@ -17,7 +17,7 @@ export function Faq() {
       {FAQ.map((item) => (
         <details
           key={item.q}
-          className="rounded border border-bolu-border bg-white px-6 py-5"
+          className="rounded-md border border-bolu-border bg-white px-6 py-5"
         >
           <summary className="font-display text-[20px] font-semibold">{item.q}</summary>
           <p className="mt-3 text-bolu-muted">{item.a}</p>

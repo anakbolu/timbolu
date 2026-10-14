@@ -168,7 +168,7 @@ export function ChatView({
       <div className="flex min-h-0 flex-1 flex-col">
         <section className="flex min-h-0 flex-1 flex-col">
           {chat.error ? (
-            <p role="alert" className="mx-4 mt-3 rounded border border-bolu-belum/30 bg-bolu-belum/8 px-3 py-2 text-sm text-bolu-belum">
+            <p role="alert" className="mx-4 mt-3 rounded-md border border-bolu-belum/30 bg-bolu-belum/8 px-3 py-2 text-sm text-bolu-belum">
               {chat.error}
             </p>
           ) : null}
@@ -336,7 +336,7 @@ function MessageRow({ message, name, face }: { message: ChatMessage; name: strin
           ))}
 
           {notice ? (
-            <p className="mt-2 rounded border border-bolu-flag/30 bg-bolu-flag/8 px-2.5 py-1.5 text-xs text-bolu-flag">
+            <p className="mt-2 rounded-md border border-bolu-flag/30 bg-bolu-flag/8 px-2.5 py-1.5 text-xs text-bolu-flag">
               {notice}
             </p>
           ) : null}

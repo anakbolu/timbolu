@@ -34,7 +34,7 @@ import {
   payInvoice,
 } from "@/lib/api";
 
-const CARD = "rounded border border-bolu-border bg-white";
+const CARD = "rounded-md border border-bolu-border bg-white";
 /**
  * PAGE is the frame a screen inside the shell uses.
  *
@@ -359,7 +359,7 @@ export function SubscriptionView() {
           <h2 className={HEADING}>Tagihan yang menunggu</h2>
           <ul className="mt-4 list-none space-y-3 p-0">
             {owed.map((invoice) => (
-              <li key={invoice.id} className="rounded border border-bolu-border p-4">
+              <li key={invoice.id} className="rounded-md border border-bolu-border p-4">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <div>
                     <div className="font-semibold">
@@ -380,7 +380,7 @@ export function SubscriptionView() {
                   </button>
                 </div>
                 {invoice.payment_instructions ? (
-                  <p className="mt-3 rounded bg-bolu-panel p-3 font-mono text-[13px]">
+                  <p className="mt-3 rounded-md bg-bolu-panel p-3 font-mono text-[13px]">
                     {invoice.payment_instructions}
                   </p>
                 ) : null}
@@ -403,7 +403,7 @@ export function SubscriptionView() {
             {KIND_LABEL[paying.kind] ?? paying.kind}. Statusnya berubah sendiri setelah penyedia pembayaran
             mengonfirmasi.
           </p>
-          <p className="mt-3 rounded bg-bolu-panel p-3 font-mono text-[14px]">{paying.payment_instructions}</p>
+          <p className="mt-3 rounded-md bg-bolu-panel p-3 font-mono text-[14px]">{paying.payment_instructions}</p>
         </section>
       ) : null}
 
@@ -415,7 +415,7 @@ export function SubscriptionView() {
           </p>
           <ul className="mt-4 grid list-none grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3 p-0">
             {snapshot.top_ups.map((pack) => (
-              <li key={pack.key} className="rounded border border-bolu-border p-4">
+              <li key={pack.key} className="rounded-md border border-bolu-border p-4">
                 <div className="font-semibold">{pack.name}</div>
                 <div className="mt-1 text-[13px] text-bolu-muted">{formatRupiah(pack.price_idr)}</div>
                 <button
@@ -441,7 +441,7 @@ export function SubscriptionView() {
             return (
               <li
                 key={plan.key}
-                className="flex flex-wrap items-center justify-between gap-3 rounded border border-bolu-border p-4"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-bolu-border p-4"
               >
                 <div>
                   <div className="font-semibold">

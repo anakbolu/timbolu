@@ -291,7 +291,7 @@ export function ModelView() {
             </div>
 
             {providers.length === 0 ? (
-              <p className="rounded border border-dashed border-bolu-border px-4 py-6 text-sm text-bolu-muted">
+              <p className="rounded-md border border-dashed border-bolu-border px-4 py-6 text-sm text-bolu-muted">
                 Belum ada penyedia. Tambahkan satu di kanan: tanpa penyedia, Bolu tidak bisa memanggil model.
               </p>
             ) : (
@@ -299,7 +299,7 @@ export function ModelView() {
                 {providers.map((provider) => (
                   <li
                     key={provider.id}
-                    className="rounded border border-bolu-border bg-bolu-surface px-4 py-3"
+                    className="rounded-md border border-bolu-border bg-bolu-surface px-4 py-3"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -336,14 +336,14 @@ export function ModelView() {
                           type="button"
                           onClick={() => void test(provider)}
                           disabled={busy}
-                          className="rounded border border-bolu-border px-2.5 py-1 transition hover:bg-bolu-panel/60 disabled:opacity-50"
+                          className="rounded-md border border-bolu-border px-2.5 py-1 transition hover:bg-bolu-panel/60 disabled:opacity-50"
                         >
                           Uji
                         </button>
                         <button
                           type="button"
                           onClick={() => setEditing(provider)}
-                          className="rounded border border-bolu-border px-2.5 py-1 transition hover:bg-bolu-panel/60"
+                          className="rounded-md border border-bolu-border px-2.5 py-1 transition hover:bg-bolu-panel/60"
                         >
                           Ubah
                         </button>
@@ -351,7 +351,7 @@ export function ModelView() {
                           type="button"
                           onClick={() => void remove(provider)}
                           disabled={busy}
-                          className="rounded border border-bolu-border px-2.5 py-1 text-bolu-belum transition hover:bg-bolu-belum/8 disabled:opacity-50"
+                          className="rounded-md border border-bolu-border px-2.5 py-1 text-bolu-belum transition hover:bg-bolu-belum/8 disabled:opacity-50"
                         >
                           Hapus
                         </button>
@@ -363,7 +363,7 @@ export function ModelView() {
             )}
 
             {capabilities ? (
-              <div className="mt-3 rounded border border-bolu-border bg-bolu-panel/50 px-4 py-3 text-sm text-bolu-body">
+              <div className="mt-3 rounded-md border border-bolu-border bg-bolu-panel/50 px-4 py-3 text-sm text-bolu-body">
                 <p className="font-medium">{capabilities.provider} menjawab dengan:</p>
                 <p className="mt-1">
                   alat {capabilities.result.tools ? "ya" : "tidak"} · streaming{" "}
@@ -387,7 +387,7 @@ export function ModelView() {
               <select
                 value={selectedAgent}
                 onChange={(event) => setSelectedAgent(event.target.value)}
-                className="w-full rounded border border-bolu-border bg-bolu-surface px-3 py-2"
+                className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3 py-2"
               >
                 <option value="">— pilih Bolu —</option>
                 {agents.map((agent) => (
@@ -402,7 +402,7 @@ export function ModelView() {
               <form
                 onSubmit={saveOverride}
                 key={`${selectedAgent}-${override?.provider_id ?? ""}-${override?.model ?? ""}-${override?.max_tokens ?? 0}`}
-                className="space-y-3 rounded border border-bolu-border bg-bolu-surface px-4 py-3"
+                className="space-y-3 rounded-md border border-bolu-border bg-bolu-surface px-4 py-3"
               >
                 <p className="text-sm text-bolu-muted">
                   {describeOverride(override, providers)}
@@ -412,7 +412,7 @@ export function ModelView() {
                   <select
                     name="provider_id"
                     defaultValue={override?.provider_id ?? ""}
-                    className="w-full rounded border border-bolu-border bg-bolu-surface px-3 py-2"
+                    className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3 py-2"
                   >
                     <option value="">Ikut rantai workspace</option>
                     {providers.map((provider) => (
@@ -429,7 +429,7 @@ export function ModelView() {
                       name="model"
                       defaultValue={override?.model ?? ""}
                       placeholder="mis. gpt-4o-mini"
-                      className="w-full rounded border border-bolu-border bg-bolu-surface px-3 py-2"
+                      className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3 py-2"
                     />
                   </label>
                   <label className="block text-sm">
@@ -439,14 +439,14 @@ export function ModelView() {
                       type="number"
                       min={0}
                       defaultValue={override?.max_tokens ?? 0}
-                      className="w-full rounded border border-bolu-border bg-bolu-surface px-3 py-2"
+                      className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3 py-2"
                     />
                   </label>
                 </div>
                 <button
                   type="submit"
                   disabled={busy}
-                  className="rounded bg-bolu-accent px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+                  className="rounded-md bg-bolu-accent px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
                 >
                   Simpan model
                 </button>
@@ -463,11 +463,11 @@ export function ModelView() {
             </div>
 
             {usage.length === 0 ? (
-              <p className="rounded border border-dashed border-bolu-border px-4 py-6 text-sm text-bolu-muted">
+              <p className="rounded-md border border-dashed border-bolu-border px-4 py-6 text-sm text-bolu-muted">
                 Belum ada panggilan model yang tercatat.
               </p>
             ) : (
-              <div className="overflow-hidden rounded border border-bolu-border">
+              <div className="overflow-hidden rounded-md border border-bolu-border">
                 <table className="w-full text-sm">
                   <thead className="bg-bolu-panel/60 text-left text-bolu-muted">
                     <tr>
@@ -502,7 +502,7 @@ export function ModelView() {
             {editing ? `Ubah ${editing.name}` : "Tambah penyedia"}
           </h2>
 
-          <form onSubmit={saveProvider} className="space-y-3 rounded border border-bolu-border bg-bolu-surface px-4 py-4">
+          <form onSubmit={saveProvider} className="space-y-3 rounded-md border border-bolu-border bg-bolu-surface px-4 py-4">
             <label className="block text-sm">
               <span className="mb-1 block text-bolu-muted">Nama</span>
               <input
@@ -510,7 +510,7 @@ export function ModelView() {
                 required
                 defaultValue={editing?.name ?? ""}
                 placeholder="mis. OpenRouter (utama)"
-                className="w-full rounded border border-bolu-border bg-bolu-surface px-3 py-2"
+                className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3 py-2"
               />
             </label>
 
@@ -519,7 +519,7 @@ export function ModelView() {
               <select
                 name="adapter"
                 defaultValue={editing?.adapter ?? adapters[0] ?? "openai"}
-                className="w-full rounded border border-bolu-border bg-bolu-surface px-3 py-2"
+                className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3 py-2"
               >
                 {adapters.map((adapter) => (
                   <option key={adapter} value={adapter}>
@@ -535,7 +535,7 @@ export function ModelView() {
                 name="base_url"
                 defaultValue={editing?.base_url ?? ""}
                 placeholder="kosong = endpoint resmi"
-                className="w-full rounded border border-bolu-border bg-bolu-surface px-3 py-2"
+                className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3 py-2"
               />
             </label>
 
@@ -546,7 +546,7 @@ export function ModelView() {
                 required
                 defaultValue={editing?.model ?? ""}
                 placeholder="mis. gpt-4o-mini"
-                className="w-full rounded border border-bolu-border bg-bolu-surface px-3 py-2"
+                className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3 py-2"
               />
             </label>
 
@@ -559,7 +559,7 @@ export function ModelView() {
                 type="password"
                 autoComplete="off"
                 placeholder={editing?.has_api_key ? "biarkan kosong untuk mempertahankan kunci" : "sk-…"}
-                className="w-full rounded border border-bolu-border bg-bolu-surface px-3 py-2"
+                className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3 py-2"
               />
             </label>
 
@@ -578,7 +578,7 @@ export function ModelView() {
                   type="number"
                   min={0}
                   defaultValue={editing?.priority ?? 100}
-                  className="w-full rounded border border-bolu-border bg-bolu-surface px-3 py-2"
+                  className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3 py-2"
                 />
               </label>
               <label className="block text-sm">
@@ -588,7 +588,7 @@ export function ModelView() {
                   type="number"
                   min={0}
                   defaultValue={editing?.max_tokens ?? 0}
-                  className="w-full rounded border border-bolu-border bg-bolu-surface px-3 py-2"
+                  className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3 py-2"
                 />
               </label>
               <label className="block text-sm">
@@ -598,7 +598,7 @@ export function ModelView() {
                   type="number"
                   min={0}
                   defaultValue={editing?.context_tokens ?? 0}
-                  className="w-full rounded border border-bolu-border bg-bolu-surface px-3 py-2"
+                  className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3 py-2"
                 />
               </label>
             </div>
@@ -616,7 +616,7 @@ export function ModelView() {
               <button
                 type="submit"
                 disabled={busy}
-                className="rounded bg-bolu-accent px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+                className="rounded-md bg-bolu-accent px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
               >
                 {editing ? "Simpan perubahan" : "Tambah"}
               </button>
@@ -624,7 +624,7 @@ export function ModelView() {
                 <button
                   type="button"
                   onClick={() => setEditing(null)}
-                  className="rounded border border-bolu-border px-4 py-2 text-sm transition hover:bg-bolu-panel/60"
+                  className="rounded-md border border-bolu-border px-4 py-2 text-sm transition hover:bg-bolu-panel/60"
                 >
                   Batal
                 </button>

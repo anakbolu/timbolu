@@ -95,7 +95,7 @@ export function OnboardingForm() {
             id="timezone"
             value={timezone}
             onChange={(event) => setTimezone(event.target.value)}
-            className="w-full rounded border border-bolu-border bg-bolu-surface px-3.5 py-2.5 text-[15px] text-bolu-ink outline-none focus:border-bolu-accent focus:ring-2 focus:ring-bolu-accent/20"
+            className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3.5 py-2.5 text-[15px] text-bolu-ink outline-none focus:border-bolu-accent focus:ring-2 focus:ring-bolu-accent/20"
           >
             {TIMEZONES.map((zone) => (
               <option key={zone.value} value={zone.value}>
@@ -183,7 +183,7 @@ export function InviteAccept() {
           type="button"
           onClick={() => void join()}
           disabled={status === "joining"}
-          className="w-full rounded bg-bolu-accent px-4 py-2.5 text-[15px] font-semibold text-white transition hover:bg-[#1a6cba] disabled:opacity-60"
+          className="w-full rounded-md bg-bolu-accent px-4 py-2.5 text-[15px] font-semibold text-white transition hover:bg-[#1a6cba] disabled:opacity-60"
         >
           {status === "joining" ? "Bergabung…" : "Terima undangan"}
         </button>
