@@ -96,6 +96,10 @@ type userPayload struct {
 	Onboarded     bool   `json:"onboarded"`
 	HasPassword   bool   `json:"has_password"`
 	HasGoogle     bool   `json:"has_google"`
+	// Role is the platform role: `admin` reaches /admin, `user` is everybody
+	// else. The screen reads it from /auth/me to decide whether to offer the
+	// link; the API checks it again on every admin request.
+	Role string `json:"role"`
 }
 
 // sessionPayload is what a sign-in returns. The refresh token travels in the
@@ -389,6 +393,7 @@ func toUserPayload(user domain.User) userPayload {
 		Onboarded:     user.Onboarded,
 		HasPassword:   user.HasPassword,
 		HasGoogle:     user.HasGoogle,
+		Role:          user.Role,
 	}
 }
 

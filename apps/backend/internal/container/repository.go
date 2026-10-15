@@ -3,6 +3,7 @@ package container
 import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	adminrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/admin/repository"
 	agentrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/repository"
 	approvalrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/repository"
 	authrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository"
@@ -25,7 +26,11 @@ import (
 // Repositories aggregates the data access layer. Modules register their
 // repositories here as they are implemented.
 type Repositories struct {
-	Health    *healthrepo.Repository
+	Health *healthrepo.Repository
+	// Admin holds the operator surface's reads: the account list and what the
+	// accounts add up to. Its subject is the deployment rather than a tenant,
+	// which is why it is the one repository with no workspace scope to open.
+	Admin     *adminrepo.Repository
 	Auth      *authrepo.Repository
 	Workspace *workspacerepo.Repository
 	Agent     *agentrepo.Repository
@@ -149,6 +154,11 @@ func newRepositories(pool *database.Pool) *Repositories {
 		// built here for the same reason the order module is: the hub decides which
 		// tools exist from this repository, before the module itself is assembled.
 		repositories.Checklist = checklistrepo.New(pool)
+
+		// The operator surface reads the account table, which is the deployment's
+		// rather than a tenant's: it opens no scope, because there is no workspace
+		// for it to open.
+		repositories.Admin = adminrepo.New(pool)
 	}
 	return repositories
 }

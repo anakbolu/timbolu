@@ -1,6 +1,7 @@
 package container
 
 import (
+	admindomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/admin/domain"
 	agentdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
 	approvaldomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/domain"
 	authdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain"
@@ -26,6 +27,10 @@ import (
 // package that knows the concrete implementations.
 type Services struct {
 	Health healthdomain.Service
+	// Admin is the operator surface: the accounts a deployment has, and the one
+	// decision an admin makes about them. It is built by openAdmin, and stays nil
+	// when there is no database to read the account table from.
+	Admin admindomain.Service
 	// Auth and Workspace are filled in by openAuth, which needs the
 	// repositories; they stay nil when the database is not configured.
 	Auth      authdomain.Service

@@ -6,6 +6,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"go.uber.org/zap"
 
+	adminhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/admin/handler"
 	agenthandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/handler"
 	approvalhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/handler"
 	authhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/handler"
@@ -33,7 +34,11 @@ import (
 // means its module is not configured in this deployment; the routes for it are
 // then registered as 503 instead of being skipped silently.
 type Handlers struct {
-	Health    *healthhandler.Handler
+	Health *healthhandler.Handler
+	// Admin is the operator surface: the accounts a deployment has, and the one
+	// decision an admin makes about them. Its group is the only one guarded by a
+	// platform role rather than by a workspace membership.
+	Admin     *adminhandler.Handler
 	Auth      *authhandler.Handler
 	Workspace *workspacehandler.Handler
 	Agent     *agenthandler.Handler
@@ -69,6 +74,9 @@ func newHandlers(services *Services, log *zap.Logger, cfg *config.Config) *Handl
 		Health: healthhandler.New(services.Health, log),
 	}
 
+	if services.Admin != nil {
+		handlers.Admin = adminhandler.New(services.Admin, log)
+	}
 	if services.Auth != nil {
 		handlers.Auth = authhandler.New(services.Auth, log, authhandler.Config{
 			FrontendURL: cfg.Application.FrontendURL,
@@ -200,6 +208,29 @@ func (c *Container) registerRoutes() {
 	// screen that offers it.
 	if c.Handlers.Agent != nil {
 		agenthandler.CatalogRoutes(user, c.Handlers.Agent)
+	}
+
+	// The operator surface. It needs an authenticated account and nothing else:
+	// no workspace, no subscription, and no membership — a platform admin
+	// administers the deployment, so the account that belongs to no workspace at
+	// all still has to be reachable from here.
+	//
+	// Two details put it here rather than with the other guarded groups below:
+	//
+	//   - the guard is registered on the path prefix rather than through an
+	//     empty-path group. An empty-path group applies its middleware to every
+	//     route registered afterwards, whichever group registers it, so a
+	//     platform-role check registered that way would land on the workspace
+	//     reads below as well. A path-scoped one reaches `/admin` and nothing
+	//     else.
+	//   - it is registered *before* the tenant groups, because those are
+	//     empty-path groups: registered after them, this route would be asked for
+	//     an active workspace by middleware that has nothing to do with it.
+	if c.Handlers.Admin == nil {
+		api.All("/admin*", unavailable("the operator surface is not configured", "admin_not_configured"))
+	} else {
+		api.Use("/admin", c.requireUser(), c.requirePlatformAdmin())
+		adminhandler.Routes(api, c.Handlers.Admin)
 	}
 
 	if c.Handlers.Workspace == nil {
@@ -379,6 +410,7 @@ func (c *Container) registerRoutes() {
 	if c.Handlers.Order != nil {
 		orderhandler.ManagerRoutes(registry, c.Handlers.Order)
 	}
+
 }
 
 // registerStreamRoutes mounts the live stream and the sandboxed content origin.

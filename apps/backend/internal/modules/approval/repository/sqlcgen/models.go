@@ -656,6 +656,7 @@ type User struct {
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 	OnboardedAt     *time.Time
+	Role            string
 }
 
 type WebhookEvent struct {

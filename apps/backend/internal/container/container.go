@@ -307,6 +307,14 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Container, e
 		return nil, err
 	}
 
+	// The operator surface comes after the auth service, whose account read it
+	// guards its routes with, and before the handlers, which is when the route
+	// table is built.
+	if err := c.openAdmin(ctx, cfg); err != nil {
+		c.Close()
+		return nil, err
+	}
+
 	// Billing comes before the model gateway, because the gateway's quota policy is
 	// this module's answer: a gateway built first would hold the configured fixed
 	// allowance for the life of the process, and every workspace would be served on
