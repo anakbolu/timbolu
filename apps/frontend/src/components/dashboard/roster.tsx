@@ -15,6 +15,10 @@
  *      drawer on a phone, and the HTML5 API does not fire on touch at all. Pointer
  *      capture also means the drop target is computed from the pointer's own
  *      position rather than from whatever element the browser decides is under it.
+ *      The row itself is the surface a mouse or a pen drags, because a person
+ *      reorders a list by grabbing the row and not by finding a 28px grip — the grip
+ *      is what a finger and a keyboard use. `DRAG_SLOP` is what keeps the two apart:
+ *      below it a press is still a click that opens the chat.
  *   3. **The drop target is a slot, not a row.** `index` counts the list *without*
  *      the Bolu being moved, which is what both a pointer and an arrow key can
  *      compute, and the slot is drawn by colouring the 2px border the row already
@@ -114,6 +118,16 @@ function writeFolding(workspaceID: string, teams: string[]): void {
 /** The slot a Bolu would land in: a team, and a position inside it. */
 type DropTarget = { teamId: string; index: number };
 
+/**
+ * DRAG_SLOP is how far a press must travel before it stops being a click.
+ *
+ * The row is the drag surface, so a pointer that goes down on the Bolu's own name
+ * has to be able to mean two things: a click that opens the chat, and the start of a
+ * drag. Distance is what tells them apart, and it is measured from the press rather
+ * than from the row, because a hand that shakes by a pixel is still clicking.
+ */
+const DRAG_SLOP = 5;
+
 /** sectionTarget is the team whose section is nearest the pointer. */
 function sectionTarget(sections: Map<string, HTMLElement>, clientY: number): string | null {
   let chosen: { teamId: string; distance: number } | null = null;
@@ -178,11 +192,16 @@ function slotFor(teams: { id: string; agents: Agent[] }[], agent: Agent, step: n
 }
 
 /**
- * RosterRow is one Bolu: the face, the name, and — for a managing role — the handle
- * that moves it.
+ * RosterRow is one Bolu: the face, the name, and — for a managing role — the grip
+ * that names the row for a keyboard.
  *
  * `dropBefore` and `dropAfter` are the drop indicator. They colour a border the row
  * already carries, so marking a slot cannot move the row under the pointer.
+ *
+ * The pointer handlers are on the row rather than on the grip, which is the whole
+ * point: a person drags the Bolu they can see. The grip stays because a finger needs
+ * a surface that does not scroll the sidebar, and because a keyboard needs something
+ * to land on.
  */
 function RosterRow({
   item,
@@ -190,32 +209,49 @@ function RosterRow({
   dragging,
   dropBefore,
   dropAfter,
-  onGrab,
+  onPress,
   onMove,
-  onDrop,
+  onRelease,
+  onCancel,
   onKeyMove,
+  onFollow,
 }: {
   item: RosterItem;
   draggable: boolean;
   dragging: boolean;
   dropBefore: boolean;
   dropAfter: boolean;
-  onGrab: (event: React.PointerEvent<HTMLButtonElement>) => void;
-  onMove: (event: React.PointerEvent<HTMLButtonElement>) => void;
-  onDrop: (event: React.PointerEvent<HTMLButtonElement>) => void;
+  onPress: (event: React.PointerEvent<HTMLDivElement>) => void;
+  onMove: (event: React.PointerEvent<HTMLDivElement>) => void;
+  onRelease: (event: React.PointerEvent<HTMLDivElement>) => void;
+  onCancel: () => void;
   onKeyMove: (event: React.KeyboardEvent<HTMLButtonElement>) => void;
+  onFollow: (event: React.MouseEvent<HTMLAnchorElement>) => void;
 }) {
   const edge = dropBefore ? "border-t-bolu-ink" : dropAfter ? "border-b-bolu-ink" : "border-transparent";
 
   return (
     <div
       data-roster-row={item.agent.id}
+      onPointerDown={draggable ? onPress : undefined}
+      onPointerMove={draggable ? onMove : undefined}
+      onPointerUp={draggable ? onRelease : undefined}
+      onPointerCancel={draggable ? onCancel : undefined}
+      // `touch-pan-y` is what keeps a finger that starts on the row scrolling the
+      // sidebar instead of reordering it — the grip, which has no pan, is where a
+      // touch drag begins. `select-none` is what keeps a drag from selecting the
+      // name it crosses on the way to another team.
       className={`group flex min-h-[46px] min-w-0 items-center gap-1 rounded-md border-2 ${edge} p-[5px_8px] text-bolu-ink ${
         dragging ? "opacity-40" : ""
-      }`}
+      } ${draggable ? "touch-pan-y select-none" : ""}`}
     >
       <Link
         href={`/chat?agent=${item.agent.id}`}
+        // A drag that ends on the row must not also open the chat, and a link the
+        // browser turns into its own drag image would fight the pointer for the
+        // gesture — so the link follows the pointer only when nothing was dragged.
+        onClick={onFollow}
+        draggable={false}
         className="flex min-w-0 flex-1 items-center gap-2.5 text-left text-bolu-ink no-underline hover:text-bolu-ink"
       >
         <div className="relative size-9 flex-none">
@@ -249,10 +285,6 @@ function RosterRow({
           // The label names the Bolu because the handle is where a keyboard lands,
           // and "Ubah urutan" alone would not say which row it moves.
           aria-label={`Ubah urutan ${item.agent.name}`}
-          onPointerDown={onGrab}
-          onPointerMove={onMove}
-          onPointerUp={onDrop}
-          onPointerCancel={onDrop}
           onKeyDown={onKeyMove}
           className="flex size-7 flex-none cursor-grab items-center justify-center rounded border-0 bg-transparent text-bolu-muted opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100 active:cursor-grabbing [@media(hover:none)]:opacity-100 [touch-action:none]"
         >
@@ -273,9 +305,27 @@ function RosterRow({
 export function BoluRoster() {
   const { teams, drafts, ready, user, members, workspaceID, moveAgent } = useWorkspace();
 
-  const [drag, setDrag] = useState<{ agentId: string; teamId: string } | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
   const [drop, setDrop] = useState<DropTarget | null>(null);
   const [announcement, setAnnouncement] = useState("");
+
+  /**
+   * The gesture itself, and the click it has to swallow if it becomes a drag.
+   *
+   * The gesture is a ref rather than state because a pointermove handler runs against
+   * the render it was created in, and a drag that read its own state would spend one
+   * move per render deciding it had not started yet — which is exactly the move that
+   * has to reach the drop target. `draggingId` and `drop` are the parts the screen
+   * shows, mirrored from here on every change.
+   */
+  const gesture = useRef<{
+    pointerId: number;
+    agentId: string;
+    startX: number;
+    startY: number;
+    target: DropTarget | null;
+  } | null>(null);
+  const swallowClick = useRef(false);
 
   const sections = useRef(new Map<string, HTMLElement>());
   const lists = useRef(new Map<string, HTMLDivElement>());
@@ -315,26 +365,66 @@ export function BoluRoster() {
     [collapsed, foldedKey],
   );
 
-  const grab = useCallback(
-    (agent: Agent) => (event: React.PointerEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      event.currentTarget.setPointerCapture(event.pointerId);
-      setDrag({ agentId: agent.id, teamId: agent.team_id });
-      // The Bolu's stored position is its slot in the list without it, so a drag
-      // that never moves is already expressed and needs no special case at the end.
-      setDrop({ teamId: agent.team_id, index: agent.position });
+  /**
+   * press is a pointer going down on a row, which may yet turn out to be a click.
+   *
+   * Nothing is captured and nothing is marked as dragging until the pointer has
+   * travelled `DRAG_SLOP`: capturing on the press would send the row's own click to
+   * the row instead of the link inside it, and opening a chat would stop working.
+   */
+  const pressRow = useCallback(
+    (agent: Agent) => (event: React.PointerEvent<HTMLDivElement>) => {
+      // A right-click or a middle-click is not a drag, and neither is a second finger.
+      if (event.button !== 0 || !event.isPrimary) return;
+      // The flag is spent by the click that follows a drag, and a drag that ended away
+      // from the link never produces one — so a new press is where a stale flag dies,
+      // rather than leaving the next honest click on this row unanswered.
+      swallowClick.current = false;
+      gesture.current = {
+        pointerId: event.pointerId,
+        agentId: agent.id,
+        startX: event.clientX,
+        startY: event.clientY,
+        target: null,
+      };
     },
     [],
   );
 
-  const move = useCallback(
-    (event: React.PointerEvent<HTMLButtonElement>) => {
-      if (!drag) return;
+  const moveRow = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const current = gesture.current;
+      if (!current || current.pointerId !== event.pointerId) return;
+
+      if (!current.target) {
+        const travelled = Math.hypot(event.clientX - current.startX, event.clientY - current.startY);
+        if (travelled < DRAG_SLOP) return;
+
+        const agent = teams.flatMap((team) => team.agents).find((entry) => entry.id === current.agentId);
+        if (!agent) {
+          gesture.current = null;
+          return;
+        }
+
+        // The pointer is captured once the gesture is a drag, so the row keeps
+        // receiving moves after the cursor leaves it — which is the whole way a Bolu
+        // reaches another team.
+        event.currentTarget.setPointerCapture(event.pointerId);
+        swallowClick.current = true;
+        setDraggingId(agent.id);
+        // The Bolu's stored position is its slot in the list without it, so a drag
+        // that never moves is already expressed and needs no special case at the end.
+        current.target = { teamId: agent.team_id, index: agent.position };
+        setDrop(current.target);
+        return;
+      }
+
       const teamId = sectionTarget(sections.current, event.clientY);
       if (!teamId) return;
-      setDrop({ teamId, index: slotIn(lists.current.get(teamId), drag.agentId, event.clientY) });
+      current.target = { teamId, index: slotIn(lists.current.get(teamId), current.agentId, event.clientY) };
+      setDrop(current.target);
     },
-    [drag],
+    [teams],
   );
 
   const commit = useCallback(
@@ -364,16 +454,47 @@ export function BoluRoster() {
     [collapsed, foldedKey, moveAgent, teams],
   );
 
+  /**
+   * release ends the gesture. The drop is read from the ref, because the pointerup
+   * that ends a drag can arrive in the same frame as the move that chose the slot.
+   */
   const release = useCallback(() => {
-    const agent = drag ? teams.flatMap((team) => team.agents).find((entry) => entry.id === drag.agentId) : null;
+    const current = gesture.current;
+    gesture.current = null;
+    const agent = current
+      ? teams.flatMap((team) => team.agents).find((entry) => entry.id === current.agentId)
+      : null;
     // A drag that ended where it started is the same list back from `moveAgent`,
     // which the store reads as "nothing to write" — so this only has to hand it the
     // slot the pointer chose.
-    if (agent && drop) commit(agent, drop);
+    if (agent && current?.target) commit(agent, current.target);
 
-    setDrag(null);
+    setDraggingId(null);
     setDrop(null);
-  }, [commit, drag, drop, teams]);
+  }, [commit, teams]);
+
+  /**
+   * cancel is the browser taking the gesture back — a scroll, a system gesture, a
+   * pointer that left the window. Nothing is written, and the click that follows a
+   * cancelled gesture is still swallowed, because the row did move under the finger.
+   */
+  const cancel = useCallback(() => {
+    gesture.current = null;
+    setDraggingId(null);
+    setDrop(null);
+  }, []);
+
+  /**
+   * follow is the row's link deciding whether the press it belongs to was a click.
+   *
+   * The flag is cleared here rather than in a timeout, because the click always
+   * arrives after the drag's own pointerup and there is no second chance to spend it.
+   */
+  const follow = useCallback((event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!swallowClick.current) return;
+    swallowClick.current = false;
+    event.preventDefault();
+  }, []);
 
   /**
    * keyMove is the same move without a pointer: one step up or down the roster.
@@ -453,13 +574,15 @@ export function BoluRoster() {
                     key={item.agent.id}
                     item={item}
                     draggable={canArrange}
-                    dragging={drag?.agentId === item.agent.id}
-                    dropBefore={onTarget && drop.index === position && drag?.agentId !== item.agent.id}
+                    dragging={draggingId === item.agent.id}
+                    dropBefore={onTarget && drop.index === position && draggingId !== item.agent.id}
                     dropAfter={onTarget && position === roster.length - 1 && drop.index === roster.length}
-                    onGrab={grab(item.agent)}
-                    onMove={move}
-                    onDrop={release}
+                    onPress={pressRow(item.agent)}
+                    onMove={moveRow}
+                    onRelease={release}
+                    onCancel={cancel}
                     onKeyMove={keyMove(item.agent)}
+                    onFollow={follow}
                   />
                 ))}
               </div>
