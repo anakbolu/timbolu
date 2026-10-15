@@ -188,7 +188,15 @@ link carries the Bolu or the group in the query), `/bolu/new` (the one screen th
 makes a Bolu: the body it is drawn as, its name, and its job), `/groups`, `/dashboard/usage` (what the
 workspace spent, read three ways over one window, with the tasks that need a person),
 and `/tasks` with `/tasks/[taskID]` (the task history, and one task's rounds and
-hand-offs). `/tasks/[taskID]` is the app's first dynamic route: the layout above it
+hand-offs). The operator surface lives outside that group, under `/admin`, because it
+belongs to the deployment rather than to a workspace: `/admin/dashboard` (the account
+counts) and `/admin/users` (every account, its platform role, and the one button that
+changes it) — no roster, no drafts, and no `X-Workspace-Id`, since an account that
+belongs to no workspace still has to be administrable. Its frame is shadcn's sidebar
+(`components/ui/*`, the registry's own source, retuned in `globals.css` to this
+palette), and its gate reads the platform role from `/auth/me` — the API checks it
+again on every request, so the gate is a door rather than the lock.
+`/tasks/[taskID]` is the app's first dynamic route: the layout above it
 reads the workspace from client hooks, so the route file carries `export const
 instant = false` — this repo builds with `cacheComponents`, which calls an unbounded
 segment a blocking route. Integrasi also carries the WhatsApp card: the number is linked by scanning
