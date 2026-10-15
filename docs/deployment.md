@@ -198,6 +198,12 @@ so they are stated here rather than left to whoever set the service up first:
 | `timbolu-wa-gateway` | `/` | `apps/whatsapp-gw/Dockerfile` | — | listens on `:8090`, never published |
 | `timbolu-migrate` | `/` | `apps/backend/Dockerfile` | `BINARY=../tools/migrate` | one-shot, runs `up` |
 
+The build arg is not a separate Easypanel field: Easypanel passes a service's environment values to
+the Docker build as build arguments, so the `BINARY=…` line in the service's environment is what
+selects the binary, and the same variable is present in the container at runtime. The Build Path is
+both where the Dockerfile path is resolved from and what the build context is, which is why the
+Dockerfile paths above are repository-relative while the source path is `/`.
+
 **All four data processes share one storage directory.** `STORAGE_DRIVER=local` with
 `STORAGE_LOCAL_ROOT=/data/storage` means the bytes live on the filesystem, and the gateway is the
 process that *writes* an inbound attachment while the API is the process that *reads* it back to
