@@ -142,6 +142,66 @@ func (_c *Service_AllowedTools_Call) RunAndReturn(run func(context.Context, doma
 	return _c
 }
 
+// Arrange provides a mock function with given fields: ctx, scope, arrangement
+func (_m *Service) Arrange(ctx context.Context, scope domain.Scope, arrangement domain.Arrangement) ([]domain.Team, error) {
+	ret := _m.Called(ctx, scope, arrangement)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Arrange")
+	}
+
+	var r0 []domain.Team
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, domain.Arrangement) ([]domain.Team, error)); ok {
+		return rf(ctx, scope, arrangement)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, domain.Arrangement) []domain.Team); ok {
+		r0 = rf(ctx, scope, arrangement)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]domain.Team)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, domain.Scope, domain.Arrangement) error); ok {
+		r1 = rf(ctx, scope, arrangement)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// Service_Arrange_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Arrange'
+type Service_Arrange_Call struct {
+	*mock.Call
+}
+
+// Arrange is a helper method to define mock.On call
+//   - ctx context.Context
+//   - scope domain.Scope
+//   - arrangement domain.Arrangement
+func (_e *Service_Expecter) Arrange(ctx interface{}, scope interface{}, arrangement interface{}) *Service_Arrange_Call {
+	return &Service_Arrange_Call{Call: _e.mock.On("Arrange", ctx, scope, arrangement)}
+}
+
+func (_c *Service_Arrange_Call) Run(run func(ctx context.Context, scope domain.Scope, arrangement domain.Arrangement)) *Service_Arrange_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(domain.Scope), args[2].(domain.Arrangement))
+	})
+	return _c
+}
+
+func (_c *Service_Arrange_Call) Return(_a0 []domain.Team, _a1 error) *Service_Arrange_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *Service_Arrange_Call) RunAndReturn(run func(context.Context, domain.Scope, domain.Arrangement) ([]domain.Team, error)) *Service_Arrange_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Create provides a mock function with given fields: ctx, scope, req
 func (_m *Service) Create(ctx context.Context, scope domain.Scope, req domain.CreateRequest) (domain.Agent, error) {
 	ret := _m.Called(ctx, scope, req)

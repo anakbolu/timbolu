@@ -943,6 +943,54 @@ func (_c *Repository_SetMemoryExtraction_Call) RunAndReturn(run func(context.Con
 	return _c
 }
 
+// SetPlacements provides a mock function with given fields: ctx, scope, placements
+func (_m *Repository) SetPlacements(ctx context.Context, scope domain.Scope, placements []domain.Placement) error {
+	ret := _m.Called(ctx, scope, placements)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SetPlacements")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, []domain.Placement) error); ok {
+		r0 = rf(ctx, scope, placements)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// Repository_SetPlacements_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetPlacements'
+type Repository_SetPlacements_Call struct {
+	*mock.Call
+}
+
+// SetPlacements is a helper method to define mock.On call
+//   - ctx context.Context
+//   - scope domain.Scope
+//   - placements []domain.Placement
+func (_e *Repository_Expecter) SetPlacements(ctx interface{}, scope interface{}, placements interface{}) *Repository_SetPlacements_Call {
+	return &Repository_SetPlacements_Call{Call: _e.mock.On("SetPlacements", ctx, scope, placements)}
+}
+
+func (_c *Repository_SetPlacements_Call) Run(run func(ctx context.Context, scope domain.Scope, placements []domain.Placement)) *Repository_SetPlacements_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(domain.Scope), args[2].([]domain.Placement))
+	})
+	return _c
+}
+
+func (_c *Repository_SetPlacements_Call) Return(_a0 error) *Repository_SetPlacements_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *Repository_SetPlacements_Call) RunAndReturn(run func(context.Context, domain.Scope, []domain.Placement) error) *Repository_SetPlacements_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // SetStatus provides a mock function with given fields: ctx, scope, id, status
 func (_m *Repository) SetStatus(ctx context.Context, scope domain.Scope, id uuid.UUID, status string) (domain.Agent, error) {
 	ret := _m.Called(ctx, scope, id, status)

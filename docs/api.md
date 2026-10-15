@@ -111,6 +111,7 @@ than an empty one.
 | `GET /agents/:id` | bearer + tenant | any | One Bolu with its derived status and the reason |
 | `POST /agents` | bearer + tenant | owner, admin | `{team_id, name?, template_key?, copy_from?, persona?, role?}` |
 | `PATCH /agents/:id` | bearer + tenant | owner, admin | Profile: name, role, persona, tone, shape, color, tools, default_model |
+| `PUT /agents/order` | bearer + tenant | owner, admin | The sidebar's layout: `{teams: [{team_id, agent_ids}]}`, every live Bolu exactly once. Answers with the stored teams |
 | `PATCH /agents/:id/status` | bearer + tenant | owner, admin | `{status: "active" \| "resting"}` |
 | `DELETE /agents/:id` | bearer + tenant | owner, admin | Soft delete; refused while the Bolu has a running task |
 | `GET /agents/:id/grants` | bearer + tenant | any | The integrations this Bolu may use |
@@ -133,6 +134,18 @@ Bolu:
 
 A resting Bolu never accepts new tasks; the ones already running are left to
 finish.
+
+### The sidebar's order is stored, and per team
+
+`agents.sort_order` counts from zero inside its team, and `GET /teams` returns each
+team's Bolu in it. A drag sends `PUT /agents/order` with the layout as it should
+read — every team, and every live Bolu exactly once — rather than one move, because
+the whole list is what makes the write idempotent and what keeps two tabs from
+interleaving into an order that matches neither of them. The layout is checked
+against the registry first: a body that forgets a Bolu, names one twice, or names a
+team or Bolu outside the workspace is refused whole (`order_incomplete`, 400), so
+there is no partial arrangement. A Bolu created afterwards lands at the end of its
+team's list.
 
 ### Tool labels decide approval
 

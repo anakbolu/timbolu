@@ -57,6 +57,11 @@ var (
 	ErrAgentHasRunningTask = errors.New("agent: this bolu is still working on a task")
 	ErrAgentLimitReached   = errors.New("agent: the plan's bolu limit is reached")
 	ErrIntegrationNotFound = errors.New("agent: integration not found")
+	// ErrOrderIncomplete: the arrangement a client sent is not the workspace's
+	// registry. A partial layout is refused rather than applied, because the rows
+	// it forgot would keep the positions they had and the list would interleave
+	// two arrangements.
+	ErrOrderIncomplete = errors.New("agent: the arrangement does not list every bolu exactly once")
 )
 
 // Agent is one Bolu.
@@ -73,6 +78,10 @@ type Agent struct {
 	Tone    string
 	Shape   string
 	Color   string
+
+	// Position is where the Bolu sits in its team's list, counting from zero. The
+	// sidebar orders by it, and it is the only part of a Bolu that a drag changes.
+	Position int32
 
 	// Status is the stored switch (active or resting).
 	Status string
@@ -198,6 +207,35 @@ type UpdateRequest struct {
 	DefaultModel map[string]any
 }
 
+// Arrangement is the sidebar's layout: which team each Bolu is in, and in what
+// order, as one whole list.
+//
+// It is sent whole rather than as a single move because the two are not the same
+// claim. "Move Oren down one" is a statement about a list the client read at some
+// moment; "the sidebar reads Oren, Senja, Kopi" is a statement about the list
+// itself, and it is what makes a drag idempotent — the same body sent twice leaves
+// the same sidebar, and a second tab that reordered in the meantime cannot produce
+// two Bolu in the same slot.
+type Arrangement struct {
+	Teams []TeamArrangement
+}
+
+// TeamArrangement is one team's row of the sidebar, in order.
+type TeamArrangement struct {
+	TeamID uuid.UUID
+	// Agents is the team's Bolu, first to last. It must name every live Bolu of
+	// the team exactly once; a list that does not is refused.
+	Agents []uuid.UUID
+}
+
+// Placement is one Bolu's resolved position: the team it belongs to and where it
+// sits in that team's list.
+type Placement struct {
+	AgentID  uuid.UUID
+	TeamID   uuid.UUID
+	Position int32
+}
+
 // Repository is the persistence contract. Every method runs inside the caller's
 // tenant scope, so Row Level Security applies.
 type Repository interface {
@@ -207,6 +245,9 @@ type Repository interface {
 	Update(ctx context.Context, scope Scope, id uuid.UUID, req UpdateRequest) (Agent, error)
 	SetStatus(ctx context.Context, scope Scope, id uuid.UUID, status string) (Agent, error)
 	SetMemoryExtraction(ctx context.Context, scope Scope, id uuid.UUID, enabled bool) (Agent, error)
+	// SetPlacements writes a whole arrangement in one transaction: either every
+	// Bolu lands where the arrangement puts it or none of them move.
+	SetPlacements(ctx context.Context, scope Scope, placements []Placement) error
 	Delete(ctx context.Context, scope Scope, id uuid.UUID) error
 
 	Activity(ctx context.Context, scope Scope) (map[uuid.UUID]Activity, error)
@@ -283,6 +324,11 @@ type Service interface {
 	SetStatus(ctx context.Context, scope Scope, id uuid.UUID, status string) (Agent, error)
 	SetMemoryExtraction(ctx context.Context, scope Scope, id uuid.UUID, enabled bool) (Agent, error)
 	Delete(ctx context.Context, scope Scope, id uuid.UUID) error
+
+	// Arrange applies the sidebar's layout and answers with the teams as they now
+	// read, so the screen that dragged a Bolu renders the stored order rather
+	// than the one it hoped for.
+	Arrange(ctx context.Context, scope Scope, arrangement Arrangement) ([]Team, error)
 
 	Teams(ctx context.Context, scope Scope) ([]Team, error)
 	Templates(ctx context.Context) ([]Template, error)

@@ -204,6 +204,102 @@ func (s *service) Delete(ctx context.Context, scope domain.Scope, id uuid.UUID) 
 	return s.deps.Delete(ctx, scope, id)
 }
 
+// Arrange applies the sidebar's layout: which team each Bolu belongs to, and in
+// what order each team lists them.
+//
+// The requested layout is checked against the workspace's own registry before
+// anything is written, because the two ways a client can be wrong are the two ways
+// this write would be destructive: a layout that forgets a Bolu (the rows it forgot
+// would keep their old positions and the sidebar would interleave two
+// arrangements), and a layout that names a Bolu this workspace does not have (a
+// write RLS would refuse halfway through, leaving the rest applied). Either way the
+// whole request is refused, and the answer is the teams as they actually read.
+func (s *service) Arrange(ctx context.Context, scope domain.Scope, arrangement domain.Arrangement) ([]domain.Team, error) {
+	if err := requireScope(scope); err != nil {
+		return nil, err
+	}
+
+	current, err := s.deps.Teams(ctx, scope)
+	if err != nil {
+		return nil, err
+	}
+
+	placements, err := placementsFor(current, arrangement)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.deps.SetPlacements(ctx, scope, placements); err != nil {
+		return nil, err
+	}
+
+	return s.Teams(ctx, scope)
+}
+
+// placementsFor turns a requested layout into one position per Bolu.
+//
+// It is a plain function over the registry rather than a method because the rule it
+// enforces — the layout is the registry, rearranged — is a statement about those
+// two lists and nothing else, and a reader can check it without a repository in
+// mind. A workspace with no Bolu is a valid layout of nothing: every team is still
+// named, and every list is empty.
+func placementsFor(current []domain.Team, arrangement domain.Arrangement) ([]domain.Placement, error) {
+	members := map[uuid.UUID]uuid.UUID{}
+	for _, team := range current {
+		for _, agent := range team.Agents {
+			members[agent.ID] = team.ID
+		}
+	}
+
+	teams := make(map[uuid.UUID]bool, len(current))
+	for _, team := range current {
+		teams[team.ID] = true
+	}
+
+	seenTeams := make(map[uuid.UUID]bool, len(arrangement.Teams))
+	seenAgents := make(map[uuid.UUID]bool, len(members))
+
+	placements := make([]domain.Placement, 0, len(members))
+	for _, team := range arrangement.Teams {
+		if !teams[team.TeamID] {
+			return nil, fmt.Errorf("%w: team %s is not in this workspace", domain.ErrOrderIncomplete, team.TeamID)
+		}
+		if seenTeams[team.TeamID] {
+			return nil, fmt.Errorf("%w: team %s is listed twice", domain.ErrOrderIncomplete, team.TeamID)
+		}
+		seenTeams[team.TeamID] = true
+
+		for position, agentID := range team.Agents {
+			if _, ok := members[agentID]; !ok {
+				return nil, fmt.Errorf("%w: bolu %s is not in this workspace", domain.ErrOrderIncomplete, agentID)
+			}
+			if seenAgents[agentID] {
+				return nil, fmt.Errorf("%w: bolu %s is listed twice", domain.ErrOrderIncomplete, agentID)
+			}
+			seenAgents[agentID] = true
+
+			placements = append(placements, domain.Placement{
+				AgentID:  agentID,
+				TeamID:   team.TeamID,
+				Position: int32(position),
+			})
+		}
+	}
+
+	for teamID := range teams {
+		if !seenTeams[teamID] {
+			return nil, fmt.Errorf("%w: team %s is missing", domain.ErrOrderIncomplete, teamID)
+		}
+	}
+	for agentID := range members {
+		if !seenAgents[agentID] {
+			return nil, fmt.Errorf("%w: bolu %s is missing", domain.ErrOrderIncomplete, agentID)
+		}
+	}
+
+	return placements, nil
+}
+
 // Teams lists the teams with their Bolu, each carrying its derived status.
 func (s *service) Teams(ctx context.Context, scope domain.Scope) ([]domain.Team, error) {
 	if err := requireScope(scope); err != nil {

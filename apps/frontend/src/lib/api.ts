@@ -556,6 +556,8 @@ export type Agent = {
   status: string;
   /** Derived from tasks and drafts, never stored: working | waiting | idle | resting. */
   display_status: string;
+  /** Where the Bolu sits in its team's list, counting from zero. */
+  position: number;
   reason?: { kind: string; id: string; title?: string; status?: string; created_at: string };
   template_key?: string;
   tools: string[];
@@ -1007,6 +1009,26 @@ export function openDirectConversation(
   return request<ChatConversation>("/conversations/direct", {
     method: "POST",
     body: { agent_id: agentId },
+    workspace: workspaceId,
+  });
+}
+
+/**
+ * arrangeAgents writes the sidebar's order.
+ *
+ * The whole layout is sent rather than one move: the positions are the indexes of
+ * the lists, so the same body sent twice leaves the same sidebar and two tabs
+ * cannot interleave. The answer is the stored teams, which is what the screen
+ * renders next — a drag is a guess about a list, and the workspace is the one that
+ * decides where things landed.
+ */
+export function arrangeAgents(
+  workspaceId: string,
+  teams: { team_id: string; agent_ids: string[] }[],
+): Promise<ApiResult<AgentTeam[]>> {
+  return request<AgentTeam[]>("/agents/order", {
+    method: "PUT",
+    body: { teams },
     workspace: workspaceId,
   });
 }

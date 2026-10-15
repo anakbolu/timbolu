@@ -506,6 +506,161 @@ func TestRepositoryErrorsSurface(t *testing.T) {
 	require.Len(t, templates, 1)
 }
 
+// TestArrangeWritesTheLayoutTheSidebarAskedFor is the sidebar's move at the service
+// level: the layout arrives whole, the positions are the indexes it sent, and the
+// answer is the stored teams.
+func TestArrangeWritesTheLayoutTheSidebarAskedFor(t *testing.T) {
+	h := newHarness(t)
+	s := scope()
+	bolu, hore := uuid.New(), uuid.New()
+	first := agentFixture(func(a *domain.Agent) { a.TeamID = bolu; a.Position = 0 })
+	second := agentFixture(func(a *domain.Agent) { a.Name = "Senja"; a.TeamID = bolu; a.Position = 1 })
+	third := agentFixture(func(a *domain.Agent) { a.Name = "Kopi"; a.TeamID = hore; a.Position = 0 })
+
+	h.repo.EXPECT().Teams(mock.Anything, s).Return([]domain.Team{
+		{ID: bolu, Name: "Tim Bolu", Kind: "bolu", Agents: []domain.Agent{first, second}},
+		{ID: hore, Name: "Tim Hore", Kind: "hore", Agents: []domain.Agent{third}},
+	}, nil).Once()
+
+	// Kopi moves up into Tim Bolu, and Senja and Oren swap. The whole layout is one
+	// request because that is what a drag produces: the list as it should read.
+	h.repo.EXPECT().SetPlacements(mock.Anything, s, []domain.Placement{
+		{AgentID: third.ID, TeamID: bolu, Position: 0},
+		{AgentID: first.ID, TeamID: bolu, Position: 1},
+		{AgentID: second.ID, TeamID: bolu, Position: 2},
+	}).Return(nil).Once()
+
+	stored := []domain.Team{
+		{ID: bolu, Name: "Tim Bolu", Kind: "bolu", Agents: []domain.Agent{third, first, second}},
+		{ID: hore, Name: "Tim Hore", Kind: "hore"},
+	}
+	h.repo.EXPECT().Teams(mock.Anything, s).Return(stored, nil).Once()
+	h.repo.EXPECT().Activity(mock.Anything, s).Return(map[uuid.UUID]domain.Activity{}, nil).Once()
+
+	teams, err := h.service.Arrange(context.Background(), s, domain.Arrangement{Teams: []domain.TeamArrangement{
+		{TeamID: bolu, Agents: []uuid.UUID{third.ID, first.ID, second.ID}},
+		{TeamID: hore},
+	}})
+	require.NoError(t, err)
+	require.Len(t, teams, 2)
+	require.Equal(t, third.ID, teams[0].Agents[0].ID, "the answer is the stored order, not the requested one")
+	require.Equal(t, domain.DisplayIdle, teams[0].Agents[0].Display, "the derived status is still computed")
+}
+
+// TestArrangeRefusesALayoutThatIsNotTheRegistry covers the two ways a client can be
+// wrong. A partial layout would leave the Bolu it forgot at its old position, and a
+// foreign id would be refused by RLS halfway through the write — so both are
+// refused before anything is written, and nothing is.
+func TestArrangeRefusesALayoutThatIsNotTheRegistry(t *testing.T) {
+	bolu, hore := uuid.New(), uuid.New()
+	first := agentFixture(func(a *domain.Agent) { a.TeamID = bolu })
+	second := agentFixture(func(a *domain.Agent) { a.Name = "Senja"; a.TeamID = hore })
+
+	registry := []domain.Team{
+		{ID: bolu, Name: "Tim Bolu", Kind: "bolu", Agents: []domain.Agent{first}},
+		{ID: hore, Name: "Tim Hore", Kind: "hore", Agents: []domain.Agent{second}},
+	}
+
+	tests := []struct {
+		name        string
+		arrangement domain.Arrangement
+		message     string
+	}{
+		{
+			name: "a Bolu is missing",
+			arrangement: domain.Arrangement{Teams: []domain.TeamArrangement{
+				{TeamID: bolu, Agents: []uuid.UUID{first.ID}},
+				{TeamID: hore},
+			}},
+			message: "bolu",
+		},
+		{
+			name: "a team is missing",
+			arrangement: domain.Arrangement{Teams: []domain.TeamArrangement{
+				{TeamID: bolu, Agents: []uuid.UUID{first.ID, second.ID}},
+			}},
+			message: "team",
+		},
+		{
+			name: "a Bolu is listed twice",
+			arrangement: domain.Arrangement{Teams: []domain.TeamArrangement{
+				{TeamID: bolu, Agents: []uuid.UUID{first.ID, second.ID}},
+				{TeamID: hore, Agents: []uuid.UUID{first.ID}},
+			}},
+			message: "twice",
+		},
+		{
+			name: "a stranger is named",
+			arrangement: domain.Arrangement{Teams: []domain.TeamArrangement{
+				{TeamID: bolu, Agents: []uuid.UUID{first.ID, second.ID, uuid.New()}},
+				{TeamID: hore},
+			}},
+			message: "not in this workspace",
+		},
+		{
+			name: "a team from another workspace is named",
+			arrangement: domain.Arrangement{Teams: []domain.TeamArrangement{
+				{TeamID: bolu, Agents: []uuid.UUID{first.ID}},
+				{TeamID: hore, Agents: []uuid.UUID{second.ID}},
+				{TeamID: uuid.New()},
+			}},
+			message: "not in this workspace",
+		},
+		{
+			name:        "nothing is named at all",
+			arrangement: domain.Arrangement{},
+			message:     "missing",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			h := newHarness(t)
+			s := scope()
+			h.repo.EXPECT().Teams(mock.Anything, s).Return(registry, nil).Once()
+
+			_, err := h.service.Arrange(context.Background(), s, test.arrangement)
+			require.ErrorIs(t, err, domain.ErrOrderIncomplete)
+			require.Contains(t, err.Error(), test.message)
+		})
+	}
+}
+
+// TestArrangeKeepsTheLayoutOfAnEmptyWorkspace: a workspace with teams and no Bolu
+// is a valid layout of nothing, and it must not be refused for the same reason a
+// forgotten Bolu is.
+func TestArrangeKeepsTheLayoutOfAnEmptyWorkspace(t *testing.T) {
+	h := newHarness(t)
+	s := scope()
+	bolu, hore := uuid.New(), uuid.New()
+
+	h.repo.EXPECT().Teams(mock.Anything, s).Return([]domain.Team{
+		{ID: bolu, Name: "Tim Bolu", Kind: "bolu"},
+		{ID: hore, Name: "Tim Hore", Kind: "hore"},
+	}, nil).Once()
+	h.repo.EXPECT().SetPlacements(mock.Anything, s, []domain.Placement{}).Return(nil).Once()
+	h.repo.EXPECT().Teams(mock.Anything, s).Return([]domain.Team{
+		{ID: bolu, Name: "Tim Bolu", Kind: "bolu"},
+		{ID: hore, Name: "Tim Hore", Kind: "hore"},
+	}, nil).Once()
+	h.repo.EXPECT().Activity(mock.Anything, s).Return(map[uuid.UUID]domain.Activity{}, nil).Once()
+
+	teams, err := h.service.Arrange(context.Background(), s, domain.Arrangement{Teams: []domain.TeamArrangement{
+		{TeamID: bolu},
+		{TeamID: hore},
+	}})
+	require.NoError(t, err)
+	require.Len(t, teams, 2)
+}
+
+// TestArrangeRequiresAWorkspaceScope is the same guard every other write has.
+func TestArrangeRequiresAWorkspaceScope(t *testing.T) {
+	h := newHarness(t)
+
+	_, err := h.service.Arrange(context.Background(), domain.Scope{}, domain.Arrangement{})
+	require.ErrorIs(t, err, domain.ErrInvalidInput)
+}
+
 type harness struct {
 	service domain.Service
 	repo    *mocks.Repository

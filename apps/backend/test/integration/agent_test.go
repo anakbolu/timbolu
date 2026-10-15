@@ -490,5 +490,86 @@ func TestAgentRepositoryWithoutAPool(t *testing.T) {
 	require.ErrorContains(t, err, "not configured")
 }
 
+// TestArrangeMovesABoluUpAndAcrossTeams is the sidebar's drag against a real
+// database: the positions are stored, they survive a reload, and a Bolu can change
+// team in the same write.
+func TestArrangeMovesABoluUpAndAcrossTeams(t *testing.T) {
+	fixture := newAgentFixture(t, appDatabase(t))
+	ctx := t.Context()
+
+	created := seedAgents(t, fixture.pool, fixture.workspace.ID, "Oren", "Biru", "Lila")
+	teams, err := fixture.service.Teams(ctx, fixture.scope)
+	require.NoError(t, err)
+
+	bolu, hore := teams[0], teams[1]
+	require.Len(t, bolu.Agents, 3, "the seeded Bolu land in the first team")
+	require.Equal(t, []string{"Oren", "Biru", "Lila"}, names(bolu.Agents), "a new Bolu lands at the end")
+
+	// Lila moves to the top of Tim Bolu and Oren moves into Tim Hore, which is one
+	// layout: the list as it should read.
+	_, err = fixture.service.Arrange(ctx, fixture.scope, agentdomain.Arrangement{Teams: []agentdomain.TeamArrangement{
+		{TeamID: bolu.ID, Agents: []uuid.UUID{created[2].ID, created[1].ID}},
+		{TeamID: hore.ID, Agents: []uuid.UUID{created[0].ID}},
+	}})
+	require.NoError(t, err)
+
+	// Read back through a fresh repository, which is what a reload does.
+	reloaded, err := agentrepo.New(fixture.pool).Teams(ctx, fixture.scope)
+	require.NoError(t, err)
+	require.Equal(t, []string{"Lila", "Biru"}, names(reloaded[0].Agents))
+	require.Equal(t, []string{"Oren"}, names(reloaded[1].Agents))
+
+	// The team a Bolu moved to is the one it now reports, not the one it was made
+	// in: the arrangement is a move, not a note beside it.
+	moved, err := fixture.service.Get(ctx, fixture.scope, created[0].ID)
+	require.NoError(t, err)
+	require.Equal(t, hore.ID, moved.TeamID)
+	require.Equal(t, "Tim Hore", moved.TeamName)
+	require.Equal(t, int32(0), moved.Position)
+
+	// A Bolu made afterwards lands at the end of its team, not in the gap the move
+	// left behind.
+	fresh, err := fixture.service.Create(ctx, fixture.scope, agentdomain.CreateRequest{TeamID: bolu.ID, Name: "Kunyit"})
+	require.NoError(t, err)
+	require.Equal(t, int32(2), fresh.Position)
+
+	reloaded, err = fixture.service.Teams(ctx, fixture.scope)
+	require.NoError(t, err)
+	require.Equal(t, []string{"Lila", "Biru", "Kunyit"}, names(reloaded[0].Agents))
+}
+
+// TestArrangeRefusesAnIncompleteLayoutAgainstTheDatabase keeps the service's own
+// check honest: the registry the database returns is what the layout is compared
+// against, so a Bolu of the same workspace that the client forgot is a refusal
+// rather than a row left at its old position.
+func TestArrangeRefusesAnIncompleteLayoutAgainstTheDatabase(t *testing.T) {
+	fixture := newAgentFixture(t, appDatabase(t))
+	ctx := t.Context()
+
+	created := seedAgents(t, fixture.pool, fixture.workspace.ID, "Oren", "Biru")
+	teams, err := fixture.service.Teams(ctx, fixture.scope)
+	require.NoError(t, err)
+
+	_, err = fixture.service.Arrange(ctx, fixture.scope, agentdomain.Arrangement{Teams: []agentdomain.TeamArrangement{
+		{TeamID: teams[0].ID, Agents: []uuid.UUID{created[0].ID}},
+		{TeamID: teams[1].ID, Agents: []uuid.UUID{}},
+	}})
+	require.ErrorIs(t, err, agentdomain.ErrOrderIncomplete)
+
+	// Nothing moved, which is the point of refusing the whole layout.
+	reloaded, err := fixture.service.Teams(ctx, fixture.scope)
+	require.NoError(t, err)
+	require.Equal(t, []string{"Oren", "Biru"}, names(reloaded[0].Agents))
+}
+
+// names reads a team's Bolu in the order they are stored.
+func names(agents []agentdomain.Agent) []string {
+	list := make([]string, 0, len(agents))
+	for _, agent := range agents {
+		list = append(list, agent.Name)
+	}
+	return list
+}
+
 // TestProvisionerNeedsSeededTemplates keeps a missing seed an explicit failure
 // rather than a workspace with no Bolu.
