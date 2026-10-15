@@ -27,6 +27,12 @@ export type ApiSuccess<T> = {
   ok: true;
   status: number;
   data: T;
+  /**
+   * The envelope's meta, when the endpoint sent one. Paginated reads put the
+   * total and the page the filter became here, so a screen can render "3 of 41"
+   * without remembering what it asked for.
+   */
+  meta?: Record<string, unknown>;
 };
 
 export type ApiResult<T> = ApiSuccess<T> | ApiError;
@@ -38,6 +44,14 @@ export type User = {
   onboarded: boolean;
   has_password: boolean;
   has_google: boolean;
+  /**
+   * The platform role: `admin` reaches /admin, `user` is everybody else. It is
+   * not the workspace role — that one is on `Workspace.role` and answers what
+   * the account may do inside one workspace. The screen uses this only to decide
+   * whether to offer the link; the API checks the role again on every request,
+   * so a stale value here costs nothing but a redirect.
+   */
+  role: string;
 };
 
 export type Session = {
@@ -198,6 +212,7 @@ type Envelope<T> = {
   success: boolean;
   message: string;
   data?: T;
+  meta?: Record<string, unknown>;
   error?: { code?: string; details?: unknown };
 };
 
@@ -359,7 +374,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<A
     };
   }
 
-  return { ok: true, status: response.status, data: envelope.data as T };
+  return { ok: true, status: response.status, data: envelope.data as T, meta: envelope.meta };
 }
 
 /** register creates a password account and emails a verification link. */
@@ -2306,4 +2321,89 @@ export function buyTopUp(workspaceId: string, packageKey: string): Promise<ApiRe
     body: { package_key: packageKey },
     workspace: workspaceId,
   });
+}
+
+/* ------------------------------------------------------------ operator surface
+ *
+ * The endpoints behind /admin. They carry no workspace: the operator surface
+ * administers the deployment rather than a tenant, so `workspace` is left unset
+ * and the API never asks for the header. A plain account is answered 403, which
+ * the screens treat as "this is not for you" rather than as an error to retry.
+ */
+
+/** AdminAccount is one account as the operator surface reads it. */
+export type AdminAccount = {
+  id: string;
+  email: string;
+  role: string;
+  email_verified: boolean;
+  onboarded: boolean;
+  has_google: boolean;
+  has_password: boolean;
+  /** How many workspaces the account is a member of. */
+  workspaces: number;
+  created_at: string;
+};
+
+/** AdminStats is what the deployment's accounts add up to. */
+export type AdminStats = {
+  total: number;
+  admins: number;
+  users: number;
+  verified: number;
+  onboarded: number;
+  google_accounts: number;
+  new_last_7_days: number;
+};
+
+/** AdminPage is one page of accounts plus what the filter matched. */
+export type AdminPage = {
+  accounts: AdminAccount[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+/** adminOverview returns the numbers the operator dashboard opens with. */
+export function adminOverview(): Promise<ApiResult<AdminStats>> {
+  return request<AdminStats>("/admin/overview");
+}
+
+/**
+ * adminUsers returns a page of accounts.
+ *
+ * The envelope's meta carries the total and the page the filter became, so the
+ * screen never has to remember what it asked for.
+ */
+export async function adminUsers(filter: {
+  search?: string;
+  role?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<ApiResult<AdminPage>> {
+  const params = new URLSearchParams();
+  if (filter.search) params.set("q", filter.search);
+  if (filter.role) params.set("role", filter.role);
+  if (filter.limit) params.set("limit", String(filter.limit));
+  if (filter.offset) params.set("offset", String(filter.offset));
+
+  const suffix = params.size > 0 ? `?${params.toString()}` : "";
+  const result = await request<AdminAccount[]>(`/admin/users${suffix}`);
+  if (!result.ok) return result;
+
+  const meta = result.meta ?? {};
+  return {
+    ...result,
+    data: {
+      accounts: result.data,
+      total: Number(meta.total ?? result.data.length),
+      limit: Number(meta.limit ?? result.data.length),
+      offset: Number(meta.offset ?? 0),
+    },
+  };
+}
+
+/** adminSetRole promotes or demotes an account. */
+export function adminSetRole(userId: string, role: string): Promise<ApiResult<AdminAccount>> {
+  return request<AdminAccount>(`/admin/users/${userId}/role`, { method: "POST", body: { role } });
 }

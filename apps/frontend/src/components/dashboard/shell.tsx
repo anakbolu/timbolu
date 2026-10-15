@@ -20,6 +20,7 @@ import {
   Plus,
   Plug,
   Settings,
+  ShieldCheck,
   Users,
   X,
 } from "lucide-react";
@@ -95,7 +96,7 @@ function GroupRow({ conversation, agents }: { conversation: ChatConversation; ag
  * would have to remember to pass.
  */
 export function WorkspaceShell({ children }: { children: React.ReactNode }) {
-  const { conversations, drafts, agents, hub, error } = useWorkspace();
+  const { conversations, drafts, agents, hub, error, user } = useWorkspace();
   const [navOpen, setNavOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const pathname = usePathname();
@@ -299,6 +300,22 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
             <Settings size={19} strokeWidth={2} aria-hidden="true" />
             <span className="flex-1 text-left">Pengaturan</span>
           </Link>
+
+          {/* The operator surface is offered only to an account the API says
+              carries the platform role. It is not a guard — /admin checks the
+              role again on every request — but a link nobody can use is noise on
+              the sidebar of everybody else. */}
+          {user?.role === "admin" ? (
+            <Link
+              href="/admin/dashboard"
+              onClick={() => setNavOpen(false)}
+              className="flex min-h-[42px] items-center gap-2.5 rounded-md px-3 text-[15px] font-bold text-bolu-ink no-underline hover:text-bolu-ink"
+            >
+              <ShieldCheck size={19} strokeWidth={2} aria-hidden="true" />
+              <span className="flex-1 text-left">Admin</span>
+              <span className="text-[12px] font-bold text-bolu-muted">platform</span>
+            </Link>
+          ) : null}
         </div>
       </nav>
 

@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 @theme {
   /* Keluarga Bolu palette. */
@@ -23,6 +24,53 @@
 
   --font-sans: var(--font-figtree), system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-display: var(--font-fredoka), var(--font-figtree), system-ui, sans-serif;
+
+  /* shadcn/ui tokens. The components under components/ui are written against
+     these names — bg-primary, text-muted-foreground, border-border, bg-sidebar —
+     so this block is the bridge between the registry's vocabulary and this
+     project's palette. Every value is a Keluarga Bolu colour or a step away from
+     one, which is what makes a registry component look like the rest of the
+     product instead of like a default theme dropped into it. */
+  --color-background: #ffffff;
+  --color-foreground: var(--color-bolu-ink);
+  --color-card: #ffffff;
+  --color-card-foreground: var(--color-bolu-ink);
+  --color-popover: #ffffff;
+  --color-popover-foreground: var(--color-bolu-ink);
+  --color-primary: var(--color-bolu-ink);
+  --color-primary-foreground: #ffffff;
+  --color-secondary: var(--color-bolu-panel);
+  --color-secondary-foreground: var(--color-bolu-ink);
+  --color-muted: var(--color-bolu-panel);
+  --color-muted-foreground: var(--color-bolu-muted);
+  --color-accent: var(--color-bolu-panel);
+  --color-accent-foreground: var(--color-bolu-ink);
+  --color-destructive: #b4421f;
+  --color-destructive-foreground: #ffffff;
+  --color-border: var(--color-bolu-border);
+  --color-input: var(--color-bolu-border);
+  --color-ring: var(--color-bolu-accent);
+
+  /* The sidebar is a surface, not a dark panel: the product's own shell is a
+     white sidebar on the page's own background, and the operator surface keeps
+     that so the two read as one product. */
+  --color-sidebar: #ffffff;
+  --color-sidebar-foreground: var(--color-bolu-ink);
+  --color-sidebar-primary: var(--color-bolu-ink);
+  --color-sidebar-primary-foreground: #ffffff;
+  --color-sidebar-accent: var(--color-bolu-panel);
+  --color-sidebar-accent-foreground: var(--color-bolu-ink);
+  --color-sidebar-border: var(--color-bolu-border);
+  --color-sidebar-ring: var(--color-bolu-accent);
+
+  /* Radii: the registry's defaults are rounder than this product's, so they are
+     narrowed to the scale the dashboard already uses. */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
 }
 
 @layer base {
