@@ -1,11 +1,16 @@
 -- name: ListAgents :many
--- The registry. Soft-deleted Bolu are invisible, and the team is joined so the
--- list can be grouped without a second query.
+-- The registry, in the order the sidebar shows it: team by name, then the position
+-- a person gave each Bolu. Soft-deleted Bolu are invisible, and the team is joined
+-- so the list can be grouped without a second query.
+--
+-- created_at is the tiebreaker rather than the order itself. sort_order is not
+-- unique — two creates may compute the same next position — and a list with no
+-- total order would let two reads of the same workspace disagree.
 SELECT a.*, t.name AS team_name, t.kind AS team_kind
 FROM agents a
 JOIN teams t ON t.id = a.team_id
 WHERE a.workspace_id = $1 AND a.deleted_at IS NULL
-ORDER BY t.name, a.created_at;
+ORDER BY t.name, a.sort_order, a.created_at;
 
 -- name: GetAgent :one
 SELECT a.*, t.name AS team_name, t.kind AS team_kind
@@ -18,13 +23,19 @@ SELECT count(*)::bigint FROM agents
 WHERE workspace_id = $1 AND deleted_at IS NULL;
 
 -- name: CreateAgent :one
-INSERT INTO agents (workspace_id, team_id, name, role, persona, tone, shape, color, tools, template_key, default_model)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+-- A new Bolu lands at the end of its team's list, which is where a person looks
+-- for the one they just made. The position is computed here rather than passed in:
+-- a caller that had to know the current length would be a caller that could get it
+-- wrong, and two Bolu with the same position still read in created_at order.
+INSERT INTO agents (workspace_id, team_id, name, role, persona, tone, shape, color, tools, template_key, default_model, sort_order)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+        (SELECT COALESCE(max(sort_order) + 1, 0) FROM agents
+         WHERE workspace_id = $1 AND team_id = $2 AND deleted_at IS NULL))
 RETURNING *;
 
 -- name: UpdateAgent :one
--- Only the editable profile. The team is changed through MoveAgent so the
--- workspace_id guard stays in one place.
+-- Only the editable profile. The team and the position are changed through
+-- SetAgentPlacement, so the workspace_id guard stays in one place.
 UPDATE agents
 SET name = $3,
     role = $4,
@@ -54,9 +65,16 @@ SET memory_extraction_enabled = $3, updated_at = now()
 WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL
 RETURNING *;
 
--- name: MoveAgentToTeam :one
+-- name: SetAgentPlacement :one
+-- Where a Bolu sits: which team, and at which position inside it. One statement for
+-- both, because they are one decision — "up" and "into the other team" are the same
+-- move, and splitting them would let a caller make half of it.
+--
+-- updated_at is deliberately not touched: a reorder is not an edit to the profile,
+-- and a "last changed" a person reads on the Bolu's own screen would then report a
+-- drag as if the persona had been rewritten.
 UPDATE agents
-SET team_id = $3, updated_at = now()
+SET team_id = $3, sort_order = $4
 WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL
 RETURNING *;
 

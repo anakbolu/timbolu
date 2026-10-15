@@ -331,6 +331,54 @@ func TestDeleteAgentHandler(t *testing.T) {
 	})
 }
 
+func TestArrangeHandler(t *testing.T) {
+	bolu, hore := uuid.New(), uuid.New()
+	first, second := uuid.New(), uuid.New()
+
+	t.Run("applies the layout and answers with the stored teams", func(t *testing.T) {
+		service := mocks.NewService(t)
+		service.EXPECT().Arrange(mock.Anything, mock.Anything, domain.Arrangement{Teams: []domain.TeamArrangement{
+			{TeamID: bolu, Agents: []uuid.UUID{second, first}},
+			{TeamID: hore, Agents: []uuid.UUID{}},
+		}}).Return([]domain.Team{
+			{ID: bolu, Name: "Tim Bolu", Kind: "bolu", Agents: []domain.Agent{func() domain.Agent {
+				agent := agentFixture()
+				agent.ID, agent.TeamID = second, bolu
+				return agent
+			}()}},
+			{ID: hore, Name: "Tim Hore", Kind: "hore"},
+		}, nil).Once()
+
+		app := newTestApp(t, service, identity{userID: uuid.New(), workspaceID: uuid.New(), role: "owner"})
+		body := `{"teams":[{"team_id":"` + bolu.String() + `","agent_ids":["` + second.String() + `","` + first.String() + `"]},{"team_id":"` + hore.String() + `","agent_ids":[]}]}`
+		resp := do(t, app, fiber.MethodPut, "/api/agents/order", body)
+
+		require.Equal(t, fiber.StatusOK, resp.Code, resp.Body.String())
+		require.Contains(t, resp.Body.String(), "Tim Bolu")
+	})
+
+	t.Run("refuses a layout that is not the registry", func(t *testing.T) {
+		service := mocks.NewService(t)
+		service.EXPECT().Arrange(mock.Anything, mock.Anything, mock.Anything).
+			Return(nil, domain.ErrOrderIncomplete).Once()
+
+		app := newTestApp(t, service, identity{userID: uuid.New(), workspaceID: uuid.New(), role: "owner"})
+		resp := do(t, app, fiber.MethodPut, "/api/agents/order", `{"teams":[{"team_id":"`+bolu.String()+`","agent_ids":[]}]}`)
+
+		require.Equal(t, fiber.StatusBadRequest, resp.Code)
+		require.Contains(t, resp.Body.String(), "order_incomplete")
+	})
+
+	t.Run("refuses an id that is not a uuid", func(t *testing.T) {
+		service := mocks.NewService(t)
+		app := newTestApp(t, service, identity{userID: uuid.New(), workspaceID: uuid.New(), role: "owner"})
+
+		resp := do(t, app, fiber.MethodPut, "/api/agents/order", `{"teams":[{"team_id":"nope","agent_ids":[]}]}`)
+		require.Equal(t, fiber.StatusBadRequest, resp.Code)
+		require.Contains(t, resp.Body.String(), "invalid_request")
+	})
+}
+
 func TestTeamsHandler(t *testing.T) {
 	service := mocks.NewService(t)
 	agent := agentFixture()

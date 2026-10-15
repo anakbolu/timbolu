@@ -54,6 +54,22 @@ type setStatusRequest struct {
 	Status string `json:"status"`
 }
 
+// arrangeRequest is the sidebar's layout as the client read it.
+//
+// The whole list is sent rather than one move, so the write is idempotent and two
+// clients cannot interleave into a sidebar that matches neither of them. `teams`
+// carries the position too: a drag that crosses a team boundary is the same
+// gesture as one that does not, and a body that could only reorder inside a team
+// would make the two into different requests.
+type arrangeRequest struct {
+	Teams []arrangeTeamRequest `json:"teams"`
+}
+
+type arrangeTeamRequest struct {
+	TeamID   string   `json:"team_id"`
+	AgentIDs []string `json:"agent_ids"`
+}
+
 type setMemoryExtractionRequest struct {
 	// Enabled is a pointer so an absent field is a bad request rather than a
 	// silent "turn it off": the switch decides whether a Bolu learns from
@@ -87,6 +103,9 @@ type agentPayload struct {
 	Color    string `json:"color"`
 	Status   string `json:"status"`
 	Display  string `json:"display_status"`
+	// Position is where the Bolu sits in its team's list, which is what a drag
+	// changes and what the sidebar orders by.
+	Position int32 `json:"position"`
 	// MemoryExtraction is the switch the memory screen reads and writes.
 	MemoryExtraction bool           `json:"memory_extraction_enabled"`
 	Reason           *reasonPayload `json:"reason,omitempty"`
@@ -161,6 +180,13 @@ func (h *Handler) Teams(c *fiber.Ctx) error {
 		return h.fail(c, "list teams", err)
 	}
 
+	return response.OK(c, "ok", toTeamPayloads(teams))
+}
+
+// toTeamPayloads renders the teams and their Bolu. It is shared by the read and by
+// the arrangement's answer, so the sidebar a drag re-renders is the same shape as
+// the one it was drawn from.
+func toTeamPayloads(teams []domain.Team) []teamPayload {
 	payload := make([]teamPayload, 0, len(teams))
 	for _, team := range teams {
 		agents := make([]agentPayload, 0, len(team.Agents))
@@ -169,8 +195,45 @@ func (h *Handler) Teams(c *fiber.Ctx) error {
 		}
 		payload = append(payload, teamPayload{ID: team.ID.String(), Name: team.Name, Kind: team.Kind, Agents: agents})
 	}
+	return payload
+}
 
-	return response.OK(c, "ok", payload)
+// Arrange applies the sidebar's layout and answers with the teams as they now read.
+//
+// The answer is the stored arrangement rather than an acknowledgement, because a
+// drag is a guess about a list: the client sends the layout it wants, and what it
+// renders next should be what the workspace kept.
+func (h *Handler) Arrange(c *fiber.Ctx) error {
+	var req arrangeRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "invalid request body", "invalid_request", nil)
+	}
+
+	arrangement := domain.Arrangement{Teams: make([]domain.TeamArrangement, 0, len(req.Teams))}
+	for _, team := range req.Teams {
+		teamID, err := uuid.Parse(team.TeamID)
+		if err != nil {
+			return response.Error(c, fiber.StatusBadRequest, "invalid team id", "invalid_request", nil)
+		}
+
+		agentIDs := make([]uuid.UUID, 0, len(team.AgentIDs))
+		for _, raw := range team.AgentIDs {
+			id, err := uuid.Parse(raw)
+			if err != nil {
+				return response.Error(c, fiber.StatusBadRequest, "invalid agent id", "invalid_request", nil)
+			}
+			agentIDs = append(agentIDs, id)
+		}
+
+		arrangement.Teams = append(arrangement.Teams, domain.TeamArrangement{TeamID: teamID, Agents: agentIDs})
+	}
+
+	teams, err := h.service.Arrange(c.UserContext(), scope(c), arrangement)
+	if err != nil {
+		return h.fail(c, "arrange agents", err)
+	}
+
+	return response.OK(c, "urutan diperbarui", toTeamPayloads(teams))
 }
 
 // Get returns one Bolu.
@@ -480,6 +543,7 @@ func Routes(group fiber.Router, h *Handler) {
 // applies the tenant middleware and a managing-role check.
 func ManagerRoutes(group fiber.Router, h *Handler) {
 	group.Post("/agents", h.Create)
+	group.Put("/agents/order", h.Arrange)
 	group.Patch("/agents/:agentID", h.Update)
 	group.Patch("/agents/:agentID/status", h.SetStatus)
 	group.Patch("/agents/:agentID/memory-extraction", h.SetMemoryExtraction)
@@ -510,6 +574,8 @@ func (h *Handler) fail(c *fiber.Ctx, operation string, err error) error {
 		return response.Error(c, fiber.StatusBadRequest, err.Error(), "invalid_status", nil)
 	case errors.Is(err, domain.ErrInvalidPermission):
 		return response.Error(c, fiber.StatusBadRequest, err.Error(), "invalid_permission", nil)
+	case errors.Is(err, domain.ErrOrderIncomplete):
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), "order_incomplete", nil)
 	case errors.Is(err, domain.ErrAgentHasRunningTask):
 		return response.Error(c, fiber.StatusConflict, err.Error(), "agent_busy", nil)
 	case errors.Is(err, domain.ErrAgentLimitReached):
@@ -545,6 +611,7 @@ func toAgentPayload(agent domain.Agent) agentPayload {
 		Color:            agent.Color,
 		Status:           agent.Status,
 		Display:          agent.Display,
+		Position:         agent.Position,
 		MemoryExtraction: agent.MemoryExtraction,
 		TemplateKey:      agent.TemplateKey,
 		Tools:            agent.Tools,

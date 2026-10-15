@@ -8,7 +8,7 @@
  */
 
 import { BOLU_SHAPES, type BoluShapeName } from "@/components/bolu/characters";
-import type { ActivityEvent, Agent, Draft, Task } from "@/lib/api";
+import type { ActivityEvent, Agent, AgentTeam, Draft, Task } from "@/lib/api";
 import { ALL_BOTS, type BoluExpressionName, type CrewMember } from "@/lib/crew";
 
 /**
@@ -562,4 +562,46 @@ export function buildRoster(agents: Agent[], drafts: Draft[]): RosterItem[] {
 /** countPending is what the sidebar badge and the nav badge show. */
 export function countPending(drafts: Draft[]): number {
   return drafts.filter((draft) => draft.status === "pending").length;
+}
+
+/**
+ * moveAgentTo puts one Bolu at a position in a team and answers with the teams as
+ * they would read.
+ *
+ * `index` counts the list *without* the Bolu being moved, which is what a drag
+ * computes: the rows under the pointer are the ones still on screen, and a person
+ * dropping Oren "before the third row" means the same thing whether Oren came from
+ * that same list or from another team. Keeping that one convention is what makes
+ * the same index mean the same thing in both directions.
+ *
+ * A layout that cannot be built — a Bolu or a team that is not in the list — and a
+ * move that changes nothing are both answered with the list itself, so a caller can
+ * compare identity rather than read a flag. That is what keeps a drag that ends
+ * where it started from writing anything at all.
+ */
+export function moveAgentTo(teams: AgentTeam[], agentId: string, teamId: string, index: number): AgentTeam[] {
+  const target = teams.find((team) => team.id === teamId);
+  const moved = teams.flatMap((team) => team.agents).find((agent) => agent.id === agentId);
+  if (!target || !moved) return teams;
+
+  const stripped = teams.map((team) => ({
+    ...team,
+    agents: team.agents.filter((agent) => agent.id !== agentId),
+  }));
+
+  const at = Math.max(0, Math.min(index, stripped.find((team) => team.id === teamId)?.agents.length ?? 0));
+
+  const next = stripped.map((team) => {
+    if (team.id !== teamId) return team;
+    const agents = [...team.agents];
+    // The team the Bolu now belongs to travels with it, so nothing reads a stale
+    // team in the moment between the drag and the stored answer.
+    agents.splice(at, 0, { ...moved, team_id: team.id, team_name: team.name, position: at });
+    return { ...team, agents };
+  });
+
+  const before = teams.flatMap((team) => team.agents);
+  const after = next.flatMap((team) => team.agents);
+  const same = before.length === after.length && before.every((agent, i) => agent.id === after[i].id);
+  return same ? teams : next;
 }

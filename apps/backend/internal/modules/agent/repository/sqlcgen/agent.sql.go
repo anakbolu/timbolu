@@ -179,9 +179,11 @@ func (q *Queries) CountRunningTasksForAgent(ctx context.Context, agentID uuid.UU
 }
 
 const createAgent = `-- name: CreateAgent :one
-INSERT INTO agents (workspace_id, team_id, name, role, persona, tone, shape, color, tools, template_key, default_model)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-RETURNING id, workspace_id, team_id, name, role, persona, tone, shape, color, status, template_key, default_model, created_at, updated_at, deleted_at, tools, memory_extraction_enabled
+INSERT INTO agents (workspace_id, team_id, name, role, persona, tone, shape, color, tools, template_key, default_model, sort_order)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+        (SELECT COALESCE(max(sort_order) + 1, 0) FROM agents
+         WHERE workspace_id = $1 AND team_id = $2 AND deleted_at IS NULL))
+RETURNING id, workspace_id, team_id, name, role, persona, tone, shape, color, status, template_key, default_model, created_at, updated_at, deleted_at, tools, memory_extraction_enabled, sort_order
 `
 
 type CreateAgentParams struct {
@@ -198,6 +200,10 @@ type CreateAgentParams struct {
 	DefaultModel []byte
 }
 
+// A new Bolu lands at the end of its team's list, which is where a person looks
+// for the one they just made. The position is computed here rather than passed in:
+// a caller that had to know the current length would be a caller that could get it
+// wrong, and two Bolu with the same position still read in created_at order.
 func (q *Queries) CreateAgent(ctx context.Context, arg CreateAgentParams) (Agent, error) {
 	row := q.db.QueryRow(ctx, createAgent,
 		arg.WorkspaceID,
@@ -231,6 +237,7 @@ func (q *Queries) CreateAgent(ctx context.Context, arg CreateAgentParams) (Agent
 		&i.DeletedAt,
 		&i.Tools,
 		&i.MemoryExtractionEnabled,
+		&i.SortOrder,
 	)
 	return i, err
 }
@@ -255,7 +262,7 @@ func (q *Queries) DeleteGrant(ctx context.Context, arg DeleteGrantParams) (int64
 }
 
 const getAgent = `-- name: GetAgent :one
-SELECT a.id, a.workspace_id, a.team_id, a.name, a.role, a.persona, a.tone, a.shape, a.color, a.status, a.template_key, a.default_model, a.created_at, a.updated_at, a.deleted_at, a.tools, a.memory_extraction_enabled, t.name AS team_name, t.kind AS team_kind
+SELECT a.id, a.workspace_id, a.team_id, a.name, a.role, a.persona, a.tone, a.shape, a.color, a.status, a.template_key, a.default_model, a.created_at, a.updated_at, a.deleted_at, a.tools, a.memory_extraction_enabled, a.sort_order, t.name AS team_name, t.kind AS team_kind
 FROM agents a
 JOIN teams t ON t.id = a.team_id
 WHERE a.id = $1 AND a.workspace_id = $2 AND a.deleted_at IS NULL
@@ -284,6 +291,7 @@ type GetAgentRow struct {
 	DeletedAt               *time.Time
 	Tools                   []byte
 	MemoryExtractionEnabled bool
+	SortOrder               int32
 	TeamName                string
 	TeamKind                string
 }
@@ -309,6 +317,7 @@ func (q *Queries) GetAgent(ctx context.Context, arg GetAgentParams) (GetAgentRow
 		&i.DeletedAt,
 		&i.Tools,
 		&i.MemoryExtractionEnabled,
+		&i.SortOrder,
 		&i.TeamName,
 		&i.TeamKind,
 	)
@@ -431,11 +440,11 @@ func (q *Queries) ListAgentTemplates(ctx context.Context) ([]AgentTemplate, erro
 }
 
 const listAgents = `-- name: ListAgents :many
-SELECT a.id, a.workspace_id, a.team_id, a.name, a.role, a.persona, a.tone, a.shape, a.color, a.status, a.template_key, a.default_model, a.created_at, a.updated_at, a.deleted_at, a.tools, a.memory_extraction_enabled, t.name AS team_name, t.kind AS team_kind
+SELECT a.id, a.workspace_id, a.team_id, a.name, a.role, a.persona, a.tone, a.shape, a.color, a.status, a.template_key, a.default_model, a.created_at, a.updated_at, a.deleted_at, a.tools, a.memory_extraction_enabled, a.sort_order, t.name AS team_name, t.kind AS team_kind
 FROM agents a
 JOIN teams t ON t.id = a.team_id
 WHERE a.workspace_id = $1 AND a.deleted_at IS NULL
-ORDER BY t.name, a.created_at
+ORDER BY t.name, a.sort_order, a.created_at
 `
 
 type ListAgentsRow struct {
@@ -456,12 +465,18 @@ type ListAgentsRow struct {
 	DeletedAt               *time.Time
 	Tools                   []byte
 	MemoryExtractionEnabled bool
+	SortOrder               int32
 	TeamName                string
 	TeamKind                string
 }
 
-// The registry. Soft-deleted Bolu are invisible, and the team is joined so the
-// list can be grouped without a second query.
+// The registry, in the order the sidebar shows it: team by name, then the position
+// a person gave each Bolu. Soft-deleted Bolu are invisible, and the team is joined
+// so the list can be grouped without a second query.
+//
+// created_at is the tiebreaker rather than the order itself. sort_order is not
+// unique — two creates may compute the same next position — and a list with no
+// total order would let two reads of the same workspace disagree.
 func (q *Queries) ListAgents(ctx context.Context, workspaceID uuid.UUID) ([]ListAgentsRow, error) {
 	rows, err := q.db.Query(ctx, listAgents, workspaceID)
 	if err != nil {
@@ -489,6 +504,7 @@ func (q *Queries) ListAgents(ctx context.Context, workspaceID uuid.UUID) ([]List
 			&i.DeletedAt,
 			&i.Tools,
 			&i.MemoryExtractionEnabled,
+			&i.SortOrder,
 			&i.TeamName,
 			&i.TeamKind,
 		); err != nil {
@@ -662,21 +678,34 @@ func (q *Queries) ListWorkspaceTeams(ctx context.Context, workspaceID uuid.UUID)
 	return items, nil
 }
 
-const moveAgentToTeam = `-- name: MoveAgentToTeam :one
+const setAgentPlacement = `-- name: SetAgentPlacement :one
 UPDATE agents
-SET team_id = $3, updated_at = now()
+SET team_id = $3, sort_order = $4
 WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL
-RETURNING id, workspace_id, team_id, name, role, persona, tone, shape, color, status, template_key, default_model, created_at, updated_at, deleted_at, tools, memory_extraction_enabled
+RETURNING id, workspace_id, team_id, name, role, persona, tone, shape, color, status, template_key, default_model, created_at, updated_at, deleted_at, tools, memory_extraction_enabled, sort_order
 `
 
-type MoveAgentToTeamParams struct {
+type SetAgentPlacementParams struct {
 	ID          uuid.UUID
 	WorkspaceID uuid.UUID
 	TeamID      uuid.UUID
+	SortOrder   int32
 }
 
-func (q *Queries) MoveAgentToTeam(ctx context.Context, arg MoveAgentToTeamParams) (Agent, error) {
-	row := q.db.QueryRow(ctx, moveAgentToTeam, arg.ID, arg.WorkspaceID, arg.TeamID)
+// Where a Bolu sits: which team, and at which position inside it. One statement for
+// both, because they are one decision — "up" and "into the other team" are the same
+// move, and splitting them would let a caller make half of it.
+//
+// updated_at is deliberately not touched: a reorder is not an edit to the profile,
+// and a "last changed" a person reads on the Bolu's own screen would then report a
+// drag as if the persona had been rewritten.
+func (q *Queries) SetAgentPlacement(ctx context.Context, arg SetAgentPlacementParams) (Agent, error) {
+	row := q.db.QueryRow(ctx, setAgentPlacement,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.TeamID,
+		arg.SortOrder,
+	)
 	var i Agent
 	err := row.Scan(
 		&i.ID,
@@ -696,6 +725,7 @@ func (q *Queries) MoveAgentToTeam(ctx context.Context, arg MoveAgentToTeamParams
 		&i.DeletedAt,
 		&i.Tools,
 		&i.MemoryExtractionEnabled,
+		&i.SortOrder,
 	)
 	return i, err
 }
@@ -704,7 +734,7 @@ const setAgentStatus = `-- name: SetAgentStatus :one
 UPDATE agents
 SET status = $3, updated_at = now()
 WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL
-RETURNING id, workspace_id, team_id, name, role, persona, tone, shape, color, status, template_key, default_model, created_at, updated_at, deleted_at, tools, memory_extraction_enabled
+RETURNING id, workspace_id, team_id, name, role, persona, tone, shape, color, status, template_key, default_model, created_at, updated_at, deleted_at, tools, memory_extraction_enabled, sort_order
 `
 
 type SetAgentStatusParams struct {
@@ -735,6 +765,7 @@ func (q *Queries) SetAgentStatus(ctx context.Context, arg SetAgentStatusParams) 
 		&i.DeletedAt,
 		&i.Tools,
 		&i.MemoryExtractionEnabled,
+		&i.SortOrder,
 	)
 	return i, err
 }
@@ -743,7 +774,7 @@ const setMemoryExtraction = `-- name: SetMemoryExtraction :one
 UPDATE agents
 SET memory_extraction_enabled = $3, updated_at = now()
 WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL
-RETURNING id, workspace_id, team_id, name, role, persona, tone, shape, color, status, template_key, default_model, created_at, updated_at, deleted_at, tools, memory_extraction_enabled
+RETURNING id, workspace_id, team_id, name, role, persona, tone, shape, color, status, template_key, default_model, created_at, updated_at, deleted_at, tools, memory_extraction_enabled, sort_order
 `
 
 type SetMemoryExtractionParams struct {
@@ -776,6 +807,7 @@ func (q *Queries) SetMemoryExtraction(ctx context.Context, arg SetMemoryExtracti
 		&i.DeletedAt,
 		&i.Tools,
 		&i.MemoryExtractionEnabled,
+		&i.SortOrder,
 	)
 	return i, err
 }
@@ -811,7 +843,7 @@ SET name = $3,
     default_model = $10,
     updated_at = now()
 WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL
-RETURNING id, workspace_id, team_id, name, role, persona, tone, shape, color, status, template_key, default_model, created_at, updated_at, deleted_at, tools, memory_extraction_enabled
+RETURNING id, workspace_id, team_id, name, role, persona, tone, shape, color, status, template_key, default_model, created_at, updated_at, deleted_at, tools, memory_extraction_enabled, sort_order
 `
 
 type UpdateAgentParams struct {
@@ -827,8 +859,8 @@ type UpdateAgentParams struct {
 	DefaultModel []byte
 }
 
-// Only the editable profile. The team is changed through MoveAgent so the
-// workspace_id guard stays in one place.
+// Only the editable profile. The team and the position are changed through
+// SetAgentPlacement, so the workspace_id guard stays in one place.
 func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Agent, error) {
 	row := q.db.QueryRow(ctx, updateAgent,
 		arg.ID,
@@ -861,6 +893,7 @@ func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Agent
 		&i.DeletedAt,
 		&i.Tools,
 		&i.MemoryExtractionEnabled,
+		&i.SortOrder,
 	)
 	return i, err
 }

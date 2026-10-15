@@ -220,27 +220,6 @@ func (c *Container) registerRoutes() {
 	tenant := api.Group("", c.requireUser(), c.requireTenant(), c.requireActiveSubscription())
 	workspacehandler.TenantRoutes(tenant, c.Handlers.Workspace)
 
-	// Member management needs a managing role on top of the tenant. The subscription
-	// guard is repeated on each of these groups because each is a group of its own:
-	// middleware registered on one does not reach another.
-	managers := api.Group("", c.requireUser(), c.requireTenant(), c.requireActiveSubscription(), requireRole(domain.RoleOwner, domain.RoleAdmin))
-	workspacehandler.ManagerRoutes(managers, c.Handlers.Workspace)
-
-	// Workspace settings are owner-only.
-	owners := api.Group("", c.requireUser(), c.requireTenant(), c.requireActiveSubscription(), requireRole(domain.RoleOwner))
-	workspacehandler.OwnerRoutes(owners, c.Handlers.Workspace)
-
-	// Erasing a workspace's data is the most destructive thing this API offers, so it sits on the
-	// owner group with the other settings — one role, an active subscription, and an active
-	// workspace, which is what makes "who asked" answerable from the session rather than from the
-	// body of the request.
-	if c.Handlers.Retention != nil {
-		retentionhandler.OwnerRoutes(owners, c.Handlers.Retention)
-	} else {
-		owners.All("/workspaces/current/erasure", unavailable(
-			"penghapusan data tidak dikonfigurasi di deployment ini", "erasure_not_configured"))
-	}
-
 	if c.Handlers.Agent == nil {
 		registerAgentFallback(tenant)
 	} else {
@@ -352,6 +331,35 @@ func (c *Container) registerRoutes() {
 		registerModelFallback(tenant)
 	} else {
 		llmhandler.Routes(tenant, c.Handlers.LLM)
+	}
+
+	// The groups that need a role are registered last, and that placement is the
+	// guard rather than a preference. Fiber applies a group's middleware to every
+	// route registered *after* it, whichever group registers that route — so an
+	// empty-path group created here, in front of the module routes below, would put
+	// `requireRole` on every read of the workspace: a member's teams, chat, and
+	// tasks would answer 403 and the sidebar would be empty for everyone who is not
+	// an owner. Everything a member may read is registered above this line.
+
+	// Member management needs a managing role on top of the tenant. The subscription
+	// guard is repeated on each of these groups because each is a group of its own:
+	// middleware registered on one does not reach another.
+	managers := api.Group("", c.requireUser(), c.requireTenant(), c.requireActiveSubscription(), requireRole(domain.RoleOwner, domain.RoleAdmin))
+	workspacehandler.ManagerRoutes(managers, c.Handlers.Workspace)
+
+	// Workspace settings are owner-only.
+	owners := api.Group("", c.requireUser(), c.requireTenant(), c.requireActiveSubscription(), requireRole(domain.RoleOwner))
+	workspacehandler.OwnerRoutes(owners, c.Handlers.Workspace)
+
+	// Erasing a workspace's data is the most destructive thing this API offers, so it sits on the
+	// owner group with the other settings — one role, an active subscription, and an active
+	// workspace, which is what makes "who asked" answerable from the session rather than from the
+	// body of the request.
+	if c.Handlers.Retention != nil {
+		retentionhandler.OwnerRoutes(owners, c.Handlers.Retention)
+	} else {
+		owners.All("/workspaces/current/erasure", unavailable(
+			"penghapusan data tidak dikonfigurasi di deployment ini", "erasure_not_configured"))
 	}
 
 	// Changing the registry, a group, or a provider needs a managing role.

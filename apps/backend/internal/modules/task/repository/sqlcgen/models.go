@@ -43,6 +43,7 @@ type Agent struct {
 	DeletedAt               *time.Time
 	Tools                   []byte
 	MemoryExtractionEnabled bool
+	SortOrder               int32
 }
 
 type AgentGrant struct {

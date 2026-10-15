@@ -17,6 +17,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useRouter } from "next/navigation";
 
 import {
+  arrangeAgents,
   createGroup,
   currentUser,
   currentWorkspace,
@@ -50,6 +51,7 @@ import {
   type User,
   type Workspace,
 } from "@/lib/api";
+import { moveAgentTo } from "@/lib/dashboard-view";
 import { connect, type RealtimeConnection, type RealtimeStatus } from "@/lib/realtime";
 
 /** Hub is the integration hub's reads, kept together because a screen needs them together. */
@@ -101,6 +103,16 @@ export type WorkspaceData = {
   reloadPolicies: () => Promise<void>;
   /** decide answers a draft; the dashboard card and the chat card call the same one. */
   decide: (draftId: string, decision: "approve" | "revise" | "cancel", note?: string) => Promise<Outcome>;
+  /**
+   * moveAgent puts a Bolu at a position in a team, the way a drag does.
+   *
+   * The sidebar is updated before the request leaves, because a drag that waited
+   * for a round trip would spring back under the pointer and then jump again. What
+   * is sent is the layout the drag produced — every team and every Bolu — so the
+   * write is idempotent, and the answer replaces the guess with the stored order
+   * rather than being trusted to match it.
+   */
+  moveAgent: (agentId: string, teamId: string, index: number) => Promise<Outcome>;
   /**
    * sendTask hands one instruction to the team.
    *
@@ -416,6 +428,43 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   const agents = useMemo(() => teams.flatMap((team) => team.agents), [teams]);
 
+  const moveAgent = useCallback(
+    async (agentId: string, teamId: string, index: number) => {
+      const id = workspaceIdRef.current;
+      if (!id) return { ok: false, message: "Pilih workspace dulu." };
+
+      const previous = teams;
+      const next = moveAgentTo(previous, agentId, teamId, index);
+      // A drop that changes nothing — the row's own slot, or an unknown Bolu — is
+      // the same list back, and a list nobody rearranged is not worth a request.
+      if (next === previous) return { ok: true, message: "" };
+
+      setTeams(next);
+      agentsRef.current = next.flatMap((team) => team.agents);
+
+      const result = await arrangeAgents(
+        id,
+        next.map((team) => ({ team_id: team.id, agent_ids: team.agents.map((agent) => agent.id) })),
+      );
+      if (!result.ok) {
+        // The stored order is the one that counts, so a refused drag is undone by
+        // reading it back rather than by trusting the list the drag produced: the
+        // two can differ, and the sidebar would then show an order nobody kept.
+        // The read is best-effort — a network that refused the write may refuse
+        // this too, and the list the drag produced is closer than nothing.
+        setTeams(previous);
+        agentsRef.current = previous.flatMap((team) => team.agents);
+        await loadAgents(id);
+        return { ok: false, message: result.message };
+      }
+
+      setTeams(result.data);
+      agentsRef.current = result.data.flatMap((team) => team.agents);
+      return { ok: true, message: "Urutan tersimpan." };
+    },
+    [teams, loadAgents],
+  );
+
   // The exposed reloads take no argument: the id they act on is the active one, so a
   // caller cannot aim one at another workspace. They are bound here rather than
   // inside the value, because binding them is what reads the id during render.
@@ -464,6 +513,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       reloadHub,
       reloadPolicies,
       decide,
+      moveAgent,
       sendTask,
     }),
     [
@@ -491,6 +541,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       reloadHub,
       reloadPolicies,
       decide,
+      moveAgent,
       sendTask,
     ],
   );

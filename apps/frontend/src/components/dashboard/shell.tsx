@@ -31,16 +31,9 @@ import { Bolu } from "@/components/bolu/bolu";
 import { GroupIcon } from "@/components/bolu/group-icon";
 import type { Agent, ChatConversation } from "@/lib/api";
 import { LOGO } from "@/lib/crew";
-import {
-  buildRoster,
-  countPending,
-  crewFor,
-  expressionOf,
-  relativeAge,
-  stateOf,
-  type RosterItem,
-} from "@/lib/dashboard-view";
+import { countPending, relativeAge } from "@/lib/dashboard-view";
 
+import { BoluRoster } from "./roster";
 import { useWorkspace } from "./workspace-data";
 
 /** The nav entries, in the design's order. */
@@ -73,38 +66,6 @@ const SETTINGS_TITLES: Record<string, string> = {
   "/settings/usage": "Pemakaian",
 };
 
-/** One sidebar row for a Bolu: it opens that Bolu's chat. */
-function RosterRow({ item }: { item: RosterItem }) {
-  return (
-    <Link
-      href={`/chat?agent=${item.agent.id}`}
-      className="flex min-h-[46px] min-w-0 flex-[1_1_200px] items-center gap-2.5 rounded-md border-2 border-transparent p-[5px_8px] text-left text-bolu-ink no-underline hover:text-bolu-ink"
-    >
-      <div className="relative size-9 flex-none">
-        <Bolu
-          member={crewFor(item.agent)}
-          expression={expressionOf(stateOf(item.agent))}
-          color={item.agent.color || undefined}
-          size={36}
-        />
-        <span
-          className="absolute -right-px bottom-px size-[10px] rounded-full border-2 border-white"
-          style={{ backgroundColor: item.dot }}
-        />
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col text-left">
-        <span className="truncate font-display text-[15px] font-semibold leading-[1.2]">{item.agent.name}</span>
-        <span className="truncate text-[12px] text-bolu-muted">{item.line}</span>
-      </div>
-      {item.waiting > 0 ? (
-        <span className="box-border inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-bolu-ink px-1.5 text-[11px] font-extrabold text-white">
-          {item.waiting}
-        </span>
-      ) : null}
-    </Link>
-  );
-}
-
 /** One sidebar row for a group: it opens that group's thread. */
 function GroupRow({ conversation, agents }: { conversation: ChatConversation; agents: Agent[] }) {
   const members = conversation.participants.filter((participant) => participant.is_agent).length;
@@ -134,14 +95,12 @@ function GroupRow({ conversation, agents }: { conversation: ChatConversation; ag
  * would have to remember to pass.
  */
 export function WorkspaceShell({ children }: { children: React.ReactNode }) {
-  const { conversations, drafts, teams, agents, hub, ready, error } = useWorkspace();
+  const { conversations, drafts, agents, hub, error } = useWorkspace();
   const [navOpen, setNavOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const pathname = usePathname();
 
-  const roster = teams[0]?.agents ?? [];
   const groups = conversations.filter((conversation) => conversation.kind === "group");
-  const otherTeams = teams.slice(1);
   const pending = countPending(drafts);
   const connected = hub.connections.length;
 
@@ -233,36 +192,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           })}
         </div>
 
-        {roster.length > 0 ? (
-          <>
-            <div className="flex items-center justify-between px-2 pb-0.5 pt-3 text-[12px] font-bold text-bolu-muted">
-              <span>{teams[0]?.name ?? "Tim Bolu"}</span>
-              <span className="font-medium">{roster.length} aktif</span>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {buildRoster(roster, drafts).map((item) => (
-                <RosterRow key={item.agent.id} item={item} />
-              ))}
-            </div>
-          </>
-        ) : null}
-
-        {otherTeams.map((team) => (
-          <div key={team.id}>
-            <div className="px-2 pb-0.5 pt-3 text-[12px] font-bold text-bolu-muted">{team.name}</div>
-            <div className="flex flex-wrap gap-1">
-              {buildRoster(team.agents, drafts).map((item) => (
-                <RosterRow key={item.agent.id} item={item} />
-              ))}
-            </div>
-          </div>
-        ))}
-
-        {ready && roster.length === 0 ? (
-          <p className="px-2 py-2 text-[12px] text-bolu-muted">
-            Belum ada Bolu di tim ini.
-          </p>
-        ) : null}
+        <BoluRoster />
 
         {groups.length > 0 ? (
           <>

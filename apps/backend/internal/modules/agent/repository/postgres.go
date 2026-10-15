@@ -230,6 +230,35 @@ func (r *Repository) Delete(ctx context.Context, scope domain.Scope, id uuid.UUI
 	})
 }
 
+// SetPlacements writes a whole arrangement.
+//
+// One transaction, because a half-applied arrangement is worse than a refused one:
+// a Bolu that moved into its new team while the Bolu it displaced kept the old
+// position would leave two rows claiming the same slot, and the sidebar would read
+// as neither arrangement. `write` opens that transaction and runs every statement
+// inside the tenant scope, so RLS applies to each row.
+func (r *Repository) SetPlacements(ctx context.Context, scope domain.Scope, placements []domain.Placement) error {
+	return r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
+		for _, placement := range placements {
+			_, err := queries.SetAgentPlacement(ctx, sqlcgen.SetAgentPlacementParams{
+				ID:          placement.AgentID,
+				WorkspaceID: scope.WorkspaceID,
+				TeamID:      placement.TeamID,
+				SortOrder:   placement.Position,
+			})
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					// The Bolu was deleted between the service's read and this
+					// write, which is the one case the arrangement cannot cover.
+					return domain.ErrAgentNotFound
+				}
+				return fmt.Errorf("agent: set placement: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
 // Activity returns the status inputs for every live Bolu at once.
 func (r *Repository) Activity(ctx context.Context, scope domain.Scope) (map[uuid.UUID]domain.Activity, error) {
 	activity := map[uuid.UUID]domain.Activity{}
@@ -749,6 +778,8 @@ type agentRow struct {
 	Shape       string
 	Color       string
 	Status      string
+	// SortOrder is the Bolu's position inside its team's list.
+	SortOrder int32
 	// MemoryExtraction is the switch that decides whether a quiet conversation is
 	// read into the Bolu's memory.
 	MemoryExtraction bool
@@ -765,7 +796,7 @@ func toAgentFromList(row sqlcgen.ListAgentsRow) (domain.Agent, error) {
 	return toAgent(agentRow{
 		ID: row.ID, WorkspaceID: row.WorkspaceID, TeamID: row.TeamID,
 		Name: row.Name, Role: row.Role, Persona: row.Persona, Tone: row.Tone,
-		Shape: row.Shape, Color: row.Color, Status: row.Status,
+		Shape: row.Shape, Color: row.Color, Status: row.Status, SortOrder: row.SortOrder,
 		MemoryExtraction: row.MemoryExtractionEnabled, TemplateKey: row.TemplateKey,
 		DefaultModel: row.DefaultModel,
 		CreatedAt:    row.CreatedAt, UpdatedAt: row.UpdatedAt, Tools: row.Tools,
@@ -777,7 +808,7 @@ func toAgentFromGet(row sqlcgen.GetAgentRow) (domain.Agent, error) {
 	return toAgent(agentRow{
 		ID: row.ID, WorkspaceID: row.WorkspaceID, TeamID: row.TeamID,
 		Name: row.Name, Role: row.Role, Persona: row.Persona, Tone: row.Tone,
-		Shape: row.Shape, Color: row.Color, Status: row.Status,
+		Shape: row.Shape, Color: row.Color, Status: row.Status, SortOrder: row.SortOrder,
 		MemoryExtraction: row.MemoryExtractionEnabled, TemplateKey: row.TemplateKey,
 		DefaultModel: row.DefaultModel,
 		CreatedAt:    row.CreatedAt, UpdatedAt: row.UpdatedAt, Tools: row.Tools,
@@ -807,6 +838,7 @@ func toAgent(row agentRow) (domain.Agent, error) {
 		Tone:             row.Tone,
 		Shape:            row.Shape,
 		Color:            row.Color,
+		Position:         row.SortOrder,
 		Status:           row.Status,
 		MemoryExtraction: row.MemoryExtraction,
 		TemplateKey:      row.TemplateKey,
