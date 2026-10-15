@@ -169,8 +169,7 @@ listener.
 
 `.github/workflows/deployment.yml` is the everyday path: a push to `main` redeploys whichever
 services the commit touched, by calling each service's Easypanel deploy webhook (`/api/deploy/<token>`).
-There are no tests in it — the gates are a separate concern — and the mapping is path -> service,
-because a path is what a service builds from:
+There are no tests in it — the gates are a separate concern — and the mapping is path -> service:
 
 | Changed | Redeployed |
 | --- | --- |
@@ -183,10 +182,48 @@ because a path is what a service builds from:
 `apps/whatsapp-gw` is a module of its own, so a change to it rolls only the gateway; `packages/` is
 the module both Go processes import, so a change there rolls all four Go services.
 
+### What each Easypanel service is configured with
+
+A path in the table above is a path that *triggers* a service, not the directory the service builds
+from: every Go service builds from the repository root, because each module imports the shared
+`packages/` module and a Docker build does not read `go.work`. The service's own settings carry that,
+so they are stated here rather than left to whoever set the service up first:
+
+| Service | Source path | Dockerfile | Build arg | Notes |
+| --- | --- | --- | --- | --- |
+| `timbolu` | `/apps/frontend` | `Dockerfile` | — | `NEXT_PUBLIC_*` are build args, see above |
+| `timbolu-backend` | `/` | `apps/backend/Dockerfile` | `BINARY=api` | serves the internal seam on `:8091` |
+| `timbolu-agent-worker` | `/` | `apps/backend/Dockerfile` | `BINARY=agent-worker` | |
+| `timbolu-integration-worker` | `/` | `apps/backend/Dockerfile` | `BINARY=integration-worker` | |
+| `timbolu-wa-gateway` | `/` | `apps/whatsapp-gw/Dockerfile` | — | listens on `:8090`, never published |
+| `timbolu-migrate` | `/` | `apps/backend/Dockerfile` | `BINARY=../tools/migrate` | one-shot, runs `up` |
+
+**All four data processes share one storage directory.** `STORAGE_DRIVER=local` with
+`STORAGE_LOCAL_ROOT=/data/storage` means the bytes live on the filesystem, and the gateway is the
+process that *writes* an inbound attachment while the API is the process that *reads* it back to
+serve it. Easypanel names a volume per service, so a per-service volume would give each process its
+own empty directory and an attachment stored by one would be a 404 in the other. Each of
+`timbolu-wa-gateway`, `timbolu-agent-worker`, and `timbolu-integration-worker` therefore bind-mounts
+the API's own volume directory at the same path:
+
+```text
+/var/lib/docker/volumes/timbolu_timbolu-backend_storage/_data  ->  /data/storage
+```
+
+The API keeps its named volume, which is what owns the directory; the others mount it, so there is one
+copy of the bytes and no service that can be rolled into an empty one.
+
+The gateway's environment carries the seam in the direction it does not already have: `WA_API_URL`
+(`http://timbolu_timbolu-backend:8091`) and `WA_GATEWAY_TOKEN`, the same token the API reaches the
+gateway with. `INTERNAL_ADDRESS=:8091` on `timbolu-backend` is what makes that listener exist; it is
+never published, and leaving it empty is what a deployment without a gateway wants.
+
 The migration job runs before the others and they wait for it, so the schema is applied before a new
 image serves traffic — the same order as the release flow, and for the same reason. Note what the wait
 covers: the workflow waits for the migration to be *triggered*, not for it to finish, because the
-deploy hooks are fire-and-forget.
+deploy hooks are fire-and-forget. Each hook call is retried (`--retry 5 --retry-all-errors`) rather
+than trusted once: the hook answers as soon as the build is queued, so a dropped connection is not a
+failed deployment, and treating it as one leaves that service on the previous image.
 
 `timbolu-temporal` and `timbolu-temporal-ui` run upstream images and have no path in this repository,
 so nothing in the workflow triggers them.

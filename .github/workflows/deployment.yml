@@ -5,7 +5,19 @@ name: Deployment
 # separate concern, and this workflow owns one thing — turning "these paths changed" into "the
 # services that build from those paths are redeployed".
 #
-# The mapping is path -> service, because a path is what a service actually builds from:
+# The mapping is path -> service. Every Go service builds from the repository root, because each
+# module imports the shared `packages/` module and a Docker build does not read `go.work`, so what a
+# service is configured with in Easypanel is:
+#
+#   service                      source path      Dockerfile                    build arg
+#   timbolu                      /apps/frontend   Dockerfile                    —
+#   timbolu-backend              /                apps/backend/Dockerfile       BINARY=api
+#   timbolu-agent-worker         /                apps/backend/Dockerfile       BINARY=agent-worker
+#   timbolu-integration-worker   /                apps/backend/Dockerfile       BINARY=integration-worker
+#   timbolu-wa-gateway           /                apps/whatsapp-gw/Dockerfile   —
+#   timbolu-migrate              /                apps/backend/Dockerfile       BINARY=../tools/migrate
+#
+# Which paths therefore redeploy which service:
 #
 #   apps/frontend/**            -> timbolu                     (the web app)
 #   apps/backend/**             -> timbolu-backend             (the API)
@@ -30,6 +42,11 @@ name: Deployment
 #
 #   TIMBOLU_FRONTEND_DEPLOY_HOOK, TIMBOLU_BACKEND_DEPLOY_HOOK, TIMBOLU_AGENT_WORKER_DEPLOY_HOOK,
 #   TIMBOLU_INTEGRATION_WORKER_DEPLOY_HOOK, TIMBOLU_WA_GATEWAY_DEPLOY_HOOK, TIMBOLU_MIGRATE_DEPLOY_HOOK
+#
+# The hook answers as soon as it has queued the build — the build itself happens on the server — so
+# the call is retried hard and bounded rather than trusted once. A transient network failure is not a
+# failed deployment, and letting one fail the job leaves that service on the previous image: the
+# integration worker was left behind exactly that way by a broken connection (`curl` exit 56).
 
 on:
   push:
@@ -86,7 +103,7 @@ jobs:
           fi
           # The hook is Easypanel's own; what this workflow owns is the *order* — migrate, then roll
           # the new images out.
-          curl --fail --silent --show-error --retry 3 --retry-connrefused -X POST "$DEPLOY_HOOK"
+          curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --max-time 60 -X POST "$DEPLOY_HOOK"
 
   # ---------------------------------------------------------------- backend
   backend:
@@ -128,7 +145,7 @@ jobs:
             echo "TIMBOLU_${{ matrix.hook }}_DEPLOY_HOOK is not set; see docs/deployment.md" >&2
             exit 1
           fi
-          curl --fail --silent --show-error --retry 3 --retry-connrefused -X POST "$hook"
+          curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --max-time 60 -X POST "$hook"
 
   # ---------------------------------------------------------------- gateway
   gateway:
@@ -152,7 +169,7 @@ jobs:
             echo "TIMBOLU_WA_GATEWAY_DEPLOY_HOOK is not set; see docs/deployment.md" >&2
             exit 1
           fi
-          curl --fail --silent --show-error --retry 3 --retry-connrefused -X POST "$DEPLOY_HOOK"
+          curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --max-time 60 -X POST "$DEPLOY_HOOK"
 
   # ---------------------------------------------------------------- frontend
   frontend:
@@ -173,4 +190,4 @@ jobs:
             echo "TIMBOLU_FRONTEND_DEPLOY_HOOK is not set; see docs/deployment.md" >&2
             exit 1
           fi
-          curl --fail --silent --show-error --retry 3 --retry-connrefused -X POST "$DEPLOY_HOOK"
+          curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --max-time 60 -X POST "$DEPLOY_HOOK"
