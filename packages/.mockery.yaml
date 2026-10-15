@@ -1,0 +1,29 @@
+# Mockery generates the mocks used by the service unit tests from the domain
+# interfaces. This is the shared module's own config: the WhatsApp contract is
+# declared here rather than in the backend, so its mocks are generated here too
+# and both processes import them.
+with-expecter: true
+dir: "{{.InterfaceDir}}/mocks"
+outpkg: "mocks"
+mockname: "{{.InterfaceName}}"
+packages:
+  github.com/robzlabz/employeebot/packages/whatsapp/domain:
+    interfaces:
+      Service:
+      Store:
+      SessionStore:
+      SessionForgetter:
+      Transport:
+      Sealer:
+      Directory:
+      Lease:
+      Activity:
+      Alerter:
+      Replies:
+      Watchers:
+      Connections:
+      MediaStore:
+      Inbox:
+      Drain:
+      Status:
+      LinkSink:

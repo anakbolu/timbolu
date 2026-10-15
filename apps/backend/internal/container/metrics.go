@@ -6,7 +6,7 @@ import (
 	approvaldomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/domain"
 	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/metrics"
+	"github.com/robzlabz/employeebot/packages/platform/metrics"
 )
 
 // The metrics adapters: three modules that report what they did, and one place that knows how a

@@ -17,7 +17,7 @@ import (
 	taskrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/repository"
 	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // approvalFixture is one onboarded workspace with the approval runtime.

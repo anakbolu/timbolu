@@ -17,7 +17,7 @@ import (
 	"github.com/google/uuid"
 
 	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
-	whatsappdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/domain"
+	whatsappdomain "github.com/robzlabz/employeebot/packages/whatsapp/domain"
 )
 
 // App is the application key this adapter answers for.

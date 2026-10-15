@@ -18,9 +18,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/repository/sqlcgen"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
+	"github.com/robzlabz/employeebot/packages/platform/database"
+	"github.com/robzlabz/employeebot/packages/whatsapp/domain"
 )
 
 // Repository is the Postgres-backed implementation of the WhatsApp ports.
@@ -298,70 +298,15 @@ func (r *Repository) Publish(ctx context.Context, scope domain.Scope, numberID u
 	})
 }
 
-// Serving returns the numbers the fleet is expected to serve.
+// ForgetSession ends a session.
 //
-// It is the one read outside a tenant scope, and the migration says why: a
-// gateway has to discover which tenants have a number before it can open any
-// workspace's scope at all. What it returns is a routing pair, not data.
-func (r *Repository) Serving(ctx context.Context) ([]domain.Assignment, error) {
-	if r == nil || r.pool == nil {
-		return nil, fmt.Errorf("%w: database is not configured", domain.ErrNotConfigured)
-	}
-
-	rows, err := sqlcgen.New(r.pool.PgxPool()).ServingWhatsAppNumbers(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("whatsapp: serving numbers: %w", err)
-	}
-
-	assignments := make([]domain.Assignment, 0, len(rows))
-	for _, row := range rows {
-		assignments = append(assignments, domain.Assignment{NumberID: row.NumberID, WorkspaceID: row.WorkspaceID})
-	}
-	return assignments, nil
-}
-
-// Save stores the sealed device state.
-func (r *Repository) Save(ctx context.Context, scope domain.Scope, session domain.Session) error {
-	return r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
-		if _, err := queries.UpsertWhatsAppSession(ctx, sqlcgen.UpsertWhatsAppSessionParams{
-			NumberID:     session.NumberID,
-			WorkspaceID:  session.WorkspaceID,
-			SealedDevice: session.Sealed,
-			Jid:          session.JID,
-		}); err != nil {
-			return translate(err, "save session")
-		}
-		return nil
-	})
-}
-
-// Load returns the sealed device state of one number.
-func (r *Repository) Load(ctx context.Context, scope domain.Scope, numberID uuid.UUID) (domain.Session, error) {
-	var session domain.Session
-
-	err := r.read(ctx, scope, func(queries *sqlcgen.Queries) error {
-		row, err := queries.GetWhatsAppSession(ctx, sqlcgen.GetWhatsAppSessionParams{
-			NumberID:    numberID,
-			WorkspaceID: scope.WorkspaceID,
-		})
-		if err != nil {
-			return translate(err, "load session")
-		}
-
-		session = fromGotSession(row)
-		return nil
-	})
-	if err != nil {
-		return domain.Session{}, err
-	}
-
-	return session, nil
-}
-
-// ForgetSession forgets a device.
+// It is the product's half of the session table: the gateway reads and writes the
+// device blob, and this ends one. Unlinking a number has to end it whether or not
+// a gateway is configured, because a session that lingers is a number that still
+// looks linked — which is why the statement lives here as well as there.
 func (r *Repository) ForgetSession(ctx context.Context, scope domain.Scope, numberID uuid.UUID) error {
 	return r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
-		if _, err := queries.DeleteWhatsAppSession(ctx, sqlcgen.DeleteWhatsAppSessionParams{
+		if _, err := queries.ForgetWhatsAppSession(ctx, sqlcgen.ForgetWhatsAppSessionParams{
 			NumberID:    numberID,
 			WorkspaceID: scope.WorkspaceID,
 		}); err != nil {

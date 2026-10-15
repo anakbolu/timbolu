@@ -14,8 +14,8 @@ import (
 	approvaldomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/domain"
 	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/metrics"
+	"github.com/robzlabz/employeebot/packages/platform/config"
+	"github.com/robzlabz/employeebot/packages/platform/metrics"
 )
 
 // The wiring tests for metrics cover what only the container can get wrong: that a deployment which

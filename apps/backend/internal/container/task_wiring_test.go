@@ -18,9 +18,9 @@ import (
 	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
 	taskhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/handler"
 	taskservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/service"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
+	"github.com/robzlabz/employeebot/packages/platform/config"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // The wiring tests cover what only the container can get wrong: which routes

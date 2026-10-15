@@ -16,8 +16,8 @@ import (
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/container"
 	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
+	"github.com/robzlabz/employeebot/packages/platform/config"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // These tests cover the E8.6 gate: a server's tools arrive with the same shape as

@@ -18,9 +18,9 @@ import (
 
 	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain/mocks"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/response"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // streamIdentity is what the container's stream middleware stores on a request

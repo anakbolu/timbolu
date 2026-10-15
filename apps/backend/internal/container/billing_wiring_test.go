@@ -18,8 +18,8 @@ import (
 	billingdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/domain/mocks"
 	billinghandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/handler"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // The wiring tests for billing cover what only the container can get wrong: which routes

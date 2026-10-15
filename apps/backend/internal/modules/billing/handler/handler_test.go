@@ -17,9 +17,9 @@ import (
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/domain/mocks"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/response"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // The HTTP surface is this file: what a screen can ask for, and what it reads when

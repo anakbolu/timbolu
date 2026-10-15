@@ -15,8 +15,8 @@ import (
 	agentdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain/mocks"
 	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/storage"
+	"github.com/robzlabz/employeebot/packages/platform/config"
+	"github.com/robzlabz/employeebot/packages/platform/storage"
 )
 
 // TestOpenStorageSelectsTheDriver covers the three configurations a deployment

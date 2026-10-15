@@ -16,8 +16,8 @@ import (
 	sdkworker "go.temporal.io/sdk/worker"
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/container"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/temporal"
+	"github.com/robzlabz/employeebot/packages/platform/config"
 )
 
 func main() {

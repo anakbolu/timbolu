@@ -15,11 +15,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/domain/mocks"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/response"
+	"github.com/robzlabz/employeebot/packages/platform/database"
+	"github.com/robzlabz/employeebot/packages/whatsapp/domain"
+	"github.com/robzlabz/employeebot/packages/whatsapp/domain/mocks"
 )
 
 // The HTTP surface is this file: what a screen can ask for, and what it reads when

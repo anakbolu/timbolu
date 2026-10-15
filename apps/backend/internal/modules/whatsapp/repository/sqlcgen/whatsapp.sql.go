@@ -243,24 +243,6 @@ func (q *Queries) DeleteWhatsAppNumber(ctx context.Context, arg DeleteWhatsAppNu
 	return result.RowsAffected(), nil
 }
 
-const deleteWhatsAppSession = `-- name: DeleteWhatsAppSession :execrows
-DELETE FROM whatsapp_sessions
-WHERE number_id = $1 AND workspace_id = $2
-`
-
-type DeleteWhatsAppSessionParams struct {
-	NumberID    uuid.UUID
-	WorkspaceID uuid.UUID
-}
-
-func (q *Queries) DeleteWhatsAppSession(ctx context.Context, arg DeleteWhatsAppSessionParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteWhatsAppSession, arg.NumberID, arg.WorkspaceID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const enqueueWhatsAppMessage = `-- name: EnqueueWhatsAppMessage :one
 
 INSERT INTO whatsapp_outbox (
@@ -316,6 +298,32 @@ func (q *Queries) EnqueueWhatsAppMessage(ctx context.Context, arg EnqueueWhatsAp
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const forgetWhatsAppSession = `-- name: ForgetWhatsAppSession :execrows
+
+DELETE FROM whatsapp_sessions
+WHERE number_id = $1 AND workspace_id = $2
+`
+
+type ForgetWhatsAppSessionParams struct {
+	NumberID    uuid.UUID
+	WorkspaceID uuid.UUID
+}
+
+// ---------------------------------------------------------------- sessions
+// The product's own half of the session table. The gateway reads and writes the
+// device blob — it is a socket's material, and only the process driving the
+// socket may touch it — while the backend only ever ends a session, which is
+// what unlinking a number does. It has to be able to do that whether or not a
+// gateway is configured, because a session that lingers is a number that still
+// looks linked.
+func (q *Queries) ForgetWhatsAppSession(ctx context.Context, arg ForgetWhatsAppSessionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, forgetWhatsAppSession, arg.NumberID, arg.WorkspaceID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getWhatsAppMessage = `-- name: GetWhatsAppMessage :one
@@ -478,29 +486,6 @@ func (q *Queries) GetWhatsAppNumberByPhone(ctx context.Context, phone string) (W
 		&i.ConnectedAt,
 		&i.LastSeenAt,
 		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getWhatsAppSession = `-- name: GetWhatsAppSession :one
-SELECT number_id, workspace_id, sealed_device, jid, updated_at FROM whatsapp_sessions
-WHERE number_id = $1 AND workspace_id = $2
-`
-
-type GetWhatsAppSessionParams struct {
-	NumberID    uuid.UUID
-	WorkspaceID uuid.UUID
-}
-
-func (q *Queries) GetWhatsAppSession(ctx context.Context, arg GetWhatsAppSessionParams) (WhatsappSession, error) {
-	row := q.db.QueryRow(ctx, getWhatsAppSession, arg.NumberID, arg.WorkspaceID)
-	var i WhatsappSession
-	err := row.Scan(
-		&i.NumberID,
-		&i.WorkspaceID,
-		&i.SealedDevice,
-		&i.Jid,
 		&i.UpdatedAt,
 	)
 	return i, err
@@ -969,40 +954,6 @@ func (q *Queries) RecordWhatsAppMessage(ctx context.Context, arg RecordWhatsAppM
 	return i, err
 }
 
-const servingWhatsAppNumbers = `-- name: ServingWhatsAppNumbers :many
-SELECT number_id, workspace_id FROM whatsapp_directory
-WHERE enabled
-ORDER BY created_at
-`
-
-type ServingWhatsAppNumbersRow struct {
-	NumberID    uuid.UUID
-	WorkspaceID uuid.UUID
-}
-
-// The fleet's read. It is deliberately unscoped: a gateway has to find out which
-// tenants have a number before it can open any workspace's scope. It selects the
-// routing pair and nothing else.
-func (q *Queries) ServingWhatsAppNumbers(ctx context.Context) ([]ServingWhatsAppNumbersRow, error) {
-	rows, err := q.db.Query(ctx, servingWhatsAppNumbers)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ServingWhatsAppNumbersRow{}
-	for rows.Next() {
-		var i ServingWhatsAppNumbersRow
-		if err := rows.Scan(&i.NumberID, &i.WorkspaceID); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const setWhatsAppMessageMedia = `-- name: SetWhatsAppMessageMedia :execrows
 UPDATE whatsapp_messages
 SET media_key = $1,
@@ -1196,43 +1147,6 @@ func (q *Queries) UpdateWhatsAppNumber(ctx context.Context, arg UpdateWhatsAppNu
 		&i.ConnectedAt,
 		&i.LastSeenAt,
 		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const upsertWhatsAppSession = `-- name: UpsertWhatsAppSession :one
-
-INSERT INTO whatsapp_sessions (number_id, workspace_id, sealed_device, jid)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (number_id) DO UPDATE
-SET sealed_device = EXCLUDED.sealed_device,
-    jid = EXCLUDED.jid,
-    updated_at = now()
-RETURNING number_id, workspace_id, sealed_device, jid, updated_at
-`
-
-type UpsertWhatsAppSessionParams struct {
-	NumberID     uuid.UUID
-	WorkspaceID  uuid.UUID
-	SealedDevice []byte
-	Jid          string
-}
-
-// ---------------------------------------------------------------- sessions
-func (q *Queries) UpsertWhatsAppSession(ctx context.Context, arg UpsertWhatsAppSessionParams) (WhatsappSession, error) {
-	row := q.db.QueryRow(ctx, upsertWhatsAppSession,
-		arg.NumberID,
-		arg.WorkspaceID,
-		arg.SealedDevice,
-		arg.Jid,
-	)
-	var i WhatsappSession
-	err := row.Scan(
-		&i.NumberID,
-		&i.WorkspaceID,
-		&i.SealedDevice,
-		&i.Jid,
 		&i.UpdatedAt,
 	)
 	return i, err

@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
+	"github.com/robzlabz/employeebot/packages/platform/config"
 )
 
 // TestNewReportsUnusableDependencies keeps every misconfigured dependency a

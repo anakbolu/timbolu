@@ -10,9 +10,9 @@ import (
 	agentdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
 	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
 	chatservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/service"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/pubsub"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/storage"
+	"github.com/robzlabz/employeebot/packages/platform/config"
+	"github.com/robzlabz/employeebot/packages/platform/storage"
 )
 
 // openChat builds the conversation module: the repository, the object storage,

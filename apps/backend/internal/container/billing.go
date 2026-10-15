@@ -23,11 +23,11 @@ import (
 	llmservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/service"
 	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	workspaceservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/service"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/mail"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/payment/duitku"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/quota"
+	"github.com/robzlabz/employeebot/packages/platform/config"
 )
 
 // openBilling builds the subscription module: the package a workspace is on, the

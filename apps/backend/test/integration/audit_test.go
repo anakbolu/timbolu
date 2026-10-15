@@ -19,9 +19,9 @@ import (
 	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 	memorydomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain"
 	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/mail"
+	"github.com/robzlabz/employeebot/packages/platform/config"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // EPIC 13's first gate is this file: **every sensitive action leaves exactly one line, with

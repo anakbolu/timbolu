@@ -114,30 +114,15 @@ SET workspace_id = EXCLUDED.workspace_id,
     enabled = EXCLUDED.enabled,
     updated_at = now();
 
--- name: ServingWhatsAppNumbers :many
--- The fleet's read. It is deliberately unscoped: a gateway has to find out which
--- tenants have a number before it can open any workspace's scope. It selects the
--- routing pair and nothing else.
-SELECT number_id, workspace_id FROM whatsapp_directory
-WHERE enabled
-ORDER BY created_at;
-
 -- ---------------------------------------------------------------- sessions
 
--- name: UpsertWhatsAppSession :one
-INSERT INTO whatsapp_sessions (number_id, workspace_id, sealed_device, jid)
-VALUES (sqlc.arg('number_id'), sqlc.arg('workspace_id'), sqlc.arg('sealed_device'), sqlc.arg('jid'))
-ON CONFLICT (number_id) DO UPDATE
-SET sealed_device = EXCLUDED.sealed_device,
-    jid = EXCLUDED.jid,
-    updated_at = now()
-RETURNING *;
-
--- name: GetWhatsAppSession :one
-SELECT * FROM whatsapp_sessions
-WHERE number_id = $1 AND workspace_id = $2;
-
--- name: DeleteWhatsAppSession :execrows
+-- name: ForgetWhatsAppSession :execrows
+-- The product's own half of the session table. The gateway reads and writes the
+-- device blob — it is a socket's material, and only the process driving the
+-- socket may touch it — while the backend only ever ends a session, which is
+-- what unlinking a number does. It has to be able to do that whether or not a
+-- gateway is configured, because a session that lingers is a number that still
+-- looks linked.
 DELETE FROM whatsapp_sessions
 WHERE number_id = $1 AND workspace_id = $2;
 

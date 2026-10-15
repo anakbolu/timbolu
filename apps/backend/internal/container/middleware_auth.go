@@ -12,9 +12,9 @@ import (
 
 	authdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain"
 	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/response"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // HeaderWorkspaceID is the header that carries the active workspace. The

@@ -16,9 +16,9 @@ import (
 	retentiondomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/retention/domain"
 	routinedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
 	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	whatsappdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/domain"
 	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/redis"
+	"github.com/robzlabz/employeebot/packages/platform/redis"
+	whatsappdomain "github.com/robzlabz/employeebot/packages/whatsapp/domain"
 )
 
 // Services aggregates the business layer built on top of Repositories. Every

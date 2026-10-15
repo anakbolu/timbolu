@@ -25,8 +25,8 @@ import (
 	whatsapphandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/handler"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	workspacehandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/handler"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/response"
+	"github.com/robzlabz/employeebot/packages/platform/config"
 )
 
 // Handlers aggregates the HTTP handlers wired into the router. A nil handler

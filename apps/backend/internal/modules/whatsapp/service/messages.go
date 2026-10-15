@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/domain"
+	"github.com/robzlabz/employeebot/packages/whatsapp/domain"
 )
 
 // The message half: what arrived, what is waiting to leave, and how the two are
@@ -244,15 +244,6 @@ func (s *Service) History(ctx context.Context, scope domain.Scope, integrationID
 		oldest = append(oldest, newest[index])
 	}
 	return oldest, nil
-}
-
-// Assignments returns the numbers the fleet is expected to serve.
-//
-// It is the one call with no tenant scope, and the migration says why: a gateway
-// has to discover which tenants have a number before it can open any workspace's
-// scope at all.
-func (s *Service) Assignments(ctx context.Context) ([]domain.Assignment, error) {
-	return s.deps.Repository.Serving(ctx)
 }
 
 // Enqueue records one message to send.

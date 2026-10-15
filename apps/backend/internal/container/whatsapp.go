@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"path"
 	"strings"
 	"time"
@@ -17,14 +16,14 @@ import (
 	routinedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
 	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
 	whatsappadapter "github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/adapter"
-	whatsappdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/domain"
 	whatsappservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/service"
 	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/mail"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/storage"
-	platformwhatsapp "github.com/robzlabz/employeebot/apps/backend/internal/platform/whatsapp"
+	"github.com/robzlabz/employeebot/packages/platform/config"
+	"github.com/robzlabz/employeebot/packages/platform/storage"
+	whatsappdomain "github.com/robzlabz/employeebot/packages/whatsapp/domain"
+	"github.com/robzlabz/employeebot/packages/whatsapp/seam"
 )
 
 // openWhatsApp builds the WhatsApp module: the numbers a workspace has linked,
@@ -52,7 +51,6 @@ func (c *Container) openWhatsApp(_ context.Context, cfg *config.Config) error {
 	service := whatsappservice.New(whatsappservice.Deps{
 		Repository: c.Repositories.WhatsApp,
 		Sessions:   c.Repositories.WhatsApp,
-		Sealer:     c.whatsAppSealer(),
 		Transport:  transport,
 		Connections: whatsAppConnections{
 			integrations: c.Services.Integration,
@@ -83,56 +81,7 @@ func (c *Container) whatsAppTransport(cfg *config.Config) whatsappdomain.Transpo
 		return nil
 	}
 
-	return platformwhatsapp.NewClient(cfg.WhatsApp.GatewayURL, cfg.WhatsApp.GatewayToken, 30*time.Second)
-}
-
-// WhatsAppSealer is the sealer this deployment uses for session blobs.
-//
-// It is exported for the reason the test-only options are: the property it carries
-// — the same bytes sealed for one workspace do not open for another — can only be
-// exercised with the real key ring, and a test that rebuilt the cipher itself would
-// be testing its own reconstruction rather than the deployment's.
-func (c *Container) WhatsAppSealer() whatsappdomain.Sealer {
-	return c.whatsAppSealer()
-}
-
-// whatsAppSealer seals a session blob with the workspace's own data key.
-//
-// It reuses the hub's key ring rather than standing up a second one, and the
-// cipher is the very type the hub seals tokens with: the wrap is per workspace,
-// the rotation story is already written for it, and a session sealed under a
-// retired key is exactly the case rotating the ring is designed to survive.
-func (c *Container) whatsAppSealer() whatsappdomain.Sealer {
-	cipher := c.tokenCipher(c.Keys)
-	if cipher == nil {
-		return nil
-	}
-
-	return whatsAppSealer{cipher: cipher}
-}
-
-// whatsAppSealer adapts the hub's per-workspace cipher to this module's port.
-type whatsAppSealer struct {
-	cipher integrationdomain.TokenCipher
-}
-
-// Seal implements whatsappdomain.Sealer.
-//
-// The hub's cipher speaks strings because every other credential it holds is a
-// token; a device blob is bytes. The conversion is a cast rather than an
-// encoding, and Go strings carry arbitrary bytes, so the blob survives exactly.
-func (s whatsAppSealer) Seal(ctx context.Context, workspaceID uuid.UUID, plaintext []byte) ([]byte, error) {
-	return s.cipher.Seal(ctx, workspaceID, string(plaintext))
-}
-
-// Open implements whatsappdomain.Sealer.
-func (s whatsAppSealer) Open(ctx context.Context, workspaceID uuid.UUID, ciphertext []byte) ([]byte, error) {
-	opened, err := s.cipher.Open(ctx, workspaceID, ciphertext)
-	if err != nil {
-		return nil, err
-	}
-
-	return []byte(opened), nil
+	return seam.NewClient(cfg.WhatsApp.GatewayURL, cfg.WhatsApp.GatewayToken, 30*time.Second)
 }
 
 // whatsAppConnections records a number as a connection the hub shows.
@@ -422,83 +371,6 @@ func maskNumber(phone string) string {
 		return strings.Repeat("•", len(trimmed))
 	}
 	return strings.Repeat("•", len(trimmed)-4) + trimmed[len(trimmed)-4:]
-}
-
-// ------------------------------------------------------------------- runtime
-
-// OpenWhatsAppRuntime builds the engine the wa-gateway process serves.
-//
-// It belongs in the container because the container is the assembly point: the
-// engine needs the module's repository, its service, the key ring, the Redis
-// lease, and object storage, and a caller outside would have to reach all five
-// itself.
-func (c *Container) OpenWhatsAppRuntime(cfg *config.Config) (*platformwhatsapp.Engine, *platformwhatsapp.Gateway, error) {
-	if c.Services == nil || c.Services.WhatsApp == nil {
-		return nil, nil, fmt.Errorf("whatsapp: the module is not configured")
-	}
-	if c.Redis == nil {
-		// The lease is what keeps two instances off one number, and two clients on
-		// one session is the failure that gets a number banned. A gateway without
-		// Redis cannot tell whether it is alone, so it does not start.
-		return nil, nil, fmt.Errorf("whatsapp: the gateway needs Redis for the session lease")
-	}
-	if c.whatsAppSealer() == nil {
-		return nil, nil, fmt.Errorf("whatsapp: the gateway needs the key ring to seal sessions")
-	}
-
-	engineCfg := platformwhatsapp.DefaultEngineConfig()
-	engineCfg.Owner = cfg.WhatsApp.Owner
-	if cfg.WhatsApp.LeaseTTL > 0 {
-		engineCfg.LeaseTTL = cfg.WhatsApp.LeaseTTL
-	}
-	if cfg.WhatsApp.LeaseRenew > 0 {
-		engineCfg.LeaseRenew = cfg.WhatsApp.LeaseRenew
-	}
-	if cfg.WhatsApp.TypingDelay > 0 {
-		engineCfg.TypingDelay = cfg.WhatsApp.TypingDelay
-	}
-	if cfg.WhatsApp.MaxMediaBytes > 0 {
-		engineCfg.MaxMediaBytes = cfg.WhatsApp.MaxMediaBytes
-	}
-
-	engine := platformwhatsapp.NewEngine(engineCfg, platformwhatsapp.EngineDeps{
-		Sessions:  c.Repositories.WhatsApp,
-		Sealer:    c.whatsAppSealer(),
-		Directory: c.Repositories.WhatsApp,
-		Lease:     platformwhatsapp.NewRedisLease(c.Redis.Raw()),
-		Inbox:     c.Services.WhatsApp,
-		Drain:     c.Services.WhatsApp,
-		Status:    c.Services.WhatsApp,
-		Links:     c.Services.WhatsApp,
-		Media:     c.whatsAppMedia(),
-	}, c.Logger)
-
-	if cfg.WhatsApp.LogWhatsmeow {
-		engine = engine.WithLogger(platformwhatsapp.WALogger(c.Logger))
-	}
-
-	// The service and the engine are the two halves of one runtime: the engine
-	// records what arrives through the service, and the service sends through the
-	// engine. That is why the transport is set here rather than passed in — the
-	// dependency is genuinely mutual, and this is the moment both halves exist.
-	whatsappservice.UseTransport(c.Services.WhatsApp, engine)
-
-	gateway := platformwhatsapp.NewGateway(engine, platformwhatsapp.GatewayConfig{
-		Token: cfg.WhatsApp.GatewayToken,
-	}, c.Logger)
-
-	return engine, gateway, nil
-}
-
-// WhatsAppGatewayMux builds the gateway process's router.
-//
-// It is here rather than in the binary so the routes, the address, and the server
-// settings are one assembly point like every other process's.
-func (c *Container) WhatsAppGatewayMux(gateway *platformwhatsapp.Gateway) *http.ServeMux {
-	mux := http.NewServeMux()
-	gateway.Routes(mux)
-
-	return mux
 }
 
 // adWattsApp exposes a linked number to the hub, so the model sees tools for it

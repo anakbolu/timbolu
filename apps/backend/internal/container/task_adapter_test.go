@@ -17,7 +17,7 @@ import (
 	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
 	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
+	"github.com/robzlabz/employeebot/packages/platform/config"
 )
 
 // The adapter tests cover the seam between the task runtime and the modules it

@@ -13,7 +13,7 @@ import (
 	llmhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/handler"
 	taskhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/handler"
 	workspacemocks "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain/mocks"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
+	"github.com/robzlabz/employeebot/packages/platform/config"
 )
 
 // The wiring tests for the usage screen: which routes exist, and which of them the container's route

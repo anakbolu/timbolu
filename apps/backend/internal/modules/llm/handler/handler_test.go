@@ -16,9 +16,9 @@ import (
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain/mocks"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/response"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // identity stands in for what the container's auth and tenant middleware put on

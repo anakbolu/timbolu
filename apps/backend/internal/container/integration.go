@@ -13,10 +13,10 @@ import (
 	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
 	integrationservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/service"
 	routinedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/crypto"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/kms"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/oauthstate"
+	"github.com/robzlabz/employeebot/packages/platform/config"
+	"github.com/robzlabz/employeebot/packages/platform/crypto"
+	"github.com/robzlabz/employeebot/packages/platform/kms"
 )
 
 // openIntegration builds the integration hub: the connected accounts, the key

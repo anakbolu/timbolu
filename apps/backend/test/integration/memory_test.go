@@ -19,7 +19,7 @@ import (
 	memoryservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/service"
 	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // memoryFixture is one onboarded workspace with a Bolu, ready to remember.

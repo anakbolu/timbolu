@@ -14,7 +14,7 @@ import (
 	chatrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/repository"
 	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // chatFixture is one onboarded workspace with the conversation repository.

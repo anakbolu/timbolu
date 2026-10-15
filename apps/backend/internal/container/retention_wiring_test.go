@@ -12,7 +12,7 @@ import (
 	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
 	retentiondomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/retention/domain"
 	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
+	"github.com/robzlabz/employeebot/packages/platform/config"
 )
 
 // The wiring tests for retention cover what only the container can get wrong: that a deployment

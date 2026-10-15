@@ -21,8 +21,8 @@ import (
 	routinehandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/handler"
 	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
 	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // The wiring tests for the routine module cover what only the container can get

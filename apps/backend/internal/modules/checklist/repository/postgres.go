@@ -20,7 +20,7 @@ import (
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/repository/sqlcgen"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // Repository is the Postgres-backed implementation of domain.Repository.

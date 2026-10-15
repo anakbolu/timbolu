@@ -10,7 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
+	"github.com/robzlabz/employeebot/packages/platform/config"
 )
 
 // testConfig is the smallest configuration that assembles a container: no

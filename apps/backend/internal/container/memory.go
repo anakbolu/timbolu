@@ -18,8 +18,8 @@ import (
 	memoryservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/service"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/workflow"
 	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/temporal"
+	"github.com/robzlabz/employeebot/packages/platform/config"
 )
 
 // openMemory builds the memory module: what a Bolu remembers, what it knows, and

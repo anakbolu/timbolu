@@ -14,7 +14,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/logger"
+	"github.com/robzlabz/employeebot/packages/platform/logger"
 )
 
 // Header names understood by the request context middleware.

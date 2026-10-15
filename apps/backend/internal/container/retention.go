@@ -13,7 +13,7 @@ import (
 	retentionservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/retention/service"
 	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
 	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
+	"github.com/robzlabz/employeebot/packages/platform/config"
 )
 
 // openRetention builds the retention job: how long the deployment keeps what a customer said

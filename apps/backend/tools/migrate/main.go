@@ -14,7 +14,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/database"
+	"github.com/robzlabz/employeebot/apps/backend/internal/platform/migrate"
 )
 
 func main() {
@@ -45,13 +45,13 @@ func run() error {
 
 	switch command {
 	case "up":
-		if err := database.MigrateUp(ctx, target); err != nil {
+		if err := migrate.MigrateUp(ctx, target); err != nil {
 			return err
 		}
 		fmt.Println("migrate: up applied")
 		return report(ctx, target)
 	case "down":
-		if err := database.MigrateDown(ctx, target); err != nil {
+		if err := migrate.MigrateDown(ctx, target); err != nil {
 			return err
 		}
 		fmt.Println("migrate: down reverted")
@@ -64,7 +64,7 @@ func run() error {
 }
 
 func report(ctx context.Context, url string) error {
-	version, dirty, err := database.MigrateVersion(ctx, url)
+	version, dirty, err := migrate.MigrateVersion(ctx, url)
 	if err != nil {
 		return err
 	}

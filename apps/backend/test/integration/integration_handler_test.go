@@ -14,7 +14,7 @@ import (
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/container"
 	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
+	"github.com/robzlabz/employeebot/packages/platform/config"
 )
 
 // These tests drive the integration endpoints over the real router, so what is

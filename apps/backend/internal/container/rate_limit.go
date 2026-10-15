@@ -10,9 +10,9 @@ import (
 	"go.uber.org/zap"
 
 	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/config"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/metrics"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/ratelimit"
+	"github.com/robzlabz/employeebot/packages/platform/config"
+	"github.com/robzlabz/employeebot/packages/platform/metrics"
 )
 
 // callLimits paces the calls a workspace makes on one integration.

@@ -5,8 +5,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/repository/sqlcgen"
+	"github.com/robzlabz/employeebot/packages/whatsapp/domain"
 )
 
 // The conversions from the generated rows to the domain types.
@@ -215,20 +215,6 @@ func fromClaimed(row sqlcgen.WhatsappOutbox) domain.Outbox {
 
 func fromListedOutbox(row sqlcgen.WhatsappOutbox) domain.Outbox {
 	return toOutbox(outboxRow(row))
-}
-
-func toSession(row sqlcgen.WhatsappSession) domain.Session {
-	return domain.Session{
-		NumberID:    row.NumberID,
-		WorkspaceID: row.WorkspaceID,
-		Sealed:      row.SealedDevice,
-		JID:         row.Jid,
-		UpdatedAt:   row.UpdatedAt,
-	}
-}
-
-func fromGotSession(row sqlcgen.WhatsappSession) domain.Session {
-	return toSession(row)
 }
 
 // optionalID writes an id that may be absent. A zero uuid in the database would

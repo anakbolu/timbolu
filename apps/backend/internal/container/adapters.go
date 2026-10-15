@@ -11,9 +11,9 @@ import (
 	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/authn"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/mail"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/metrics"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/oauth/google"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/ratelimit"
+	"github.com/robzlabz/employeebot/packages/platform/metrics"
 )
 
 // The adapters below translate a platform implementation into the port a module
