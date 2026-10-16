@@ -274,9 +274,10 @@ func (q *Queries) CreateConversation(ctx context.Context, arg CreateConversation
 	return i, err
 }
 
-const deleteAttachment = `-- name: DeleteAttachment :execrows
+const deleteAttachment = `-- name: DeleteAttachment :one
 DELETE FROM message_attachments
 WHERE id = $1 AND workspace_id = $2
+RETURNING message_id
 `
 
 type DeleteAttachmentParams struct {
@@ -284,12 +285,14 @@ type DeleteAttachmentParams struct {
 	WorkspaceID uuid.UUID
 }
 
-func (q *Queries) DeleteAttachment(ctx context.Context, arg DeleteAttachmentParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteAttachment, arg.ID, arg.WorkspaceID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+// The row is the storage record, and it answers the message it belonged to so
+// the read model can be fixed in the same transaction. A row that is not there
+// is not an error: a retry after a partial failure has to converge.
+func (q *Queries) DeleteAttachment(ctx context.Context, arg DeleteAttachmentParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, deleteAttachment, arg.ID, arg.WorkspaceID)
+	var message_id uuid.UUID
+	err := row.Scan(&message_id)
+	return message_id, err
 }
 
 const eventsSince = `-- name: EventsSince :many
@@ -881,6 +884,48 @@ func (q *Queries) ListParticipants(ctx context.Context, arg ListParticipantsPara
 		return nil, err
 	}
 	return items, nil
+}
+
+const removeMessageAttachment = `-- name: RemoveMessageAttachment :one
+UPDATE messages
+SET attachments = COALESCE((
+        SELECT jsonb_agg(element ORDER BY ordinality)
+        FROM jsonb_array_elements(COALESCE(attachments, '[]'::jsonb)) WITH ORDINALITY AS element_at(element, ordinality)
+        WHERE element_at.element->>'ID' <> $3::text
+    ), '[]'::jsonb)
+WHERE id = $1 AND workspace_id = $2
+RETURNING id, workspace_id, conversation_id, author_agent_id, author_user_id, blocks, attachments, task_id, created_at, status, finish_reason, updated_at
+`
+
+type RemoveMessageAttachmentParams struct {
+	ID           uuid.UUID
+	WorkspaceID  uuid.UUID
+	AttachmentID string
+}
+
+// Drops one element from a message's read model.
+//
+// The element is matched by the id it carries, which is the key the encoder
+// writes, rather than by position: the column is what a client renders, and a
+// position that shifted since the read would remove the wrong file.
+func (q *Queries) RemoveMessageAttachment(ctx context.Context, arg RemoveMessageAttachmentParams) (Message, error) {
+	row := q.db.QueryRow(ctx, removeMessageAttachment, arg.ID, arg.WorkspaceID, arg.AttachmentID)
+	var i Message
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ConversationID,
+		&i.AuthorAgentID,
+		&i.AuthorUserID,
+		&i.Blocks,
+		&i.Attachments,
+		&i.TaskID,
+		&i.CreatedAt,
+		&i.Status,
+		&i.FinishReason,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const renameConversation = `-- name: RenameConversation :one

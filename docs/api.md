@@ -361,6 +361,16 @@ task id on that message, so a client follows the answer from the message rather
 than watching the whole thread. A dispatch that cannot be opened marks the
 placeholder `failed` instead of leaving it streaming forever.
 
+An upload is checked before anything is written, and the check is on both halves
+of the file: the extension must be one the deployment allows
+(`ATTACHMENT_ALLOWED_EXTENSIONS`, which can only narrow the module's own list of
+images, PDFs, office documents, and text) and the first bytes must be that type,
+so an executable is refused whatever it is named. A refused file is `415
+file_type_not_allowed` and nothing is created. An upload sent without
+`message_id` opens the message it belongs to in the same transaction that stores
+the file, so a store that fails leaves neither a message nor an event behind, and
+the only event a client sees is `message.new` carrying the file.
+
 ### The block contract
 
 | Type | Required | Notes |
@@ -1032,6 +1042,7 @@ level deep, so a screen that shows progress reads it rather than counting for it
 | `invalid_block` | 400 | A block does not satisfy its schema |
 | `block_too_large` | 413 | A block exceeds its size limit |
 | `file_too_large` | 413 | An attachment exceeds 25 MB |
+| `file_type_not_allowed` | 415 | The upload is not a type this deployment allows |
 | `storage_not_configured` | 503 | Object storage is not configured |
 | `chat_not_configured` | 503 | Module not wired (no database) |
 | `memory_not_found` | 404 | No such memory or chunk in this workspace |

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http/httptest"
@@ -205,30 +206,35 @@ func TestSendCanSkipTheReply(t *testing.T) {
 	require.NotContains(t, resp.Body.String(), "reply_message_id")
 }
 
-// TestAttachWithoutMessageOpensOne: an upload may arrive before the words, so
-// the handler opens a message for it — with no text and no reply.
-func TestAttachWithoutMessageOpensOne(t *testing.T) {
+// TestARefusedFileTypeIs415: the file is real and the request is well formed, so the status
+// says what is wrong — the media type — rather than blaming the request.
+func TestARefusedFileTypeIs415(t *testing.T) {
 	service := mocks.NewService(t)
 	id := identity{userID: uuid.New(), workspaceID: uuid.New()}
 	conversationID := uuid.New()
-	opened := messageFixture(conversationID)
-	attachment := chatdomain.Attachment{ID: uuid.New(), MessageID: opened.ID, Filename: "a.txt"}
 
-	service.EXPECT().Send(mock.Anything, mock.Anything, mock.MatchedBy(func(req chatdomain.SendRequest) bool {
-		return req.ConversationID == conversationID && req.ForAttachment && req.Text == "" && !req.Reply
-	})).Return(chatdomain.SendResult{Message: opened}, nil).Once()
-	service.EXPECT().Attach(mock.Anything, mock.Anything, mock.MatchedBy(func(req chatdomain.AttachRequest) bool {
-		return req.MessageID == opened.ID
-	}), []byte("a")).Return(attachment, nil).Once()
+	service.EXPECT().Attach(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(chatdomain.Attachment{}, fmt.Errorf("%w: .exe is an executable", chatdomain.ErrFileTypeNotAllowed)).Once()
 
 	app := newTestApp(t, service, id)
+	resp := upload(t, app, conversationID, "", "a.exe", []byte("MZ"))
+
+	require.Equal(t, fiber.StatusUnsupportedMediaType, resp.Code)
+	require.Contains(t, resp.Body.String(), "file_type_not_allowed")
+}
+
+func upload(t *testing.T, app *fiber.App, conversationID uuid.UUID, messageID, filename string, content []byte) *httptest.ResponseRecorder {
+	t.Helper()
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
-	part, err := writer.CreateFormFile("file", "a.txt")
+	part, err := writer.CreateFormFile("file", filename)
 	require.NoError(t, err)
-	_, err = part.Write([]byte("a"))
+	_, err = part.Write(content)
 	require.NoError(t, err)
+	if messageID != "" {
+		require.NoError(t, writer.WriteField("message_id", messageID))
+	}
 	require.NoError(t, writer.Close())
 
 	req := httptest.NewRequest(fiber.MethodPost,
@@ -239,17 +245,18 @@ func TestAttachWithoutMessageOpensOne(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
 
-	require.Equal(t, fiber.StatusCreated, resp.StatusCode)
-
-	content, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	require.Contains(t, string(content), `"filename":"a.txt"`)
+	recorder := httptest.NewRecorder()
+	recorder.Code = resp.StatusCode
+	if content, err := io.ReadAll(resp.Body); err == nil {
+		recorder.Body.Write(content)
+	}
+	return recorder
 }
 
 // TestHistoryCarriesAnOpaqueCursor keeps a client from building one by hand.
 func TestHistoryCarriesAnOpaqueCursor(t *testing.T) {
-	service := mocks.NewService(t)
 	id := identity{userID: uuid.New(), workspaceID: uuid.New()}
+	service := mocks.NewService(t)
 	conversation := conversationFixture()
 	boundary := messageFixture(conversation.ID)
 

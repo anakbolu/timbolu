@@ -100,9 +100,20 @@ type SendResult struct {
 
 // AttachRequest is one file to store.
 type AttachRequest struct {
-	MessageID   uuid.UUID
-	Filename    string
-	ContentType string
+	// MessageID is the message the file belongs to. When it is nil the file
+	// belongs to a message the server opens for it, and ConversationID names the
+	// thread that message goes in — which is what keeps an upload from opening a
+	// message before its bytes are known to be storable.
+	MessageID uuid.UUID
+	// ConversationID is the thread a file without a MessageID belongs to. It is
+	// ignored when MessageID is set.
+	ConversationID uuid.UUID
+	// Filename is the name the client sent, and it decides the file's type: the
+	// extension must be one the deployment allows, and the stored type is derived
+	// from it rather than taken from the request, so a client cannot claim one thing
+	// and send another. A name with no extension is refused rather than defaulted,
+	// because a file whose type is unknown cannot be stored safely.
+	Filename string
 }
 
 // AttachmentMaxBytes caps one upload. The limit is the chat surface's, not the
