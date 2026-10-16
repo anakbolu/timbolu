@@ -101,7 +101,7 @@ func TestAttachmentContentReachesTheModel(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = service.Attach(t.Context(), fixture.scope, chatdomain.AttachRequest{
-		MessageID: sent.Message.ID, Filename: "stok.txt", ContentType: "text/plain",
+		MessageID: sent.Message.ID, Filename: "stok.txt",
 	}, []byte("Stok kaos merah: 7 pcs"))
 	require.NoError(t, err)
 
@@ -168,7 +168,7 @@ func TestAnOversizedAttachmentIsNamedNotRead(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = service.Attach(t.Context(), fixture.scope, chatdomain.AttachRequest{
-		MessageID: sent.Message.ID, Filename: "besar.txt", ContentType: "text/plain",
+		MessageID: sent.Message.ID, Filename: "besar.txt",
 	}, []byte(strings.Repeat("a", 2048)))
 	require.NoError(t, err)
 
