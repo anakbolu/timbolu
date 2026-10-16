@@ -6,12 +6,80 @@
  *
  * Two details make the feed whole rather than merely live:
  * - every frame carries the event id, so a reconnect asks for everything after
- *   the last id it saw instead of hoping nothing happened;
- * - a reconnect first replays the backlog over HTTP and then opens the stream,
- *   so a gap is closed by the durable rows rather than by luck.
+ *   the last id it saw instead of hoping nothing happened, and that id is kept
+ *   in sessionStorage so a reload resumes where the last one stopped instead of
+ *   replaying the workspace's history over the screen;
+ * - the connection opens first and the backlog follows it — the server sends
+ *   everything after `last_event_id` on the connection itself — so "live" is
+ *   reached as soon as the transport is up and a slow HTTP replay can no longer
+ *   delay it.
  */
 
 import { getAccessToken, listEvents, type ActivityEvent } from "./api";
+
+export const CHAT_EVENT_TYPES: readonly string[] = [
+  "message.new",
+  "message.updated",
+  "router.decision",
+  // A Bolu says what it is doing through its own state, which is the only
+  // status the stream carries while an answer is still being prepared.
+  "agent.state",
+];
+
+/**
+ * Every event type the app acts on, named once.
+ *
+ * The SSE fallback subscribes to each of them by name: the server names its
+ * frames, and EventSource fires `onmessage` only for unnamed ones, so a named
+ * frame with no listener of its own is a frame nobody sees.
+ */
+export const REALTIME_EVENT_TYPES: readonly string[] = [
+  ...CHAT_EVENT_TYPES,
+  "draft.created",
+  "draft.decided",
+  "task.started",
+  "task.finished",
+  "task.waiting_approval",
+  "task.running",
+  "routine.run",
+];
+
+/** Where the last delivered event id per workspace is kept. */
+const LAST_EVENT_ID_PREFIX = "bolu.last_event_id.";
+
+/** The key that forces the SSE fallback, for testing it against a real backend. */
+const TRANSPORT_KEY = "bolu.realtime";
+
+/**
+ * readLastEventId is the resume point a page load starts from.
+ *
+ * sessionStorage rather than localStorage: the cursor is only meaningful while
+ * this tab's view of the workspace is being rebuilt, and a second tab must be
+ * free to resume from where it left off rather than from this one's.
+ */
+export function readLastEventId(workspaceId: string): number {
+  if (typeof window === "undefined") {
+    return 0;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(LAST_EVENT_ID_PREFIX + workspaceId);
+    const value = raw === null ? Number.NaN : Number(raw);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  } catch {
+    // Storage can be denied outright (private mode, blocked cookies). A missing
+    // cursor costs a backlog replay, which is what 0 asks for anyway.
+    return 0;
+  }
+}
+
+function writeLastEventId(workspaceId: string, id: number) {
+  try {
+    window.sessionStorage.setItem(LAST_EVENT_ID_PREFIX + workspaceId, String(id));
+  } catch {
+    // As above: the cursor is an optimisation, not the feed.
+  }
+}
 
 /**
  * parseEvent reads one streamed frame.
@@ -19,8 +87,11 @@ import { getAccessToken, listEvents, type ActivityEvent } from "./api";
  * The frame comes from the network, so it is validated rather than asserted: a
  * malformed one is dropped instead of reaching a renderer as a half-built
  * object. Only the fields the client acts on are checked.
+ *
+ * `fallbackId` is the frame header's id, used when the body carries none: a
+ * named SSE frame puts its id on the `id:` line rather than in the JSON.
  */
-function parseEvent(raw: unknown): ActivityEvent | null {
+function parseEvent(raw: unknown, fallbackId?: number): ActivityEvent | null {
   if (typeof raw !== "string") {
     return null;
   }
@@ -37,11 +108,12 @@ function parseEvent(raw: unknown): ActivityEvent | null {
   }
 
   const candidate = value as Record<string, unknown>;
-  if (typeof candidate.id !== "number" || typeof candidate.type !== "string") {
+  const id = typeof candidate.id === "number" ? candidate.id : fallbackId;
+  if (typeof id !== "number" || !Number.isFinite(id) || typeof candidate.type !== "string") {
     return null;
   }
 
-  return value as ActivityEvent;
+  return { ...candidate, id } as ActivityEvent;
 }
 
 export type RealtimeStatus = "connecting" | "live" | "reconnecting" | "closed";
@@ -68,12 +140,25 @@ function apiBase(): string {
 }
 
 /**
+ * sseForced takes the socket out of the picture, so the fallback can be
+ * exercised against a real backend: `localStorage['bolu.realtime'] = 'sse'`.
+ */
+function sseForced(): boolean {
+  try {
+    return window.localStorage.getItem(TRANSPORT_KEY) === "sse";
+  } catch {
+    return false;
+  }
+}
+
+/**
  * connect opens the stream for one workspace.
  *
- * The backlog is read first and the connection opens after, which is the order
- * that cannot lose an event: anything that happens in between is either already
- * in the backlog or arrives on the connection, and an id that appears twice is
- * dropped by the caller's cursor rather than shown twice.
+ * The transport opens first and the backlog follows it: the server sends
+ * everything after `last_event_id` on the connection, so waiting on an HTTP
+ * replay before opening would only delay "live". The replay is kept for a
+ * reconnect — in the background, from the last delivered id — and `deliver`
+ * drops every id it has already seen, so the two sources cannot double up.
  */
 export function connect(
   workspaceId: string,
@@ -100,11 +185,24 @@ export function connect(
       return;
     }
     lastId = event.id;
+    // The cursor is written where it is advanced, so a reload resumes from the
+    // last event this tab actually saw.
+    writeLastEventId(workspaceId, event.id);
     handlers.onEvent(event);
   }
 
+  /**
+   * replay fills a gap over HTTP, after a reconnect and in the background: the
+   * connection is already open and carries the server's own backlog, so this is
+   * the belt to that suspenders. It starts from the last delivered id — never
+   * from 0 — and a page the connection has already overtaken is dropped by
+   * `deliver` rather than applied out of order.
+   */
   async function replay() {
     for (let page = 0; page < REPLAY_MAX_PAGES; page++) {
+      if (stopped) {
+        return;
+      }
       const result = await listEvents(workspaceId, lastId, REPLAY_LIMIT);
       if (!result.ok || result.data.length === 0) {
         return;
@@ -125,7 +223,7 @@ export function connect(
     const delay = RECONNECT_DELAYS_MS[Math.min(attempts, RECONNECT_DELAYS_MS.length - 1)];
     attempts++;
     setStatus("reconnecting");
-    timer = window.setTimeout(() => void start(), delay);
+    timer = window.setTimeout(() => start(true), delay);
   }
 
   function openSocket(): boolean {
@@ -183,12 +281,23 @@ export function connect(
       attempts = 0;
       setStatus("live");
     };
-    candidate.onmessage = (message) => {
-      const event = parseEvent(message.data);
+
+    // The frames are named, and `onmessage` only fires for unnamed ones, so
+    // every type the app acts on needs a listener of its own. The frame header
+    // carries the id, which is the fallback when the body has none.
+    const handle = (raw: Event) => {
+      const message = raw as MessageEvent<string>;
+      const header = message.lastEventId ? Number(message.lastEventId) : undefined;
+      const event = parseEvent(message.data, header);
       if (event) {
         deliver(event);
       }
     };
+    for (const type of REALTIME_EVENT_TYPES) {
+      candidate.addEventListener(type, handle);
+    }
+    candidate.onmessage = handle;
+
     candidate.onerror = () => {
       // EventSource reconnects by itself, but without the query string it would
       // lose the resume point, so the client owns the reconnect.
@@ -198,28 +307,28 @@ export function connect(
     };
   }
 
-  async function start() {
+  function start(reconnected: boolean) {
     if (stopped) {
       return;
     }
-    setStatus(attempts === 0 ? "connecting" : "reconnecting");
+    setStatus(reconnected ? "reconnecting" : "connecting");
 
-    try {
-      await replay();
-    } catch {
-      // A failed replay is not fatal: the stream still delivers from now on, and
-      // the next reconnect tries the backlog again.
+    if (reconnected) {
+      void replay().catch(() => {
+        // A failed replay is not fatal: the connection is live, and the next
+        // reconnect tries the backlog again.
+      });
     }
 
     if (stopped) {
       return;
     }
-    if (!openSocket()) {
+    if (sseForced() || !openSocket()) {
       openSSE();
     }
   }
 
-  void start();
+  start(false);
 
   return {
     close() {
