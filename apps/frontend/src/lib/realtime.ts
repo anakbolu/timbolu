@@ -232,7 +232,7 @@ export function connect(
       return false;
     }
 
-    const url = new URL(`${apiBase()}/api/events/socket`);
+    const url = new URL(`${apiBase()}/api/events/socket`, apiBase() || window.location.origin);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     url.searchParams.set("workspace_id", workspaceId);
     url.searchParams.set("token", token);
@@ -269,7 +269,7 @@ export function connect(
 
     // EventSource cannot set a header either, so the token travels in the query
     // like it does for the socket, and the workspace the same way.
-    const url = new URL(`${apiBase()}/api/events/stream`);
+    const url = new URL(`${apiBase()}/api/events/stream`, apiBase() || window.location.origin);
     url.searchParams.set("workspace_id", workspaceId);
     url.searchParams.set("token", token);
     url.searchParams.set("last_event_id", String(lastId));
