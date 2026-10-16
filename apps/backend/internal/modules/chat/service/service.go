@@ -426,6 +426,13 @@ func (s *Service) AttachmentContent(ctx context.Context, scope chatdomain.Scope,
 // Removing the row also drops the file from the message's read model, and the message that comes
 // back is published as an update: a client renders the column and not the rows, so a sweep that
 // stayed quiet would leave the file on screen and its download 404.
+//
+// One event per message, not one per row, and it carries the whole attachment list as it reads
+// after the last row of that message went. Several files of one message expire in the same pass,
+// and a client replaces the entire list on every update it receives: an event per row would show
+// it states the message never had. The events go out after the loop rather than from inside it,
+// so a pass that stopped on a cancelled context, or that lost an object and kept going, still
+// tells clients what it did remove.
 func (s *Service) PruneAttachments(ctx context.Context, scope chatdomain.Scope, olderThan time.Time, limit int) (chatdomain.AttachmentPrune, error) {
 	if err := requireWorkspace(scope); err != nil {
 		return chatdomain.AttachmentPrune{}, err
@@ -441,6 +448,12 @@ func (s *Service) PruneAttachments(ctx context.Context, scope chatdomain.Scope, 
 
 	var result chatdomain.AttachmentPrune
 	var failures []error
+
+	// The last message Delete answered with for each message, in the order the messages were
+	// first touched: that message is the read model after that row went, so the final one per
+	// message is the list a client should end up rendering.
+	updated := make(map[uuid.UUID]chatdomain.Message)
+	order := make([]uuid.UUID, 0, len(expired))
 
 	for _, attachment := range expired {
 		if ctx.Err() != nil {
@@ -461,11 +474,19 @@ func (s *Service) PruneAttachments(ctx context.Context, scope chatdomain.Scope, 
 			continue
 		}
 		if message.ID != uuid.Nil {
-			s.emitMessage(ctx, scope, message, message.ConversationID, chatdomain.EventMessageUpdated)
+			if _, seen := updated[message.ID]; !seen {
+				order = append(order, message.ID)
+			}
+			updated[message.ID] = message
 		}
 
 		result.Count++
 		result.BytesFreed += attachment.ByteSize
+	}
+
+	for _, id := range order {
+		message := updated[id]
+		s.emitMessage(ctx, scope, message, message.ConversationID, chatdomain.EventMessageUpdated)
 	}
 
 	return result, errors.Join(failures...)
