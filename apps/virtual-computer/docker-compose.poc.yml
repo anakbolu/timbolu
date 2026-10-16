@@ -1,5 +1,5 @@
-# The PoC's own stack: the control plane, one fixture page, and the two networks a
-# sandbox can live on.
+# The PoC's own stack: the control plane, one fixture page, the docker socket proxy, and
+# the three networks the sandbox, the control plane and the daemon API live on.
 #
 # It is a separate file on purpose. `docker-compose.yml` at the repository root is the
 # product: Postgres, Redis, Temporal, and the four processes that serve customers. This
@@ -34,6 +34,10 @@
 #                             a laptop demo use.
 #   VCOMPUTER_DOCKER_BIN      the docker CLI the runtime execs. Default `docker`; may
 #                             contain spaces (`sudo docker`).
+#   DOCKER_HOST               read by the docker CLI, not by the control plane: it is how
+#                             the CLI reaches the daemon. This file points it at
+#                             vcomputer-socket-proxy, and it must stay pointed there — the
+#                             control container has no socket to fall back on.
 #   VCOMPUTER_SANDBOX_IMAGE   image the runtime starts per bot. Default
 #                             vcomputer-sandbox:poc.
 #   VCOMPUTER_SANDBOX_NETWORK docker network sandboxes join. Default vcomputer-internal.
@@ -57,19 +61,142 @@
 #   2. Sandboxes join `vcomputer-internal` only, and that network is `internal: true`:
 #      no egress and no host route. A browser inside a sandbox can reach the fixture and
 #      the control plane, and nothing else — not the internet, not Postgres, not Redis.
-#      The control plane is the single member of both networks, which makes it the only
-#      door in.
-#   3. The control container mounts the docker socket. That is a PoC trade-off, not an
-#      oversight: the runtime drives the daemon with the CLI, the CLI needs the socket,
-#      and the socket is root on this host, so anyone who can reach the control plane's
-#      HTTP surface can start a container as root here. The loopback-only port and the
-#      mandatory token are the two locks that make it survivable; the alternative — a
-#      filtering API proxy — is more machinery than the PoC can justify
+#      The control plane is the only member of this network that is not a sandbox or the
+#      fixture, and the only member of `vcomputer-dockerapi` besides the proxy, which
+#      makes it the only door in.
+#   3. The control container never mounts the docker socket; a filtering proxy does. The
+#      runtime drives the daemon with the CLI and the CLI is pointed at
+#      `vcomputer-socket-proxy` with DOCKER_HOST, so the socket is held by one container
+#      that sits on its own internal network, publishes no port, and answers 403 to every
+#      Engine API section the runtime does not use (the allowlist on that service).
+#
+#      What that buys, measured against the real image and not assumed: images, info,
+#      version, networks, events, swarm, secrets, plugins, build, system and auth are
+#      unreachable — a 403 from the proxy, the daemon never sees the request. So a
+#      compromised control plane cannot pull an image, read the daemon's configuration or
+#      its secrets, touch the swarm, or load a plugin.
+#
+#      What it does not buy, and this is the honest half: the allowlist is per *section*,
+#      not per operation. CONTAINERS=1 admits every path under /containers — including
+#      restart, kill, pause, attach and DELETE — and because POST=1 is what lets the CLI's
+#      writes through, the proxy's method gate stops refusing non-GET requests at all.
+#      Nothing in the proxy inspects a request body either, so a compromised control plane
+#      can still create a container with any HostConfig (a privileged one, or one with the
+#      host root bind-mounted) and reach host root through the API it is allowed to use.
+#      What remains genuinely closed: no route to the proxy from a sandbox, no socket in
+#      the control container, and no daemon-wide operation. The loopback-only port and the
+#      mandatory token are still the locks on the HTTP surface
 #      (docs/adr/0003-virtual-computer.md §3.3, §3.7).
 
 name: vcomputer-poc
 
 services:
+
+  # The daemon's only holder of /var/run/docker.sock, and the reason the control container
+  # does not have it: haproxy forwards the Engine API to the unix socket and refuses, with
+  # a 403, every request outside the allowlist below.
+  #
+  # The tag is pinned because this container is a security boundary: `latest` would let a
+  # future image move the defaults under us, and the haproxy version matters — `docker
+  # exec` hijacks the connection (Upgrade: tcp, answered 101), which haproxy 3.0.0-3.0.5
+  # broke and 3.0.6 fixed (Tecnativa/docker-socket-proxy#132, haproxy#2684). v0.5.0 is the
+  # current release and ships haproxy 3.4.2, so hijacking works.
+  vcomputer-socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    container_name: vcomputer-socket-proxy
+    restart: unless-stopped
+    environment:
+      # --- allowed: exactly what control/internal/sandbox/docker.go asks the CLI to do ---
+      # The runtime creates the session volume (POST /volumes/create).
+      VOLUMES: 1
+      # It creates, inspects, starts and stops containers, and it creates exec instances
+      # (POST /containers/create, GET /containers/<id>/json, POST /containers/<id>/exec).
+      CONTAINERS: 1
+      # The screenshot, click and type commands go through docker exec, which is
+      # POST /exec/<id>/start plus GET /exec/<id>/json.
+      EXEC: 1
+      # Every write above is a POST. This is also what lets the CLI's own `HEAD /_ping`
+      # through the first rule of the proxy's config, which is evaluated before any
+      # section rule is. The cost is real and worth writing down: with POST set, that first
+      # rule — `deny unless METH_GET || POST` — stops refusing anything, so the method of a
+      # request is no longer a constraint at all (a PUT to an allowed section gets through).
+      # Measured against the real image, not inferred.
+      POST: 1
+      # `docker start` and `docker stop` on their own paths: the runtime starts a container
+      # that exists and is stopped, and stops one on DELETE.
+      #
+      # ALLOW_RESTARTS/PAUSE/UNPAUSE stay 0 below, but do not read that as a refusal:
+      # haproxy evaluates the ALLOW_* rules before the section rules, so with CONTAINERS=1
+      # those paths are allowed by `/containers` regardless. Setting them to 1 would change
+      # nothing today; they are 0 so that the intent survives if CONTAINERS is ever turned
+      # off. The same goes for ALLOW_START/ALLOW_STOP above — they are redundant while
+      # CONTAINERS is on, and kept explicit because they are the operations the runtime
+      # actually performs.
+      ALLOW_START: 1
+      ALLOW_STOP: 1
+      # Every docker CLI invocation pings before it does anything (cli/command/cli.go,
+      # initializeFromClient), and the ping is where the CLI's API version negotiation
+      # comes from — so /_ping is load-bearing and /version is not.
+      PING: 1
+      # --- refused: 0 for every section the runtime never touches ---
+      # Written out rather than left to the image's defaults, so an upstream default
+      # change cannot widen this on its own. Each of these is a 403 that the daemon never
+      # sees (checked against the real image; see the e2e check for /images/json).
+      ALLOW_RESTARTS: 0
+      ALLOW_PAUSE: 0
+      ALLOW_UNPAUSE: 0
+      AUTH: 0
+      BUILD: 0
+      COMMIT: 0
+      CONFIGS: 0
+      DISTRIBUTION: 0
+      EVENTS: 0
+      GRPC: 0
+      # The runtime never pulls or lists an image: vcomputer-sandbox:poc has to be built
+      # first (the `build` profile below, or scripts/e2e.sh). That is the one thing this
+      # allowlist costs the operator.
+      IMAGES: 0
+      INFO: 0
+      # The network is passed to `docker run --network` by name and resolved by the daemon;
+      # the CLI makes no network API call on that path.
+      NETWORKS: 0
+      NODES: 0
+      PLUGINS: 0
+      SECRETS: 0
+      SERVICES: 0
+      SESSION: 0
+      SWARM: 0
+      SYSTEM: 0
+      TASKS: 0
+      VERSION: 0
+      # Not an allowlist entry: the bind address. Left at its default the entrypoint tells
+      # haproxy to listen on `[::]:2375 v4v6`, and a host with no IPv6 at all (kernel
+      # `ipv6.disable=1`, as on the machine this file is tested on) cannot bind that — the
+      # proxy would exit, `depends_on` would never be satisfied, and the control plane would
+      # never start. IPv4-only is what this stack needs anyway: the network is IPv4-only, so
+      # the name vcomputer-socket-proxy has no AAAA record.
+      DISABLE_IPV6: 1
+    volumes:
+      # Read-only, and the only mount of the socket in this file. `:ro` does not restrict
+      # the Engine API — the allowlist above does — but it does keep the socket file from
+      # being replaced or rewritten from inside the proxy.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      # /_ping proves both halves: haproxy is listening, and it reached the daemon over the
+      # socket. Checked with the daemon unreachable: /_ping is a 503 there and wget exits 1,
+      # so the control plane waits for a proxy that has actually opened the socket, and the
+      # first `docker volume create` cannot race haproxy's bind.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2375/_ping"]
+      interval: 10s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+    networks:
+      # Its own network, and no published port: the control plane is the only other member,
+      # so the only way in is the control plane. Sandboxes are on vcomputer-internal, which
+      # this service is deliberately not on.
+      - vcomputer-dockerapi
+
   # The control plane: session lifecycle, navigate / screenshot / click / type / exec,
   # and the noVNC proxy. It is the only service with a host-published port.
   vcomputer-control:
@@ -87,6 +214,10 @@ services:
       # Quoted because the error message inside ${...:?} contains a colon-space, which
       # an unquoted YAML scalar would read as the start of another mapping.
       VCOMPUTER_CONTROL_TOKEN: "${VCOMPUTER_CONTROL_TOKEN:?set a token: generate one with openssl rand -hex 16}"
+      # The CLI's address for the daemon, and never a socket file: this container has no
+      # docker.sock to fall back on, so dropping this line fails every call loudly instead
+      # of quietly going back to root-on-the-host.
+      DOCKER_HOST: tcp://vcomputer-socket-proxy:2375
       VCOMPUTER_RUNTIME: ${VCOMPUTER_RUNTIME:-docker}
       VCOMPUTER_DOCKER_BIN: ${VCOMPUTER_DOCKER_BIN:-docker}
       VCOMPUTER_SANDBOX_IMAGE: ${VCOMPUTER_SANDBOX_IMAGE:-vcomputer-sandbox:poc}
@@ -96,15 +227,17 @@ services:
       VCOMPUTER_EXEC_TIMEOUT: ${VCOMPUTER_EXEC_TIMEOUT:-30s}
       SCREEN_GEOMETRY: ${SCREEN_GEOMETRY:-1280x800x24}
     ports:
-      # Bound to the host's loopback on purpose. This container can start containers as
-      # root through the socket below, so publishing it on 0.0.0.0 would hand that to
-      # the network. The token is the second lock.
+      # Bound to the host's loopback on purpose. This is the surface that can start
+      # containers on the host, so publishing it on 0.0.0.0 would hand that to the network;
+      # the token is the second lock, and the socket is not here at all — it is behind
+      # vcomputer-socket-proxy.
       - "127.0.0.1:${VCOMPUTER_CONTROL_PORT:-8090}:8090"
-    volumes:
-      # The privilege trade-off, stated where it is granted: the runtime drives the
-      # daemon with the CLI and the CLI needs the socket, which is equivalent to root on
-      # this host (docs/adr/0003-virtual-computer.md §3.3, §3.7).
-      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      # service_healthy, not the short form: the runtime's first call is a `docker volume
+      # create`, and that must not race haproxy's bind. There is no socket mount here to
+      # fall back on (docs/adr/0003-virtual-computer.md §3.3, §3.7).
+      vcomputer-socket-proxy:
+        condition: service_healthy
     healthcheck:
       # wget, not curl: the runtime image is docker:27-cli (alpine), which has wget and
       # the docker CLI but no curl. /health is the one route that needs no token.
@@ -114,11 +247,14 @@ services:
       start_period: 5s
       retries: 3
     networks:
-      # Two networks, and the split is the point: the edge network is how the host
-      # reaches the control plane, and the internal network is the only place sandboxes
-      # live. This container is the single member of both, so it is the only door in.
+      # Three networks, and the split is the point: the edge network is how the host
+      # reaches the control plane, the internal network is the only place sandboxes live,
+      # and the dockerapi network is where the daemon's proxy listens. This container is
+      # the only member of the last one, which is what keeps the Engine API out of a
+      # sandbox's reach.
       - vcomputer-edge
       - vcomputer-internal
+      - vcomputer-dockerapi
 
   # A page for the browser to navigate to. The sandbox network has no route out
   # (`internal: true`), so a demonstration needs something to open that is not the
@@ -159,3 +295,10 @@ networks:
   # on. The control plane is its only member.
   vcomputer-edge:
     name: vcomputer-edge
+
+  # The daemon-API network: the proxy and the control plane, nobody else. `internal: true`
+  # so nothing on it has egress — the proxy needs none (it reaches the daemon over the
+  # socket it mounts) and the control plane keeps vcomputer-edge for everything else.
+  vcomputer-dockerapi:
+    name: vcomputer-dockerapi
+    internal: true

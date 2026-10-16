@@ -26,6 +26,13 @@
 #   network-internal / no-published-ports / no-egress
 #                                 the sandbox sits on an internal network, publishes nothing,
 #                                 and cannot reach the internet
+#   control-no-docker-sock / proxy-not-published / dockerapi-internal /
+#   proxy-refuses-forbidden
+#                                 the daemon socket is held by a filtering proxy on its own
+#                                 internal network, the control container has no socket
+#                                 mount, and an API section the runtime does not use is
+#                                 refused with a 403
+#   sandbox-cannot-reach-proxy    a tenant has no route to the daemon API at all
 #   novnc-*                       the desktop is reachable through the control plane only,
 #                                 and only with the token
 #   delete / delete-twice-404 / ensure-after-delete-running / volume-reused
@@ -63,6 +70,11 @@
 # Needs bash, curl, sed, od, tr, cut, wc, sha256sum, and the docker CLI; openssl if present
 # and /dev/urandom if not. No jq and no python3: the JSON read here is one level deep, and an
 # evidence script that needs a package manager is an evidence script nobody reruns.
+#
+# One image more than the two this file builds: the socket proxy
+# (tecnativa/docker-socket-proxy:v0.5.0, docker-compose.poc.yml) is pulled, never built. `up`
+# pulls it when it is missing, so a daemon with no route to a registry has to have it loaded
+# already — the same daemon BUILD_NETWORK=host exists for.
 
 # A failed check must not stop the run: the point of the log is the whole list of what broke,
 # not the first thing that did.
@@ -218,10 +230,15 @@ fi
 
 # ------------------------------------------------------------------------------------ up
 
-log "up: control plane and fixture"
+log "up: control plane, fixture and socket proxy"
 
 # The fixture is the page the browser opens. It lives on the internal network, so it is the
 # only URL a sandbox can navigate to — which is what makes the navigate check meaningful.
+# The proxy is named here because it is the control plane's only way to the daemon: `up` pulls
+# it if this daemon does not have it yet, and the control plane waits for its healthcheck
+# (depends_on: service_healthy), so a proxy that cannot reach the socket fails the run here
+# rather than at the first `docker volume create`.
+
 up_flags=""
 if [ "$PREBUILT" = "1" ]; then
     # `--no-build` keeps the tags that already exist instead of rebuilding them behind the
@@ -229,10 +246,10 @@ if [ "$PREBUILT" = "1" ]; then
     up_flags="--no-build"
 fi
 # shellcheck disable=SC2086  # COMPOSE and the flag above are word lists by design
-if $COMPOSE up -d $up_flags vcomputer-control vcomputer-fixture; then
+if $COMPOSE up -d $up_flags vcomputer-control vcomputer-fixture vcomputer-socket-proxy; then
     pass "compose-up"
 else
-    fail "compose-up" "$COMPOSE up -d failed (does the compose file still name the services vcomputer-control and vcomputer-fixture?)"
+    fail "compose-up" "$COMPOSE up -d failed (do the services still exist under those names, and is tecnativa/docker-socket-proxy:v0.5.0 in this daemon or reachable from it?)"
 fi
 
 # Nothing below can be read before the process is listening. Compose's own healthcheck is
@@ -389,7 +406,60 @@ else
     fail "no-egress" "curl to https://example.com inside the sandbox answered exit_code=${code:-<none>}, want non-zero: the internal network must have no route out"
 fi
 
-log "10. noVNC goes through the control plane, with the token and without it"
+# --------------------------------------------------------- the socket, and who may hold it
+
+log "10. the docker socket sits behind a filtering proxy"
+
+# The control plane drives the daemon with the CLI, so where that CLI points is the whole
+# security story of this stack. First claim: the socket is not in the control container at
+# all. DOCKER_HOST is what proves the CLI was pointed elsewhere, and every check above is
+# the evidence for that — without it the CLI would have nothing to talk to.
+# shellcheck disable=SC2086  # DOCKER may be "sudo docker"
+mounts=$($DOCKER inspect vcomputer-control -f '{{range .Mounts}}{{.Source}} {{end}}' 2>/dev/null)
+case "$mounts" in
+    *docker.sock*)
+        fail "control-no-docker-sock" "vcomputer-control mounts ${mounts}: the control plane must reach the daemon only through vcomputer-socket-proxy"
+        ;;
+    *)
+        pass "control-no-docker-sock"
+        ;;
+esac
+
+# A published port on the proxy would undo the point of it, and an internal network is what
+# keeps it off the host's route table. The proxy is on vcomputer-dockerapi and the sandboxes
+# are not, which is what the last check in this section tests from the inside.
+# shellcheck disable=SC2086  # DOCKER may be "sudo docker"
+expect "proxy-not-published" "$($DOCKER port vcomputer-socket-proxy 2>/dev/null)" "" \
+    "vcomputer-socket-proxy must publish no port: the control plane reaches it over vcomputer-dockerapi, never from the host"
+# shellcheck disable=SC2086  # DOCKER may be "sudo docker"
+expect "dockerapi-internal" "$($DOCKER network inspect vcomputer-dockerapi -f '{{.Internal}}' 2>/dev/null)" "true" \
+    "vcomputer-dockerapi must exist with internal: true"
+
+# The allowlist, checked from the only side that can see the answer. A request the runtime
+# never makes must be refused by the proxy itself — a 403, not a daemon error and not a
+# connection error — and GET /images/json is the cheapest such request, because the runtime
+# never pulls or lists an image. wget -S prints the response line, which carries the status.
+# shellcheck disable=SC2086  # DOCKER may be "sudo docker"
+forbidden=$($DOCKER exec vcomputer-control wget -S -O /dev/null http://vcomputer-socket-proxy:2375/images/json 2>&1)
+case "$forbidden" in
+    *403*) pass "proxy-refuses-forbidden" ;;
+    *) fail "proxy-refuses-forbidden" "GET /images/json through the proxy answered '${forbidden}', want a 403: the proxy must refuse every Engine API section the runtime does not use" ;;
+esac
+
+# And the direction that matters for a tenant: a sandbox must not reach the daemon API at
+# all. It is on vcomputer-internal only, so this fails either at name resolution or at the
+# route — non-zero either way, which is the claim.
+body=$(api -X POST -H 'Content-Type: application/json' \
+    -d '{"command":"curl -s -m 5 -o /dev/null http://vcomputer-socket-proxy:2375/_ping"}' \
+    "${BASE}/v1/sessions/${BOT}/exec")
+code=$(json_num "$body" exit_code)
+if [ -n "$code" ] && [ "$code" != "0" ]; then
+    pass "sandbox-cannot-reach-proxy"
+else
+    fail "sandbox-cannot-reach-proxy" "curl to the proxy inside the sandbox answered exit_code=${code:-<none>}, want non-zero: a sandbox must have no route to the daemon API"
+fi
+
+log "11. noVNC goes through the control plane, with the token and without it"
 # No Authorization header on either request, on purpose: this is the browser's path, where the
 # token arrives once as a query parameter and is traded for an HttpOnly cookie.
 novnc="http://127.0.0.1:${PORT}/v1/sessions/${BOT}/novnc/vnc.html"
@@ -398,7 +468,7 @@ expect "novnc-with-token" "$(curl -s -o /dev/null -m 20 -w '%{http_code}' "${nov
 expect "novnc-without-token" "$(curl -s -o /dev/null -m 20 -w '%{http_code}' "$novnc")" 401 \
     "the same URL without the token must be refused"
 
-log "11. delete ends the container, the volume outlives it"
+log "12. delete ends the container, the volume outlives it"
 code=$(status -X DELETE "${BASE}/v1/sessions/${BOT}")
 case "$code" in
     2*) pass "delete" ;;

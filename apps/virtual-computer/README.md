@@ -25,7 +25,13 @@ flowchart LR
         P -->|"Runtime interface"| R2["DockerRuntime<br/>(docker CLI, nyata)"]
     end
 
-    R2 -->|"docker run · docker exec · docker inspect"| S
+    R2 -->|"DOCKER_HOST=tcp://vcomputer-socket-proxy:2375<br/>docker run · docker exec · docker inspect"| SX
+
+    subgraph DX["vcomputer-dockerapi (internal: true, tanpa port)"]
+        SX["vcomputer-socket-proxy :2375<br/>haproxy + allowlist Engine API"]
+    end
+
+    SX -->|"unix socket /var/run/docker.sock (ro), hanya section yang diizinkan"| DD["dockerd host"]
 
     subgraph S["sandbox container — vcomputer-internal (internal: true, tanpa egress)"]
         X["Xvfb :99"] --> F["fluxbox"] --> V["x11vnc :5900<br/>(localhost)"] --> N["noVNC<br/>:${NOVNC_PORT:-6080}"]
@@ -43,28 +49,37 @@ flowchart LR
     G["gerbang approval<br/>(EPIC 7, belum tersambung)"] -.->|"write_external"| P
 ```
 
-Enam hal yang dibaca dari diagram itu:
+Delapan hal yang dibaca dari diagram itu:
 
 1. **Backend tidak memanggil Docker.** Ia memanggil satu API HTTP di jaringan internal,
    dengan `Authorization: Bearer`. Control plane boleh berganti cara ia membuat sandbox
    (Docker hari ini, gVisor/K8s kelak) tanpa worker berubah.
-2. **Sandbox adalah proses yang bisa dibaca daftarnya**, bukan satu "komputer" opaque:
+2. **Socket Docker tidak ada di container control plane.** CLI docker di dalam
+   `vcomputer-control` diarahkan `DOCKER_HOST=tcp://vcomputer-socket-proxy:2375`, dan
+   `vcomputer-socket-proxy` satu-satunya container yang memegang `/var/run/docker.sock`
+   (read-only). Proxy itu menjawab `403` untuk setiap section Engine API yang tidak
+   dipakai runtime, dan tidak punya port yang dipublikasikan: satu-satunya jalan masuk
+   adalah jaringan `vcomputer-dockerapi`, yang hanya memuat proxy dan control plane.
+3. **Sandbox adalah proses yang bisa dibaca daftarnya**, bukan satu "komputer" opaque:
    Xvfb → fluxbox → x11vnc → noVNC, plus Chromium dengan CDP.
-3. **State yang bertahan ada di volume**, bukan di proses: profil browser dan berkas
+4. **State yang bertahan ada di volume**, bukan di proses: profil browser dan berkas
    hidup di `/home/bolu`, jadi container boleh mati dan sesi tidak hilang. Workflow
    hanya membawa pengenal — aturan *claim check* di ADR 0001.
-4. **CDP hanya mendengarkan di loopback Chromium.** `--remote-debugging-address=0.0.0.0`
+5. **CDP hanya mendengarkan di loopback Chromium.** `--remote-debugging-address=0.0.0.0`
    diabaikan Chromium baru, jadi `socat TCP-LISTEN:${CDP_PORT},fork,reuseaddr,bind=0.0.0.0`
    yang mempublikasikannya ke alamat container. Control plane menyapa
    `http://<ip-sandbox>:9223` — **IP, bukan nama host** — karena endpoint DevTools menolak
    Host header yang bukan IP atau `localhost`.
-5. **noVNC di-proxy.** Browser hanya perlu menjangkau control plane: path
+6. **noVNC di-proxy.** Browser hanya perlu menjangkau control plane: path
    `/v1/sessions/<bot>/novnc/...` di-strip lalu diteruskan ke
    `http://<ip-sandbox>:<port-novnc>/` berikut upgrade websocket-nya. Tidak ada port
    sandbox yang pernah dipublikasikan ke host.
-6. **Gerbang approval belum tersambung** (garis putus-putus). `click`, `type`, dan
+7. **Gerbang approval belum tersambung** (garis putus-putus). `click`, `type`, dan
    `exec` adalah `write_external` menurut riset §5.1; PoC men-stub jalur itu dan
    menyatakannya, bukan menganggapnya selesai.
+8. **Proxy socket adalah pagar, bukan isolasi.** Ia mempersempit apa yang bisa dilakukan
+   control plane yang diambil alih, tetapi `CONTAINERS` tetap ada di allowlist — jadi
+   sandbox dengan HostConfig sembarang masih mungkin. Rinciannya di trade-off di bawah.
 
 ## Isi direktori
 
@@ -76,7 +91,7 @@ Enam hal yang dibaca dari diagram itu:
 | `sandbox/` | Image sandbox: `Dockerfile` + `entrypoint.sh` |
 | `fixture/` | Satu halaman statis yang disajikan `vcomputer-fixture` di jaringan internal |
 | `demo/index.html` | Halaman statis yang menyematkan noVNC asli lewat proxy control plane |
-| `docker-compose.poc.yml` | Stack PoC: `control` + `fixture` + target build `vcomputer-sandbox`, dan dua jaringan |
+| `docker-compose.poc.yml` | Stack PoC: `vcomputer-control` + `vcomputer-fixture` + `vcomputer-socket-proxy` + target build `vcomputer-sandbox`, dan tiga jaringan |
 | `scripts/e2e.sh` | Checklist QA end-to-end: build, jalankan, periksa, tulis bukti, cetak PASS/FAIL |
 
 ## Permukaan API
@@ -113,7 +128,7 @@ sesi tidak ada, `500`/`502` runtime gagal. Setiap rute di atas dilayani kedua ru
 | `VCOMPUTER_RUNTIME` | `memory` (`docker` di compose) | `memory` (tanpa Docker sama sekali) atau `docker` (runtime nyata) |
 | `VCOMPUTER_CONTROL_TOKEN` | — (**wajib**) | rahasia bersama untuk setiap rute `/v1/*` |
 | `VCOMPUTER_CONTROL_PORT` | `8090` | port host control plane |
-| `VCOMPUTER_DOCKER_BIN` | `docker` | CLI docker; boleh berisi spasi (`sudo docker`) |
+| `DOCKER_HOST` | — (diisi compose) | alamat daemon untuk CLI docker di dalam container control; compose menunjuknya ke `tcp://vcomputer-socket-proxy:2375`, dan container itu tidak punya `docker.sock` untuk jadi fallback |
 | `VCOMPUTER_SANDBOX_IMAGE` | `vcomputer-sandbox:poc` | image yang dijalankan runtime per bot |
 | `VCOMPUTER_SANDBOX_NETWORK` | `vcomputer-internal` | jaringan Docker tempat sandbox bergabung |
 | `VCOMPUTER_SANDBOX_NOVNC_PORT` | `6080` | port noVNC tiap sandbox, dikirim sebagai `-e NOVNC_PORT=` |
@@ -140,8 +155,7 @@ cd apps/virtual-computer/control && VCOMPUTER_CONTROL_TOKEN=$(openssl rand -hex 
 
 # Seluruh stack PoC (butuh Docker).
 export VCOMPUTER_CONTROL_TOKEN=$(openssl rand -hex 16)
-docker compose -f apps/virtual-computer/docker-compose.poc.yml --profile build build
-docker compose -f apps/virtual-computer/docker-compose.poc.yml up -d control fixture
+docker compose -f apps/virtual-computer/docker-compose.poc.yml up -d vcomputer-control vcomputer-fixture vcomputer-socket-proxy
 ```
 
 Lalu seluruh checklist QA dalam satu perintah:
@@ -160,16 +174,61 @@ yang sudah ada), memakai `${DOCKER:-docker}` sehingga `DOCKER="sudo docker"` bis
 dan keluar non-nol bila ada satu pemeriksaan yang gagal. `BUILD_NETWORK=host` hanya perlu
 bila daemon build tidak bisa mengambil paket apt lewat jembatan jaringannya.
 
-### Trade-off yang diterima: `/var/run/docker.sock`
+### Trade-off yang diterima: proxy socket dengan allowlist per section
 
-Control plane mengendarai daemon lewat CLI docker, dan CLI itu butuh socket-nya. Container
-`vcomputer-control` karena itu me-mount `/var/run/docker.sock` dan berjalan sebagai root:
-itu **setara akses root di host**, dan siapa pun yang bisa mencapai permukaan HTTP-nya bisa
-menjalankan container sebagai root. Ini lubang terbesar di PoC ini, dan ditulis di sini
-supaya tidak ketemu belakangan. Dua pagar yang dipasang: token wajib (control plane
-menolak start tanpa itu) dan port host hanya di `127.0.0.1`. Jalur produksinya **bukan**
-socket di dalam container, melainkan klien Docker API di node sandbox — atau socket di
-belakang proxy yang memfilter request — persis seperti riset §4.2.
+Control plane mengendarai daemon lewat CLI docker, dan CLI itu butuh alamat daemon. Yang
+**tidak** dilakukan PoC ini: me-mount socket ke container control plane. Yang dilakukan:
+satu container tambahan, `vcomputer-socket-proxy`
+(`tecnativa/docker-socket-proxy:v0.5.0`, tag dipin), memegang
+`/var/run/docker.sock` read-only dan meneruskan Engine API lewat haproxy di port `2375`
+dengan allowlist per section. CLI di container control plane diarahkan ke sana lewat
+`DOCKER_HOST`, dan proxy itu hanya ada di jaringan `vcomputer-dockerapi`
+(`internal: true`) bersama control plane — tanpa port yang dipublikasikan.
+
+Allowlist-nya adalah **apa yang benar-benar dipanggil `internal/sandbox/docker.go`**, bukan
+seluruh API:
+
+| Section | Nilai | Yang memakainya |
+| --- | --- | --- |
+| `VOLUMES` | `1` | `docker volume create` (volume home per bot) |
+| `CONTAINERS` | `1` | `docker run`, `docker inspect`, `docker start`, `docker stop` |
+| `EXEC` | `1` | `docker exec` untuk screenshot / click / type |
+| `POST` | `1` | setiap panggilan di atas adalah POST — dan CLI melakukan `HEAD /_ping` sebelum apa pun; ini juga yang mematikan gerbang method di proxy (lihat di bawah) |
+| `ALLOW_START` / `ALLOW_STOP` | `1` | `docker start` / `docker stop` (redundan selama `CONTAINERS=1`; ditulis eksplisit karena itu operasi yang benar-benar dipakai runtime) |
+| `PING` | `1` | ping CLI saat start (dari situ versi API dinegosiasikan) |
+| sisanya (`IMAGES`, `INFO`, `NETWORKS`, `SYSTEM`, `SWARM`, `SECRETS`, `PLUGINS`, `EVENTS`, `AUTH`, `BUILD`, `COMMIT`, `CONFIGS`, `DISTRIBUTION`, `GRPC`, `NODES`, `SERVICES`, `SESSION`, `TASKS`, `VERSION`) | `0` | tidak ada — dijawab `403` oleh proxy, daemon tidak pernah melihat request-nya |
+| `ALLOW_RESTARTS` / `ALLOW_PAUSE` / `ALLOW_UNPAUSE` | `0` | bukan penolakan: selama `CONTAINERS=1`, `restart`/`kill`/`pause` tetap lolos lewat section `/containers` (lihat di bawah) |
+
+Yang **tidak** dibeli proxy ini, dan ditulis di sini supaya tidak ketemu belakangan. Allowlist
+itu per **section**, bukan per operasi:
+
+- `CONTAINERS=1` membuka **seluruh** path di bawah `/containers` — termasuk `restart`, `kill`,
+  `pause`, `attach`, dan `DELETE` (`docker rm`), plus `DELETE /volumes/<name>`. Nilai
+  `ALLOW_RESTARTS=0` tidak menutupnya: haproxy memeriksa rule `ALLOW_*` sebelum rule section,
+  jadi selama `CONTAINERS=1`, `restart`/`kill` tetap lolos lewat `/containers`.
+- `POST=1` — yang wajib, karena setiap tulis adalah POST — mematikan gerbang method di rule
+  pertama (`deny unless METH_GET || POST`). Konsekuensinya method tidak lagi jadi batas: `PUT`
+  ke section yang diizinkan tetap diterima.
+- Proxy tidak memeriksa body request. Jadi `POST /containers/create` dengan HostConfig apa pun
+  tetap bisa: container privileged, atau host root yang di-bind-mount. Control plane yang
+  diambil alih karena itu **masih bisa mencapai root host** lewat API yang memang diizinkan
+  untuknya.
+
+Yang benar-benar hilang dari permukaan: tarik image, swarm, secret, plugin, `system`, `info`,
+dan setiap section lain yang tidak dipakai runtime. Ditambah dua pagar yang sudah ada — token
+wajib (control plane menolak start tanpa itu) dan port host hanya di `127.0.0.1` — dan satu
+yang baru: sandbox tidak punya rute ke proxy sama sekali (`vcomputer-internal` ≠
+`vcomputer-dockerapi`), dan tidak ada `docker.sock` di container control plane.
+
+Harga yang dibayar: `IMAGES=0` berarti runtime tidak bisa menarik image, jadi
+`vcomputer-sandbox:poc` harus sudah dibangun di daemon itu (`--profile build build`, atau
+`scripts/e2e.sh`). Proxy juga satu titik kegagalan: tanpa dia, control plane tidak bisa
+memanggil daemon sama sekali — dan itu disengaja, karena fallback ke socket akan
+mengembalikan persis lubang yang ditutup.
+
+Jalur produksinya tetap **bukan** proxy: ia klien Docker API di node sandbox yang terpisah
+dari node API — atau gVisor/Kubernetes di Fase 2 riset. Proxy ini yang membuat PoC hari ini
+berhenti memegang socket host; ia tidak mengubah rekomendasi itu.
 
 ## Halaman demo
 
@@ -245,7 +304,7 @@ seharusnya menulis PNG ke object storage Jakarta dan mengembalikan kuncinya — 
 
 | Bagian | Keadaan PoC | Yang dibutuhkan untuk produksi |
 | --- | --- | --- |
-| `DockerRuntime` | **Nyata**: `docker volume create`, `docker run`, `docker exec`, `docker inspect`, `docker stop` lewat CLI, tanpa `-p` | Klien Docker API di node sandbox, tanpa `docker.sock` di dalam container control |
+| `DockerRuntime` | **Nyata**: `docker volume create`, `docker run`, `docker exec`, `docker inspect`, `docker stop` lewat CLI, tanpa `-p`, dan tanpa `docker.sock` di container control plane (lewat `vcomputer-socket-proxy` dengan allowlist) | Klien Docker API di node sandbox, tanpa `docker.sock` di dalam container control |
 | `exec` di runtime `memory` | Echo; perintah tidak pernah dijalankan — hanya runtime ini yang begitu, runtime `docker` menjalankannya sungguhan | Label `write_external` + gerbang approval, atau allowlist perintah `read`-only |
 | Gerbang approval | Tidak tersambung | Draf untuk `click`/`type`/`exec`, dengan tangkapan layar sebagai konteks |
 | Isolasi | Container runc yang dikeraskan (`cap_drop: ALL`, `no-new-privileges`, limit RAM/PID), jaringan internal tanpa egress | gVisor di Kubernetes (riset Fase 2) |
@@ -266,6 +325,19 @@ seharusnya menulis PNG ke object storage Jakarta dan mengembalikan kuncinya — 
   terdaftar tercetak oleh `TestAgentWorkerRegistrationInventory`).
 - `scripts/e2e.sh` menjalankan jalur yang sebenarnya di Docker dan menulis buktinya ke
   `docs/poc-evidence/virtual-computer/`.
+- `scripts/e2e.sh` juga memeriksa pagar socket itu sendiri: container control tidak
+  me-mount `docker.sock`, proxy tidak mempublikasikan port, `vcomputer-dockerapi` benar
+  `internal: true`, `GET /images/json` lewat proxy dijawab `403`, dan sandbox tidak punya
+  rute ke proxy.
+- Tabel allowlist di atas diukur, bukan dibaca dari dokumentasi: haproxy dari image
+  `tecnativa/docker-socket-proxy:v0.5.0` dijalankan di atas daemon tiruan dengan env yang sama
+  seperti compose, dan CLI docker sungguhan digerakkan lewat proxy itu. Semua panggilan
+  runtime (`volume create`, `run -d`, `inspect`, `start`, `stop`, `exec`) selesai dengan exit
+  0; `image ls`, `info`, `network ls`, `pull`, `version` dan `system df` dijawab `403`. Dari
+  situ juga terlihat batasnya: `restart`, `kill`, `DELETE /containers/<id>`,
+  `DELETE /volumes/<name>` dan `PUT /containers/create` ikut lolos (docs/adr/0003 §Revisi
+  2026-10-16 (b)). Harness-nya tidak ikut masuk repo karena butuh `python3` sebagai daemon
+  tiruan; yang tetap ada di repo adalah pemeriksaan `403` di `scripts/e2e.sh`.
 
 Perintah yang menjalankannya, dan alasannya bukan bagian dari `make test`/`make lint`:
 kedua target itu per modul produk, masing-masing dengan `.golangci.yml` dan
