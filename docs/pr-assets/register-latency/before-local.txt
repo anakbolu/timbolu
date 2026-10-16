@@ -1,0 +1,4 @@
+REKAP hasil pengukuran sebelumnya (bukan dijalankan ulang)
+Build: main 2bb8257
+Env: MAIL_DRIVER=smtp  MAIL_HOST=10.255.255.1  AUTH_REQUIRE_EMAIL_VERIFICATION=true
+POST /register  ->  HTTP 500   waktu: 134,08 detik

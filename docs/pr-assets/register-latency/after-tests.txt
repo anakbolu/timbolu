@@ -1,0 +1,13 @@
+$ git rev-parse --short HEAD
+c46960c
+$ (apps/backend) go test -count=1 ./internal/platform/mail/... ./internal/modules/auth/... ./internal/container/...
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/platform/mail	0.416s
+?   	github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain	[no test files]
+?   	github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain/mocks	[no test files]
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/handler	0.014s
+?   	github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository	[no test files]
+?   	github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository/sqlcgen	[no test files]
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/service	3.669s
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/container	1.784s
+$ (packages/platform/config) go test -count=1 .
+ok  	github.com/robzlabz/employeebot/packages/platform/config	0.027s
