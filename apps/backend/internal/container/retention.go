@@ -71,10 +71,14 @@ func buildRetention(cfg *config.Config, repository retentiondomain.Repository, s
 		// not a policy about what a customer said: a file that was uploaded and never
 		// sent has no message to be kept with, and an operator tuning it is tuning how
 		// long a client may take to finish a send.
-		StagedTTL:  cfg.Storage.AttachmentStagedTTL,
-		Interval:   cfg.Retention.Interval,
-		Limit:      cfg.Retention.Batch,
-		SweepLimit: cfg.Retention.SweepLimit,
+		StagedTTL: cfg.Storage.AttachmentStagedTTL,
+		// The staged clock has a schedule of its own, because the deployment that turns the
+		// pass off is the one whose staged uploads would otherwise never leave: nothing
+		// carries them and no reader waits, so only this loop would ever take them.
+		StagedSweepInterval: cfg.Storage.AttachmentStagedSweepInterval,
+		Interval:            cfg.Retention.Interval,
+		Limit:               cfg.Retention.Batch,
+		SweepLimit:          cfg.Retention.SweepLimit,
 	})
 }
 
@@ -250,5 +254,76 @@ func (c *Container) pruneContent(ctx context.Context) {
 		zap.Int("attachments_pruned", result.Attachments),
 		zap.Int64("bytes_freed", result.BytesFreed),
 		zap.Duration("step_window", c.Retention.Policy().StepWindow),
+	)
+}
+
+// RunStagedSweep removes the uploads nobody ever sent, on an interval until the context ends.
+//
+// It is a loop of its own rather than the tail of the retention pass, because the two answer to
+// different switches. RETENTION_INTERVAL=0 is a deployment that chose not to delete what a
+// customer said — a stack somebody is stepping through — and it is that deployment whose staged
+// uploads would otherwise accumulate forever: nothing carries them, so the attachment window never
+// reaches them, and no reader waits for them either.
+//
+// It stands down while the pass is running, and that is not a saving but a correctness rule: both
+// walks use `retention_targets` as their queue and both push `next_prune_at` forward, so two of
+// them at once would each schedule a workspace for the other and the pair would drift out of both
+// intervals. The pass carries the staged half itself, so nothing is left unswept by standing down.
+func (c *Container) RunStagedSweep(ctx context.Context) {
+	if c.Retention == nil || c.Config == nil {
+		return
+	}
+	if c.Config.Retention.Interval > 0 {
+		// The pass is on: its own walk carries the staged uploads, and starting this would
+		// take its queue out from under it.
+		c.Logger.Info("the staged sweep is carried by the retention pass")
+		return
+	}
+
+	interval := c.Config.Storage.AttachmentStagedSweepInterval
+	if interval <= 0 {
+		interval = retentionservice.DefaultStagedSweepInterval
+	}
+
+	c.sweepStaged(ctx)
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.sweepStaged(ctx)
+		}
+	}
+}
+
+// sweepStaged runs one staged sweep and reports what it did.
+func (c *Container) sweepStaged(ctx context.Context) {
+	result, err := c.Retention.SweepStaged(ctx)
+	if err != nil && ctx.Err() == nil {
+		c.Logger.Error("the staged sweep failed",
+			zap.Int("workspaces", result.Workspaces),
+			zap.Int("attachments_pruned", result.Attachments),
+			zap.Int64("bytes_freed", result.BytesFreed),
+			zap.Error(err))
+		return
+	}
+
+	if result.Attachments == 0 && result.BytesFreed == 0 {
+		return
+	}
+
+	// The same series the pass writes, because it is the same question: a staged upload is an
+	// attachment, and the kind says what was removed rather than which loop removed it.
+	c.Metrics.RetentionPruned(ctx, "attachment", int64(result.Attachments))
+
+	c.Logger.Info("the staged sweep ran",
+		zap.Int("workspaces", result.Workspaces),
+		zap.Int("attachments_pruned", result.Attachments),
+		zap.Int64("bytes_freed", result.BytesFreed),
+		zap.Duration("staged_ttl", c.Retention.Policy().StagedTTL),
 	)
 }

@@ -35,6 +35,12 @@ x-backend-env: &backend-env
   # narrow the module's own list, so empty is the list of images, PDFs, office
   # documents, and text.
   ATTACHMENT_ALLOWED_EXTENSIONS: ${ATTACHMENT_ALLOWED_EXTENSIONS:-}
+  # The staged clock: how long an upload nobody named in a message is kept, and how
+  # often the sweep that removes one looks. It is not the attachment policy — a file
+  # nobody sent has no message to be kept with — so it keeps running with
+  # RETENTION_INTERVAL=0, which is this stack's default. Empty means 24h and 1h.
+  ATTACHMENT_STAGED_TTL: ${ATTACHMENT_STAGED_TTL:-}
+  ATTACHMENT_STAGED_SWEEP_INTERVAL: ${ATTACHMENT_STAGED_SWEEP_INTERVAL:-}
   # The origin the sandboxed documents are served from. Locally the API serves
   # them itself; production points this at a separate host.
   CONTENT_ORIGIN: ${CONTENT_ORIGIN:-http://localhost:8080}

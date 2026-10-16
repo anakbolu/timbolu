@@ -614,6 +614,14 @@ type StorageConfig struct {
 	// as long as the message that carries it, while a staged upload has no message and
 	// no reader — nothing was ever sent with it, so nothing is waiting for it.
 	AttachmentStagedTTL time.Duration `mapstructure:"AttachmentStagedTTL" validate:"optional"`
+	// AttachmentStagedSweepInterval is how often the sweep that removes those uploads
+	// looks. Zero means the retention module's default of an hour.
+	//
+	// It is a schedule of its own rather than RETENTION_INTERVAL, because the two answer
+	// to different switches: a deployment that turned the retention pass off — a stack
+	// somebody is stepping through — still has no reason to keep a file nobody sent, and
+	// it is that deployment whose staged uploads would otherwise accumulate forever.
+	AttachmentStagedSweepInterval time.Duration `mapstructure:"AttachmentStagedSweepInterval" validate:"optional"`
 }
 
 // LoggingConfig holds structured logging settings.

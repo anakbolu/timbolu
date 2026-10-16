@@ -221,24 +221,6 @@ func (s *Service) dispatchTask(
 	return result, nil
 }
 
-// resolveAttachments loads the metadata of the files named in a message, so the
-// stored message carries them and the client renders them without a fetch.
-func (s *Service) resolveAttachments(ctx context.Context, scope chatdomain.Scope, ids []uuid.UUID) ([]chatdomain.Attachment, error) {
-	if len(ids) == 0 {
-		return nil, nil
-	}
-
-	attachments := make([]chatdomain.Attachment, 0, len(ids))
-	for _, id := range dedupe(ids) {
-		attachment, err := s.deps.Attachments.Open(ctx, scope, id)
-		if err != nil {
-			return nil, err
-		}
-		attachments = append(attachments, attachment)
-	}
-	return attachments, nil
-}
-
 // responderPick is one Bolu that will answer, and how it was chosen.
 type responderPick struct {
 	Agent chatdomain.AgentRef

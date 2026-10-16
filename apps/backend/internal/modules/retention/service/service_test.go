@@ -308,3 +308,130 @@ func TestABacklogIsReportedRatherThanSilentlyLeft(t *testing.T) {
 	require.Len(t, fixture.steps.seen, 1)
 	require.Equal(t, 500, fixture.steps.seen[0].limit)
 }
+
+// TestTheStagedSweepRunsWhenThePassIsOff is the reason the sweep is a pass of its own: a
+// deployment that keeps every attachment with its message — the local stack, and any deployment
+// that set RETENTION_INTERVAL=0 — still must not keep the file nobody ever sent, because nothing
+// carries it and no reader waits for it. The pass's clock is not the staged clock.
+func TestTheStagedSweepRunsWhenThePassIsOff(t *testing.T) {
+	workspace := uuid.New()
+	now := time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)
+
+	fixture := newRetentionFixture(workspace)
+	fixture.attachments.stagedPruned[workspace] = domain.PrunedAttachments{Count: 2, BytesFreed: 8192}
+
+	// The pass is off: no interval, and an attachment window of zero, which is the policy that
+	// keeps everything a customer sent.
+	service := newFixtureService(t, fixture, Config{Interval: 0, AttachmentWindow: 0}, now)
+
+	result, err := service.SweepStaged(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Workspaces)
+	require.Equal(t, 2, result.Attachments)
+	require.Equal(t, int64(8192), result.BytesFreed)
+	require.Zero(t, result.StepsPruned)
+
+	require.Len(t, fixture.attachments.stagedSeen, 1)
+	require.Equal(t, now.Add(-domain.DefaultStagedTTL), fixture.attachments.stagedSeen[0].olderThan,
+		"an unset staged TTL is the module's day, not a window of zero")
+	require.Equal(t, domain.DefaultLimit, fixture.attachments.stagedSeen[0].limit)
+
+	// Nothing else was touched: the sweep is the staged clock and not a second pass.
+	require.Empty(t, fixture.steps.seen)
+	require.Empty(t, fixture.attachments.seen)
+
+	// And the workspace is due again on the sweep's own interval, not the pass's, which is
+	// what keeps a deployment with the pass off from walking the queue in a tight loop.
+	require.Equal(t, now.Add(DefaultStagedSweepInterval), fixture.touched[workspace])
+}
+
+// TestTheStagedSweepSchedulesItselfOnItsOwnClock: the schedule and the window are both the
+// deployment's when it names them, and the two are separate settings because they answer
+// different questions — how long a file is kept, and how often somebody looks.
+func TestTheStagedSweepSchedulesItselfOnItsOwnClock(t *testing.T) {
+	workspace := uuid.New()
+	now := time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)
+
+	fixture := newRetentionFixture(workspace)
+	service := newFixtureService(t, fixture, Config{
+		StagedTTL:           6 * time.Hour,
+		StagedSweepInterval: 15 * time.Minute,
+	}, now)
+
+	_, err := service.SweepStaged(context.Background())
+	require.NoError(t, err)
+
+	require.Len(t, fixture.attachments.stagedSeen, 1)
+	require.Equal(t, now.Add(-6*time.Hour), fixture.attachments.stagedSeen[0].olderThan)
+	require.Equal(t, now.Add(15*time.Minute), fixture.touched[workspace])
+}
+
+// TestThePassCarriesTheStagedUploads: a deployment that runs the pass is not also running the
+// sweep — the container starts one or the other — so the pass has to take the staged half itself.
+// The two walk one queue and both push a workspace's next look forward, so a pass that left them
+// to the sweep would leave them to a walker nobody started.
+func TestThePassCarriesTheStagedUploads(t *testing.T) {
+	workspace := uuid.New()
+	now := time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)
+
+	fixture := newRetentionFixture(workspace)
+	fixture.attachments.pruned[workspace] = domain.PrunedAttachments{Count: 1, BytesFreed: 512}
+	fixture.attachments.stagedPruned[workspace] = domain.PrunedAttachments{Count: 2, BytesFreed: 2048}
+
+	service := newFixtureService(t, fixture, Config{
+		Interval:         time.Hour,
+		AttachmentWindow: 90 * 24 * time.Hour,
+	}, now)
+
+	result, err := service.Run(context.Background())
+	require.NoError(t, err)
+
+	// Both windows were swept, with their own cutoffs, and both counts reach the caller.
+	require.Len(t, fixture.attachments.seen, 1)
+	require.Equal(t, now.Add(-90*24*time.Hour), fixture.attachments.seen[0].olderThan)
+	require.Len(t, fixture.attachments.stagedSeen, 1)
+	require.Equal(t, now.Add(-domain.DefaultStagedTTL), fixture.attachments.stagedSeen[0].olderThan,
+		"the staged half goes on its own window, not the attachment policy")
+	require.Equal(t, 3, result.Attachments)
+	require.Equal(t, int64(2560), result.BytesFreed)
+
+	// And the workspace is scheduled on the pass's interval, because the pass is what ran.
+	require.Equal(t, now.Add(time.Hour), fixture.touched[workspace])
+}
+
+// TestTheStagedSweepKeepsGoingWhenOneWorkspaceFails: the sweep walks the same queue the pass
+// does, so it inherits the same rule — the rest of the fleet is waiting, and the workspace that
+// failed is due again on the interval rather than in a tight loop.
+func TestTheStagedSweepKeepsGoingWhenOneWorkspaceFails(t *testing.T) {
+	first, second := uuid.New(), uuid.New()
+	now := time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)
+
+	fixture := newRetentionFixture(first, second)
+	fixture.attachments.err = map[uuid.UUID]error{first: errors.New("the bucket refused the delete")}
+	fixture.attachments.stagedPruned[second] = domain.PrunedAttachments{Count: 1, BytesFreed: 2048}
+
+	service := newFixtureService(t, fixture, Config{StagedSweepInterval: time.Hour}, now)
+
+	result, err := service.SweepStaged(context.Background())
+	require.Error(t, err)
+	require.Equal(t, 2, result.Workspaces)
+	require.Equal(t, 1, result.Attachments)
+	require.Equal(t, int64(2048), result.BytesFreed)
+
+	require.Len(t, fixture.touched, 2)
+	require.Equal(t, now.Add(time.Hour), fixture.touched[first])
+	require.Len(t, fixture.runs, 1)
+	require.Error(t, fixture.runFailure[0])
+}
+
+// TestTheStagedSweepNeedsAnAttachmentPruner: a deployment without object storage has no staged
+// uploads to remove, and that is not a failure of the sweep.
+func TestTheStagedSweepNeedsAnAttachmentPruner(t *testing.T) {
+	fixture := newRetentionFixture(uuid.New())
+	service := New(Deps{Repository: fixture, Steps: fixture.steps, Clock: time.Now}, Config{})
+
+	result, err := service.SweepStaged(context.Background())
+	require.NoError(t, err)
+	require.Zero(t, result.Attachments)
+	require.Empty(t, fixture.attachments.stagedSeen)
+}

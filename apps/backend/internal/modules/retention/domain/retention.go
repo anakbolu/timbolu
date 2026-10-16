@@ -157,6 +157,17 @@ type Service interface {
 	ErasureService
 	// Run makes one pass over every workspace that is due, and reports what it did.
 	Run(ctx context.Context) (RunResult, error)
+	// SweepStaged makes one pass that removes only the uploads nobody ever sent.
+	//
+	// It is a second entry point rather than a flag on Run because the two answer to different
+	// switches: RETENTION_INTERVAL=0 is a deployment stepping through a task, and it still must
+	// not keep the files nobody sent — which is exactly the deployment whose staged uploads
+	// would otherwise accumulate forever, since no message carries them and no reader waits.
+	//
+	// Run carries the staged half itself, so the two are alternatives and not a pair: both walk
+	// the same queue and both write back when a workspace is next due, so a caller that starts
+	// this while Run is on its interval takes the pass's workspaces out from under it.
+	SweepStaged(ctx context.Context) (RunResult, error)
 	// Policy is the window and the batch this deployment applies.
 	Policy() Policy
 }

@@ -464,10 +464,17 @@ the server opens the carrier message itself.
 `ATTACHMENT_STAGED_TTL` is how long an upload nobody ever named in a message is
 kept, as a Go duration; empty means `24h`. It is not the attachment policy
 (`RETENTION_ATTACHMENT_DAYS`): an attachment lives as long as the message that
-carries it, while a staged upload has no message and no reader. The retention
-pass removes an expired staged upload — row and object together — whatever the
+carries it, while a staged upload has no message and no reader. The staged sweep
+removes an expired staged upload — row and object together — whatever the
 attachment policy says, and publishes nothing, because a staged file is in no
 message's read model.
+
+The sweep is its own clock, and that is the point of it: it runs on
+`ATTACHMENT_STAGED_SWEEP_INTERVAL` (empty means `1h`) even though
+`RETENTION_INTERVAL=0` — which is what a stack somebody is stepping through runs,
+and the one whose staged uploads would otherwise never leave. While the pass is
+on, the pass removes them itself and the sweep stands down: the two walk the same
+queue, and one queue walked twice is a workspace neither of them reaches on time.
 
 ### The block contract
 

@@ -13,6 +13,10 @@
 //     nothing in it waits. `retention_targets.next_prune_at` is what makes a missed pass a pass
 //     that is still due, so a process that was down for a day catches up on its next run
 //     instead of skipping the day.
+//   - It has a second entry point, SweepStaged, for the deployment that runs with the interval
+//     off: a file nobody ever sent still has to go, and nothing else in that deployment would
+//     take it. The two are alternatives rather than a pair, because they share one queue —
+//     Run carries the staged half itself, and the container starts one walker or the other.
 //   - One workspace that cannot be pruned does not stop the pass. The rest of the fleet is
 //     waiting, and this one is due again on the interval.
 package service
@@ -69,6 +73,12 @@ type Config struct {
 	// how long it keeps a file that was uploaded and never sent at all, and a deployment
 	// that keeps messages forever still has no reason to keep one of those.
 	StagedTTL time.Duration
+	// StagedSweepInterval is how far forward a workspace's next staged sweep is scheduled
+	// after one runs. Zero takes the default of an hour.
+	//
+	// It is not Interval: the staged sweep answers to a switch of its own, because a
+	// deployment that turned the pass off still has no reason to keep a file nobody sent.
+	StagedSweepInterval time.Duration
 	// Interval is how far forward a workspace's next pass is scheduled after one runs.
 	// Zero takes the default of a day.
 	Interval time.Duration
@@ -80,6 +90,13 @@ type Config struct {
 
 // DefaultInterval is how long a workspace waits between passes.
 const DefaultInterval = 24 * time.Hour
+
+// DefaultStagedSweepInterval is how long a workspace waits between staged sweeps.
+//
+// An hour, and the number is a judgement rather than a law: it is often enough that a file nobody
+// sent leaves within a TTL plus an hour, and rare enough that the walk costs nothing in a
+// deployment whose staged window is a day.
+const DefaultStagedSweepInterval = time.Hour
 
 // DefaultSweepLimit bounds how many workspaces one pass looks at.
 const DefaultSweepLimit = 200
@@ -135,8 +152,32 @@ func (s *Service) Policy() domain.Policy {
 	}
 }
 
-// Run makes one pass over every workspace that is due.
+// Run makes one pass over every workspace that is due, removing what each window has passed —
+// steps, attachments, and the uploads nobody ever sent.
 func (s *Service) Run(ctx context.Context) (domain.RunResult, error) {
+	return s.pass(ctx, s.interval(), s.pruneWorkspace)
+}
+
+// SweepStaged makes one pass over every workspace that is due, removing only the uploads nobody
+// ever sent.
+//
+// It is the walker for the deployment whose pass is off: RETENTION_INTERVAL=0 is a stack somebody
+// is stepping through, and it keeps every file a customer sent, but the uploads nobody sent have
+// no message to be kept with — and nothing else in such a deployment would ever take them. A
+// deployment that does run the pass carries the staged half inside it and must not start this:
+// the two share `retention_targets` as their queue, and each pushes a workspace's next look
+// forward for the other, so a workspace could fall out of both schedules.
+func (s *Service) SweepStaged(ctx context.Context) (domain.RunResult, error) {
+	return s.pass(ctx, s.stagedInterval(), s.pruneStaged)
+}
+
+// pass walks the queue once: every workspace that is due, pruned by one of the two per-workspace
+// passes below, and scheduled for its next look whatever happened here.
+//
+// `next` is the schedule the walk writes back, and the two callers differ in it rather than in the
+// walk itself: the pass schedules itself on the deployment's interval, the staged sweep on its own
+// — which is what keeps a deployment with the pass off from sweeping staged uploads in a tight loop.
+func (s *Service) pass(ctx context.Context, next time.Duration, prune func(context.Context, domain.Scope, time.Time) (pruned, error)) (domain.RunResult, error) {
 	var result domain.RunResult
 
 	if s.deps.Repository == nil {
@@ -172,7 +213,7 @@ func (s *Service) Run(ctx context.Context) (domain.RunResult, error) {
 		scope := domain.Scope{WorkspaceID: workspaceID}
 		result.Workspaces++
 
-		pruned, err := s.pruneWorkspace(ctx, scope, now)
+		pruned, err := prune(ctx, scope, now)
 		result.StepsPruned += pruned.Steps
 		result.Attachments += pruned.Attachments
 		result.BytesFreed += pruned.Bytes
@@ -187,7 +228,7 @@ func (s *Service) Run(ctx context.Context) (domain.RunResult, error) {
 		// The next pass is scheduled whether or not this one worked, so a workspace that
 		// failed is retried on the interval rather than in a tight loop — and a pass that
 		// never ran is caught by the next one rather than lost.
-		if err := s.deps.Repository.TouchTarget(ctx, scope, now.Add(s.interval())); err != nil {
+		if err := s.deps.Repository.TouchTarget(ctx, scope, now.Add(next)); err != nil {
 			s.warn("could not schedule a workspace's next prune",
 				zap.String("workspace", workspaceID.String()), zap.Error(err))
 		}
@@ -205,11 +246,16 @@ type pruned struct {
 	Bytes       int64
 }
 
-// pruneWorkspace prunes one workspace's steps and attachments.
+// pruneWorkspace prunes one workspace's steps, its attachments, and the uploads nobody ever sent.
+// It is the per-workspace pass Run makes.
 //
-// The two are independent: a deployment may run with a storage driver but no attachment policy,
-// or the reverse, and one of them failing must not skip the other. So each is attempted and its
+// The three are independent: a deployment may run with a storage driver but no attachment policy,
+// or the reverse, and one of them failing must not skip the others. So each is attempted and its
 // error collected, rather than the first failure returning.
+//
+// The staged uploads are here rather than only in SweepStaged because this pass is the walker a
+// deployment with RETENTION_INTERVAL set already runs: leaving them to the sweep as well would put
+// two walkers on one queue, and each pushes `next_prune_at` forward for the other.
 func (s *Service) pruneWorkspace(ctx context.Context, scope domain.Scope, now time.Time) (pruned, error) {
 	policy := s.Policy()
 	var out pruned
@@ -240,21 +286,37 @@ func (s *Service) pruneWorkspace(ctx context.Context, scope domain.Scope, now ti
 		}
 	}
 
-	// The staged sweep is not gated on the attachment policy: an upload nobody ever sent is
-	// not content this deployment chose to keep, so it goes on the staged clock whatever the
-	// policy says. Its count joins the attachments, because that is what it is — the
-	// difference between the two is why the file went, not what it was.
-	if s.deps.Attachments != nil && policy.StagedTTL > 0 {
-		staged, err := s.deps.Attachments.PruneStagedAttachments(
-			ctx, scope, now.Add(-policy.StagedTTL), policy.Limit)
-		out.Attachments += staged.Count
-		out.Bytes += staged.BytesFreed
-		if err != nil {
-			failures = append(failures, err)
-		}
+	// The staged sweep is not gated on the attachment policy: an upload nobody ever sent is not
+	// content this deployment chose to keep, so it goes on the staged clock whatever the policy
+	// says. Its count joins the attachments, because that is what it is — the difference between
+	// the two is why the file went, not what it was.
+	staged, err := s.pruneStaged(ctx, scope, now)
+	out.Attachments += staged.Attachments
+	out.Bytes += staged.Bytes
+	if err != nil {
+		failures = append(failures, err)
 	}
 
 	return out, errors.Join(failures...)
+}
+
+// pruneStaged removes a workspace's staged uploads, and nothing else. Both walkers call it, which
+// is the point: "which file is a staged upload" is the chat module's answer, not this one's, and
+// the two clocks must not derive different cutoffs for it.
+func (s *Service) pruneStaged(ctx context.Context, scope domain.Scope, now time.Time) (pruned, error) {
+	var out pruned
+
+	policy := s.Policy()
+	if s.deps.Attachments == nil || policy.StagedTTL <= 0 {
+		return out, nil
+	}
+
+	staged, err := s.deps.Attachments.PruneStagedAttachments(
+		ctx, scope, now.Add(-policy.StagedTTL), policy.Limit)
+	out.Attachments = staged.Count
+	out.Bytes = staged.BytesFreed
+
+	return out, err
 }
 
 // close writes what the run did, and reports a failure it could not record.
@@ -274,6 +336,15 @@ func (s *Service) interval() time.Duration {
 	}
 
 	return DefaultInterval
+}
+
+// stagedInterval takes the deployment's staged schedule or the default.
+func (s *Service) stagedInterval() time.Duration {
+	if s.settings.StagedSweepInterval > 0 {
+		return s.settings.StagedSweepInterval
+	}
+
+	return DefaultStagedSweepInterval
 }
 
 // sweepLimit takes the deployment's bound or the default.

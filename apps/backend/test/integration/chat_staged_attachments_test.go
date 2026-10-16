@@ -241,13 +241,20 @@ func (r *stagedRig) send(t *testing.T, conversationID uuid.UUID, body string) (i
 	require.NoError(t, json.Unmarshal(raw, &envelope), string(raw))
 
 	var payload struct {
-		Message        chatdomain.MessagePayload `json:"message"`
-		ReplyMessageID string                    `json:"reply_message_id"`
+		Message chatdomain.MessagePayload `json:"message"`
+		// The answer's placeholder, when one was opened. It is a list because a
+		// group message that names two Bolu gets two, which #277 introduced; this
+		// flow sends into a direct thread, so it is the first or none.
+		ReplyMessageIDs []string `json:"reply_message_ids"`
 	}
 	if len(envelope.Data) > 0 {
 		require.NoError(t, json.Unmarshal(envelope.Data, &payload), string(raw))
 	}
-	return resp.StatusCode, payload.Message, payload.ReplyMessageID, envelope.Error.Code
+	replyID := ""
+	if len(payload.ReplyMessageIDs) > 0 {
+		replyID = payload.ReplyMessageIDs[0]
+	}
+	return resp.StatusCode, payload.Message, replyID, envelope.Error.Code
 }
 
 // attachmentRow is the stored shape of one upload, read through the workspace's own scope.
@@ -565,10 +572,14 @@ func TestAMessageMayBeOnlyFiles(t *testing.T) {
 	require.Equal(t, 1, rig.messageCount(t, conversation.ID))
 }
 
-// TestTheStagedSweepTakesTheFilesNobodySent is the retention half: an upload that was never named
-// in a message has no message to be kept with, so it goes on its own clock — bytes and row
-// together — while a file that was sent stays with the message that carries it, and one that is
-// still waiting stays for its client.
+// TestTheStagedSweepTakesTheFilesNobodySent is the staged clock end to end: an upload that was
+// never named in a message has no message to be kept with, so it goes on its own clock — bytes and
+// row together — while a file that was sent stays with the message that carries it, and one that
+// is still waiting stays for its client.
+//
+// It drives the sweep rather than the pass, because that is the walker a deployment with
+// RETENTION_INTERVAL=0 has: the local stack keeps every file a customer sent and still must not
+// keep the one nobody sent. The pass carrying the same half is the next test.
 //
 // The uploads here are made through the service rather than over HTTP because the subject is the
 // sweep; the object store is the deployment's own local driver, so "the bytes are gone" is a fact
@@ -578,64 +589,105 @@ func TestTheStagedSweepTakesTheFilesNobodySent(t *testing.T) {
 	ctx := t.Context()
 
 	scope := chatdomain.Scope{UserID: fixture.userID, WorkspaceID: fixture.workspace}
+	abandoned, fresh, sent := fixture.threeUploads(t)
 
-	conversation, err := fixture.app.Repositories.Chat.Direct(ctx, scope, fixture.agentID)
+	// The events before the sweep, so that what it published can be told apart from what the
+	// uploads above did.
+	before, err := fixture.app.Repositories.Chat.SinceEvents(ctx, fixture.workspace, 0, 500)
 	require.NoError(t, err)
 
-	abandoned, err := fixture.app.Services.Chat.Attach(ctx, scope, chatdomain.AttachRequest{
+	result, err := fixture.app.Retention.SweepStaged(ctx)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, result.Attachments, 1)
+	require.GreaterOrEqual(t, result.BytesFreed, int64(len(pdfOf("diunggah lalu tidak pernah dikirim"))))
+
+	_, _, err = fixture.app.Services.Chat.AttachmentContent(ctx, scope, abandoned)
+	require.Error(t, err, "the row and the bytes go together")
+
+	_, waiting, err := fixture.app.Services.Chat.AttachmentContent(ctx, scope, fresh)
+	require.NoError(t, err)
+	require.Equal(t, pdfOf("baru saja diunggah"), waiting, "a file still inside its window stays")
+
+	_, carried, err := fixture.app.Services.Chat.AttachmentContent(ctx, scope, sent)
+	require.NoError(t, err)
+	require.Equal(t, pdfOf("dikirim bersama pesannya"), carried,
+		"the staged clock is not the attachment policy")
+
+	// A staged upload is in no message's read model, so its removal is not something a client
+	// could be told about: the sweep publishes nothing at all.
+	after, err := fixture.app.Repositories.Chat.SinceEvents(ctx, fixture.workspace, 0, 500)
+	require.NoError(t, err)
+	require.Len(t, after, len(before), "a staged file has no read model to update")
+}
+
+// TestTheRetentionPassCarriesTheStagedUploads: a deployment that runs the pass does not need the
+// sweep, because the pass walks the same queue and takes the staged half with it. The two are
+// alternatives rather than a pair — the container starts one or the other — so this is the other
+// half of the rule above.
+func TestTheRetentionPassCarriesTheStagedUploads(t *testing.T) {
+	fixture := newRetentionFixture(t, retentionDatabase(t))
+	ctx := t.Context()
+
+	scope := chatdomain.Scope{UserID: fixture.userID, WorkspaceID: fixture.workspace}
+	abandoned, fresh, sent := fixture.threeUploads(t)
+
+	result, err := fixture.app.Retention.Run(ctx)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, result.Attachments, 1)
+
+	_, _, err = fixture.app.Services.Chat.AttachmentContent(ctx, scope, abandoned)
+	require.Error(t, err, "the pass removes the upload nobody sent")
+
+	_, waiting, err := fixture.app.Services.Chat.AttachmentContent(ctx, scope, fresh)
+	require.NoError(t, err)
+	require.Equal(t, pdfOf("baru saja diunggah"), waiting)
+
+	_, carried, err := fixture.app.Services.Chat.AttachmentContent(ctx, scope, sent)
+	require.NoError(t, err)
+	require.Equal(t, pdfOf("dikirim bersama pesannya"), carried,
+		"the pass is still the attachment policy, and it kept this one")
+}
+
+// threeUploads is one workspace with three files: one uploaded and never sent, one uploaded a
+// moment ago, and one carried by a message. Both clocks are moved past the staged window, so the
+// only question left for a walker is which of the three it is allowed to take.
+func (f *retentionFixture) threeUploads(t *testing.T) (abandoned, fresh, sent uuid.UUID) {
+	t.Helper()
+
+	ctx := t.Context()
+	scope := chatdomain.Scope{UserID: f.userID, WorkspaceID: f.workspace}
+
+	conversation, err := f.app.Repositories.Chat.Direct(ctx, scope, f.agentID)
+	require.NoError(t, err)
+
+	abandonedFile, err := f.app.Services.Chat.Attach(ctx, scope, chatdomain.AttachRequest{
 		ConversationID: conversation.ID,
 		Filename:       "belum-terkirim.pdf",
 		Staged:         true,
 	}, pdfOf("diunggah lalu tidak pernah dikirim"))
 	require.NoError(t, err)
 
-	fresh, err := fixture.app.Services.Chat.Attach(ctx, scope, chatdomain.AttachRequest{
+	freshFile, err := f.app.Services.Chat.Attach(ctx, scope, chatdomain.AttachRequest{
 		ConversationID: conversation.ID,
 		Filename:       "baru-saja.pdf",
 		Staged:         true,
 	}, pdfOf("baru saja diunggah"))
 	require.NoError(t, err)
 
-	message := fixture.message(t)
-	sent, err := fixture.app.Services.Chat.Attach(ctx, scope, chatdomain.AttachRequest{
+	message := f.message(t)
+	sentFile, err := f.app.Services.Chat.Attach(ctx, scope, chatdomain.AttachRequest{
 		MessageID: message.ID,
 		Filename:  "nota-terkirim.pdf",
 	}, pdfOf("dikirim bersama pesannya"))
 	require.NoError(t, err)
 
-	// Both files are aged past the twenty-four hour staged window, and only one of them is
-	// staged. The bound one is well inside the ninety-day attachment policy, so if it goes,
-	// the staged sweep took something it had no business taking.
-	fixture.ageStagedAttachment(t, abandoned.ID, 48*time.Hour)
-	fixture.ageAttachment(t, sent.ID, 48*time.Hour)
+	// The staged file is aged past the twenty-four hour window and the bound one is aged past
+	// the same mark, which leaves it well inside the ninety-day attachment policy: if it goes,
+	// the walker took something it had no business taking.
+	f.ageStagedAttachment(t, abandonedFile.ID, 48*time.Hour)
+	f.ageAttachment(t, sentFile.ID, 48*time.Hour)
 
-	// The events before the pass, so that what the pass published can be told apart from what
-	// the uploads above did.
-	before, err := fixture.app.Repositories.Chat.SinceEvents(ctx, fixture.workspace, 0, 500)
-	require.NoError(t, err)
-
-	result, err := fixture.app.Retention.Run(ctx)
-	require.NoError(t, err)
-	require.GreaterOrEqual(t, result.Attachments, 1)
-	require.GreaterOrEqual(t, result.BytesFreed, int64(len(pdfOf("diunggah lalu tidak pernah dikirim"))))
-
-	_, _, err = fixture.app.Services.Chat.AttachmentContent(ctx, scope, abandoned.ID)
-	require.Error(t, err, "the row and the bytes go together")
-
-	_, waiting, err := fixture.app.Services.Chat.AttachmentContent(ctx, scope, fresh.ID)
-	require.NoError(t, err)
-	require.Equal(t, pdfOf("baru saja diunggah"), waiting, "a file still inside its window stays")
-
-	_, carried, err := fixture.app.Services.Chat.AttachmentContent(ctx, scope, sent.ID)
-	require.NoError(t, err)
-	require.Equal(t, pdfOf("dikirim bersama pesannya"), carried,
-		"the staged clock is not the attachment policy")
-
-	// A staged upload is in no message's read model, so its removal is not something a client
-	// could be told about: the pass publishes nothing at all.
-	after, err := fixture.app.Repositories.Chat.SinceEvents(ctx, fixture.workspace, 0, 500)
-	require.NoError(t, err)
-	require.Len(t, after, len(before), "a staged file has no read model to update")
+	return abandonedFile.ID, freshFile.ID, sentFile.ID
 }
 
 // ageStagedAttachment moves an upload's staging moment back, which is the clock the staged sweep

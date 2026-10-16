@@ -34,6 +34,10 @@ func TestOpenRetentionWithoutADatabaseLeavesTheJobUnwired(t *testing.T) {
 	require.Nil(t, c.Retention)
 	require.Nil(t, c.Services.Retention)
 	require.Nil(t, c.Repositories.Retention)
+
+	// And the staged loop is a no-op with no job to sweep through, rather than a nil panic:
+	// the deployment without Postgres has no staged uploads either.
+	c.RunStagedSweep(context.Background())
 }
 
 // TestTheRetentionPolicyComesFromTheConfiguration: a deployment's days become the window the
@@ -145,6 +149,58 @@ func TestAnUnwiredPrunerIsNotAFailure(t *testing.T) {
 	require.Equal(t, retentiondomain.PrunedAttachments{}, staged)
 }
 
+// TestTheStagedSweepStandsDownWhileThePassIsOn: the two walks share one queue and both push a
+// workspace's next pass forward, so a deployment that runs the pass must not also run the sweep —
+// the pass would find its workspaces already scheduled and skip them.
+func TestTheStagedSweepStandsDownWhileThePassIsOn(t *testing.T) {
+	cfg := &config.Config{Retention: config.RetentionConfig{Interval: time.Hour}}
+	retention := &recordingRetention{swept: make(chan struct{}, 8)}
+	c := &Container{Config: cfg, Logger: zap.NewNop(), Retention: retention}
+
+	c.RunStagedSweep(context.Background())
+
+	require.Empty(t, retention.swept, "the pass carries the staged uploads while it is on")
+}
+
+// TestTheStagedSweepRunsWhileThePassIsOff is the other half of the same rule, and the whole point
+// of the loop: RETENTION_INTERVAL=0 is a deployment that keeps everything a customer said, and the
+// files nobody sent still have to leave. The first sweep is immediate and the next is the
+// deployment's own interval, not the pass's — which is what a deployment with the pass off has no
+// other clock for.
+func TestTheStagedSweepRunsWhileThePassIsOff(t *testing.T) {
+	cfg := &config.Config{
+		Retention: config.RetentionConfig{Interval: 0},
+		Storage:   config.StorageConfig{AttachmentStagedSweepInterval: 10 * time.Millisecond},
+	}
+	retention := &recordingRetention{swept: make(chan struct{}, 8)}
+	c := &Container{Config: cfg, Logger: zap.NewNop(), Retention: retention}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		c.RunStagedSweep(ctx)
+	}()
+
+	for range 2 {
+		select {
+		case <-retention.swept:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the staged sweep never ran")
+		}
+	}
+
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the staged sweep did not stop with its context")
+	}
+}
+
 // recordingSteps is the task module's pruner, recording what it was asked.
 type recordingSteps struct {
 	pruned taskdomain.StepPrune
@@ -191,4 +247,25 @@ func (c *recordingChat) PruneStagedAttachments(_ context.Context, scope chatdoma
 	c.stagedSeen = append(c.stagedSeen, attachmentCall{scope: scope, olderThan: olderThan, limit: limit})
 
 	return c.staged, nil
+}
+
+// recordingRetention is the job as the container sees it: the entry point the staged loop calls and
+// the policy it logs. It records a sweep rather than performing one, because which of the two loops
+// runs is the container's decision and the walk itself is the service's.
+type recordingRetention struct {
+	retentiondomain.Service
+
+	swept chan struct{}
+}
+
+func (r *recordingRetention) SweepStaged(context.Context) (retentiondomain.RunResult, error) {
+	if r.swept != nil {
+		r.swept <- struct{}{}
+	}
+
+	return retentiondomain.RunResult{Workspaces: 1, Attachments: 1, BytesFreed: 1024}, nil
+}
+
+func (r *recordingRetention) Policy() retentiondomain.Policy {
+	return retentiondomain.Policy{StagedTTL: retentiondomain.DefaultStagedTTL}
 }
