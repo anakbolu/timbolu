@@ -172,10 +172,10 @@ func TestSendDefaultsToReplying(t *testing.T) {
 	service.EXPECT().Send(mock.Anything, mock.Anything, mock.MatchedBy(func(req chatdomain.SendRequest) bool {
 		return req.ConversationID == conversation.ID && req.Reply && req.Text == "Berapa pesanan?"
 	})).Return(chatdomain.SendResult{
-		Message:        message,
-		ReplyMessageID: replyID,
-		Responder:      &responder,
-		Routed:         true,
+		Message:         message,
+		ReplyMessageIDs: []uuid.UUID{replyID},
+		Responders:      []chatdomain.AgentRef{responder},
+		Routed:          true,
 	}, nil).Once()
 
 	app := newTestApp(t, service, id)
@@ -183,7 +183,7 @@ func TestSendDefaultsToReplying(t *testing.T) {
 		`{"text":"Berapa pesanan?"}`)
 
 	require.Equal(t, fiber.StatusCreated, resp.Code)
-	require.Contains(t, resp.Body.String(), `"reply_message_id":"`+replyID.String()+`"`)
+	require.Contains(t, resp.Body.String(), `"reply_message_ids":["`+replyID.String()+`"]`)
 	require.Contains(t, resp.Body.String(), `"name":"Oren"`)
 	require.Contains(t, resp.Body.String(), `"routed":true`)
 	require.Contains(t, resp.Body.String(), `"markdown":"Berapa pesanan hari ini?"`)
@@ -203,7 +203,7 @@ func TestSendCanSkipTheReply(t *testing.T) {
 		`{"text":"Catatan","reply":false}`)
 
 	require.Equal(t, fiber.StatusCreated, resp.Code)
-	require.NotContains(t, resp.Body.String(), "reply_message_id")
+	require.NotContains(t, resp.Body.String(), "reply_message_ids")
 }
 
 // TestARefusedFileTypeIs415: the file is real and the request is well formed, so the status

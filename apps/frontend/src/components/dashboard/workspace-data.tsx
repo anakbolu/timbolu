@@ -420,11 +420,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       if (!sent.ok) return { ok: false, message: sent.message };
 
       await loadConversations(id);
+      const names = (sent.data.responders ?? []).map((responder) => responder.name);
       return {
         ok: true,
-        message: sent.data.responder
-          ? `${sent.data.responder.name} menerimanya.`
-          : "Tugas diteruskan ke timmu.",
+        message: names.length === 0 ? "Tugas diteruskan ke timmu." : `${names.join(", ")} menerimanya.`,
       };
     },
     [conversations, loadConversations],

@@ -158,11 +158,12 @@ func TestSendStoresTheMessageAndStartsTheReply(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, h.scope.UserID, result.Message.AuthorUserID, "the user wrote the message")
-	require.Equal(t, h.agent.ID, result.Responder.ID)
+	require.Len(t, result.Responders, 1, "a direct thread answers with its one Bolu")
+	require.Equal(t, h.agent.ID, result.Responders[0].ID)
 	require.False(t, result.Routed, "a direct thread does not need the router")
-	require.NotEqual(t, uuid.Nil, result.ReplyMessageID)
+	require.Len(t, result.ReplyMessageIDs, 1)
 
-	reply := h.waitForMessage(t, result.ReplyMessageID, settled)
+	reply := h.waitForMessage(t, result.ReplyMessageIDs[0], settled)
 	require.Equal(t, chatdomain.MessageComplete, reply.Status)
 	require.Equal(t, h.agent.ID, reply.AuthorAgentID, "the Bolu wrote the reply")
 	require.Len(t, reply.Blocks, 1)
@@ -194,7 +195,7 @@ func TestStreamedReplyIsPublishedAsItGrows(t *testing.T) {
 		if err := json.Unmarshal(event.Payload, &payload); err != nil {
 			return false
 		}
-		return payload.MessageID == result.ReplyMessageID.String() && payload.Status == chatdomain.MessageComplete
+		return payload.MessageID == result.ReplyMessageIDs[0].String() && payload.Status == chatdomain.MessageComplete
 	})
 
 	updates := h.store.eventsOfType(chatdomain.EventMessageUpdated)
@@ -229,7 +230,7 @@ func TestAFailedStreamLeavesAPartialMessage(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	reply := h.waitForMessage(t, result.ReplyMessageID, settled)
+	reply := h.waitForMessage(t, result.ReplyMessageIDs[0], settled)
 	require.Equal(t, chatdomain.MessagePartial, reply.Status)
 	require.Contains(t, reply.FinishReason, "putus")
 	require.Len(t, reply.Blocks, 1, "the text that arrived is kept")
@@ -253,7 +254,7 @@ func TestAFailureBeforeAnyTextIsMarkedFailed(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	reply := h.waitForMessage(t, result.ReplyMessageID, settled)
+	reply := h.waitForMessage(t, result.ReplyMessageIDs[0], settled)
 	require.Equal(t, chatdomain.MessageFailed, reply.Status)
 	require.Empty(t, reply.Blocks)
 }
@@ -273,7 +274,7 @@ func TestAReplyThatCannotBeStartedIsMarkedFailed(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	reply := h.waitForMessage(t, result.ReplyMessageID, settled)
+	reply := h.waitForMessage(t, result.ReplyMessageIDs[0], settled)
 	require.Equal(t, chatdomain.MessageFailed, reply.Status)
 	require.Contains(t, reply.FinishReason, "unreachable")
 }
@@ -308,8 +309,8 @@ func TestSendingWithoutAReplyStoresOnlyTheMessage(t *testing.T) {
 		Reply:          false,
 	})
 	require.NoError(t, err)
-	require.Equal(t, uuid.Nil, result.ReplyMessageID)
-	require.Nil(t, result.Responder)
+	require.Empty(t, result.ReplyMessageIDs)
+	require.Empty(t, result.Responders)
 
 	page, err := h.service.History(context.Background(), h.scope, conversation.ID, chatdomain.Cursor{})
 	require.NoError(t, err)
@@ -358,8 +359,8 @@ func TestSendOpensAnEmptyMessageForAnAttachment(t *testing.T) {
 
 	// Nothing answers an attachment container: no placeholder, no responder,
 	// even though the caller asked for a reply.
-	require.Equal(t, uuid.Nil, result.ReplyMessageID)
-	require.Nil(t, result.Responder)
+	require.Empty(t, result.ReplyMessageIDs)
+	require.Empty(t, result.Responders)
 
 	page, err := h.service.History(context.Background(), h.scope, conversation.ID, chatdomain.Cursor{})
 	require.NoError(t, err)
@@ -539,7 +540,7 @@ func TestTheRouterPicksTheBoluTheModelNamed(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, result.Routed)
-	require.Equal(t, biru.ID, result.Responder.ID, "the model named Biru, and Biru answers")
+	require.Equal(t, biru.ID, result.Responders[0].ID, "the model named Biru, and Biru answers")
 
 	decisions := h.store.eventsOfType(chatdomain.EventRouterDecision)
 	require.Len(t, decisions, 1)
@@ -626,7 +627,8 @@ func TestPinningABoluOverridesTheRouter(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.False(t, result.Routed, "a pinned Bolu is not a router decision")
-	require.Equal(t, lila.ID, result.Responder.ID)
+	require.Len(t, result.Responders, 1)
+	require.Equal(t, lila.ID, result.Responders[0].ID)
 	require.Empty(t, h.store.eventsOfType(chatdomain.EventRouterDecision))
 }
 

@@ -76,8 +76,9 @@ export type ChatState = {
    * Bolu finishing must not rewrite this line.
    */
   activity: { agentId: string; text: string } | null;
-  /** The Bolu that will answer the message being composed, once known. */
-  responder: { agentId: string; name: string } | null;
+  /** The Bolu that will answer the message being composed, once known. A group
+   *  message can address more than one, so this is a list. */
+  responders: { agentId: string; name: string }[];
   routerNotice: RouterNotice | null;
   open: (conversation: ChatConversation) => void;
   openByAgent: (agentId: string) => Promise<void>;
@@ -125,7 +126,7 @@ export function useChat(): ChatState {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [responder, setResponder] = useState<{ agentId: string; name: string } | null>(null);
+  const [responders, setResponders] = useState<{ agentId: string; name: string }[]>([]);
   const [routerNotice, setRouterNotice] = useState<RouterNotice | null>(null);
   const [activity, setActivity] = useState<{ agentId: string; text: string } | null>(null);
 
@@ -150,7 +151,7 @@ export function useChat(): ChatState {
       setActive(conversation);
       setMessages([]);
       setRouterNotice(null);
-      setResponder(null);
+      setResponders([]);
       setActivity(null);
       cursor.current = undefined;
       snapshot.current = null;
@@ -274,12 +275,12 @@ export function useChat(): ChatState {
       setError(null);
       setMessages((previous) => append(previous, result.data.message));
 
-      if (result.data.responder) {
-        setResponder({
-          agentId: result.data.responder.agent_id ?? "",
-          name: result.data.responder.name,
-        });
-      }
+      setResponders(
+        (result.data.responders ?? []).map((responder) => ({
+          agentId: responder.agent_id ?? "",
+          name: responder.name,
+        })),
+      );
 
       // The reply placeholder is not added here: it arrives on the stream, which
       // is what makes a second tab show the same conversation.
@@ -311,7 +312,7 @@ export function useChat(): ChatState {
         void reloadConversations();
         return;
       }
-      applyEvent(event, snapshot.current, setMessages, setRouterNotice, setResponder, setActivity);
+      applyEvent(event, snapshot.current, setMessages, setRouterNotice, setResponders, setActivity);
     });
 
     return unsubscribe;
@@ -336,7 +337,7 @@ export function useChat(): ChatState {
     hasMore,
     status: store.status,
     error: error ?? store.error,
-    responder,
+    responders,
     activity,
     routerNotice,
     open,
@@ -372,7 +373,7 @@ function applyEvent(
   snapshot: HistorySnapshot | null,
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
   setRouterNotice: React.Dispatch<React.SetStateAction<RouterNotice | null>>,
-  setResponder: React.Dispatch<React.SetStateAction<{ agentId: string; name: string } | null>>,
+  setResponders: React.Dispatch<React.SetStateAction<{ agentId: string; name: string }[]>>,
   setActivity: React.Dispatch<React.SetStateAction<{ agentId: string; text: string } | null>>,
 ) {
   if (event.type === "agent.state") {
@@ -471,8 +472,14 @@ function applyEvent(
   });
 
   if (payload.status === "complete" || payload.status === "failed" || payload.status === "partial") {
-    setResponder(null);
-    setActivity(null);
+    // Only the Bolu whose message settled stops waiting: a group message can be
+    // answered by more than one, and the other answers are still coming. A
+    // payload that names no Bolu cannot be attributed, so the whole wait ends
+    // rather than one row being held open by an empty id.
+    setResponders((previous) =>
+      payload.agent_id ? previous.filter((candidate) => candidate.agentId !== payload.agent_id) : [],
+    );
+    setActivity((previous) => (previous?.agentId === payload.agent_id ? null : previous));
   }
 }
 

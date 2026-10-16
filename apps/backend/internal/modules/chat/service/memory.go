@@ -106,6 +106,6 @@ func (s *Service) remember(
 
 	s.emitMessage(ctx, scope, confirmation, conversation.ID, chatdomain.EventMessageNew)
 
-	result.ReplyMessageID = confirmation.ID
+	result.ReplyMessageIDs = []uuid.UUID{confirmation.ID}
 	return true, nil
 }

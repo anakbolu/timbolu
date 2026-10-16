@@ -138,37 +138,58 @@ export function ChatView({
   }, [chat.active, agents]);
 
   /**
-   * waiting is the one line that stands for an answer being prepared.
+   * waiting are the lines that stand for the answers being prepared.
    *
-   * The router may name the Bolu before its message exists, and that message
-   * carries no text until the first block lands, so both are the same wait and
-   * are drawn once. A message that already has content is its own bubble, and
-   * the row is over.
+   * A group message can be answered by more than one Bolu, so each one that is
+   * still working gets its own line: one row for the whole group would hide the
+   * second answer behind the first. The router may name the Bolu before its
+   * message exists, and that message carries no text until the first block lands,
+   * so both are the same wait and are drawn once. A message that already has
+   * content is its own bubble, and its row is over.
    */
   const waiting = useMemo(() => {
-    const streaming = chat.messages.filter(isBusy);
-    const last = streaming[streaming.length - 1];
-    if (last && (last.blocks.length > 0 || last.attachments.length > 0)) {
-      return null;
+    const rows: { key: string; name: string; face: CrewMember; text: string }[] = [];
+
+    for (const message of chat.messages) {
+      if (!isBusy(message) || message.blocks.length > 0 || message.attachments.length > 0) {
+        continue;
+      }
+      rows.push({
+        key: message.message_id,
+        name: nameOf(chat.active, message),
+        face: authorFace(chat.active, message, agents) ?? allBot("Oren"),
+        text:
+          chat.activity && chat.activity.agentId === message.agent_id
+            ? chat.activity.text
+            : "Sedang memikirkan…",
+      });
     }
-    if (!last && !chat.responder) {
-      return null;
+
+    if (rows.length > 0) {
+      return rows;
     }
-    // A responder the router named without an id is still a Bolu to wait on.
-    const agentId = last?.agent_id || chat.responder?.agentId || null;
-    const agent = agents.find((candidate) => candidate.id === agentId) ?? null;
-    const participant = chat.active?.participants.find((item) => item.agent_id === agentId);
-    return {
-      name: agent?.name ?? participant?.name ?? chat.responder?.name ?? "Bolu",
-      // A Bolu that has since been deleted is still drawn as the crew member its
-      // name maps to, the same fallback a message from it uses.
-      face: agent ? crewFor(agent) : allBot("Oren"),
-      // The sentence a Bolu wrote for its own state is the most specific status
-      // the stream carries, and it belongs to one Bolu: another thread's line
-      // must not be read as this one's.
-      text: chat.activity?.agentId === agentId ? chat.activity.text : "Sedang memikirkan…",
-    };
-  }, [agents, chat.active, chat.activity, chat.messages, chat.responder]);
+
+    // No placeholder has arrived yet, which is the moment between the request
+    // being accepted and the stream delivering it. The Bolu the send response
+    // named are what the wait is made of until then.
+    for (const responder of chat.responders) {
+      const agent = agents.find((candidate) => candidate.id === responder.agentId) ?? null;
+      const participant = chat.active?.participants.find(
+        (item) => item.agent_id === responder.agentId,
+      );
+      rows.push({
+        key: responder.agentId || responder.name,
+        name: agent?.name ?? participant?.name ?? responder.name ?? "Bolu",
+        face: agent ? crewFor(agent) : allBot("Oren"),
+        text:
+          chat.activity && chat.activity.agentId === responder.agentId
+            ? chat.activity.text
+            : "Sedang memikirkan…",
+      });
+    }
+
+    return rows;
+  }, [agents, chat.active, chat.activity, chat.messages, chat.responders]);
 
   // The circle beside a user message carries the account's initial: the store has
   // no display name, and the email is what a person recognises as their own.
@@ -352,20 +373,21 @@ export function ChatView({
                 />
               ))}
 
-              {waiting ? (
+              {waiting.map((row) => (
                 <div
+                  key={row.key}
                   role="status"
                   aria-live="polite"
                   className="flex items-center gap-2.5 text-sm text-bolu-muted"
                 >
-                  <Bolu member={waiting.face} expression="mikir" size={22} className="flex-none" />
+                  <Bolu member={row.face} expression="mikir" size={22} className="flex-none" />
                   {/* The name is inside the pulsing text rather than a separate
                       line: one row is the whole state, and it is read once. */}
                   <span className="motion-safe:animate-soft-pulse">
-                    {waiting.name} · {waiting.text}
+                    {row.name} · {row.text}
                   </span>
                 </div>
-              ) : null}
+              ))}
 
               {chat.routerNotice ? (
                 <p className="text-xs text-bolu-muted">

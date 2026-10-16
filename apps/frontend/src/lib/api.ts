@@ -1039,8 +1039,10 @@ export type MessagePage = {
 
 export type SendMessageResult = {
   message: ChatMessage;
-  reply_message_id?: string;
-  responder?: ChatParticipant;
+  /** One placeholder per Bolu that will answer, in the order they were picked. */
+  reply_message_ids?: string[];
+  /** The Bolu that will answer: a group message can address more than one. */
+  responders?: ChatParticipant[];
   routed: boolean;
 };
 
