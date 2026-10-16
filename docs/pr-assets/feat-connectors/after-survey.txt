@@ -1,0 +1,32 @@
+=== AFTER: adapters/ ===
+apps/backend/internal/modules/integration/adapters/github/github.go
+apps/backend/internal/modules/integration/adapters/github/github_test.go
+apps/backend/internal/modules/integration/adapters/gmail/gmail.go
+apps/backend/internal/modules/integration/adapters/slack/slack.go
+apps/backend/internal/modules/integration/adapters/slack/slack_test.go
+
+=== AFTER: integrationAdapters Slack+GitHub gates ===
+174:		gmailAdapter, err := gmail.New(gmail.Config{
+193:	if strings.TrimSpace(cfg.Integrations.SlackClientID) != "" &&
+194:		strings.TrimSpace(cfg.Integrations.SlackClientSecret) != "" {
+195:		slackAdapter, err := slack.New(slack.Config{
+196:			ClientID:      cfg.Integrations.SlackClientID,
+197:			ClientSecret:  cfg.Integrations.SlackClientSecret,
+210:	if strings.TrimSpace(cfg.Integrations.GitHubClientID) != "" &&
+211:		strings.TrimSpace(cfg.Integrations.GitHubClientSecret) != "" {
+212:		githubAdapter, err := ghconnector.New(ghconnector.Config{
+213:			ClientID:      cfg.Integrations.GitHubClientID,
+214:			ClientSecret:  cfg.Integrations.GitHubClientSecret,
+
+=== AFTER: go test adapters + smoke ===
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/adapters/github	0.002s [no tests to run]
+?   	github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/adapters/gmail	[no test files]
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/adapters/slack	0.003s [no tests to run]
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/container	0.019s
+
+=== AFTER: go build ===
+BUILD_OK
+
+=== AFTER: commits ===
+013c489 docs(backend): chat E2E path and how to add a connector
+4ed7dfd feat(integration): scaffold Slack and GitHub OAuth connectors

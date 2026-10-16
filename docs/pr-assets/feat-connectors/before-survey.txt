@@ -1,0 +1,23 @@
+=== BEFORE: adapters/ ===
+apps/backend/internal/modules/integration/adapters/gmail/gmail.go
+
+=== BEFORE: buildAdapters Gmail-only gate ===
+143:		adapters = append(adapters, adOrder(c))
+151:		adapters = append(adapters, adChecklist(c))
+164:		adapters = append(adapters, adWattsApp(c))
+170:	if strings.TrimSpace(cfg.Integrations.GmailClientID) != "" &&
+171:		strings.TrimSpace(cfg.Integrations.GmailClientSecret) != "" {
+172:		gmailAdapter, err := gmail.New(gmail.Config{
+173:			ClientID:      cfg.Integrations.GmailClientID,
+174:			ClientSecret:  cfg.Integrations.GmailClientSecret,
+184:			adapters = append(adapters, gmailAdapter)
+
+=== BEFORE: IntegrationConfig OAuth fields ===
+packages/platform/config/config.go:220:	// GmailClientID and GmailClientSecret are the deployment's own OAuth
+packages/platform/config/config.go:227:	GmailClientID     string `mapstructure:"GmailClientID" validate:"optional"`
+packages/platform/config/config.go:228:	GmailClientSecret string `mapstructure:"GmailClientSecret" validate:"optional"`
+packages/platform/config/init.go:218:		"GMAIL_CLIENT_ID":                 &cfg.Integrations.GmailClientID,
+packages/platform/config/init.go:219:		"GMAIL_CLIENT_SECRET":             &cfg.Integrations.GmailClientSecret,
+
+=== BEFORE: go build ===
+BUILD_OK
