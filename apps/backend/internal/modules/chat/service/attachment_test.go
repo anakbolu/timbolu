@@ -409,6 +409,51 @@ func TestPrunePublishesWhatItRemovedWhenAnotherFileFails(t *testing.T) {
 	require.Len(t, message.Attachments, 1)
 }
 
+// TestPrunePublishesWhatItRemovedWhenTheCallerGivesUp: the sweep stops when the caller's context is
+// cancelled, and the files it removed before that are gone from the bucket and from the rows — so
+// the messages that render them have to be published anyway, on a context that outlives the
+// request. A cancelled context reaching the event store is what the issue was filed about: the row
+// goes, the update never arrives, and the file stays on screen with a download that no longer
+// answers.
+func TestPrunePublishesWhatItRemovedWhenTheCallerGivesUp(t *testing.T) {
+	h := newHarness(t)
+	conversation := h.directConversation(t)
+
+	removed, err := h.service.Attach(context.Background(), h.scope, chatdomain.AttachRequest{
+		ConversationID: conversation.ID, Filename: "satu.png",
+	}, pngOf("satu"))
+	require.NoError(t, err)
+
+	kept, err := h.service.Attach(context.Background(), h.scope, chatdomain.AttachRequest{
+		ConversationID: conversation.ID, Filename: "dua.png",
+	}, pngOf("dua"))
+	require.NoError(t, err)
+	require.NotEqual(t, removed.MessageID, kept.MessageID)
+
+	// The pass meets the older row first and is cancelled the moment that row is gone, which is
+	// what a caller that gave up between two rows looks like.
+	h.backdate(t, removed.ID, 96*time.Hour)
+	h.backdate(t, kept.ID, 48*time.Hour)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	h.store.afterDelete = cancel
+
+	result, err := h.service.PruneAttachments(ctx, h.scope,
+		time.Now().Add(-24*time.Hour), chatdomain.DefaultPruneLimit)
+	require.ErrorIs(t, err, context.Canceled, "the pass reports that it was cut short")
+	require.Equal(t, 1, result.Count, "only the row the pass reached went")
+
+	updates := h.updatesFor(t, removed.MessageID)
+	require.Len(t, updates, 1, "the message whose file went is published even though the caller gave up")
+	requireEmptyAttachments(t, updates[0])
+
+	require.Empty(t, h.updatesFor(t, kept.MessageID), "a row that stayed is a file still on screen")
+	message, err := h.store.GetMessage(context.Background(), h.scope, kept.MessageID)
+	require.NoError(t, err)
+	require.Len(t, message.Attachments, 1)
+}
+
 // TestAnUploadNeedsAThreadToLandIn: the file opens its own message, so it has to say
 // which conversation that message goes in.
 func TestAnUploadNeedsAThreadToLandIn(t *testing.T) {

@@ -436,21 +436,28 @@ func (s *Service) updateMessage(ctx context.Context, scope chatdomain.Scope, con
 	return stored
 }
 
-// emitMessage publishes a message event.
+// emitMessage publishes a message event, and drops whether it went.
 //
 // The event type is passed in rather than derived from the status: a reply that
 // finishes is an update to a message the client already has, and calling it new
 // would make it appear twice.
 func (s *Service) emitMessage(ctx context.Context, scope chatdomain.Scope, message chatdomain.Message, conversationID uuid.UUID, eventType string) {
+	_ = s.emitMessageErr(ctx, scope, message, conversationID, eventType)
+}
+
+// emitMessageErr publishes a message event and reports whether it went, which is what a caller
+// that has to answer for a lost update needs. The event type is passed in for the reason
+// emitMessage gives.
+func (s *Service) emitMessageErr(ctx context.Context, scope chatdomain.Scope, message chatdomain.Message, conversationID uuid.UUID, eventType string) error {
 	payload := chatdomain.WireMessage(message)
 	payload.ConversationID = conversationID.String()
 
 	encoded, err := json.Marshal(payload)
 	if err != nil {
-		return
+		return fmt.Errorf("chat: encode %s event: %w", eventType, err)
 	}
 
-	_ = s.Emit(ctx, chatdomain.Event{
+	return s.Emit(ctx, chatdomain.Event{
 		WorkspaceID:    scope.WorkspaceID,
 		Type:           eventType,
 		ActorAgentID:   message.AuthorAgentID,

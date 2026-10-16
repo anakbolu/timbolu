@@ -35,6 +35,10 @@ type memoryStore struct {
 	// failAttachmentWrite makes the write that records an upload fail, which is how
 	// a test drives the "the file could not be stored" path.
 	failAttachmentWrite bool
+	// afterDelete runs after a row is removed and its message read model is rewritten,
+	// which is how a test cancels the caller's context mid-pass: the sweep has done work
+	// it has to publish, and the next thing it looks at is a cancelled context.
+	afterDelete func()
 }
 
 func newMemoryStore() *memoryStore {
@@ -339,9 +343,20 @@ func (s *memoryStore) ListExpired(_ context.Context, _ chatdomain.Scope, olderTh
 //
 // A row that is already gone is not an error: the zero message comes back with a nil error,
 // which is what tells the caller there is nothing to publish.
-func (s *memoryStore) Delete(_ context.Context, _ chatdomain.Scope, id uuid.UUID) (chatdomain.Message, error) {
+func (s *memoryStore) Delete(ctx context.Context, _ chatdomain.Scope, id uuid.UUID) (chatdomain.Message, error) {
+	// A store refuses a context that is already gone, exactly as a database driver does.
+	// Without that the bug this stands in for is invisible: the sweep would publish its
+	// updates on the cancelled context and the fake would happily accept them.
+	if err := ctx.Err(); err != nil {
+		return chatdomain.Message{}, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.afterDelete != nil {
+		// Deferred, so the hook runs once the row is gone and the message's read model is
+		// rewritten: that is the state a caller that gave up mid-pass leaves behind.
+		defer s.afterDelete()
+	}
 
 	attachment, ok := s.attachments[id]
 	if !ok {
@@ -366,7 +381,11 @@ func (s *memoryStore) Delete(_ context.Context, _ chatdomain.Scope, id uuid.UUID
 	return message, nil
 }
 
-func (s *memoryStore) AppendEvent(_ context.Context, event chatdomain.Event) (chatdomain.Event, error) {
+func (s *memoryStore) AppendEvent(ctx context.Context, event chatdomain.Event) (chatdomain.Event, error) {
+	if err := ctx.Err(); err != nil {
+		return chatdomain.Event{}, err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
