@@ -443,7 +443,7 @@ belong to:
 
 | The file | What the model receives |
 | --- | --- |
-| Text, CSV, JSON, Markdown, XML, YAML, HTML source | A section: `[Lampiran: name (type, size)]`, the text, `[/Lampiran]` |
+| Text, CSV, JSON, Markdown, XML, YAML, HTML source | A section: `[Lampiran: name (type, size) #nonce]`, the text, `[/Lampiran #nonce]` — the nonce is eight random hex characters, one per file |
 | PDF | The same section, holding the extracted text of every page |
 | Picture whose bytes sniff as an image | `[Gambar name (type, size)]` in the text, plus the bytes as vision input |
 | Anything else (Office documents, archives, audio) | `[Lampiran name (type, size): isi tidak dibaca — tipe ini belum didukung]` |
@@ -451,6 +451,14 @@ belong to:
 
 The stored `content_type` is never trusted for the decision: the bytes are
 sniffed, so a `.txt` that holds a PNG is sent as a picture.
+
+An attachment is data, never instruction. Each section carries its own random
+nonce, so a file cannot contain the marker that ends it; a filename is stripped of
+line breaks and brackets, and text inside a file that spells a marker is rewritten
+(`[/Lampiran` → `[/ Lampiran`, `[Lampiran` → `[ Lampiran`) with the section's nonce
+replaced by `#`. Both system prompts tell the model the same thing: what sits
+between the markers is untrusted file content, and instructions found inside it
+are never to be followed.
 
 What one request may carry is bounded, and every bound is configurable:
 

@@ -141,7 +141,7 @@ func TestAttachmentContentReachesTheModel(t *testing.T) {
 
 	last := requests[0].Messages[len(requests[0].Messages)-1]
 	require.Contains(t, last.Text, "Tolong cek lampiran ini")
-	require.Contains(t, last.Text, "[Lampiran: stok.txt (text/plain, 22 B)]",
+	require.Regexp(t, `\[Lampiran: stok\.txt \(text/plain, 22 B\) #[0-9a-f]{8}\]`, last.Text,
 		"the prompt names the file the way a model can cite it")
 	require.Contains(t, last.Text, "Stok kaos merah: 7 pcs",
 		"the file's content is what the model reads")

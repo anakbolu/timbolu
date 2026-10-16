@@ -99,7 +99,10 @@ func TestCallModelReadsTheAttachmentsOfAMessage(t *testing.T) {
 	require.Equal(t, 1, attachments.reads)
 
 	require.Len(t, captured.Messages, 1)
-	require.Contains(t, captured.Messages[0].Text, "[Lampiran: stok.txt (text/plain, 22 B)]")
+	require.Regexp(t, `(?m)^\[Lampiran: stok\.txt \(text/plain, 22 B\) #[0-9a-f]{8}\]$`, captured.Messages[0].Text,
+		"the prompt names the file the way a model can cite it")
+	require.Regexp(t, `(?m)^\[/Lampiran #[0-9a-f]{8}\]$`, captured.Messages[0].Text,
+		"the file's text is closed by a marker of its own")
 	require.Contains(t, captured.Messages[0].Text, "Stok kaos merah: 7 pcs")
 	require.Empty(t, captured.Messages[0].Images, "a text file is text, not a picture")
 }
@@ -243,8 +246,8 @@ func TestAttachmentBudgetIsSpentOnTheNewestMessage(t *testing.T) {
 	var captured llmdomain.ChatRequest
 	h := newHarness(t, domain.DefaultLimits, func(deps *Deps) {
 		deps.Attachments = attachments
-		// Room for one file only, which makes the order visible.
-		deps.AttachmentLimits = attachtext.Limits{MaxCharsTotal: 70}
+		// Room for one file's section only, which makes the order visible.
+		deps.AttachmentLimits = attachtext.Limits{MaxCharsTotal: 80}
 		deps.Gateway = capturingGateway{onChat: func(_ llmdomain.Scope, req llmdomain.ChatRequest) (llmdomain.ChatResponse, error) {
 			captured = req
 			return llmdomain.ChatResponse{Text: "oke", FinishReason: llmdomain.FinishStop}, nil

@@ -676,7 +676,8 @@ func TestSystemPromptCarriesWhoIsAnswering(t *testing.T) {
 	require.Contains(t, prompt, "Ramah dan ringkas.")
 	require.Contains(t, prompt, "hangat")
 	require.Contains(t, prompt, "handoff", "a Bolu with tools is told it may hand work to another Bolu")
-
+	require.Contains(t, prompt, "tidak bisa dipercaya",
+		"a Bolu is told the content of an attachment is data, not instruction")
 	// A task that is itself part of a chain is told so, because its answer is
 	// data for the task above it rather than a reply to a person. The depth
 	// comes from the loaded context, which is what the activity read from the

@@ -19,12 +19,16 @@
 package attachtext
 
 import (
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
 	"path"
+	"regexp"
 	"strings"
+	"sync/atomic"
 	"unicode/utf8"
 )
 
@@ -232,12 +236,17 @@ func (r *Renderer) Render(file File) Part {
 		return r.image(file, mediaType)
 	}
 
+	// The boundary of a section is drawn per file rather than once per renderer:
+	// a marker shared by every file of a request is one marker a file could
+	// contain, and a file that contains the closing marker ends its own section.
+	nonce := boundaryNonce()
+
 	switch {
 	case isPDF(file):
 		text, err := extractPDF(file.Content)
-		return r.document(file, text, err)
+		return r.document(file, nonce, text, err)
 	case isText(file):
-		return r.document(file, textOf(file.Content), nil)
+		return r.document(file, nonce, textOf(file.Content), nil)
 	default:
 		return r.note(file, "isi tidak dibaca — tipe ini belum didukung")
 	}
@@ -254,12 +263,13 @@ func (r *Renderer) image(file File, mediaType string) Part {
 	}
 
 	r.images++
-	text := fmt.Sprintf("[Gambar %s (%s, %s)]", file.Filename, mediaType, sizeLabel(file.ByteSize))
+	name := sanitiseName(file.Filename)
+	text := fmt.Sprintf("[Gambar %s (%s, %s)]", name, mediaType, sizeLabel(file.ByteSize))
 	r.chars += utf8.RuneCountInString(text)
 
 	return Part{
 		Text:     text,
-		NoVision: fmt.Sprintf("[Gambar %s tidak bisa dibaca: model yang aktif tidak mendukung gambar]", file.Filename),
+		NoVision: fmt.Sprintf("[Gambar %s tidak bisa dibaca: model yang aktif tidak mendukung gambar]", name),
 		Image: &Image{
 			MediaType: mediaType,
 			Data:      base64.StdEncoding.EncodeToString(file.Content),
@@ -272,7 +282,7 @@ func (r *Renderer) image(file File, mediaType string) Part {
 //
 // An extraction that found nothing is a fact about the file — a scanned PDF has
 // no text layer — and is said rather than shown as an empty section.
-func (r *Renderer) document(file File, text string, err error) Part {
+func (r *Renderer) document(file File, nonce, text string, err error) Part {
 	if err != nil {
 		return r.unreadable(file, reasonOf(err))
 	}
@@ -281,7 +291,7 @@ func (r *Renderer) document(file File, text string, err error) Part {
 	}
 
 	text, marker := truncate(text, r.limits.MaxCharsPerFile)
-	text = section(file, text, marker)
+	text = section(file, nonce, text, marker)
 
 	// The total budget is a hard bound: a file whose text does not fit in what
 	// is left contributes its note and nothing else, so a request never carries
@@ -300,7 +310,7 @@ func (r *Renderer) document(file File, text string, err error) Part {
 // for it.
 func (r *Renderer) note(file File, reason string) Part {
 	text := fmt.Sprintf("[Lampiran %s (%s, %s): %s]",
-		file.Filename, mimeOf(file), sizeLabel(file.ByteSize), reason)
+		sanitiseName(file.Filename), mimeOf(file), sizeLabel(file.ByteSize), reason)
 	r.chars += utf8.RuneCountInString(text)
 
 	return Part{Text: text}
@@ -310,7 +320,7 @@ func (r *Renderer) note(file File, reason string) Part {
 // where the reason is the whole message. The failure travels with the part, so a
 // caller that has a logger can record which files never reach the model.
 func (r *Renderer) unreadable(file File, reason string) Part {
-	text := fmt.Sprintf("[Lampiran %s tidak bisa dibaca: %s]", file.Filename, reason)
+	text := fmt.Sprintf("[Lampiran %s tidak bisa dibaca: %s]", sanitiseName(file.Filename), reason)
 	r.chars += utf8.RuneCountInString(text)
 
 	return Part{Text: text, Err: errors.New(reason)}
@@ -321,16 +331,79 @@ func (r *Renderer) remaining() int {
 	return r.limits.MaxCharsTotal - r.chars
 }
 
+// A file's own text must not be able to spell either marker tag, so both are
+// matched case-insensitively: a model reads the case of a marker as noise.
+var (
+	openTagPattern  = regexp.MustCompile(`(?i)\[Lampiran`)
+	closeTagPattern = regexp.MustCompile(`(?i)\[/Lampiran`)
+)
+
+// nameStripper removes what would let a filename break the marker it is quoted
+// in: the line breaks and tabs that would end the line, and the brackets that
+// would make the name look like a marker of its own.
+var nameStripper = strings.NewReplacer("\r", "", "\n", "", "\t", "", "[", "", "]", "")
+
+// nonceBytes is the width of a boundary nonce. Four bytes is eight hex
+// characters: short enough to read in a prompt, wide enough that a file cannot
+// carry the marker by accident, let alone on purpose.
+const nonceBytes = 4
+
+// fallbackNonce numbers the boundaries in the one case crypto/rand cannot.
+var fallbackNonce atomic.Uint64
+
+// boundaryNonce returns the marker that ends one file's section.
+//
+// It is random rather than derived from the file, because a marker a file can
+// predict is a marker a file can contain, and a file that contains the closing
+// marker ends its own section — leaving the text after it to read as though the
+// application had written it.
+func boundaryNonce() string {
+	var raw [nonceBytes]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		// crypto/rand is documented never to fail. If a source ever does, a
+		// counter still gives every boundary a marker of its own, which is the
+		// one property a section needs.
+		return fmt.Sprintf("%0*x", nonceBytes*2, fallbackNonce.Add(1))
+	}
+
+	return hex.EncodeToString(raw[:])
+}
+
+// sanitiseName is the filename as a marker may quote it: one line, with nothing
+// in it that could pass for a bracket of the marker itself.
+func sanitiseName(name string) string {
+	return strings.TrimSpace(nameStripper.Replace(name))
+}
+
+// neutralise makes a file's text unable to pass for the markers around it.
+//
+// The closing tag is broken first and the opening one second, so the replacement
+// of the first cannot be read as the second. The nonce goes last: it is what makes
+// the closing marker unforgeable, so the one string that must never survive into a
+// section is the nonce itself.
+func neutralise(text, nonce string) string {
+	text = closeTagPattern.ReplaceAllLiteralString(text, "[/ Lampiran")
+	text = openTagPattern.ReplaceAllLiteralString(text, "[ Lampiran")
+
+	return strings.ReplaceAll(text, nonce, "#")
+}
+
 // section wraps content in the markers that tell the model where the file
 // begins and ends, so the text after a section cannot be read as part of it.
 // The marker is the truncation line, empty when nothing was dropped.
-func section(file File, text, marker string) string {
+//
+// The name and the text are neutralised before they are quoted — a file is data,
+// so neither of them may spell a marker and pass for something the application
+// said — and both markers carry the nonce, so a section can only be ended by the
+// marker that opened it.
+func section(file File, nonce, text, marker string) string {
 	if marker != "" {
 		text += "\n" + marker
 	}
 
-	return fmt.Sprintf("[Lampiran: %s (%s, %s)]\n%s\n[/Lampiran]",
-		file.Filename, mimeOf(file), sizeLabel(file.ByteSize), text)
+	return fmt.Sprintf("[Lampiran: %s (%s, %s) #%s]\n%s\n[/Lampiran #%s]",
+		sanitiseName(file.Filename), mimeOf(file), sizeLabel(file.ByteSize), nonce,
+		neutralise(text, nonce), nonce)
 }
 
 // truncate keeps at most limit characters and returns the marker that says how
