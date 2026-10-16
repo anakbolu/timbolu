@@ -60,6 +60,10 @@ type Deps struct {
 	Passwords domain.Passwords
 	// Tokens generates the one-time tokens emailed to users.
 	Tokens domain.Tokens
+	// Logf reports a failure that must not fail the request it belongs to, such
+	// as a verification link that could not be delivered. Optional: without it
+	// the failure is dropped.
+	Logf   func(format string, args ...any)
 	Config Config
 }
 
@@ -88,6 +92,9 @@ func New(deps Deps) domain.Service {
 		// One attempt every five seconds, so a burst is absorbed but a
 		// legitimate user who mistyped can retry shortly.
 		deps.Config.LoginThrottleRefill = 0.2
+	}
+	if deps.Logf == nil {
+		deps.Logf = func(string, ...any) {}
 	}
 	return &service{deps: deps}
 }
@@ -118,8 +125,15 @@ func (s *service) Register(ctx context.Context, req domain.RegisterRequest) (dom
 		return s.deps.Repository.MarkEmailVerified(ctx, user.ID)
 	}
 
-	if err := s.sendVerification(ctx, user); err != nil {
+	body, err := s.issueVerificationToken(ctx, user)
+	if err != nil {
 		return domain.User{}, err
+	}
+	if err := s.send(ctx, user.Email, verificationSubject, body); err != nil {
+		// The account and its token exist, so a mail server having a bad day must
+		// not turn a successful sign-up into a failure the user cannot see past.
+		// The link stays valid: resend-verification issues a fresh one.
+		s.deps.Logf("auth: verification email to %s failed: %v", user.Email, err)
 	}
 
 	return user, nil
@@ -523,21 +537,35 @@ func (s *service) resetLoginAttempts(ctx context.Context, email, ip string) {
 	}
 }
 
+// verificationSubject is the subject of every verification email.
+const verificationSubject = "Verifikasi email Bolu"
+
 // sendVerification issues a one-time link and emails it.
 func (s *service) sendVerification(ctx context.Context, user domain.User) error {
-	raw, hash, err := s.deps.Tokens.Generate()
+	body, err := s.issueVerificationToken(ctx, user)
 	if err != nil {
 		return err
+	}
+	return s.send(ctx, user.Email, verificationSubject, body)
+}
+
+// issueVerificationToken stores a one-time verification link for the account and
+// returns the body of the email that carries it. It is separate from the delivery
+// because the two failures mean different things: a token that could not be
+// written is a broken request, a message that could not be sent is not.
+func (s *service) issueVerificationToken(ctx context.Context, user domain.User) (string, error) {
+	raw, hash, err := s.deps.Tokens.Generate()
+	if err != nil {
+		return "", err
 	}
 
 	expiresAt := s.deps.Config.Clock().Add(s.deps.Config.VerificationTTL)
 	if err := s.deps.Repository.CreateEmailVerificationToken(ctx, user.ID, hash, expiresAt); err != nil {
-		return err
+		return "", err
 	}
 
-	return s.send(ctx, user.Email, "Verifikasi email Bolu",
-		fmt.Sprintf("Buka tautan ini untuk memverifikasi email:\n\n%s/verify?token=%s\n\nTautan berlaku %s.",
-			strings.TrimRight(s.deps.Config.FrontendURL, "/"), raw, humanize(s.deps.Config.VerificationTTL)))
+	return fmt.Sprintf("Buka tautan ini untuk memverifikasi email:\n\n%s/verify?token=%s\n\nTautan berlaku %s.",
+		strings.TrimRight(s.deps.Config.FrontendURL, "/"), raw, humanize(s.deps.Config.VerificationTTL)), nil
 }
 
 func (s *service) send(ctx context.Context, to, subject, body string) error {

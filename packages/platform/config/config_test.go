@@ -28,6 +28,7 @@ func clearOverrides(t *testing.T) {
 		"DUITKU_RETURN_URL", "DUITKU_BASE_URL",
 		"BILLING_GRACE_DAYS", "BILLING_SYNC_INTERVAL", "BILLING_SWEEP_INTERVAL",
 		"AUTH_REQUIRE_EMAIL_VERIFICATION",
+		"MAIL_DRIVER", "MAIL_TIMEOUT_SECONDS",
 	} {
 		t.Setenv(key, "")
 	}
@@ -288,6 +289,29 @@ func TestRequireEmailVerificationIsOnByDefaultAndCanBeTurnedOff(t *testing.T) {
 	require.False(t, cfg.Auth.RequireEmailVerification)
 
 	t.Setenv("AUTH_REQUIRE_EMAIL_VERIFICATION", "not-a-bool")
+	_, err = Load()
+	require.Error(t, err)
+}
+
+// TestMailTimeoutSecondsBoundsOneDelivery: the bound that keeps an unreachable mail server from
+// holding a request. It is read from the environment so a deployment can tighten or loosen it, and a
+// value that is not a number is refused rather than read as "no timeout".
+func TestMailTimeoutSecondsBoundsOneDelivery(t *testing.T) {
+	clearOverrides(t)
+
+	// The base file every deployment reads supplies the default; local runs the log driver and
+	// names no timeout, which leaves the mail package's own bound in place.
+	base, err := loadFromFile("staging")
+	require.NoError(t, err)
+	require.Equal(t, 10, base.Mail.TimeoutSeconds, "the shipped default bounds the session")
+
+	t.Setenv("ENVIRONMENT", "local")
+	t.Setenv("MAIL_TIMEOUT_SECONDS", "3")
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, 3, cfg.Mail.TimeoutSeconds)
+
+	t.Setenv("MAIL_TIMEOUT_SECONDS", "soon")
 	_, err = Load()
 	require.Error(t, err)
 }

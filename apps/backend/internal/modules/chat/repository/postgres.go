@@ -385,6 +385,11 @@ func (r *Repository) LatestMessages(ctx context.Context, scope domain.Scope, con
 }
 
 // Save stores attachment bytes and their metadata.
+//
+// The row and the message's read model are written in one transaction: the rows
+// in `message_attachments` are the storage record, while the JSONB column is
+// what history and the event stream render, so a message that pointed at a file
+// its column did not list would be a file no client ever sees.
 func (r *Repository) Save(ctx context.Context, scope domain.Scope, attachment domain.Attachment, content []byte) (domain.Attachment, error) {
 	var stored domain.Attachment
 
@@ -403,6 +408,25 @@ func (r *Repository) Save(ctx context.Context, scope domain.Scope, attachment do
 		}
 
 		stored = toAttachment(row)
+
+		element, err := marshalAttachment(stored)
+		if err != nil {
+			return err
+		}
+
+		// A message that is gone takes the whole transaction with it: the row
+		// written just above must not outlive the message it points at.
+		if _, err := queries.AppendMessageAttachment(ctx, sqlcgen.AppendMessageAttachmentParams{
+			ID:          stored.MessageID,
+			WorkspaceID: scope.WorkspaceID,
+			Attachment:  element,
+		}); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return domain.ErrMessageNotFound
+			}
+			return fmt.Errorf("chat: append message attachment: %w", err)
+		}
+
 		return nil
 	})
 	if err != nil {
@@ -773,12 +797,30 @@ func toEvent(row sqlcgen.ActivityEvent) domain.Event {
 // a query per message. Both are written in the same transaction, and a test
 // asserts they agree.
 func marshalAttachments(attachments []domain.Attachment) ([]byte, error) {
-	if len(attachments) == 0 {
-		return []byte("[]"), nil
+	// One element at a time through marshalAttachment, which is the same encoder
+	// AppendMessageAttachment uses for the one element it appends: an appended
+	// element and a rewritten column cannot drift into two shapes.
+	elements := make([]json.RawMessage, 0, len(attachments))
+	for _, attachment := range attachments {
+		element, err := marshalAttachment(attachment)
+		if err != nil {
+			return nil, err
+		}
+		elements = append(elements, element)
 	}
-	raw, err := json.Marshal(attachments)
+
+	raw, err := json.Marshal(elements)
 	if err != nil {
 		return nil, fmt.Errorf("chat: encode attachments: %w", err)
+	}
+	return raw, nil
+}
+
+// marshalAttachment writes one attachment as one element of that read model.
+func marshalAttachment(attachment domain.Attachment) ([]byte, error) {
+	raw, err := json.Marshal(attachment)
+	if err != nil {
+		return nil, fmt.Errorf("chat: encode attachment: %w", err)
 	}
 	return raw, nil
 }

@@ -1,0 +1,31 @@
+$ git rev-parse --short HEAD  # + perubahan round 2 (belum commit saat dijalankan)
+c50f13c
+$ go build ./...
+build OK
+$ go test ./test/integration/ -run 'TestAttachWith|TestAttachment' -count=1 -v   (Postgres asli via testcontainers)
+=== RUN   TestAttachWithoutMessageShowsTheFile
+--- PASS: TestAttachWithoutMessageShowsTheFile (1.86s)
+=== RUN   TestAttachWithMessageShowsTheFile
+--- PASS: TestAttachWithMessageShowsTheFile (0.34s)
+=== RUN   TestAttachmentMetadataAndIsolation
+--- PASS: TestAttachmentMetadataAndIsolation (0.33s)
+=== RUN   TestAttachmentStorageKeysAreUnique
+--- PASS: TestAttachmentStorageKeysAreUnique (0.36s)
+PASS
+ok  	github.com/robzlabz/employeebot/apps/backend/test/integration	3.268s
+$ go test ./internal/modules/chat/service/ -run TestAttachShowsTheFileInHistoryAndStream -count=1 -v
+=== RUN   TestAttachShowsTheFileInHistoryAndStream
+=== RUN   TestAttachShowsTheFileInHistoryAndStream/the_message_opened_for_an_upload
+=== RUN   TestAttachShowsTheFileInHistoryAndStream/a_message_that_already_has_text
+--- PASS: TestAttachShowsTheFileInHistoryAndStream (0.00s)
+    --- PASS: TestAttachShowsTheFileInHistoryAndStream/the_message_opened_for_an_upload (0.00s)
+    --- PASS: TestAttachShowsTheFileInHistoryAndStream/a_message_that_already_has_text (0.00s)
+PASS
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/service	0.007s
+$ go test -count=1 ./internal/modules/chat/...
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain	0.017s
+?   	github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain/mocks	[no test files]
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/handler	0.012s
+?   	github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/repository	[no test files]
+?   	github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/repository/sqlcgen	[no test files]
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/service	0.063s

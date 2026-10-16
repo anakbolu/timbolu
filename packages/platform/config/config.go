@@ -445,6 +445,9 @@ type MailConfig struct {
 	Port     int    `mapstructure:"Port" validate:"optional"`
 	Username string `mapstructure:"Username" validate:"optional"`
 	Password string `mapstructure:"Password" validate:"optional"`
+	// TimeoutSeconds bounds one SMTP delivery, the dial and the session together.
+	// Zero takes the mail package's own default.
+	TimeoutSeconds int `mapstructure:"TimeoutSeconds" validate:"optional"`
 }
 
 // PlanConfig holds the plan defaults the product has not decided yet. The

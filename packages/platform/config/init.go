@@ -245,6 +245,14 @@ func loadFromEnv(cfg *Config) error {
 		}
 	}
 
+	if v := os.Getenv("MAIL_TIMEOUT_SECONDS"); v != "" {
+		seconds, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse MAIL_TIMEOUT_SECONDS: %w", err)
+		}
+		cfg.Mail.TimeoutSeconds = seconds
+	}
+
 	if v := os.Getenv("INTEGRATION_CALLS_PER_MINUTE"); v != "" {
 		perMinute, err := strconv.Atoi(v)
 		if err != nil {

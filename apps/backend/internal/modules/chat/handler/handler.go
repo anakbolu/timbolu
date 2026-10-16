@@ -378,6 +378,7 @@ func (h *Handler) Attach(c *fiber.Ctx) error {
 			ConversationID: id,
 			Text:           "",
 			Reply:          false,
+			ForAttachment:  true,
 		})
 		if err != nil {
 			return h.fail(c, "open message for attachment", err)

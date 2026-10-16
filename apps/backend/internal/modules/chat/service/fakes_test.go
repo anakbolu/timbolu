@@ -235,14 +235,28 @@ func (s *memoryStore) LatestMessages(_ context.Context, _ chatdomain.Scope, conv
 	return all, nil
 }
 
+// Save stands in for the repository's Save: the row and the message's read model
+// are written together, so a message that does not exist takes the write with it.
 func (s *memoryStore) Save(_ context.Context, _ chatdomain.Scope, attachment chatdomain.Attachment, content []byte) (chatdomain.Attachment, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	message, ok := s.messages[attachment.MessageID]
+	if !ok {
+		return chatdomain.Attachment{}, chatdomain.ErrMessageNotFound
+	}
 
 	attachment.ID = uuid.New()
 	attachment.ByteSize = int64(len(content))
 	attachment.CreatedAt = time.Now()
 	s.attachments[attachment.ID] = attachment
+	// A fresh slice rather than an append in place: the column this stands for is
+	// replaced, not extended, so a message a test already holds is unaffected.
+	attachments := make([]chatdomain.Attachment, 0, len(message.Attachments)+1)
+	attachments = append(attachments, message.Attachments...)
+	message.Attachments = append(attachments, attachment)
+	s.messages[message.ID] = message
+
 	return attachment, nil
 }
 
