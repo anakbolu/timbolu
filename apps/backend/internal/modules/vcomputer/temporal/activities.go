@@ -13,6 +13,12 @@
 // no control plane is configured — every activity then answers ErrNotConfigured, which is
 // what a deployment without a virtual computer looks like rather than a worker that has never
 // heard of one.
+
+// A configuration mistake is answered as a non-retryable Temporal error, and that is the
+// one thing this package adds to the client's answer: a missing control plane and a refused
+// token will not become true by asking again, so the activity stops instead of spending its
+// attempts on the same refused header (issue #218). Everything else the client classifies —
+// an unreachable control plane, a sandbox that is not up yet — stays retryable.
 //
 // Nothing else calls these yet: the agent task loop and its tool catalog do not reach the
 // sandbox (docs/adr/0003-virtual-computer.md), so no tool a model can call becomes a click or
@@ -28,8 +34,10 @@ package temporal
 
 import (
 	"context"
+	"errors"
 	"time"
 
+	sdktemporal "go.temporal.io/sdk/temporal"
 	"go.uber.org/zap"
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/domain"
@@ -112,7 +120,8 @@ type ScreenshotResult struct {
 // It is the first activity of any task that needs a desktop, because every other
 // activity fails with ErrNoSession when it is skipped.
 func (a *Activities) EnsureSession(ctx context.Context, request SessionRequest) (domain.Session, error) {
-	return a.client().EnsureSession(ctx, request.BotID)
+	session, err := a.client().EnsureSession(ctx, request.BotID)
+	return session, permanent(err)
 }
 
 // StopSession ends a session and keeps its volume.
@@ -122,7 +131,7 @@ func (a *Activities) EnsureSession(ctx context.Context, request SessionRequest) 
 // the task that used it would lose the browser profile it was kept for, which is the
 // opposite of what the persistent volume is for.
 func (a *Activities) StopSession(ctx context.Context, request SessionRequest) error {
-	return a.client().StopSession(ctx, request.BotID)
+	return permanent(a.client().StopSession(ctx, request.BotID))
 }
 
 // Screenshot is the desktop as it is now. The workflow decides what to do with the
@@ -130,7 +139,7 @@ func (a *Activities) StopSession(ctx context.Context, request SessionRequest) er
 func (a *Activities) Screenshot(ctx context.Context, request SessionRequest) (ScreenshotResult, error) {
 	png, err := a.client().Screenshot(ctx, request.BotID)
 	if err != nil {
-		return ScreenshotResult{}, err
+		return ScreenshotResult{}, permanent(err)
 	}
 	if len(png) == 0 {
 		// An empty capture is not a failure of the sandbox, but it is useless to the
@@ -146,12 +155,12 @@ func (a *Activities) Screenshot(ctx context.Context, request SessionRequest) (Sc
 
 // Click presses a point on the desktop.
 func (a *Activities) Click(ctx context.Context, request ClickRequest) error {
-	return a.client().Click(ctx, request.BotID, request.X, request.Y)
+	return permanent(a.client().Click(ctx, request.BotID, request.X, request.Y))
 }
 
 // Type sends text to the focused window.
 func (a *Activities) Type(ctx context.Context, request TypeRequest) error {
-	return a.client().Type(ctx, request.BotID, request.Text)
+	return permanent(a.client().Type(ctx, request.BotID, request.Text))
 }
 
 // Navigate points the browser at a page.
@@ -161,7 +170,7 @@ func (a *Activities) Type(ctx context.Context, request TypeRequest) error {
 // (docs/riset-microvm.md §5.1): the control plane refuses a scheme it does not accept,
 // and the approval gate is what decided the call was allowed at all.
 func (a *Activities) Navigate(ctx context.Context, request NavigateRequest) error {
-	return a.client().Navigate(ctx, request.BotID, request.URL)
+	return permanent(a.client().Navigate(ctx, request.BotID, request.URL))
 }
 
 // Exec runs one command inside the sandbox and answers what it printed.
@@ -173,7 +182,34 @@ func (a *Activities) Navigate(ctx context.Context, request NavigateRequest) erro
 // those apart, and a stub that looked like a successful command would reach a task
 // summary as "nothing to report" instead of as a bug.
 func (a *Activities) Exec(ctx context.Context, request ExecRequest) (domain.ExecResult, error) {
-	return a.client().Exec(ctx, request.BotID, request.Command)
+	result, err := a.client().Exec(ctx, request.BotID, request.Command)
+	return result, permanent(err)
+}
+
+// notConfiguredType is the type Temporal records for a configuration mistake. It is a name
+// rather than a sentence because it is what a RetryPolicy's NonRetryableErrorTypes matches,
+// and it is what a run's history shows beside the message.
+const notConfiguredType = "VComputerNotConfigured"
+
+// permanent is where a deployment mistake stops being a retry.
+//
+// Temporal retries an activity until its policy says otherwise, and a missing control plane
+// or a refused token is the one class of failure that answers the same way every time: the
+// same header is refused again, so the attempts only delay the message an operator needs.
+// Everything else — an unreachable control plane, a sandbox that is not up yet — is left
+// alone, because that is what the policy is for.
+//
+// The cause is attached as well as the sentence, so what an operator reads in a run carries
+// the whole chain: the control plane's own words and the sentinel's. What survives the
+// activity boundary is that text and the error's type, not the identity of the value — an
+// errors.Is against domain.ErrNotConfigured holds on this side of the boundary, where the
+// client and this wrapper keep it, and does not on the workflow side, which is why a
+// caller there branches on the message.
+func permanent(err error) error {
+	if err == nil || !errors.Is(err, domain.ErrNotConfigured) {
+		return err
+	}
+	return sdktemporal.NewNonRetryableApplicationError(err.Error(), notConfiguredType, err)
 }
 
 // client is the single place the "no control plane" case is turned into an error, so

@@ -29,6 +29,9 @@ import (
 // Whether one is configured is logged here, once, and never with the token: the address says
 // which control plane the process is pointed at, which is the first thing to check when a run
 // answers ErrNotConfigured, and the token is a shared secret with no business in a log line.
+// An address with no token is a warning rather than a quiet "configured", because the control
+// plane requires the bearer on every /v1 route: that deployment is complete-looking at startup
+// and refused on every call.
 func NewVComputerTasks(cfg config.VComputerConfig, log *zap.Logger) *vcomputertemporal.Activities {
 	if log == nil {
 		log = zap.NewNop()
@@ -42,6 +45,14 @@ func NewVComputerTasks(cfg config.VComputerConfig, log *zap.Logger) *vcomputerte
 	if url == "" {
 		log.Info("virtual computer is not configured: VCOMPUTER_CONTROL_URL is empty, " +
 			"so every activity answers ErrNotConfigured")
+	} else if strings.TrimSpace(cfg.Token) == "" {
+		// The client is still built: the refusal is the honest answer, and treating this as
+		// unconfigured would hide which of the two variables is missing.
+		computer = vcomputerservice.New(url, cfg.Token, cfg.Timeout)
+		log.Warn("virtual computer is configured without a token: VCOMPUTER_CONTROL_TOKEN is "+
+			"empty, so every call will be refused with a 401",
+			zap.String("control_url", url),
+			zap.Duration("timeout", cfg.Timeout))
 	} else {
 		computer = vcomputerservice.New(url, cfg.Token, cfg.Timeout)
 		log.Info("virtual computer is configured",

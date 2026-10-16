@@ -41,6 +41,11 @@ networks:
   # it (apps/virtual-computer/docker-compose.poc.yml). External because this file starts none
   # of the PoC: without the stack running there is nothing to join, and saying so here is
   # clearer than a DNS failure from the worker.
+  #
+  # The key stays `vcomputer-edge`, because it is what the service's `networks:` list names;
+  # only the name compose resolves is configurable. `VCOMPUTER_EDGE_NETWORK` is for a control
+  # plane whose edge network is not the one the PoC creates under the default name, and the
+  # value has to be the name that stack actually gave it.
   vcomputer-edge:
-    name: vcomputer-edge
+    name: ${VCOMPUTER_EDGE_NETWORK:-vcomputer-edge}
     external: true

@@ -1,0 +1,9 @@
+$ VCOMPUTER_EDGE_NETWORK=foo-edge docker compose -f docker-compose.yml -f docker-compose.vcomputer.yml config | grep -A2 "vcomputer-edge:"
+  vcomputer-edge:
+    name: foo-edge
+    external: true
+
+--- PASS: TestAgentWorkerIsGivenTheVirtualComputerSettings (0.00s)
+--- PASS: TestTheVirtualComputerOverlayReachesTheControlPlane (0.00s)
+--- PASS: TestTheVirtualComputerOverlayNamesTheEdgeNetworkFromTheEnvironment (0.00s)
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/container	0.052s

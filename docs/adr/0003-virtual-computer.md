@@ -213,6 +213,29 @@ port `6080`; baris "Jaringan" di Ringkasan dan §3.6 menyebut control plane hany
 internal dan tidak pernah dipublikasikan. Revisi ini yang berlaku untuk CDP, port per sandbox,
 dan pembagian dua jaringan — control plane tetap hanya di `127.0.0.1` pada host.
 
+## Revisi 2026-10-16 setelah QA PR #211
+
+QA menemukan tiga hal di jalur konfigurasi worker → control plane, semuanya sudah diperbaiki:
+
+- **Token salah bukan token kosong.** Control plane menjawab dua `401` yang berbeda:
+  `{"error":"a bearer token is required"}` bila tidak ada kredensial sama sekali, dan
+  `{"error":"the token is not valid"}` bila kredensialnya ada tapi tidak cocok
+  (`internal/httpapi`). Kalimat itu diteruskan klien apa adanya, jadi laporan run menyebut
+  token yang salah sebagai token yang salah, bukan menyuruh operator mencari variabel yang
+  sudah diisi.
+- **Kesalahan konfigurasi tidak lagi di-retry.** Activity membungkus `ErrNotConfigured`
+  sebagai `temporal.NewNonRetryableApplicationError` bertipe `VComputerNotConfigured`
+  (`internal/modules/vcomputer/temporal`), dengan `ErrNotConfigured` tetap sebagai cause
+  sehingga `errors.Is` di sisi dalam proses (klien dan activity) tidak berubah; di sisi
+  workflow yang bertahan hanya tipe dan kalimatnya, jadi cabangnya lewat pesan. Alamat kosong
+  maupun token yang ditolak karenanya gagal pada attempt pertama; `ErrUnavailable`,
+  `ErrInvalidInput`, dan `ErrNoSession` tetap retryable, karena sandbox yang belum siap memang
+  layak ditanya lagi.
+- **Alamat tanpa token tidak lagi "configured" tanpa catatan.** `NewVComputerTasks` mencatat
+  `Warn` yang menyebut `VCOMPUTER_CONTROL_TOKEN` kosong dan bahwa setiap panggilan akan
+  dijawab `401`. Kliennya tetap dibangun — yang dilaporkan jadi penolakan control plane,
+  bukan "tidak terkonfigurasi" yang menyembunyikan variabel mana yang kurang.
+
 ## Revisi 2026-10-16: activity terdaftar di agent worker
 
 PoC-nya sekarang punya jalur dari worker ke sandbox. Yang berubah, dan batasnya:
@@ -258,11 +281,15 @@ configured" (isu #217). Penyebabnya bukan loader melainkan compose.
   host, yang tidak punya rute dari container. Overlay menyambungkan `agent-worker` ke jaringan
   `vcomputer-edge` milik PoC (jaringan produk tetap dipakai, jadi Postgres, Redis, dan Temporal tetap
   terjangkau) dan memberi `VCOMPUTER_CONTROL_URL` default `http://vcomputer-control:8090`. Jaringan
-  itu `external: true` karena yang membuatnya stack PoC, yang harus hidup lebih dulu.
+  itu `external: true` karena yang membuatnya stack PoC, yang harus hidup lebih dulu. Namanya bisa
+  diganti lewat `VCOMPUTER_EDGE_NETWORK` (default `vcomputer-edge`); key-nya tetap, karena itulah
+  yang disebut daftar `networks:` service-nya.
 - **Kontraknya diuji.** `internal/container/vcomputer_compose_test.go` membaca kedua file compose
   sebagai YAML dan memastikan ketiga variabel sampai ke `agent-worker`, tidak ada di service lain,
   dan overlay benar-benar menyambung ke jaringan control plane — sehingga menghapus baris mana pun
   menggagalkan uji, bukan hanya diam-diam mengembalikan worker ke `ErrNotConfigured`.
+  Nama jaringan itu punya uji sendiri: default `vcomputer-edge`, dan nilai `VCOMPUTER_EDGE_NETWORK`
+  yang menimpanya.
 
 ## Keputusan yang tetap terbuka
 

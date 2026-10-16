@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -68,6 +69,27 @@ func mustEnv(t *testing.T, service composeService, key string) string {
 	return value
 }
 
+// composeVar is compose's own substitution syntax: `${VAR}` and `${VAR:-default}`.
+var composeVar = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}`)
+
+// composeSubstitute renders one compose value the way compose does, so what a test compares is
+// the value a deployment ends up with rather than the variable's spelling in the file. `env` is
+// the environment that deployment would have; an unset variable falls back to its default.
+func composeSubstitute(t *testing.T, value string, env map[string]string) string {
+	t.Helper()
+
+	return composeVar.ReplaceAllStringFunc(value, func(variable string) string {
+		match := composeVar.FindStringSubmatch(variable)
+		name, fallback := match[1], match[2]
+
+		if set := env[name]; set != "" {
+			return set
+		}
+		require.NotEmptyf(t, fallback, "%s is unset and carries no default", name)
+		return fallback
+	})
+}
+
 // TestAgentWorkerIsGivenTheVirtualComputerSettings: the agent worker is the process that
 // registers the module's activities (RegisterAgentTasks), so it is the process the three
 // settings have to reach. Reading them from `.env` is what makes the stack configurable at all;
@@ -123,10 +145,29 @@ func TestTheVirtualComputerOverlayReachesTheControlPlane(t *testing.T) {
 	require.True(t, ok, "the overlay joins a network the PoC creates")
 	require.True(t, edge.External,
 		"the PoC owns that network, so this file must not try to create it")
-	require.Equal(t, "vcomputer-edge", edge.Name,
-		"the PoC names it explicitly, so compose must not prefix it with a project name")
+	// The name itself is covered below: it is configurable, so what the file carries is the
+	// variable and its default rather than the name compose resolves.
 
 	url, ok := envValue(worker, "VCOMPUTER_CONTROL_URL")
 	require.True(t, ok, "the overlay is what makes the service name the control plane's address")
 	require.Contains(t, url, "vcomputer-control")
+}
+
+// TestTheVirtualComputerOverlayNamesTheEdgeNetworkFromTheEnvironment: the network's key is what
+// the service's `networks:` list names, so it stays `vcomputer-edge` and only the name compose
+// resolves is configurable. The default has to stay the name the PoC gives that network — the
+// overlay joins a network it does not create — and the override is for a control plane whose
+// edge network is named something else.
+func TestTheVirtualComputerOverlayNamesTheEdgeNetworkFromTheEnvironment(t *testing.T) {
+	project := composeFile(t, "docker-compose.vcomputer.yml")
+
+	edge, ok := project.Networks["vcomputer-edge"]
+	require.True(t, ok, "the key is what agent-worker's networks list names, so it stays fixed")
+
+	require.Equal(t, "vcomputer-edge", composeSubstitute(t, edge.Name, nil),
+		"an unset VCOMPUTER_EDGE_NETWORK has to mean the network the PoC creates")
+
+	require.Equal(t, "foo-edge",
+		composeSubstitute(t, edge.Name, map[string]string{"VCOMPUTER_EDGE_NETWORK": "foo-edge"}),
+		"the override names the network the control plane is on")
 }
