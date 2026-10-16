@@ -71,6 +71,22 @@
   --radius-lg: 8px;
   --radius-xl: 12px;
   --radius-2xl: 16px;
+
+  /* The one line that says a Bolu is working. A gentle opacity pulse rather
+     than a bounce: the sentence stays readable while it breathes, and the
+     `motion-safe` variant keeps it still for a person who asked for less
+     motion. */
+  --animate-soft-pulse: soft-pulse 2s ease-in-out infinite;
+
+  @keyframes soft-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.55;
+    }
+  }
 }
 
 @layer base {

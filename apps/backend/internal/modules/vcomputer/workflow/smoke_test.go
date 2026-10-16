@@ -267,3 +267,59 @@ func TestSmokeWorkflowReportsBothFailures(t *testing.T) {
 	require.Equal(t, []string{"bot-42", "bot-42", "bot-42"}, h.stopped,
 		"the cleanup is retried like every other step, and every attempt names the sandbox it failed to stop")
 }
+
+// countingClient is the control plane as a deployment with the wrong token sees it: every call
+// answers ErrNotConfigured, and the count is what says whether Temporal asked again.
+type countingClient struct {
+	calls int
+}
+
+func (c *countingClient) EnsureSession(context.Context, string) (domain.Session, error) {
+	c.calls++
+	return domain.Session{}, domain.ErrNotConfigured
+}
+
+func (c *countingClient) StopSession(context.Context, string) error { return domain.ErrNotConfigured }
+
+func (c *countingClient) Screenshot(context.Context, string) ([]byte, error) {
+	return nil, domain.ErrNotConfigured
+}
+
+func (c *countingClient) Click(context.Context, string, int, int) error {
+	return domain.ErrNotConfigured
+}
+
+func (c *countingClient) Type(context.Context, string, string) error {
+	return domain.ErrNotConfigured
+}
+
+func (c *countingClient) Navigate(context.Context, string, string) error {
+	return domain.ErrNotConfigured
+}
+
+func (c *countingClient) Exec(context.Context, string, string) (domain.ExecResult, error) {
+	return domain.ExecResult{}, domain.ErrNotConfigured
+}
+
+// TestSmokeWorkflowFailsAConfigurationMistakeOnTheFirstAttempt: a deployment pointed at a
+// control plane that refuses its token fails the run at once, not after the retry budget is
+// spent on the same header. That is what a QA run of #218 saw the opposite of: EnsureSession
+// reached attempt three against a wrong VCOMPUTER_CONTROL_TOKEN.
+//
+// The real activity set is registered rather than the harness's mocks, because the
+// non-retryability lives in the activity: a mocked error would say nothing about it.
+func TestSmokeWorkflowFailsAConfigurationMistakeOnTheFirstAttempt(t *testing.T) {
+	suite := &testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(SmokeWorkflow)
+
+	client := &countingClient{}
+	env.RegisterActivity(vcomputertemporal.New(vcomputertemporal.Deps{Computer: client}))
+
+	env.ExecuteWorkflow(SmokeWorkflow, smokeInput())
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.ErrorContains(t, env.GetWorkflowError(), domain.ErrNotConfigured.Error())
+	require.Equal(t, 1, client.calls,
+		"a configuration mistake fails the run on the first attempt rather than on the third")
+}

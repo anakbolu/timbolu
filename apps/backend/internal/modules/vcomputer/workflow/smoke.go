@@ -39,10 +39,10 @@ const (
 	stepTimeout = 30 * time.Second
 	// maximumAttempts is how many times one step is attempted. Three is what makes the run
 	// tolerate the transient half of the seam — a control plane restarting, a sandbox not yet
-	// accepting connections — without turning a real failure into a long wait: the errors the
-	// module classifies as permanent (a missing control plane, a refused token, a refused
-	// request) come back three times and then fail the run, which is what a smoke run should
-	// do.
+	// accepting connections — without turning a real failure into a long wait. The
+	// configuration mistakes are not retried at all: the activities answer a missing control
+	// plane and a refused token as non-retryable errors, so either one fails the run on the
+	// first attempt, with the sentence that says which of the two it was.
 	maximumAttempts = 3
 	// navigateSettle is how long the browser is given to render what it was pointed at.
 	navigateSettle = 3 * time.Second
