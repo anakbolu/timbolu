@@ -1,0 +1,51 @@
+<!doctype html>
+<!--
+  The PoC fixture: the one page a sandboxed browser can reach, because the sandbox
+  network has no egress (`internal: true` in docker-compose.poc.yml). It is served by
+  busybox httpd on vcomputer-fixture:8080 and exists so the e2e script has something to
+  navigate to, screenshot, click and type into that is not the internet.
+
+  `lang="id"` because the product is Indonesian; everything visible here is deliberately
+  huge, since the point is to be legible in a screenshot of a 1280x800 desktop.
+-->
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Timbolu VC fixture</title>
+<style>
+  /* Sizes are set for the screenshot, not for a human at a desk: the e2e captures the
+     whole 1280x800 display, so the heading and the echo have to survive downscaling. */
+  body { font-family: sans-serif; margin: 0; }
+  h1 { font-size: 52px; margin: 16px 0 0 16px; }
+  /* Near the top-left with no gap under the heading, and tall: the click check aims at a
+     fixed coordinate (320,150) and this is the box that has to be under it. */
+  #q { display: block; margin: 0 0 0 16px; padding: 72px 16px; font-size: 32px; width: 600px; box-sizing: content-box; }
+  #out { margin: 24px 16px; font-size: 56px; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<h1>Timbolu VC fixture</h1>
+
+<input id="q" autofocus style="font-size:32px;width:600px">
+
+<div id="out"></div>
+
+<script>
+  // Echoing the value is the observable result of the e2e's click + type step: the text
+  // shows up in #out, in the screenshot, and nowhere else.
+  var q = document.getElementById('q');
+  var out = document.getElementById('out');
+  q.addEventListener('input', function () { out.textContent = q.value; });
+
+  // Fixture scaffolding, not product behaviour. The e2e script clicks one fixed
+  // coordinate (320,150 on the 1280x800 desktop) and then types; it cannot know where
+  // fluxbox placed the Chromium window, and it must not have to. Focusing the input on
+  // any mousedown on the document makes that blind click end up typing into the input
+  // regardless of the window position, which is the only thing this page has to
+  // guarantee for the click + type check to mean anything.
+  document.addEventListener('mousedown', function () { q.focus(); });
+</script>
+
+</body>
+</html>

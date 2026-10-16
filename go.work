@@ -1,17 +1,20 @@
-// The development workspace: one checkout, three modules.
+// The development workspace: one checkout, four modules.
 //
 // `packages/` is the shared module both processes import, and each app has its
 // own go.mod because each is its own binary with its own dependency graph — the
-// gateway carries whatsmeow and no Temporal client, the backend the reverse.
+// gateway carries whatsmeow and no Temporal client, the backend the reverse, and
+// the virtual computer's control plane carries nothing but the standard library.
 //
 // A workspace is a convenience for a checkout, not a build input: a Docker build
 // does not read this file, which is why every go.mod also carries a `replace`
 // pointing at the sibling copy of `packages/`. The two mechanisms say the same
-// thing in the two places a build happens.
-go 1.26.0
+// thing in the two places a build happens. The control plane has no `replace`
+// because it imports nothing outside its own module.
 
+go 1.26.0
 use (
 	./apps/backend
+	./apps/virtual-computer/control
 	./apps/whatsapp-gw
 	./packages
 )

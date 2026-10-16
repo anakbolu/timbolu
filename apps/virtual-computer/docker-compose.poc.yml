@@ -1,0 +1,161 @@
+# The PoC's own stack: the control plane, one fixture page, and the two networks a
+# sandbox can live on.
+#
+# It is a separate file on purpose. `docker-compose.yml` at the repository root is the
+# product: Postgres, Redis, Temporal, and the four processes that serve customers. This
+# file starts none of them, and the product starts none of this — the PoC must be
+# runnable and removable without touching what customers use
+# (docs/adr/0003-virtual-computer.md §3.2).
+#
+# There is no running sandbox service here, and that is the design: the control plane's
+# docker runtime creates one container per bot, on the internal network, with a volume
+# per bot (control/internal/sandbox/docker.go). The `vcomputer-sandbox` service below is
+# a build target only, behind the `build` profile, so the image the runtime starts is
+# produced by this same file.
+#
+# Run:  VCOMPUTER_CONTROL_TOKEN=$(openssl rand -hex 16) \
+#         docker compose -f apps/virtual-computer/docker-compose.poc.yml \
+#         --profile build build
+#       VCOMPUTER_CONTROL_TOKEN=$(openssl rand -hex 16) \
+#         docker compose -f apps/virtual-computer/docker-compose.poc.yml up -d
+# Then: apps/virtual-computer/scripts/e2e.sh runs the whole checklist and prints PASS/FAIL.
+#
+# Environment variables — all of them. This file only forwards what it has; the control
+# plane is what reads them (control/internal/sandbox/docker.go, main.go):
+#   VCOMPUTER_CONTROL_TOKEN   REQUIRED, no default. The control plane refuses to start
+#                             without it and every /v1/* route requires it as a bearer
+#                             token. It is the same secret the backend's client uses.
+#   VCOMPUTER_CONTROL_ADDR    listen address inside the container. Default :8090.
+#   VCOMPUTER_CONTROL_PORT    host port for the control plane, published on the host's
+#                             loopback only. Default 8090.
+#   VCOMPUTER_RUNTIME         memory | docker. `docker` is the default here: this stack
+#                             is the real thing. `memory` starts no container at all and
+#                             answers the same API, which is what the handler tests and
+#                             a laptop demo use.
+#   VCOMPUTER_DOCKER_BIN      the docker CLI the runtime execs. Default `docker`; may
+#                             contain spaces (`sudo docker`).
+#   VCOMPUTER_SANDBOX_IMAGE   image the runtime starts per bot. Default
+#                             vcomputer-sandbox:poc.
+#   VCOMPUTER_SANDBOX_NETWORK docker network sandboxes join. Default vcomputer-internal.
+#   VCOMPUTER_SANDBOX_NOVNC_PORT / VCOMPUTER_SANDBOX_CDP_PORT
+#                             per-sandbox noVNC and DevTools ports, passed to each
+#                             container as `-e NOVNC_PORT=` / `-e CDP_PORT=`.
+#                             Default 6080 / 9223.
+#   VCOMPUTER_EXEC_TIMEOUT    bound on one `exec`, e.g. 30s.
+#   SCREEN_GEOMETRY           the sandbox display, passed as `-e`. Default 1280x800x24.
+#   VNC_PASSWORD              optional, and deliberately not set here: a human watching
+#                             through the noVNC proxy is already behind the control
+#                             plane's token, so the PoC ships no second secret.
+#
+# Three properties of this file are not free, so they are stated rather than assumed:
+#
+#   1. Sandbox ports are never published. The control plane reaches a sandbox's noVNC
+#      and CDP over `vcomputer-internal` — Session.NoVNCURL is a path on the control
+#      plane and Session.CDPURL is a container IP — so the host has no route to either.
+#      Sandboxes are created by the runtime, not by compose, and nothing here publishes
+#      their ports.
+#   2. Sandboxes join `vcomputer-internal` only, and that network is `internal: true`:
+#      no egress and no host route. A browser inside a sandbox can reach the fixture and
+#      the control plane, and nothing else — not the internet, not Postgres, not Redis.
+#      The control plane is the single member of both networks, which makes it the only
+#      door in.
+#   3. The control container mounts the docker socket. That is a PoC trade-off, not an
+#      oversight: the runtime drives the daemon with the CLI, the CLI needs the socket,
+#      and the socket is root on this host, so anyone who can reach the control plane's
+#      HTTP surface can start a container as root here. The loopback-only port and the
+#      mandatory token are the two locks that make it survivable; the alternative — a
+#      filtering API proxy — is more machinery than the PoC can justify
+#      (docs/adr/0003-virtual-computer.md §3.3, §3.7).
+
+name: vcomputer-poc
+
+services:
+  # The control plane: session lifecycle, navigate / screenshot / click / type / exec,
+  # and the noVNC proxy. It is the only service with a host-published port.
+  vcomputer-control:
+    build:
+      # This module depends on nothing but the standard library, so its context is its
+      # own directory and no repository-root copy is needed (control/Dockerfile).
+      context: ./control
+    image: vcomputer-control:poc
+    container_name: vcomputer-control
+    restart: unless-stopped
+    environment:
+      VCOMPUTER_CONTROL_ADDR: ":8090"
+      # No default, on purpose: an empty token is a control plane that would start a
+      # container for anyone who can reach the port, so it refuses to start instead.
+      # Quoted because the error message inside ${...:?} contains a colon-space, which
+      # an unquoted YAML scalar would read as the start of another mapping.
+      VCOMPUTER_CONTROL_TOKEN: "${VCOMPUTER_CONTROL_TOKEN:?set a token: generate one with openssl rand -hex 16}"
+      VCOMPUTER_RUNTIME: ${VCOMPUTER_RUNTIME:-docker}
+      VCOMPUTER_DOCKER_BIN: ${VCOMPUTER_DOCKER_BIN:-docker}
+      VCOMPUTER_SANDBOX_IMAGE: ${VCOMPUTER_SANDBOX_IMAGE:-vcomputer-sandbox:poc}
+      VCOMPUTER_SANDBOX_NETWORK: ${VCOMPUTER_SANDBOX_NETWORK:-vcomputer-internal}
+      VCOMPUTER_SANDBOX_NOVNC_PORT: ${VCOMPUTER_SANDBOX_NOVNC_PORT:-6080}
+      VCOMPUTER_SANDBOX_CDP_PORT: ${VCOMPUTER_SANDBOX_CDP_PORT:-9223}
+      VCOMPUTER_EXEC_TIMEOUT: ${VCOMPUTER_EXEC_TIMEOUT:-30s}
+      SCREEN_GEOMETRY: ${SCREEN_GEOMETRY:-1280x800x24}
+    ports:
+      # Bound to the host's loopback on purpose. This container can start containers as
+      # root through the socket below, so publishing it on 0.0.0.0 would hand that to
+      # the network. The token is the second lock.
+      - "127.0.0.1:${VCOMPUTER_CONTROL_PORT:-8090}:8090"
+    volumes:
+      # The privilege trade-off, stated where it is granted: the runtime drives the
+      # daemon with the CLI and the CLI needs the socket, which is equivalent to root on
+      # this host (docs/adr/0003-virtual-computer.md §3.3, §3.7).
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      # wget, not curl: the runtime image is docker:27-cli (alpine), which has wget and
+      # the docker CLI but no curl. /health is the one route that needs no token.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8090/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+    networks:
+      # Two networks, and the split is the point: the edge network is how the host
+      # reaches the control plane, and the internal network is the only place sandboxes
+      # live. This container is the single member of both, so it is the only door in.
+      - vcomputer-edge
+      - vcomputer-internal
+
+  # A page for the browser to navigate to. The sandbox network has no route out
+  # (`internal: true`), so a demonstration needs something to open that is not the
+  # internet: this serves one static file over the internal network. The e2e script
+  # navigates to http://vcomputer-fixture:8080/.
+  vcomputer-fixture:
+    image: busybox:1.36
+    container_name: vcomputer-fixture
+    restart: unless-stopped
+    command: ["httpd", "-f", "-p", "8080", "-h", "/www"]
+    volumes:
+      # Read-only: the fixture is a page, not a filesystem a sandbox may write to.
+      - ./fixture:/www:ro
+    networks:
+      # Internal only. The host cannot reach it and neither can the internet, which is
+      # exactly the reachability a sandbox has.
+      - vcomputer-internal
+
+  # Build target, never started: `--profile build build` produces vcomputer-sandbox:poc,
+  # which is the image the runtime starts per bot. A service rather than a bare
+  # `docker build` because it keeps the image tag in one file.
+  vcomputer-sandbox:
+    profiles: ["build"]
+    build:
+      context: ./sandbox
+    image: vcomputer-sandbox:poc
+
+networks:
+  # The sandbox network: no egress, no host route. A sandbox on it can reach the
+  # fixture and the control plane, and nothing else — not Postgres, not Redis, not the
+  # internet (docs/adr/0003-virtual-computer.md §3.3). The explicit `name` matters: the
+  # runtime looks the network up by that name (VCOMPUTER_SANDBOX_NETWORK), so compose
+  # must not prefix it with the project name.
+  vcomputer-internal:
+    name: vcomputer-internal
+    internal: true
+  # The edge network: an ordinary bridge, and the only one the host publishes a port
+  # on. The control plane is its only member.
+  vcomputer-edge:
+    name: vcomputer-edge

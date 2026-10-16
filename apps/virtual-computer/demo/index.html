@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Virtual Computer PoC — desktop bot</title>
+<!--
+  One page, one job: show a bot's real desktop.
+
+  It is opened straight from disk (file://), so it has no build step, no CDN, no fetched
+  font and no external asset. The only network traffic is the iframe at the bottom: it
+  loads noVNC from the control plane and then upgrades to a websocket. Nothing here is a
+  mock — there is no CSS-drawn desktop, no screenshot stub and no fake VNC chrome. A blank
+  frame means the control plane, the token or the session is the problem.
+
+  Why the token appears twice in one URL. This page is loaded from file://, so the iframe
+  is a third-party context: a browser that blocks third-party cookies will not send the
+  `vc_token` cookie that the page load just set. The `token` query parameter authorizes the
+  page load (and sets that cookie); the token inside `path` authorizes the websocket, which
+  is the request that would otherwise arrive unauthenticated. Dropping either one breaks a
+  real browser, so both stay, and both come from the same field.
+
+  The page makes no API call of its own: it does not create sessions, does not fetch a
+  screenshot and does not talk to /v1/* with fetch(). The session must already exist
+  (POST /v1/sessions); the iframe is the whole client.
+-->
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 15px/1.5 ui-sans-serif, system-ui, sans-serif;
+    margin: 0;
+    padding: 2rem 1.5rem 3rem;
+  }
+  main { max-width: 72rem; margin: 0 auto; }
+  h1 { font-size: 1.35rem; margin: 0 0 .35rem; }
+  p { margin: .75rem 0; }
+  p.lead { margin: 0 0 1.5rem; opacity: .8; }
+  form { display: flex; flex-wrap: wrap; gap: .9rem; align-items: flex-end; }
+  label {
+    display: flex; flex-direction: column; gap: .3rem;
+    font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; opacity: .8;
+  }
+  input {
+    font: inherit; padding: .45rem .55rem;
+    border: 1px solid currentColor; border-radius: 3px;
+    background: transparent; color: inherit; min-width: 16rem;
+  }
+  #port { min-width: 6rem; }
+  button { font: inherit; padding: .5rem 1.1rem; cursor: pointer; }
+  code, #url {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .8rem;
+  }
+  #url { opacity: .75; word-break: break-all; }
+  #frame {
+    display: block; width: 100%; aspect-ratio: 16 / 10;
+    margin-top: 1rem; border: 1px solid currentColor; background: #000;
+  }
+  footer { margin-top: 1.25rem; opacity: .7; font-size: .85rem; }
+</style>
+</head>
+<body>
+<main>
+
+  <h1>Virtual Computer PoC</h1>
+  <p class="lead">Desktop asli satu bot, disematkan dari control plane lewat proxy noVNC.
+    Isi token dan bot id, lalu tekan <strong>Buka desktop</strong>.</p>
+
+  <form id="form">
+    <label for="token">Token
+      <input id="token" type="password" autocomplete="off" spellcheck="false"
+             placeholder="VCOMPUTER_CONTROL_TOKEN" required>
+    </label>
+    <label for="bot">Bot id
+      <input id="bot" type="text" autocomplete="off" spellcheck="false"
+             placeholder="demo-bot" required>
+    </label>
+    <label for="port">Port control plane
+      <input id="port" type="text" inputmode="numeric" autocomplete="off" value="8090" required>
+    </label>
+    <button type="submit">Buka desktop</button>
+  </form>
+
+  <p id="url">Belum ada desktop yang dibuka.</p>
+
+  <iframe id="frame" title="Desktop bot (noVNC lewat proxy control plane)"></iframe>
+
+  <footer>
+    Sesi tidak dibuat dari halaman ini: pastikan <code>POST /v1/sessions</code> dengan
+    <code>bot_id</code> yang sama sudah dijalankan, dan control plane mendengarkan di
+    <code>127.0.0.1:&lt;port&gt;</code>. Token hanya dipakai untuk menyusun URL di atas dan
+    tidak disimpan di mana pun.
+  </footer>
+
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var form = document.getElementById("form");
+  var tokenField = document.getElementById("token");
+  var botField = document.getElementById("bot");
+  var portField = document.getElementById("port");
+  var frame = document.getElementById("frame");
+  var output = document.getElementById("url");
+
+  // buildURL is the contract with the control plane, in one place so it can be read
+  // against the README's API table. Everything interpolated goes through
+  // encodeURIComponent: a bot id or token with a slash, a question mark or a space must
+  // not be able to change the shape of the URL.
+  //
+  // The `path` value is the websocket's own path, without a leading slash, exactly as the
+  // session's novnc_url documents it: v1/sessions/<bot>/novnc/websockify?token=<t>.
+  // noVNC appends it to the page's host, and the control plane's proxy strips the
+  // /v1/sessions/<bot>/novnc prefix before forwarding to the sandbox.
+  function buildURL(token, bot, port) {
+    var prefix = "/v1/sessions/" + encodeURIComponent(bot) + "/novnc/";
+    var socketPath = "v1/sessions/" + encodeURIComponent(bot) +
+      "/novnc/websockify?token=" + encodeURIComponent(token);
+
+    // autoconnect must be the literal "true": noVNC 1.3 (Debian bookworm's `novnc`)
+    // only autoconnects for `autoconnect=true`, otherwise it stops at the Connect screen.
+    return "http://127.0.0.1:" + encodeURIComponent(port) + prefix +
+      "vnc.html?autoconnect=true&resize=scale" +
+      "&path=" + encodeURIComponent(socketPath) +
+      "&token=" + encodeURIComponent(token);
+  }
+
+  function looksLikePort(value) {
+    return /^[0-9]{1,5}$/.test(value) && Number(value) >= 1 && Number(value) <= 65535;
+  }
+
+  form.addEventListener("submit", function (event) {
+    event.preventDefault();
+
+    var token = tokenField.value.trim();
+    var bot = botField.value.trim();
+    var port = portField.value.trim() || "8090";
+
+    if (!token || !bot) {
+      output.textContent = "Token dan bot id harus diisi.";
+      return;
+    }
+    if (!looksLikePort(port)) {
+      output.textContent = "Port control plane harus angka 1-65535.";
+      return;
+    }
+
+    var url = buildURL(token, bot, port);
+    // textContent for the readout and the src attribute for the frame: the URL is never
+    // assembled as HTML, so a token or a bot id cannot inject markup.
+    output.textContent = url;
+    frame.src = url;
+  });
+})();
+</script>
+</body>
+</html>

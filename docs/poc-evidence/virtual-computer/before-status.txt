@@ -1,0 +1,41 @@
+=== BEFORE: Virtual Computer PoC belum ada ===
+Tanggal: 2026-10-16 09:52:26 WIB
+Branch: feat/virtual-computer
+
+--- docs/adr ---
+total 24
+drwxr-xr-x 2 box box 4096 Oct 16 09:48 .
+drwxr-xr-x 6 box box 4096 Oct 16 09:52 ..
+-rw-r--r-- 1 box box 5005 Oct 12 13:43 0001-temporal-dan-region.md
+-rw-r--r-- 1 box box 8166 Oct 16 09:48 0002-kepatuhan-uu-pdp.md
+
+--- apps/ ---
+total 20
+drwxr-xr-x 5 box box 4096 Oct 16 09:48 .
+drwxr-xr-x 9 box box 4096 Oct 16 09:48 ..
+drwxr-xr-x 8 box box 4096 Oct 16 09:48 backend
+drwxr-xr-x 5 box box 4096 Oct 16 09:51 frontend
+drwxr-xr-x 5 box box 4096 Oct 16 09:48 whatsapp-gw
+
+--- search novnc/vcomputer ---
+docs/poc-evidence/virtual-computer/before-status.txt
+docs/riset-microvm.md
+
+--- modules ---
+admin
+agent
+approval
+auth
+billing
+chat
+checklist
+health
+integration
+llm
+memory
+order
+retention
+routine
+task
+whatsapp
+workspace
