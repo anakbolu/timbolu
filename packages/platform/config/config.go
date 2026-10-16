@@ -233,6 +233,28 @@ type IntegrationConfig struct {
 	GmailAPIBase       string `mapstructure:"GmailAPIBase" validate:"optional"`
 	GmailAuthEndpoint  string `mapstructure:"GmailAuthEndpoint" validate:"optional"`
 	GmailTokenEndpoint string `mapstructure:"GmailTokenEndpoint" validate:"optional"`
+	// SlackClientID and SlackClientSecret are the deployment's own Slack app, and
+	// GitHubClientID and GitHubClientSecret its own GitHub OAuth app. Each pair
+	// empty disables that connector, which is what a deployment that has not
+	// registered an application looks like — the same rule Gmail follows. The
+	// three credentials are separate apps rather than one shared client because
+	// each provider is a different consent: a workspace that installed a Bolu into
+	// its Slack and one that let it read a repository asked for different things.
+	SlackClientID      string `mapstructure:"SlackClientID" validate:"optional"`
+	SlackClientSecret  string `mapstructure:"SlackClientSecret" validate:"optional"`
+	GitHubClientID     string `mapstructure:"GitHubClientID" validate:"optional"`
+	GitHubClientSecret string `mapstructure:"GitHubClientSecret" validate:"optional"`
+	// SlackAPIBase, SlackAuthEndpoint, SlackTokenEndpoint and the GitHub three
+	// point a connector somewhere other than the provider. They exist for the same
+	// reason the model gateway has a base URL: a staging deployment or a smoke test
+	// needs to run the whole path without a real account. Empty means the provider's
+	// own address.
+	SlackAPIBase        string `mapstructure:"SlackAPIBase" validate:"optional"`
+	SlackAuthEndpoint   string `mapstructure:"SlackAuthEndpoint" validate:"optional"`
+	SlackTokenEndpoint  string `mapstructure:"SlackTokenEndpoint" validate:"optional"`
+	GitHubAPIBase       string `mapstructure:"GitHubAPIBase" validate:"optional"`
+	GitHubAuthEndpoint  string `mapstructure:"GitHubAuthEndpoint" validate:"optional"`
+	GitHubTokenEndpoint string `mapstructure:"GitHubTokenEndpoint" validate:"optional"`
 }
 
 // KmsConfig holds the key-management key that protects the data keys of every
