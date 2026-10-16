@@ -307,6 +307,20 @@ func loadFromEnv(cfg *Config) error {
 		cfg.Llm.ChainLimit = limit
 	}
 
+	if v := os.Getenv("LLM_TEXT_ONLY_MODELS"); v != "" {
+		models := make([]string, 0, 4)
+		for _, model := range strings.Split(v, ",") {
+			// A model name is matched case-insensitively, and a provider spells it
+			// its own way, so the list is normalized here: what the gateway reads is
+			// one spelling, and a trailing comma is a typo rather than a model.
+			trimmed := strings.ToLower(strings.TrimSpace(model))
+			if trimmed != "" {
+				models = append(models, trimmed)
+			}
+		}
+		cfg.Llm.TextOnlyModels = models
+	}
+
 	if v := os.Getenv("LLM_DEFAULT_MAX_TOKENS"); v != "" {
 		tokens, err := strconv.Atoi(v)
 		if err != nil {
@@ -613,6 +627,46 @@ func loadFromEnv(cfg *Config) error {
 			return fmt.Errorf("parse TASK_MAX_TOOL_RESULT_BYTES: %w", err)
 		}
 		cfg.Tasks.MaxToolResultBytes = size
+	}
+
+	if v := os.Getenv("ATTACHMENT_CONTEXT_MAX_FILE_BYTES"); v != "" {
+		size, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return fmt.Errorf("parse ATTACHMENT_CONTEXT_MAX_FILE_BYTES: %w", err)
+		}
+		cfg.AttachmentContext.MaxFileBytes = size
+	}
+
+	if v := os.Getenv("ATTACHMENT_CONTEXT_MAX_CHARS_PER_FILE"); v != "" {
+		chars, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse ATTACHMENT_CONTEXT_MAX_CHARS_PER_FILE: %w", err)
+		}
+		cfg.AttachmentContext.MaxCharsPerFile = chars
+	}
+
+	if v := os.Getenv("ATTACHMENT_CONTEXT_MAX_CHARS_TOTAL"); v != "" {
+		chars, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse ATTACHMENT_CONTEXT_MAX_CHARS_TOTAL: %w", err)
+		}
+		cfg.AttachmentContext.MaxCharsTotal = chars
+	}
+
+	if v := os.Getenv("ATTACHMENT_CONTEXT_MAX_IMAGES"); v != "" {
+		images, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse ATTACHMENT_CONTEXT_MAX_IMAGES: %w", err)
+		}
+		cfg.AttachmentContext.MaxImages = images
+	}
+
+	if v := os.Getenv("ATTACHMENT_CONTEXT_MAX_IMAGE_BYTES"); v != "" {
+		size, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return fmt.Errorf("parse ATTACHMENT_CONTEXT_MAX_IMAGE_BYTES: %w", err)
+		}
+		cfg.AttachmentContext.MaxImageBytes = size
 	}
 
 	if v := os.Getenv("MEMORY_MAIN_TOKENS"); v != "" {

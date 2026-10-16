@@ -96,7 +96,7 @@ func decodeOpenAIRequest(t *testing.T, body []byte) llmtest.SentRequest {
 	}
 
 	for _, message := range payload.Messages {
-		decoded := llmtest.SentMessage{Role: message.Role, Text: contentText(t, message.Content)}
+		decoded := llmtest.SentMessage{Role: message.Role, Text: contentText(t, message.Content), Images: contentImages(message.Content)}
 
 		if message.Role == "tool" {
 			decoded.ToolResults = []llmtest.SentToolResult{{
@@ -163,4 +163,23 @@ func contentText(t *testing.T, raw json.RawMessage) string {
 		}
 	}
 	return result
+}
+
+// contentImages counts the pictures in the multimodal parts array, which is what
+// tells a refusal of the picture apart from a refusal of the text beside it.
+func contentImages(raw json.RawMessage) int {
+	var parts []struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(raw, &parts); err != nil {
+		return 0
+	}
+
+	images := 0
+	for _, part := range parts {
+		if part.Type == "image_url" {
+			images++
+		}
+	}
+	return images
 }

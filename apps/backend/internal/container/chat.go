@@ -10,6 +10,7 @@ import (
 	agentdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
 	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
 	chatservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/service"
+	"github.com/robzlabz/employeebot/apps/backend/internal/platform/attachtext"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/pubsub"
 	"github.com/robzlabz/employeebot/packages/platform/config"
 	"github.com/robzlabz/employeebot/packages/platform/storage"
@@ -73,6 +74,8 @@ func (c *Container) openChat(_ context.Context, cfg *config.Config) error {
 		deps.Responder = chatservice.NewModelResponder(chatservice.ResponderDeps{
 			Gateway: gateway,
 			Storage: objectStore,
+			Limits:  attachmentLimits(cfg),
+			Logger:  c.Logger,
 		})
 		if c.Services.Agent != nil {
 			directory := agentDirectory{service: c.Services.Agent}
@@ -105,6 +108,27 @@ func (c *Container) openChat(_ context.Context, cfg *config.Config) error {
 	c.Services.Chat = chatservice.New(deps)
 
 	return nil
+}
+
+// attachmentLimits reads the configured bounds on what a message's files
+// contribute to a model call, falling back to the product defaults.
+//
+// It converts rather than shares the type because the config lives in its own
+// module and cannot depend on the platform package that defines a limit; both
+// paths — a chat reply and a durable task — read their bounds through here, so
+// the two cannot disagree about what a limit is.
+func attachmentLimits(cfg *config.Config) attachtext.Limits {
+	if cfg == nil {
+		return attachtext.Limits{}
+	}
+
+	return attachtext.Limits{
+		MaxFileBytes:    cfg.AttachmentContext.MaxFileBytes,
+		MaxCharsPerFile: cfg.AttachmentContext.MaxCharsPerFile,
+		MaxCharsTotal:   cfg.AttachmentContext.MaxCharsTotal,
+		MaxImages:       cfg.AttachmentContext.MaxImages,
+		MaxImageBytes:   cfg.AttachmentContext.MaxImageBytes,
+	}.Normalise()
 }
 
 // openStorage builds the configured object storage driver.

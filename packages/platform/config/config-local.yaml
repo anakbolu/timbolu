@@ -90,6 +90,10 @@ Llm:
   QuotaEnabled: false
   TokensPerPeriod: 0
   ChainLimit: 3
+  # A model here that cannot read a picture, so a developer pointing the platform
+  # at a local text-only server sees the same answer a deployment would. Empty
+  # assumes every model sees.
+  TextOnlyModels: []
 
 Plan:
   # The cost ceiling of one day per workspace, in micro-rupiah (1 IDR = 1e6).
@@ -111,6 +115,15 @@ Tasks:
   MaxTokens: 120000
   MaxHandoffDepth: 2
   MaxToolResultBytes: 16384
+
+# How much of a message's attachments reaches the model. A zero falls back to
+# the product default, so the section states only what differs from it.
+AttachmentContext:
+  MaxFileBytes: 10485760
+  MaxCharsPerFile: 20000
+  MaxCharsTotal: 60000
+  MaxImages: 4
+  MaxImageBytes: 5242880
 
 Storage:
   # The local driver writes to a directory, so development needs no container and
