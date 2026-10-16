@@ -239,6 +239,22 @@ read back inside the transaction that creates it.
   strings; a typed field would publish
   `00000000-0000-0000-0000-000000000000` and a client would read it as an author.
 
+#### Chat path (end-to-end)
+
+1. `POST /api/conversations/:conversationID/messages` reaches the chat handler, which
+   calls `Send` in `internal/modules/chat/service/reply.go`. The message is stored and
+   the call returns; the answer is produced afterwards, so closing the tab costs
+   nothing.
+2. With the task runtime configured, the reply is a task: the chat module's starter
+   hands it to the task service, which starts `AgentTaskWorkflow` on the agent
+   worker's queue (`TEMPORAL_TASK_QUEUE_AGENT`). The answer then arrives out of
+   process, so it survives the request, a worker restart, and an approval that takes
+   hours.
+3. Without it, the fallback `ModelResponder` answers in process through the model
+   gateway's `Stream` (`internal/modules/llm/service/gateway.go`).
+4. Either way the reply is written to the store and published as Redis events, which
+   the UI reads from `GET /api/events/stream` (SSE).
+
 ### Task runtime
 
 - **A task is a Temporal workflow, not a goroutine.** A chat message opens one,
@@ -818,3 +834,55 @@ The web app routes are English: `/signup`, `/login`, `/verify`,
 The chat page is one thread at a time with a thread list, and the group page
 manages groups and shows who is in them. A Bolu's `agent.state` — derived from
 its work — keeps the roster current; the backend stores no coordinate.
+
+## Adding a connector
+
+A connector is an adapter plus the catalogue rows that make its tools grantable.
+Adding one touches three places and no other module: the agent worker, the approval
+gate, and the tool registry never learn that it happened.
+
+1. **The adapter.** Implement `Adapter` under
+   `internal/modules/integration/adapters/<app>/`, and `OAuthAdapter` too when the
+   application is connected through OAuth — that half knows the provider's
+   authorization endpoint, token endpoint, and answer shape, and nothing about
+   workspaces, states, or storage. Tool names are `app.action`, and the registry
+   checks every name, label, and schema while the process starts rather than at the
+   first call.
+2. **The wiring.** Register it in `integrationAdapters`
+   (`internal/container/integration.go`), gated on its environment variables. An empty
+   client id or secret means the deployment does not offer the connector at all,
+   rather than offering it and failing at the consent screen.
+3. **The migration.** Insert its `tool_catalog` rows and a default
+   `approval_policies` row for each `write_external` tool, the way
+   `000025_slack_github_connectors` does. Three readers take the catalogue as the
+   product's own list rather than asking an adapter: the grant screen offers what is
+   there, the tool filter hands a Bolu only what is there, and a workspace's approval
+   policies are seeded from the `write_external` rows. A tool an adapter declares
+   without a row is one nobody can grant.
+
+MCP stays separate. A server added over `/api/mcp/servers` is a connection a workspace
+makes itself, under a name it chose, and it is not a connector: that API is unchanged
+by any of this.
+
+The environment a connector reads, alongside the ones in Configuration:
+
+| Variable | What it decides |
+| --- | --- |
+| `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | The Slack connector's OAuth application; empty means Slack is not offered. |
+| `SLACK_API_BASE`, `SLACK_AUTH_ENDPOINT`, `SLACK_TOKEN_ENDPOINT` | Where the Slack adapter talks, so the path can be run without Slack; empty means Slack's own addresses. |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | The GitHub connector's OAuth application; empty means GitHub is not offered. |
+| `GITHUB_API_BASE`, `GITHUB_AUTH_ENDPOINT`, `GITHUB_TOKEN_ENDPOINT` | The same three overrides for GitHub. |
+| `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET` | The Gmail connector's OAuth application, a different one from the sign-in client below. |
+| `GMAIL_API_BASE`, `GMAIL_AUTH_ENDPOINT`, `GMAIL_TOKEN_ENDPOINT` | The same three overrides for Gmail. |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URL` | Google sign-in. A person signing in and a workspace connecting a mailbox are different consents, so they are different applications. |
+| `OAUTH_STATE_KEY` | Signs the value an authorization flow carries. It travels through a browser, so a guessable signature is a forged callback: at least 32 characters, and empty disables every connection flow. |
+| `OAUTH_REDIRECT_BASE` | The public origin providers redirect back to. It is registered with the provider rather than derived from the request, and the callback path is the same for every connector: `/api/integrations/oauth/callback`. |
+| `KMS_MASTER_KEY` | Wraps the per-workspace data key that seals a connection's token; empty leaves integrations read-only, because no token could be sealed. |
+| `MCP_TIMEOUT` | Bounds one request to an MCP server. |
+| `MAIL_DRIVER`, `MAIL_FROM`, `MAIL_HOST`, `MAIL_USERNAME`, `MAIL_PASSWORD` | Where the emailed links go; `log` prints them instead of sending. |
+| `TEMPORAL_HOST_PORT`, `TEMPORAL_NAMESPACE`, `TEMPORAL_TLS`, `TEMPORAL_API_KEY` | The durable runtime a task runs on. |
+| `TEMPORAL_TASK_QUEUE_AGENT`, `TEMPORAL_TASK_QUEUE_INTEGRATION` | The two queues: the agent loop, and the integration worker's OAuth, provider calls, and webhooks. |
+| `SECRET_ENCRYPTION_KEY` | Seals provider API keys at rest. |
+| `JWT_SECRET` | Signs access tokens and the OAuth state. |
+| `DATABASE_URL`, `REDIS_URL` | Postgres, and the Redis that carries the realtime channels. |
+| `LLM_DEFAULT_ADAPTER`, `LLM_DEFAULT_BASE_URL`, `LLM_DEFAULT_MODEL`, `LLM_DEFAULT_API_KEY` | The provider the platform offers a workspace that configured none; an empty adapter disables it. |
