@@ -61,6 +61,14 @@ type Config struct {
 	// AttachmentWindow is how long an attachment is kept. Zero keeps attachments as long
 	// as the message that carries them, and the pass then removes none.
 	AttachmentWindow time.Duration
+	// StagedTTL is how long an upload that was never named in a message is kept. Zero takes
+	// the module default of a day.
+	//
+	// It is separate from AttachmentWindow because it answers a different question. The
+	// attachment window says how long a deployment keeps what a customer sent; this says
+	// how long it keeps a file that was uploaded and never sent at all, and a deployment
+	// that keeps messages forever still has no reason to keep one of those.
+	StagedTTL time.Duration
 	// Interval is how far forward a workspace's next pass is scheduled after one runs.
 	// Zero takes the default of a day.
 	Interval time.Duration
@@ -111,9 +119,18 @@ func (s *Service) Policy() domain.Policy {
 	// A zero attachment window means "keep them with their message" — it is not a window of
 	// zero seconds, which would delete every attachment on the next pass. The distinction is
 	// the whole reason the value is expressed as a duration rather than as a day count.
+	//
+	// The staged TTL has no such zero: a file nobody ever sent has no message to be kept
+	// with, so an unset value means the default of a day rather than "keep".
+	staged := s.settings.StagedTTL
+	if staged <= 0 {
+		staged = domain.DefaultStagedTTL
+	}
+
 	return domain.Policy{
 		StepWindow:       window,
 		AttachmentWindow: s.settings.AttachmentWindow,
+		StagedTTL:        staged,
 		Limit:            limit,
 	}
 }
@@ -218,6 +235,20 @@ func (s *Service) pruneWorkspace(ctx context.Context, scope domain.Scope, now ti
 			ctx, scope, now.Add(-policy.AttachmentWindow), policy.Limit)
 		out.Attachments = attachments.Count
 		out.Bytes = attachments.BytesFreed
+		if err != nil {
+			failures = append(failures, err)
+		}
+	}
+
+	// The staged sweep is not gated on the attachment policy: an upload nobody ever sent is
+	// not content this deployment chose to keep, so it goes on the staged clock whatever the
+	// policy says. Its count joins the attachments, because that is what it is — the
+	// difference between the two is why the file went, not what it was.
+	if s.deps.Attachments != nil && policy.StagedTTL > 0 {
+		staged, err := s.deps.Attachments.PruneStagedAttachments(
+			ctx, scope, now.Add(-policy.StagedTTL), policy.Limit)
+		out.Attachments += staged.Count
+		out.Bytes += staged.BytesFreed
 		if err != nil {
 			failures = append(failures, err)
 		}

@@ -396,7 +396,9 @@ func (r *Repository) Save(ctx context.Context, scope domain.Scope, attachment do
 	err := r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
 		row, err := queries.CreateAttachment(ctx, sqlcgen.CreateAttachmentParams{
 			WorkspaceID:    scope.WorkspaceID,
-			MessageID:      attachment.MessageID,
+			MessageID:      optionalUUID(attachment.MessageID),
+			ConversationID: optionalUUID(attachment.ConversationID),
+			UserID:         optionalUUID(scope.UserID),
 			StorageKey:     attachment.StorageKey,
 			Filename:       attachment.Filename,
 			ContentType:    attachment.ContentType,
@@ -466,7 +468,7 @@ func (r *Repository) ListForMessage(ctx context.Context, scope domain.Scope, mes
 	err := r.read(ctx, scope, func(queries *sqlcgen.Queries) error {
 		rows, err := queries.ListAttachmentsForMessage(ctx, sqlcgen.ListAttachmentsForMessageParams{
 			WorkspaceID: scope.WorkspaceID,
-			MessageID:   messageID,
+			MessageID:   optionalUUID(messageID),
 		})
 		if err != nil {
 			return fmt.Errorf("chat: list attachments: %w", err)
@@ -506,6 +508,38 @@ func (r *Repository) ListExpired(ctx context.Context, scope domain.Scope, olderT
 		})
 		if err != nil {
 			return fmt.Errorf("chat: list expired attachments: %w", err)
+		}
+
+		attachments = make([]domain.Attachment, 0, len(rows))
+		for _, row := range rows {
+			attachments = append(attachments, toAttachment(row))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return attachments, nil
+}
+
+// ListStagedExpired returns the uploads that were never named in a message and are past
+// a moment, oldest first.
+//
+// It reads its own statement rather than filtering the sweep above, because a staged
+// upload is not an attachment whose window expired: nothing ever sent it, so the
+// deployment's attachment policy has nothing to say about it.
+func (r *Repository) ListStagedExpired(ctx context.Context, scope domain.Scope, olderThan time.Time, limit int) ([]domain.Attachment, error) {
+	var attachments []domain.Attachment
+
+	err := r.read(ctx, scope, func(queries *sqlcgen.Queries) error {
+		rows, err := queries.ListStagedExpiredAttachments(ctx, sqlcgen.ListStagedExpiredAttachmentsParams{
+			WorkspaceID: scope.WorkspaceID,
+			StagedAt:    &olderThan,
+			Limit:       int32(boundedLimit(limit)),
+		})
+		if err != nil {
+			return fmt.Errorf("chat: list staged attachments: %w", err)
 		}
 
 		attachments = make([]domain.Attachment, 0, len(rows))
@@ -562,7 +596,9 @@ func (r *Repository) SaveWithNewMessage(ctx context.Context, scope domain.Scope,
 
 		attachmentRow, err := queries.CreateAttachment(ctx, sqlcgen.CreateAttachmentParams{
 			WorkspaceID:    scope.WorkspaceID,
-			MessageID:      storedMessage.ID,
+			MessageID:      optionalUUID(storedMessage.ID),
+			ConversationID: optionalUUID(message.ConversationID),
+			UserID:         optionalUUID(scope.UserID),
 			StorageKey:     attachment.StorageKey,
 			Filename:       attachment.Filename,
 			ContentType:    attachment.ContentType,
@@ -606,6 +642,164 @@ func (r *Repository) SaveWithNewMessage(ctx context.Context, scope domain.Scope,
 	return storedMessage, stored, nil
 }
 
+// SaveStaged stores an upload that belongs to no message yet.
+//
+// It is one insert and no more: there is no message to open, no read model to fill, and
+// no event to publish, because nothing has happened in the thread yet. The row says
+// which thread and which person it came from, which is what the bind checks against
+// when the message that names the file is sent.
+func (r *Repository) SaveStaged(ctx context.Context, scope domain.Scope, attachment domain.Attachment, content []byte) (domain.Attachment, error) {
+	var stored domain.Attachment
+
+	err := r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
+		row, err := queries.CreateStagedAttachment(ctx, sqlcgen.CreateStagedAttachmentParams{
+			WorkspaceID:    scope.WorkspaceID,
+			ConversationID: optionalUUID(attachment.ConversationID),
+			UserID:         optionalUUID(scope.UserID),
+			StorageKey:     attachment.StorageKey,
+			Filename:       attachment.Filename,
+			ContentType:    attachment.ContentType,
+			ByteSize:       int64(len(content)),
+			ChecksumSha256: attachment.ChecksumSHA256,
+		})
+		if err != nil {
+			return translateWriteError(err, "create staged attachment")
+		}
+
+		stored = toAttachment(row)
+		return nil
+	})
+	if err != nil {
+		return domain.Attachment{}, err
+	}
+
+	return stored, nil
+}
+
+// SaveWithAttachments stores a message and binds the staged uploads it names, in one
+// transaction.
+//
+// The order inside it is the point of the whole flow. The message row is written first
+// because the binds need its id, and each bind is locked, checked and moved onto that
+// id before the element is appended to the read model — so by the time this returns,
+// the message and the files a client will render are one committed fact. Anything that
+// reads the message afterwards, including the reply worker this call is not allowed to
+// start, sees the files.
+//
+// A single id that cannot be bound fails the transaction: the message it would have
+// been sent with is not created either, and the uploads that were staged stay staged
+// and readable. That is the difference between a send that is refused and a send that
+// silently loses a file.
+func (r *Repository) SaveWithAttachments(ctx context.Context, scope domain.Scope, message domain.Message, attachmentIDs []uuid.UUID) (domain.Message, error) {
+	blocks, err := domain.MarshalBlocks(message.Blocks)
+	if err != nil {
+		return domain.Message{}, err
+	}
+
+	var stored domain.Message
+
+	err = r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
+		row, err := queries.AppendMessage(ctx, sqlcgen.AppendMessageParams{
+			WorkspaceID:    scope.WorkspaceID,
+			ConversationID: message.ConversationID,
+			AuthorAgentID:  optionalUUID(message.AuthorAgentID),
+			AuthorUserID:   optionalUUID(message.AuthorUserID),
+			Blocks:         blocks,
+			// The column starts empty and the binds below fill it one element at a
+			// time, so what a client renders is exactly the rows that were bound
+			// rather than what the caller hoped to bind.
+			Attachments:  []byte("[]"),
+			TaskID:       optionalUUID(message.TaskID),
+			Status:       statusOr(message.Status, domain.MessageComplete),
+			FinishReason: message.FinishReason,
+		})
+		if err != nil {
+			return translateWriteError(err, "append message")
+		}
+		if stored, err = toMessage(row); err != nil {
+			return err
+		}
+
+		for _, attachmentID := range attachmentIDs {
+			element, err := r.bindAttachment(ctx, queries, scope, stored.ID, message.ConversationID, attachmentID)
+			if err != nil {
+				return err
+			}
+
+			filled, err := queries.AppendMessageAttachment(ctx, sqlcgen.AppendMessageAttachmentParams{
+				ID:          stored.ID,
+				WorkspaceID: scope.WorkspaceID,
+				Attachment:  element,
+			})
+			if err != nil {
+				return fmt.Errorf("chat: append message attachment: %w", err)
+			}
+			if stored, err = toMessage(filled); err != nil {
+				return err
+			}
+		}
+
+		if _, err := queries.TouchConversation(ctx, sqlcgen.TouchConversationParams{
+			ID: message.ConversationID, WorkspaceID: scope.WorkspaceID,
+		}); err != nil {
+			return fmt.Errorf("chat: touch conversation: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return domain.Message{}, err
+	}
+
+	return stored, nil
+}
+
+// bindAttachment locks one staged upload, checks that this caller may bind it, and moves
+// it onto the message. It answers the element the message's read model lists.
+//
+// The lock is what makes the check and the move one decision. Two sends racing over the
+// same file both read it here, and the one that loses finds no row to update — a conflict
+// rather than a message that quietly points at a file the other message already carries.
+//
+// A file from another thread, another workspace, or another person is answered as "not
+// found" and not as "forbidden": whether somebody else's upload exists is not a client's
+// business, and the workspace is already the statement's filter.
+func (r *Repository) bindAttachment(ctx context.Context, queries *sqlcgen.Queries, scope domain.Scope, messageID, conversationID, attachmentID uuid.UUID) ([]byte, error) {
+	row, err := queries.LockAttachment(ctx, sqlcgen.LockAttachmentParams{
+		ID:          attachmentID,
+		WorkspaceID: scope.WorkspaceID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("%w: %s", domain.ErrAttachmentNotFound, attachmentID)
+		}
+		return nil, fmt.Errorf("chat: lock attachment: %w", err)
+	}
+
+	if row.ConversationID == nil || *row.ConversationID != conversationID ||
+		row.UserID == nil || *row.UserID != scope.UserID {
+		return nil, fmt.Errorf("%w: %s", domain.ErrAttachmentNotFound, attachmentID)
+	}
+	if row.Status != domain.AttachmentStaged {
+		return nil, fmt.Errorf("%w: %s", domain.ErrAttachmentAlreadyBound, attachmentID)
+	}
+
+	bound, err := queries.BindAttachment(ctx, sqlcgen.BindAttachmentParams{
+		ID:          attachmentID,
+		WorkspaceID: scope.WorkspaceID,
+		MessageID:   &messageID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Staged when it was read and not staged now: another send bound it in
+			// between, which is the conflict it looks like rather than a bug.
+			return nil, fmt.Errorf("%w: %s", domain.ErrAttachmentAlreadyBound, attachmentID)
+		}
+		return nil, fmt.Errorf("chat: bind attachment: %w", err)
+	}
+
+	return marshalAttachment(toAttachment(bound))
+}
+
 // Delete removes one attachment's row and the element it left in its message's read
 // model, in one transaction, and answers that message as it now reads.
 //
@@ -631,9 +825,14 @@ func (r *Repository) Delete(ctx context.Context, scope domain.Scope, id uuid.UUI
 			}
 			return fmt.Errorf("chat: delete attachment: %w", err)
 		}
+		// A staged upload answers no message, and that is not a gap to fill: it is
+		// in no read model, so the row going is the whole removal.
+		if messageID == nil {
+			return nil
+		}
 
 		row, err := queries.RemoveMessageAttachment(ctx, sqlcgen.RemoveMessageAttachmentParams{
-			ID:           messageID,
+			ID:           *messageID,
 			WorkspaceID:  scope.WorkspaceID,
 			AttachmentID: id.String(),
 		})
@@ -877,11 +1076,15 @@ func toMessage(row sqlcgen.Message) (domain.Message, error) {
 	}, nil
 }
 
+// toAttachment takes the nullable message id and the two columns that say where an upload
+// came from. A staged row has no message, and that is a state rather than a missing value:
+// the zero id is what "not bound yet" reads as everywhere above this line.
 func toAttachment(row sqlcgen.MessageAttachment) domain.Attachment {
 	return domain.Attachment{
 		ID:             row.ID,
 		WorkspaceID:    row.WorkspaceID,
-		MessageID:      row.MessageID,
+		MessageID:      deref(row.MessageID),
+		ConversationID: deref(row.ConversationID),
 		StorageKey:     row.StorageKey,
 		Filename:       row.Filename,
 		ContentType:    row.ContentType,

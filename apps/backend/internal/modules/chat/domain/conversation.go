@@ -74,7 +74,15 @@ var (
 	// ErrFileTypeNotAllowed means the upload's extension, or the content behind
 	// it, is not a type this deployment accepts.
 	ErrFileTypeNotAllowed = errors.New("chat: file type not allowed")
+	// ErrAttachmentNotFound means the file is not in this workspace, or is not
+	// one this caller may bind — the two are one answer on purpose, because a
+	// file that belongs to somebody else's thread is not a file a client has any
+	// business learning about.
 	ErrAttachmentNotFound = errors.New("chat: attachment not found")
+	// ErrAttachmentAlreadyBound means the file already belongs to a message. A
+	// staged upload is bound once and never moved, so naming it a second time is
+	// a conflict rather than a re-parenting.
+	ErrAttachmentAlreadyBound = errors.New("chat: attachment is already bound")
 	// ErrStorageUnavailable means no object storage is configured.
 	ErrStorageUnavailable = errors.New("chat: object storage is not configured")
 	// ErrRepairLimitReached means a block was regenerated as often as allowed.
@@ -175,10 +183,16 @@ func (m Message) AuthorID() uuid.UUID {
 // Attachment is one file attached to a message. The bytes live in object
 // storage; only the metadata is a row, so a large file never passes through
 // Postgres.
+//
+// ConversationID is set on every row this version writes, including the ones a
+// message already carries, because a file uploaded before the message that names
+// it has no message to be found through — and the bind is what checks that the
+// file came from the thread it is being bound in.
 type Attachment struct {
 	ID             uuid.UUID
 	WorkspaceID    uuid.UUID
 	MessageID      uuid.UUID
+	ConversationID uuid.UUID
 	StorageKey     string
 	Filename       string
 	ContentType    string
@@ -186,6 +200,16 @@ type Attachment struct {
 	ChecksumSHA256 string
 	CreatedAt      time.Time
 }
+
+// Attachment status. A file is either bound to a message or staged, waiting for
+// one, and the schema keeps the two halves of that in step: a row is bound
+// exactly when it has a message id.
+const (
+	// AttachmentStaged is an upload nobody has named in a message yet.
+	AttachmentStaged = "staged"
+	// AttachmentBound is a file that belongs to a message.
+	AttachmentBound = "bound"
+)
 
 // MarshalBlocks renders blocks for the JSONB column.
 func MarshalBlocks(blocks []Block) ([]byte, error) {

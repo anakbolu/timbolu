@@ -606,6 +606,14 @@ type StorageConfig struct {
 	// know is ignored, and an executable can never be named. Empty means the
 	// module's default list.
 	AttachmentAllowedExtensions []string `mapstructure:"AttachmentAllowedExtensions" validate:"optional"`
+	// AttachmentStagedTTL is how long an upload that was never named in a message is
+	// kept before the retention pass removes it, bytes and row together. Zero means
+	// the retention module's default of a day.
+	//
+	// It is not the attachment policy and is not expressed as one: an attachment lives
+	// as long as the message that carries it, while a staged upload has no message and
+	// no reader — nothing was ever sent with it, so nothing is waiting for it.
+	AttachmentStagedTTL time.Duration `mapstructure:"AttachmentStagedTTL" validate:"optional"`
 }
 
 // LoggingConfig holds structured logging settings.

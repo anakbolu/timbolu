@@ -350,7 +350,7 @@ the backend did not check.
 | `POST /conversations/:id/participants` | bearer + tenant | owner, admin | `{agent_ids?, user_ids?}`; groups only |
 | `GET /conversations/:id/messages` | bearer + tenant | any | `?cursor=&limit=`; newest first, cursor pagination |
 | `POST /conversations/:id/messages` | bearer + tenant | any | `{text, reply?, agent_id?, attachment_ids?}` |
-| `POST /conversations/:id/attachments` | bearer + tenant | any | multipart `file`, optional `message_id` |
+| `POST /conversations/:id/attachments` | bearer + tenant | any | multipart `file`, optional `message_id`, optional `?staged=true` |
 | `GET /attachments/:id` | bearer + tenant | any | The bytes, served inline with `nosniff` |
 | `GET /events` | bearer + tenant | any | `?after_id=&limit=`; the replay a reconnect makes |
 | `GET /events/stream` | bearer + tenant (query token) | any | Server-Sent Events; `Last-Event-ID` resumes; not bounded by `Http.WriteTimeout` |
@@ -390,6 +390,84 @@ file_type_not_allowed` and nothing is created. An upload sent without
 `message_id` opens the message it belongs to in the same transaction that stores
 the file, so a store that fails leaves neither a message nor an event behind, and
 the only event a client sees is `message.new` carrying the file.
+
+### Staged attachments (#236)
+
+The two-request flow — send the message with `reply: true`, then upload the file
+against the `message_id` that came back — starts the reply task before the file
+is linked, so the model answers a turn it never saw the file on. A file can
+therefore be uploaded **before** the message that names it, and the message binds
+it inside the transaction that stores the message.
+
+**Upload the file first.** `POST /conversations/:id/attachments?staged=true` takes
+the same multipart field, the same allowlist, and the same sniffing as the upload
+above, and answers a `201` of its own shape: the staged file, named the way the
+send that binds it will name it.
+
+```json
+{
+  "success": true,
+  "message": "file stored",
+  "data": {
+    "attachment_id": "0f1c2e3a-9b7d-4c1e-8a55-3f2b6d4e7a90",
+    "name": "laporan.pdf",
+    "mime": "application/pdf",
+    "size": 184320,
+    "url": "/api/attachments/0f1c2e3a-9b7d-4c1e-8a55-3f2b6d4e7a90"
+  }
+}
+```
+
+`attachment_id` is the value a client puts in `attachment_ids` below — one
+vocabulary from the upload to the send. An upload without `?staged=true` (with or
+without `message_id`) answers the message shape it always did: `id`, `filename`,
+`content_type`, `byte_size`, `url`.
+
+It opens **no** message and sends **no** event: the row has `message_id = NULL`
+and `status = 'staged'`, and nothing has happened in the thread yet. The row also
+records the conversation and the uploader, which is what the bind checks against.
+`staged_at` is the moment the file was uploaded, and it is the age the staged
+sweep reads.
+
+**Then name it in the message.** `POST /conversations/:id/messages` takes
+`attachment_ids` beside `text`:
+
+```json
+{
+  "text": "ini notanya",
+  "attachment_ids": ["0f1c2e3a-9b7d-4c1e-8a55-3f2b6d4e7a90"]
+}
+```
+
+The message row, the bind of each named file, and the message's own
+`attachments` column are written in **one transaction**. The reply task is opened
+only after that transaction commits, so the worker reads a message that already
+carries its files — which is the whole point of the change. Exactly one
+`message.new` is sent, with `attachments` filled, so a client renders the files
+without a second fetch.
+
+An id that cannot be bound fails the whole send: the message is not created, and
+the files that were named beside the bad one stay staged and readable. A send is
+either refused outright or arrives complete.
+
+| Code | Status | When |
+| --- | --- | --- |
+| `invalid_attachment_id` | 400 | An id is not a UUID |
+| `attachment_not_found` | 404 | No such file, or it was uploaded to another conversation, another workspace, or by another user — the three are one answer, because whether somebody else's upload exists is not a client's business |
+| `attachment_already_bound` | 409 | The file already belongs to a message; a staged upload is bound once and never moved |
+
+`text` may be empty when `attachment_ids` is not: a file is a message. An empty
+body with no file is still `400 invalid_input`. The old upload shapes are
+unchanged — with `message_id` the file joins an existing message, and without it
+the server opens the carrier message itself.
+
+`ATTACHMENT_STAGED_TTL` is how long an upload nobody ever named in a message is
+kept, as a Go duration; empty means `24h`. It is not the attachment policy
+(`RETENTION_ATTACHMENT_DAYS`): an attachment lives as long as the message that
+carries it, while a staged upload has no message and no reader. The retention
+pass removes an expired staged upload — row and object together — whatever the
+attachment policy says, and publishes nothing, because a staged file is in no
+message's read model.
 
 ### The block contract
 
@@ -1115,7 +1193,9 @@ level deep, so a screen that shows progress reads it rather than counting for it
 | `llm_not_configured` | 503 | Module not wired (no database) |
 | `conversation_not_found` | 404 | No such conversation in this workspace |
 | `message_not_found` | 404 | No such message in this workspace |
-| `attachment_not_found` | 404 | No such attachment in this workspace |
+| `attachment_not_found` | 404 | No such attachment in this workspace, or not one this caller may bind |
+| `invalid_attachment_id` | 400 | An attachment id is not a UUID |
+| `attachment_already_bound` | 409 | The staged upload already belongs to a message |
 | `task_not_found` | 404 | No such task in this workspace |
 | `unknown_trigger` | 400 | A client may not open a task with that trigger |
 | `task_limit_reached` | 409 | The task hit a step, token, cost, or depth bound |

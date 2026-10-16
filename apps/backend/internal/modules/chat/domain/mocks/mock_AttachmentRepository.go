@@ -205,6 +205,67 @@ func (_c *AttachmentRepository_ListForMessage_Call) RunAndReturn(run func(contex
 	return _c
 }
 
+// ListStagedExpired provides a mock function with given fields: ctx, scope, olderThan, limit
+func (_m *AttachmentRepository) ListStagedExpired(ctx context.Context, scope domain.Scope, olderThan time.Time, limit int) ([]domain.Attachment, error) {
+	ret := _m.Called(ctx, scope, olderThan, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListStagedExpired")
+	}
+
+	var r0 []domain.Attachment
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, time.Time, int) ([]domain.Attachment, error)); ok {
+		return rf(ctx, scope, olderThan, limit)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, time.Time, int) []domain.Attachment); ok {
+		r0 = rf(ctx, scope, olderThan, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]domain.Attachment)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, domain.Scope, time.Time, int) error); ok {
+		r1 = rf(ctx, scope, olderThan, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// AttachmentRepository_ListStagedExpired_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListStagedExpired'
+type AttachmentRepository_ListStagedExpired_Call struct {
+	*mock.Call
+}
+
+// ListStagedExpired is a helper method to define mock.On call
+//   - ctx context.Context
+//   - scope domain.Scope
+//   - olderThan time.Time
+//   - limit int
+func (_e *AttachmentRepository_Expecter) ListStagedExpired(ctx interface{}, scope interface{}, olderThan interface{}, limit interface{}) *AttachmentRepository_ListStagedExpired_Call {
+	return &AttachmentRepository_ListStagedExpired_Call{Call: _e.mock.On("ListStagedExpired", ctx, scope, olderThan, limit)}
+}
+
+func (_c *AttachmentRepository_ListStagedExpired_Call) Run(run func(ctx context.Context, scope domain.Scope, olderThan time.Time, limit int)) *AttachmentRepository_ListStagedExpired_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(domain.Scope), args[2].(time.Time), args[3].(int))
+	})
+	return _c
+}
+
+func (_c *AttachmentRepository_ListStagedExpired_Call) Return(_a0 []domain.Attachment, _a1 error) *AttachmentRepository_ListStagedExpired_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *AttachmentRepository_ListStagedExpired_Call) RunAndReturn(run func(context.Context, domain.Scope, time.Time, int) ([]domain.Attachment, error)) *AttachmentRepository_ListStagedExpired_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Open provides a mock function with given fields: ctx, scope, id
 func (_m *AttachmentRepository) Open(ctx context.Context, scope domain.Scope, id uuid.UUID) (domain.Attachment, error) {
 	ret := _m.Called(ctx, scope, id)
@@ -318,6 +379,124 @@ func (_c *AttachmentRepository_Save_Call) Return(_a0 domain.Attachment, _a1 erro
 }
 
 func (_c *AttachmentRepository_Save_Call) RunAndReturn(run func(context.Context, domain.Scope, domain.Attachment, []byte) (domain.Attachment, error)) *AttachmentRepository_Save_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// SaveStaged provides a mock function with given fields: ctx, scope, attachment, content
+func (_m *AttachmentRepository) SaveStaged(ctx context.Context, scope domain.Scope, attachment domain.Attachment, content []byte) (domain.Attachment, error) {
+	ret := _m.Called(ctx, scope, attachment, content)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SaveStaged")
+	}
+
+	var r0 domain.Attachment
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, domain.Attachment, []byte) (domain.Attachment, error)); ok {
+		return rf(ctx, scope, attachment, content)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, domain.Attachment, []byte) domain.Attachment); ok {
+		r0 = rf(ctx, scope, attachment, content)
+	} else {
+		r0 = ret.Get(0).(domain.Attachment)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, domain.Scope, domain.Attachment, []byte) error); ok {
+		r1 = rf(ctx, scope, attachment, content)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// AttachmentRepository_SaveStaged_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SaveStaged'
+type AttachmentRepository_SaveStaged_Call struct {
+	*mock.Call
+}
+
+// SaveStaged is a helper method to define mock.On call
+//   - ctx context.Context
+//   - scope domain.Scope
+//   - attachment domain.Attachment
+//   - content []byte
+func (_e *AttachmentRepository_Expecter) SaveStaged(ctx interface{}, scope interface{}, attachment interface{}, content interface{}) *AttachmentRepository_SaveStaged_Call {
+	return &AttachmentRepository_SaveStaged_Call{Call: _e.mock.On("SaveStaged", ctx, scope, attachment, content)}
+}
+
+func (_c *AttachmentRepository_SaveStaged_Call) Run(run func(ctx context.Context, scope domain.Scope, attachment domain.Attachment, content []byte)) *AttachmentRepository_SaveStaged_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(domain.Scope), args[2].(domain.Attachment), args[3].([]byte))
+	})
+	return _c
+}
+
+func (_c *AttachmentRepository_SaveStaged_Call) Return(_a0 domain.Attachment, _a1 error) *AttachmentRepository_SaveStaged_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *AttachmentRepository_SaveStaged_Call) RunAndReturn(run func(context.Context, domain.Scope, domain.Attachment, []byte) (domain.Attachment, error)) *AttachmentRepository_SaveStaged_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// SaveWithAttachments provides a mock function with given fields: ctx, scope, message, attachmentIDs
+func (_m *AttachmentRepository) SaveWithAttachments(ctx context.Context, scope domain.Scope, message domain.Message, attachmentIDs []uuid.UUID) (domain.Message, error) {
+	ret := _m.Called(ctx, scope, message, attachmentIDs)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SaveWithAttachments")
+	}
+
+	var r0 domain.Message
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, domain.Message, []uuid.UUID) (domain.Message, error)); ok {
+		return rf(ctx, scope, message, attachmentIDs)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, domain.Message, []uuid.UUID) domain.Message); ok {
+		r0 = rf(ctx, scope, message, attachmentIDs)
+	} else {
+		r0 = ret.Get(0).(domain.Message)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, domain.Scope, domain.Message, []uuid.UUID) error); ok {
+		r1 = rf(ctx, scope, message, attachmentIDs)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// AttachmentRepository_SaveWithAttachments_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SaveWithAttachments'
+type AttachmentRepository_SaveWithAttachments_Call struct {
+	*mock.Call
+}
+
+// SaveWithAttachments is a helper method to define mock.On call
+//   - ctx context.Context
+//   - scope domain.Scope
+//   - message domain.Message
+//   - attachmentIDs []uuid.UUID
+func (_e *AttachmentRepository_Expecter) SaveWithAttachments(ctx interface{}, scope interface{}, message interface{}, attachmentIDs interface{}) *AttachmentRepository_SaveWithAttachments_Call {
+	return &AttachmentRepository_SaveWithAttachments_Call{Call: _e.mock.On("SaveWithAttachments", ctx, scope, message, attachmentIDs)}
+}
+
+func (_c *AttachmentRepository_SaveWithAttachments_Call) Run(run func(ctx context.Context, scope domain.Scope, message domain.Message, attachmentIDs []uuid.UUID)) *AttachmentRepository_SaveWithAttachments_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(domain.Scope), args[2].(domain.Message), args[3].([]uuid.UUID))
+	})
+	return _c
+}
+
+func (_c *AttachmentRepository_SaveWithAttachments_Call) Return(_a0 domain.Message, _a1 error) *AttachmentRepository_SaveWithAttachments_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *AttachmentRepository_SaveWithAttachments_Call) RunAndReturn(run func(context.Context, domain.Scope, domain.Message, []uuid.UUID) (domain.Message, error)) *AttachmentRepository_SaveWithAttachments_Call {
 	_c.Call.Return(run)
 	return _c
 }

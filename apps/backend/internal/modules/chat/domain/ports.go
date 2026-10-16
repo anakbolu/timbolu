@@ -104,8 +104,31 @@ type MessageRepository interface {
 
 // AttachmentRepository stores attachment metadata and the bytes behind it.
 type AttachmentRepository interface {
-	// Save stores the bytes and their metadata.
+	// Save stores the bytes and their metadata against a message that already
+	// exists.
 	Save(ctx context.Context, scope Scope, attachment Attachment, content []byte) (Attachment, error)
+	// SaveStaged stores the bytes and their metadata as an upload that belongs to
+	// no message yet.
+	//
+	// It is the first half of the flow a client is asked to use: the file arrives
+	// before the message that names it, so the message can carry it in the same
+	// transaction that stores the message — and the model sees the file on the
+	// turn it was sent with rather than one turn later. Nothing is published for a
+	// staged upload: no message exists to publish, and a client renders messages.
+	SaveStaged(ctx context.Context, scope Scope, attachment Attachment, content []byte) (Attachment, error)
+	// SaveWithAttachments stores a message and binds the staged uploads it names,
+	// all in one transaction.
+	//
+	// The order inside it is the whole point of the flow: the message and its
+	// files become visible together, so anything that reads the message after this
+	// returns — the reply worker, the event stream, a history read — sees the
+	// files. Nothing is dispatched from inside the call, which is what keeps a
+	// worker from starting on a message whose attachments are still being written.
+	//
+	// Every id must name a staged upload of this workspace, this conversation, and
+	// this user, and an id that does not fails the whole call: no message, no
+	// binding, and the uploads that were staged stay staged and readable.
+	SaveWithAttachments(ctx context.Context, scope Scope, message Message, attachmentIDs []uuid.UUID) (Message, error)
 	// SaveWithNewMessage stores the bytes, opens the message that carries them,
 	// and writes the row and the message's read model, all in one transaction.
 	//
@@ -124,6 +147,15 @@ type AttachmentRepository interface {
 	// ListExpired returns the attachments past a moment, oldest first, with the
 	// storage key their bytes live under.
 	ListExpired(ctx context.Context, scope Scope, olderThan time.Time, limit int) ([]Attachment, error)
+	// ListStagedExpired returns the uploads that were never named in a message and
+	// are past a moment, oldest first.
+	//
+	// It is a read of its own rather than a filter on the one above because the two
+	// windows mean different things: an attachment past its policy window leaves
+	// because the deployment said how long it keeps what a customer sent, while a
+	// staged upload is a file that was sent and never named, so it goes on the
+	// staged clock whatever the policy is.
+	ListStagedExpired(ctx context.Context, scope Scope, olderThan time.Time, limit int) ([]Attachment, error)
 	// Delete removes one attachment's metadata row and the element it left in its
 	// message's read model, in one transaction, and returns that message as it
 	// now reads.

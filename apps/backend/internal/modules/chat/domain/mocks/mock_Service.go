@@ -797,6 +797,65 @@ func (_c *Service_PruneAttachments_Call) RunAndReturn(run func(context.Context, 
 	return _c
 }
 
+// PruneStagedAttachments provides a mock function with given fields: ctx, scope, olderThan, limit
+func (_m *Service) PruneStagedAttachments(ctx context.Context, scope domain.Scope, olderThan time.Time, limit int) (domain.AttachmentPrune, error) {
+	ret := _m.Called(ctx, scope, olderThan, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for PruneStagedAttachments")
+	}
+
+	var r0 domain.AttachmentPrune
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, time.Time, int) (domain.AttachmentPrune, error)); ok {
+		return rf(ctx, scope, olderThan, limit)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, time.Time, int) domain.AttachmentPrune); ok {
+		r0 = rf(ctx, scope, olderThan, limit)
+	} else {
+		r0 = ret.Get(0).(domain.AttachmentPrune)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, domain.Scope, time.Time, int) error); ok {
+		r1 = rf(ctx, scope, olderThan, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// Service_PruneStagedAttachments_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'PruneStagedAttachments'
+type Service_PruneStagedAttachments_Call struct {
+	*mock.Call
+}
+
+// PruneStagedAttachments is a helper method to define mock.On call
+//   - ctx context.Context
+//   - scope domain.Scope
+//   - olderThan time.Time
+//   - limit int
+func (_e *Service_Expecter) PruneStagedAttachments(ctx interface{}, scope interface{}, olderThan interface{}, limit interface{}) *Service_PruneStagedAttachments_Call {
+	return &Service_PruneStagedAttachments_Call{Call: _e.mock.On("PruneStagedAttachments", ctx, scope, olderThan, limit)}
+}
+
+func (_c *Service_PruneStagedAttachments_Call) Run(run func(ctx context.Context, scope domain.Scope, olderThan time.Time, limit int)) *Service_PruneStagedAttachments_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(domain.Scope), args[2].(time.Time), args[3].(int))
+	})
+	return _c
+}
+
+func (_c *Service_PruneStagedAttachments_Call) Return(_a0 domain.AttachmentPrune, _a1 error) *Service_PruneStagedAttachments_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *Service_PruneStagedAttachments_Call) RunAndReturn(run func(context.Context, domain.Scope, time.Time, int) (domain.AttachmentPrune, error)) *Service_PruneStagedAttachments_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Send provides a mock function with given fields: ctx, scope, req
 func (_m *Service) Send(ctx context.Context, scope domain.Scope, req domain.SendRequest) (domain.SendResult, error) {
 	ret := _m.Called(ctx, scope, req)

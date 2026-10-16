@@ -37,10 +37,13 @@ type retentionFixture struct {
 
 func newRetentionFixture(due ...uuid.UUID) *retentionFixture {
 	return &retentionFixture{
-		due:         due,
-		touched:     map[uuid.UUID]time.Time{},
-		steps:       &fakeSteps{pruned: map[uuid.UUID]domain.PrunedSteps{}},
-		attachments: &fakeAttachments{pruned: map[uuid.UUID]domain.PrunedAttachments{}},
+		due:     due,
+		touched: map[uuid.UUID]time.Time{},
+		steps:   &fakeSteps{pruned: map[uuid.UUID]domain.PrunedSteps{}},
+		attachments: &fakeAttachments{
+			pruned:       map[uuid.UUID]domain.PrunedAttachments{},
+			stagedPruned: map[uuid.UUID]domain.PrunedAttachments{},
+		},
 	}
 }
 
@@ -106,12 +109,16 @@ func (f *fakeSteps) PruneSteps(_ context.Context, scope domain.Scope, olderThan 
 	return f.pruned[scope.WorkspaceID], f.err[scope.WorkspaceID]
 }
 
-// fakeAttachments does the same for attachments.
+// fakeAttachments does the same for attachments, and keeps the staged sweep in a list of its
+// own: the two windows mean different things, so a test that asserts which one a workspace was
+// swept with has to be able to tell them apart.
 type fakeAttachments struct {
-	mu     sync.Mutex
-	seen   []fakeCall
-	pruned map[uuid.UUID]domain.PrunedAttachments
-	err    map[uuid.UUID]error
+	mu           sync.Mutex
+	seen         []fakeCall
+	pruned       map[uuid.UUID]domain.PrunedAttachments
+	stagedSeen   []fakeCall
+	stagedPruned map[uuid.UUID]domain.PrunedAttachments
+	err          map[uuid.UUID]error
 }
 
 func (f *fakeAttachments) PruneAttachments(_ context.Context, scope domain.Scope, olderThan time.Time, limit int) (domain.PrunedAttachments, error) {
@@ -121,6 +128,16 @@ func (f *fakeAttachments) PruneAttachments(_ context.Context, scope domain.Scope
 	f.seen = append(f.seen, fakeCall{workspace: scope.WorkspaceID, olderThan: olderThan, limit: limit})
 
 	return f.pruned[scope.WorkspaceID], f.err[scope.WorkspaceID]
+}
+
+// PruneStagedAttachments implements domain.AttachmentPruner.
+func (f *fakeAttachments) PruneStagedAttachments(_ context.Context, scope domain.Scope, olderThan time.Time, limit int) (domain.PrunedAttachments, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.stagedSeen = append(f.stagedSeen, fakeCall{workspace: scope.WorkspaceID, olderThan: olderThan, limit: limit})
+
+	return f.stagedPruned[scope.WorkspaceID], f.err[scope.WorkspaceID]
 }
 
 // newService builds the service over the fixture with a pinned clock.

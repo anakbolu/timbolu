@@ -266,11 +266,14 @@ func (s *Service) Events(ctx context.Context, scope chatdomain.Scope, afterID in
 
 // Attach stores a file and returns its metadata.
 //
-// It is one call for both shapes of an upload. With a MessageID the file joins a
-// message that already exists. Without one the file *is* the message: the carrier
-// is opened inside the same transaction that records the row, so an upload that
-// cannot be stored leaves neither a row nor an empty bubble, and the only event a
-// client sees is the new message — never a carrier announced and then filled.
+// It is one call for three shapes of an upload. With a MessageID the file joins a
+// message that already exists. With Staged it belongs to no message yet and waits
+// for the one that will name it, which is the flow a client is asked to use: upload
+// first, then send, so the reply to that message sees the file on the turn it was
+// sent with. Without either the file *is* the message: the carrier is opened inside
+// the same transaction that records the row, so an upload that cannot be stored
+// leaves neither a row nor an empty bubble, and the only event a client sees is the
+// new message — never a carrier announced and then filled.
 //
 // Nothing is written before the type is checked and the bytes are accepted, and
 // the type is derived from the extension rather than taken from the request.
@@ -300,8 +303,23 @@ func (s *Service) Attach(ctx context.Context, scope chatdomain.Scope, req chatdo
 		return chatdomain.Attachment{}, err
 	}
 
-	opensMessage := req.MessageID == uuid.Nil
-	if opensMessage {
+	// A staged upload is the one shape that publishes nothing: no message exists yet,
+	// so there is no event to send and a client that renders messages has nothing to
+	// render. What it needs instead is the thread it came from, because that is the
+	// thread the bind will check it against.
+	if req.Staged {
+		if req.MessageID != uuid.Nil {
+			return chatdomain.Attachment{}, fmt.Errorf("%w: a staged upload belongs to no message",
+				chatdomain.ErrInvalidInput)
+		}
+		if req.ConversationID == uuid.Nil {
+			return chatdomain.Attachment{}, fmt.Errorf("%w: a conversation id is required",
+				chatdomain.ErrInvalidInput)
+		}
+		if _, err := s.deps.Conversations.GetConversation(ctx, scope, req.ConversationID); err != nil {
+			return chatdomain.Attachment{}, err
+		}
+	} else if req.MessageID == uuid.Nil {
 		if req.ConversationID == uuid.Nil {
 			return chatdomain.Attachment{}, fmt.Errorf("%w: a message id or a conversation id is required",
 				chatdomain.ErrInvalidInput)
@@ -329,13 +347,26 @@ func (s *Service) Attach(ctx context.Context, scope chatdomain.Scope, req chatdo
 	attachment := chatdomain.Attachment{
 		ID:             attachmentID,
 		MessageID:      req.MessageID,
+		ConversationID: req.ConversationID,
 		StorageKey:     object.Key,
 		Filename:       filename,
 		ContentType:    contentType,
 		ChecksumSHA256: object.ChecksumSHA256,
 	}
 
-	if opensMessage {
+	if req.Staged {
+		stored, err := s.deps.Attachments.SaveStaged(ctx, scope, attachment, content)
+		if err != nil {
+			s.discardObject(ctx, key, err)
+			return chatdomain.Attachment{}, err
+		}
+
+		return stored, nil
+	}
+
+	// A file with no message and no staging is the one that opens its own carrier; the
+	// staged branch above has already returned.
+	if req.MessageID == uuid.Nil {
 		message, stored, err := s.deps.Attachments.SaveWithNewMessage(ctx, scope, chatdomain.Message{
 			ConversationID: req.ConversationID,
 			AuthorUserID:   scope.UserID,
@@ -445,6 +476,10 @@ func (s *Service) AttachmentContent(ctx context.Context, scope chatdomain.Scope,
 // context.WithoutCancel and bounded by pruneEmitTimeout. An event that still could not be written
 // is logged rather than dropped: the row is the record and the next history read is right, but
 // nothing else would ever tell the live clients, and the file would stay on screen.
+//
+// Which attachments those are is the attachment policy's answer, and the window it is given
+// comes from there: a deployment that keeps attachments with their message has no window to
+// pass, and then this is never called.
 func (s *Service) PruneAttachments(ctx context.Context, scope chatdomain.Scope, olderThan time.Time, limit int) (chatdomain.AttachmentPrune, error) {
 	if err := requireWorkspace(scope); err != nil {
 		return chatdomain.AttachmentPrune{}, err
@@ -458,6 +493,42 @@ func (s *Service) PruneAttachments(ctx context.Context, scope chatdomain.Scope, 
 		return chatdomain.AttachmentPrune{}, err
 	}
 
+	return s.removeAttachments(ctx, scope, expired)
+}
+
+// PruneStagedAttachments removes the staged uploads past a moment, object and row together.
+//
+// It is the same removal as the sweep above, on a different list, and the difference is why the
+// list exists at all: these are files that were uploaded and never named in a message, so they
+// are on a clock of their own rather than on the attachment policy. Nothing is published for one
+// of them, because a staged upload is in no message's read model — a client that renders messages
+// never saw the file in the first place.
+func (s *Service) PruneStagedAttachments(ctx context.Context, scope chatdomain.Scope, olderThan time.Time, limit int) (chatdomain.AttachmentPrune, error) {
+	if err := requireWorkspace(scope); err != nil {
+		return chatdomain.AttachmentPrune{}, err
+	}
+	if s.deps.Storage == nil {
+		return chatdomain.AttachmentPrune{}, chatdomain.ErrStorageUnavailable
+	}
+
+	expired, err := s.deps.Attachments.ListStagedExpired(ctx, scope, olderThan, limit)
+	if err != nil {
+		return chatdomain.AttachmentPrune{}, err
+	}
+
+	return s.removeAttachments(ctx, scope, expired)
+}
+
+// removeAttachments takes a list of attachments that must go whole — object first, then row —
+// and reports what actually went.
+//
+// One loop serves both sweeps because the two halves rule is the same rule, and because a
+// second copy of it would be a second place for the order to be got wrong. The message that
+// comes back from the row removal is published as an update when there is one: a bound
+// attachment is in its message's read model, so a sweep that stayed quiet would leave the file
+// on screen with a download that 404s. A staged upload comes back with no message, which is
+// how this tells the two apart without being told.
+func (s *Service) removeAttachments(ctx context.Context, scope chatdomain.Scope, expired []chatdomain.Attachment) (chatdomain.AttachmentPrune, error) {
 	var result chatdomain.AttachmentPrune
 	var failures []error
 

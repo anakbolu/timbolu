@@ -160,10 +160,57 @@ ORDER BY created_at;
 -- ------------------------------------------------------------- attachments
 
 -- name: CreateAttachment :one
+-- A file that already belongs to a message, which is the shape both older upload paths write:
+-- with `message_id` the client names the message, and without it the service opens one first.
+-- The row is bound from the moment it exists, which is why `status` is left to its default of
+-- 'bound': the check constraint ties that to the message id being present.
+--
+-- `conversation_id` and `user_id` are recorded here too, not only on the staged path, so one
+-- rule reads the same for every row — a file belongs to a thread and to whoever uploaded it.
 INSERT INTO message_attachments (
-    workspace_id, message_id, storage_key, filename, content_type, byte_size, checksum_sha256
+    workspace_id, message_id, conversation_id, user_id, storage_key, filename,
+    content_type, byte_size, checksum_sha256
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING *;
+
+-- name: CreateStagedAttachment :one
+-- An upload that is not part of a message yet: the client sends the file first and names it in
+-- the message that follows, so one transaction can bind the two and hand the model the file on
+-- the turn it was sent with.
+--
+-- `message_id` stays NULL, which is what the nullable column is for, and the row says who
+-- uploaded the file and where, so a bind can refuse one that came from another thread, another
+-- workspace, or another person. `staged_at` is the age the staged sweep reads.
+INSERT INTO message_attachments (
+    workspace_id, conversation_id, user_id, storage_key, filename, content_type,
+    byte_size, checksum_sha256, status, staged_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'staged', now())
+RETURNING *;
+
+-- name: LockAttachment :one
+-- One attachment of this workspace, locked for the rest of the transaction.
+--
+-- The row is read rather than assumed because the answers a bind can give are not one failure:
+-- a file that is not here is not found, one that is already bound is a conflict, and one that
+-- belongs to another thread or another person must not be distinguishable from a file that does
+-- not exist. The lock is what keeps a concurrent send from binding the same file twice between
+-- this read and the update below.
+SELECT * FROM message_attachments
+WHERE id = $1 AND workspace_id = $2
+FOR UPDATE;
+
+-- name: BindAttachment :one
+-- Binds one staged file to the message that named it.
+--
+-- The `message_id IS NULL` predicate is the guard that matters: two sends racing over one
+-- staged file both pass the read above, and the one that loses finds no row here rather than
+-- overwriting the message id the winner wrote. `status` moves with `message_id` because the
+-- check constraint ties the two together.
+UPDATE message_attachments
+SET message_id = $3, status = 'bound'
+WHERE id = $1 AND workspace_id = $2 AND message_id IS NULL
 RETURNING *;
 
 -- name: GetAttachment :one
@@ -187,10 +234,26 @@ WHERE workspace_id = $1 AND created_at < $2
 ORDER BY created_at
 LIMIT $3;
 
+-- name: ListStagedExpiredAttachments :many
+-- The staged sweep's read: uploads nobody ever named in a message, older than the staged
+-- window, oldest first.
+--
+-- It is a separate read from the retention sweep's above because the two windows mean
+-- different things. An attachment past its policy window leaves because the deployment said
+-- how long it keeps what a customer sent; a staged one is a file that was uploaded and then
+-- never sent at all, so it goes on its own clock whatever the policy is — and a row bound to
+-- a message is never a candidate here.
+SELECT * FROM message_attachments
+WHERE workspace_id = $1 AND status = 'staged' AND staged_at < $2
+ORDER BY staged_at
+LIMIT $3;
+
 -- name: DeleteAttachment :one
 -- The row is the storage record, and it answers the message it belonged to so
--- the read model can be fixed in the same transaction. A row that is not there
--- is not an error: a retry after a partial failure has to converge.
+-- the read model can be fixed in the same transaction. That answer is empty for
+-- a staged upload, which no message lists and which the sweep removes on its own
+-- clock. A row that is not there is not an error: a retry after a partial
+-- failure has to converge.
 DELETE FROM message_attachments
 WHERE id = $1 AND workspace_id = $2
 RETURNING message_id;

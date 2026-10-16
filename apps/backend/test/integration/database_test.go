@@ -25,7 +25,7 @@ import (
 )
 
 // latestMigration is the version of the newest migration file.
-const latestMigration = 24
+const latestMigration = 26
 
 const (
 	pgUser     = "postgres"

@@ -355,6 +355,14 @@ func loadFromEnv(cfg *Config) error {
 		cfg.Storage.AttachmentAllowedExtensions = extensions
 	}
 
+	if v := os.Getenv("ATTACHMENT_STAGED_TTL"); v != "" {
+		ttl, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("parse ATTACHMENT_STAGED_TTL: %w", err)
+		}
+		cfg.Storage.AttachmentStagedTTL = ttl
+	}
+
 	if v := os.Getenv("S3_USE_SSL"); v != "" {
 		useSSL, err := strconv.ParseBool(v)
 		if err != nil {

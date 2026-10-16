@@ -42,11 +42,6 @@ func (s *Service) Send(ctx context.Context, scope chatdomain.Scope, req chatdoma
 		return chatdomain.SendResult{}, err
 	}
 
-	attachments, err := s.resolveAttachments(ctx, scope, req.AttachmentIDs)
-	if err != nil {
-		return chatdomain.SendResult{}, err
-	}
-
 	blocks := make([]chatdomain.Block, 0, 1)
 	if text != "" {
 		block, err := textBlock(text)
@@ -56,17 +51,32 @@ func (s *Service) Send(ctx context.Context, scope chatdomain.Scope, req chatdoma
 		blocks = append(blocks, block)
 	}
 
-	userMessage, err := s.deps.Messages.Append(ctx, scope, chatdomain.Message{
+	message := chatdomain.Message{
 		ConversationID: conversation.ID,
 		AuthorUserID:   scope.UserID,
 		Blocks:         blocks,
-		Attachments:    attachments,
 		Status:         chatdomain.MessageComplete,
-	})
+	}
+
+	// A message that names staged files is stored *with* them, in one transaction, and
+	// that is the whole point of the staged flow: the message and the files a client
+	// will render become one committed fact before anything reads the message — the
+	// reply below included. A file that cannot be bound takes the message down with it,
+	// so a send is either refused outright or arrives complete.
+	var userMessage chatdomain.Message
+	if len(req.AttachmentIDs) > 0 {
+		userMessage, err = s.deps.Attachments.SaveWithAttachments(
+			ctx, scope, message, dedupe(req.AttachmentIDs))
+	} else {
+		userMessage, err = s.deps.Messages.Append(ctx, scope, message)
+	}
 	if err != nil {
 		return chatdomain.SendResult{}, err
 	}
 
+	// One event, after the transaction committed: the message did not exist before this
+	// request, and the files it carries are already part of it, so a client that renders
+	// this message renders them without a second fetch.
 	s.emitMessage(ctx, scope, userMessage, conversation.ID, chatdomain.EventMessageNew)
 
 	result := chatdomain.SendResult{Message: userMessage}

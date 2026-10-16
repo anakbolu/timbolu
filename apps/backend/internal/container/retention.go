@@ -67,9 +67,14 @@ func buildRetention(cfg *config.Config, repository retentiondomain.Repository, s
 	return retentionservice.New(deps, retentionservice.Config{
 		StepWindow:       time.Duration(cfg.Retention.StepDays) * 24 * time.Hour,
 		AttachmentWindow: time.Duration(cfg.Retention.AttachmentDays) * 24 * time.Hour,
-		Interval:         cfg.Retention.Interval,
-		Limit:            cfg.Retention.Batch,
-		SweepLimit:       cfg.Retention.SweepLimit,
+		// The staged TTL is the one window that is not expressed in days, because it is
+		// not a policy about what a customer said: a file that was uploaded and never
+		// sent has no message to be kept with, and an operator tuning it is tuning how
+		// long a client may take to finish a send.
+		StagedTTL:  cfg.Storage.AttachmentStagedTTL,
+		Interval:   cfg.Retention.Interval,
+		Limit:      cfg.Retention.Batch,
+		SweepLimit: cfg.Retention.SweepLimit,
 	})
 }
 
@@ -159,6 +164,18 @@ func (p chatAttachmentPruner) PruneAttachments(ctx context.Context, scope retent
 	}
 
 	result, err := p.chat.PruneAttachments(
+		ctx, chatdomain.Scope{WorkspaceID: scope.WorkspaceID}, olderThan, limit)
+
+	return retentiondomain.PrunedAttachments{Count: result.Count, BytesFreed: result.BytesFreed}, err
+}
+
+// PruneStagedAttachments implements retentiondomain.AttachmentPruner.
+func (p chatAttachmentPruner) PruneStagedAttachments(ctx context.Context, scope retentiondomain.Scope, olderThan time.Time, limit int) (retentiondomain.PrunedAttachments, error) {
+	if p.chat == nil {
+		return retentiondomain.PrunedAttachments{}, nil
+	}
+
+	result, err := p.chat.PruneStagedAttachments(
 		ctx, chatdomain.Scope{WorkspaceID: scope.WorkspaceID}, olderThan, limit)
 
 	return retentiondomain.PrunedAttachments{Count: result.Count, BytesFreed: result.BytesFreed}, err

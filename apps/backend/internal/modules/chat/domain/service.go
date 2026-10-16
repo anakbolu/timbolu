@@ -31,7 +31,9 @@ type Service interface {
 	// Stream returns one client's view of the workspace stream: the backlog it
 	// missed, then everything live. The channel closes when the context ends.
 	Stream(ctx context.Context, scope Scope, afterID int64) (<-chan Event, error)
-	// Attach stores a file and returns its metadata.
+	// Attach stores a file and returns its metadata. With Staged the file belongs
+	// to no message yet: it waits for the message that names it, which is what lets
+	// a client upload first and send second.
 	Attach(ctx context.Context, scope Scope, req AttachRequest, content []byte) (Attachment, error)
 	// Attachment returns the metadata of one file.
 	Attachment(ctx context.Context, scope Scope, id uuid.UUID) (Attachment, error)
@@ -49,6 +51,13 @@ type Service interface {
 	// It is on the service rather than on the repository because an attachment is two
 	// halves, and this is the layer that holds both.
 	PruneAttachments(ctx context.Context, scope Scope, olderThan time.Time, limit int) (AttachmentPrune, error)
+	// PruneStagedAttachments removes the staged uploads past a moment, row and object
+	// together, and reports what went.
+	//
+	// A staged upload is a file that was sent and never named in a message, so it is
+	// on a clock of its own rather than on the attachment policy: the deployment that
+	// keeps every attachment forever still has no reason to keep a file nobody sent.
+	PruneStagedAttachments(ctx context.Context, scope Scope, olderThan time.Time, limit int) (AttachmentPrune, error)
 	// Content returns one sandboxed HTML document by its reference. It carries
 	// no tenant scope on purpose: the reference is the capability, and the
 	// document is served to an iframe that cannot send a cookie.
@@ -108,8 +117,10 @@ type AttachRequest struct {
 	// thread that message goes in — which is what keeps an upload from opening a
 	// message before its bytes are known to be storable.
 	MessageID uuid.UUID
-	// ConversationID is the thread a file without a MessageID belongs to. It is
-	// ignored when MessageID is set.
+	// ConversationID is the thread the file belongs to. It is what a file without
+	// a MessageID is filed under, both when the server opens the message and when
+	// the file is staged: a staged upload is checked against it when the message
+	// that names it is sent.
 	ConversationID uuid.UUID
 	// Filename is the name the client sent, and it decides the file's type: the
 	// extension must be one the deployment allows, and the stored type is derived
@@ -117,6 +128,14 @@ type AttachRequest struct {
 	// and send another. A name with no extension is refused rather than defaulted,
 	// because a file whose type is unknown cannot be stored safely.
 	Filename string
+	// Staged stores the file for a message that does not exist yet. The client
+	// uploads first and sends the message with the ids afterwards, so the file is
+	// already bound when the message is stored — and the answer to that message
+	// sees it on the turn it was sent with rather than one turn later.
+	//
+	// It is mutually exclusive with MessageID: a file that already belongs to a
+	// message is not staged.
+	Staged bool
 }
 
 // AttachmentMaxBytes caps one upload. The limit is the chat surface's, not the

@@ -332,9 +332,9 @@ func (h *Handler) Send(c *fiber.Ctx) error {
 		return badRequest(c, "invalid request body")
 	}
 
-	attachmentIDs, err := parseIDs(req.AttachmentIDs, "attachment id")
+	attachmentIDs, err := parseAttachmentIDs(req.AttachmentIDs)
 	if err != nil {
-		return badRequest(c, err.Error())
+		return h.fail(c, "send message", err)
 	}
 	agentID, err := parseOptionalID(req.AgentID, "agent id")
 	if err != nil {
@@ -394,6 +394,17 @@ func (h *Handler) Attach(c *fiber.Ctx) error {
 		return badRequest(c, err.Error())
 	}
 
+	// A staged upload is the flow a client is asked to use: the file arrives before the
+	// message that names it, so the message can be stored with its files in one
+	// transaction and the reply sees them on the turn they were sent with. It is a query
+	// parameter rather than a second endpoint because the upload itself is the same
+	// request — same field, same validation, same answer — and what differs is only when
+	// the file is bound.
+	staged, err := parseOptionalBool(c.Query("staged"))
+	if err != nil {
+		return badRequest(c, err.Error())
+	}
+
 	opened, err := file.Open()
 	if err != nil {
 		return h.fail(c, "open upload", err)
@@ -415,9 +426,17 @@ func (h *Handler) Attach(c *fiber.Ctx) error {
 		MessageID:      messageID,
 		ConversationID: id,
 		Filename:       file.Filename,
+		Staged:         staged,
 	}, content)
 	if err != nil {
 		return h.fail(c, "store attachment", err)
+	}
+
+	// The staged answer is its own shape: the file is named by the id the send
+	// will carry, not by the message shape that does not exist yet. Every other
+	// upload — with a message id, or without one — keeps the answer it had.
+	if staged {
+		return response.Success(c, fiber.StatusCreated, "file stored", chatdomain.WireStagedAttachment(attachment))
 	}
 
 	return response.Success(c, fiber.StatusCreated, "file stored", chatdomain.WireAttachment(attachment))
@@ -700,6 +719,12 @@ func (h *Handler) fail(c *fiber.Ctx, operation string, err error) error {
 		return response.Error(c, fiber.StatusNotFound, "message not found", "message_not_found", nil)
 	case errors.Is(err, chatdomain.ErrAttachmentNotFound):
 		return response.Error(c, fiber.StatusNotFound, "attachment not found", "attachment_not_found", nil)
+	case errors.Is(err, chatdomain.ErrAttachmentAlreadyBound):
+		// 409 rather than 400: the request is well formed and the file is real, and what is
+		// wrong is the state it is in — it already belongs to a message. Retrying the same
+		// send would get the same answer, so the screen is what has to change.
+		return response.Error(c, fiber.StatusConflict, "attachment is already bound",
+			"attachment_already_bound", nil)
 	case errors.Is(err, chatdomain.ErrAgentNotInConversation):
 		return response.Error(c, fiber.StatusBadRequest, "that Bolu is not in this conversation", "agent_not_in_conversation", nil)
 	case errors.Is(err, chatdomain.ErrNoResponder):
@@ -834,6 +859,42 @@ func parseIDs(raw []string, field string) ([]uuid.UUID, error) {
 		ids = append(ids, id)
 	}
 	return ids, nil
+}
+
+// parseAttachmentIDs reads the staged files a message names.
+//
+// A malformed id is its own code rather than the generic one, because it is the answer a
+// client acts on differently: the request was well formed and one field in it was not, so a
+// screen can point at the file rather than at the message.
+func parseAttachmentIDs(raw []string) ([]uuid.UUID, error) {
+	ids := make([]uuid.UUID, 0, len(raw))
+	for _, value := range raw {
+		id, err := uuid.Parse(strings.TrimSpace(value))
+		if err != nil {
+			return nil, requestError{
+				status:  fiber.StatusBadRequest,
+				code:    "invalid_attachment_id",
+				message: fmt.Sprintf("invalid attachment id %q", value),
+			}
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+// parseOptionalBool reads a flag that is absent by default, and refuses a value that is
+// neither true nor false rather than reading it as one of them.
+func parseOptionalBool(raw string) (bool, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return false, nil
+	}
+
+	value, err := strconv.ParseBool(trimmed)
+	if err != nil {
+		return false, fmt.Errorf("invalid boolean %q", trimmed)
+	}
+	return value, nil
 }
 
 func readUpload(reader io.Reader) ([]byte, error) {

@@ -223,7 +223,86 @@ func TestARefusedFileTypeIs415(t *testing.T) {
 	require.Contains(t, resp.Body.String(), "file_type_not_allowed")
 }
 
+// TestAStagedUploadIsAskedForWithAFlag: staging is the same upload with the binding postponed,
+// so it is the same request with one query parameter — and a client that omits it gets the
+// behaviour it always got.
+func TestAStagedUploadIsAskedForWithAFlag(t *testing.T) {
+	service := mocks.NewService(t)
+	id := identity{userID: uuid.New(), workspaceID: uuid.New()}
+	conversationID := uuid.New()
+
+	attachment := attachmentFixture()
+	attachment.ID = uuid.MustParse("0f1c2e3a-9b7d-4c1e-8a55-3f2b6d4e7a90")
+
+	service.EXPECT().Attach(mock.Anything, mock.Anything, mock.MatchedBy(func(req chatdomain.AttachRequest) bool {
+		return req.Staged && req.MessageID == uuid.Nil && req.ConversationID == conversationID
+	}), mock.Anything).
+		Return(attachment, nil).Once()
+
+	app := newTestApp(t, service, id)
+	resp := uploadQuery(t, app, conversationID, "", "staged=true", "laporan.pdf", []byte("%PDF-1.4"))
+
+	require.Equal(t, fiber.StatusCreated, resp.Code)
+	// A staged file is named by the id the send that binds it will carry, so the
+	// answer speaks the send's vocabulary and not the message's.
+	require.Contains(t, resp.Body.String(), `"attachment_id":"0f1c2e3a-9b7d-4c1e-8a55-3f2b6d4e7a90"`)
+	require.Contains(t, resp.Body.String(), `"name":"laporan.pdf"`)
+	require.Contains(t, resp.Body.String(), `"mime":"application/pdf"`)
+	require.Contains(t, resp.Body.String(), `"size":1024`)
+	require.Contains(t, resp.Body.String(), `"url":"/api/attachments/0f1c2e3a-9b7d-4c1e-8a55-3f2b6d4e7a90"`)
+	require.NotContains(t, resp.Body.String(), `"filename"`)
+	require.NotContains(t, resp.Body.String(), `"byte_size"`)
+}
+
+// TestAnUploadWithoutTheFlagKeepsItsShape: the staged answer is a new shape for a new
+// request, and the upload a client already sends must answer exactly as it did.
+func TestAnUploadWithoutTheFlagKeepsItsShape(t *testing.T) {
+	service := mocks.NewService(t)
+	id := identity{userID: uuid.New(), workspaceID: uuid.New()}
+	conversationID := uuid.New()
+
+	attachment := attachmentFixture()
+	attachment.ID = uuid.MustParse("0f1c2e3a-9b7d-4c1e-8a55-3f2b6d4e7a90")
+
+	service.EXPECT().Attach(mock.Anything, mock.Anything, mock.MatchedBy(func(req chatdomain.AttachRequest) bool {
+		return !req.Staged && req.MessageID == uuid.Nil && req.ConversationID == conversationID
+	}), mock.Anything).
+		Return(attachment, nil).Once()
+
+	app := newTestApp(t, service, id)
+	resp := upload(t, app, conversationID, "", "laporan.pdf", []byte("%PDF-1.4"))
+
+	require.Equal(t, fiber.StatusCreated, resp.Code)
+	require.Contains(t, resp.Body.String(), `"id":"0f1c2e3a-9b7d-4c1e-8a55-3f2b6d4e7a90"`)
+	require.Contains(t, resp.Body.String(), `"filename":"laporan.pdf"`)
+	require.Contains(t, resp.Body.String(), `"content_type":"application/pdf"`)
+	require.Contains(t, resp.Body.String(), `"byte_size":1024`)
+	require.NotContains(t, resp.Body.String(), `"attachment_id"`)
+	require.NotContains(t, resp.Body.String(), `"mime"`)
+}
+
+// TestAMalformedAttachmentIDIsItsOwnCode: the request is well formed and one field in it is
+// not, which is the answer a screen acts on by pointing at the file rather than at the message.
+func TestAMalformedAttachmentIDIsItsOwnCode(t *testing.T) {
+	service := mocks.NewService(t)
+	id := identity{userID: uuid.New(), workspaceID: uuid.New()}
+
+	app := newTestApp(t, service, id)
+	resp := do(t, app, fiber.MethodPost, "/api/conversations/"+uuid.NewString()+"/messages",
+		`{"text":"halo","attachment_ids":["not-a-uuid"]}`)
+
+	require.Equal(t, fiber.StatusBadRequest, resp.Code)
+	require.Contains(t, resp.Body.String(), "invalid_attachment_id")
+}
+
 func upload(t *testing.T, app *fiber.App, conversationID uuid.UUID, messageID, filename string, content []byte) *httptest.ResponseRecorder {
+	t.Helper()
+
+	return uploadQuery(t, app, conversationID, messageID, "", filename, content)
+}
+
+// uploadQuery posts one file, with the query the endpoint reads its flags from.
+func uploadQuery(t *testing.T, app *fiber.App, conversationID uuid.UUID, messageID, query, filename string, content []byte) *httptest.ResponseRecorder {
 	t.Helper()
 
 	var body bytes.Buffer
@@ -237,8 +316,11 @@ func upload(t *testing.T, app *fiber.App, conversationID uuid.UUID, messageID, f
 	}
 	require.NoError(t, writer.Close())
 
-	req := httptest.NewRequest(fiber.MethodPost,
-		"/api/conversations/"+conversationID.String()+"/attachments", &body)
+	target := "/api/conversations/" + conversationID.String() + "/attachments"
+	if query != "" {
+		target += "?" + query
+	}
+	req := httptest.NewRequest(fiber.MethodPost, target, &body)
 	req.Header.Set(fiber.HeaderContentType, writer.FormDataContentType())
 
 	resp, err := app.Test(req, -1)
@@ -251,6 +333,17 @@ func upload(t *testing.T, app *fiber.App, conversationID uuid.UUID, messageID, f
 		recorder.Body.Write(content)
 	}
 	return recorder
+}
+
+func attachmentFixture() chatdomain.Attachment {
+	return chatdomain.Attachment{
+		ID:          uuid.New(),
+		WorkspaceID: uuid.New(),
+		Filename:    "laporan.pdf",
+		ContentType: "application/pdf",
+		ByteSize:    1024,
+		CreatedAt:   time.Now(),
+	}
 }
 
 // TestHistoryCarriesAnOpaqueCursor keeps a client from building one by hand.
@@ -413,7 +506,7 @@ func TestFailuresMapToStatuses(t *testing.T) {
 		"missing conversation": {err: chatdomain.ErrConversationNotFound, status: fiber.StatusNotFound, code: "conversation_not_found"},
 		"missing message":      {err: chatdomain.ErrMessageNotFound, status: fiber.StatusNotFound, code: "message_not_found"},
 		"missing attachment":   {err: chatdomain.ErrAttachmentNotFound, status: fiber.StatusNotFound, code: "attachment_not_found"},
-		"not in the group":     {err: chatdomain.ErrAgentNotInConversation, status: fiber.StatusBadRequest, code: "agent_not_in_conversation"},
+		"already bound":        {err: chatdomain.ErrAttachmentAlreadyBound, status: fiber.StatusConflict, code: "attachment_already_bound"},
 		"nobody can answer":    {err: chatdomain.ErrNoResponder, status: fiber.StatusConflict, code: "no_responder"},
 		"invalid block":        {err: chatdomain.ErrInvalidBlock, status: fiber.StatusBadRequest, code: "invalid_block"},
 		"block too large":      {err: chatdomain.ErrBlockTooLarge, status: fiber.StatusRequestEntityTooLarge, code: "block_too_large"},
