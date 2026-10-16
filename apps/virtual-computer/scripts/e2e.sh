@@ -214,6 +214,12 @@ SANDBOX_IMAGE="${STACK}-sandbox:poc"
 # `compose restart` is what a compose-driven restart looks like — the same SIGTERM an image
 # upgrade (`up -d --force-recreate`) sends, and the one that must not take a session with it.
 CONTROL_SERVICE=${CONTROL_SERVICE:-vcomputer-control}
+# The control plane's container name, which is what STACK renames: the compose file spells the
+# service key out (CONTROL_SERVICE above) and takes the container name from
+# VCOMPUTER_CONTROL_CONTAINER below, whose default is the same ${STACK}-control this derives. The
+# port-ownership check compares the container holding $PORT against this name, so a run that left
+# it unset could not tell its own control plane from another stack's.
+CONTROL_CONTAINER="${STACK}-control"
 FIXTURE_CONTAINER="${STACK}-fixture"
 INTERNAL_NETWORK="${STACK}-internal"
 EDGE_NETWORK="${STACK}-edge"
