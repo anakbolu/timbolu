@@ -313,6 +313,19 @@ func (s *Service) Attach(ctx context.Context, scope chatdomain.Scope, req chatdo
 		return chatdomain.Attachment{}, err
 	}
 
+	// The message is reloaded and published, because what a client renders is the
+	// message's attachments, not the row just written. A failure to read it back
+	// must not fail the upload: the file is stored and the next history read shows
+	// it, while a 500 here would tell the user a file they can see was rejected.
+	if message, err := s.deps.Messages.GetMessage(ctx, scope, req.MessageID); err != nil {
+		if s.deps.Logger != nil {
+			s.deps.Logger.Warn("could not reload the message an attachment was added to",
+				zap.String("message_id", req.MessageID.String()), zap.Error(err))
+		}
+	} else {
+		s.emitMessage(ctx, scope, message, message.ConversationID, chatdomain.EventMessageUpdated)
+	}
+
 	return stored, nil
 }
 

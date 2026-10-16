@@ -111,6 +111,18 @@ SET blocks = $3,
 WHERE id = $1 AND workspace_id = $2
 RETURNING *;
 
+-- name: AppendMessageAttachment :one
+-- The read model of one message's files, appended in the same transaction as the
+-- row that records the file. The metadata is stored twice on purpose: the rows
+-- are the storage record, this column is what history and the event stream read,
+-- so appending the element here is what keeps a message rendering the file it
+-- points at without a read-modify-write of the whole column.
+UPDATE messages
+SET attachments = COALESCE(attachments, '[]'::jsonb) || jsonb_build_array(sqlc.arg('attachment')::jsonb)
+WHERE id = $1 AND workspace_id = $2
+RETURNING *;
+
+
 -- name: GetMessage :one
 SELECT * FROM messages WHERE id = $1 AND workspace_id = $2;
 

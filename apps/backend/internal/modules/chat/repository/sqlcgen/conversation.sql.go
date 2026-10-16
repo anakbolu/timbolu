@@ -154,6 +154,44 @@ func (q *Queries) AppendMessage(ctx context.Context, arg AppendMessageParams) (M
 	return i, err
 }
 
+const appendMessageAttachment = `-- name: AppendMessageAttachment :one
+UPDATE messages
+SET attachments = COALESCE(attachments, '[]'::jsonb) || jsonb_build_array($3::jsonb)
+WHERE id = $1 AND workspace_id = $2
+RETURNING id, workspace_id, conversation_id, author_agent_id, author_user_id, blocks, attachments, task_id, created_at, status, finish_reason, updated_at
+`
+
+type AppendMessageAttachmentParams struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	Attachment  []byte
+}
+
+// The read model of one message's files, appended in the same transaction as the
+// row that records the file. The metadata is stored twice on purpose: the rows
+// are the storage record, this column is what history and the event stream read,
+// so appending the element here is what keeps a message rendering the file it
+// points at without a read-modify-write of the whole column.
+func (q *Queries) AppendMessageAttachment(ctx context.Context, arg AppendMessageAttachmentParams) (Message, error) {
+	row := q.db.QueryRow(ctx, appendMessageAttachment, arg.ID, arg.WorkspaceID, arg.Attachment)
+	var i Message
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ConversationID,
+		&i.AuthorAgentID,
+		&i.AuthorUserID,
+		&i.Blocks,
+		&i.Attachments,
+		&i.TaskID,
+		&i.CreatedAt,
+		&i.Status,
+		&i.FinishReason,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const countConversations = `-- name: CountConversations :one
 SELECT count(*)::bigint FROM conversations WHERE workspace_id = $1
 `
