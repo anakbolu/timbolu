@@ -1,0 +1,16 @@
+=== BEFORE (origin/main 9b17aad) ===
+$ git grep -n 'RegisterActivity\|RegisterWorkflow\|Register.*Tasks' origin/main -- apps/backend/internal/container/worker.go
+origin/main:apps/backend/internal/container/worker.go:30:// RegisterAgentTasks installs the workflows and activities the agent worker
+origin/main:apps/backend/internal/container/worker.go:36:func RegisterAgentTasks(w sdkworker.Worker, c *Container) {
+origin/main:apps/backend/internal/container/worker.go:40:	w.RegisterWorkflow(temporal.WorkerPingWorkflow)
+origin/main:apps/backend/internal/container/worker.go:41:	w.RegisterActivity(temporal.WorkerPingActivity)
+origin/main:apps/backend/internal/container/worker.go:53:	w.RegisterWorkflow(workflow.AgentTaskWorkflow)
+origin/main:apps/backend/internal/container/worker.go:57:	w.RegisterActivity(c.Tasks)
+origin/main:apps/backend/internal/container/worker.go:63:	RegisterMemoryTasks(w, c)
+origin/main:apps/backend/internal/container/worker.go:64:	RegisterRoutineTasks(w, c)
+
+$ git grep -n -i 'vcomputer' origin/main -- apps/backend/internal/container apps/backend/cmd packages/platform/config | wc -l
+0
+
+$ git grep -n 'Nothing registers' origin/main -- apps/backend/internal/modules/vcomputer
+origin/main:apps/backend/internal/modules/vcomputer/temporal/activities.go:10:// Nothing registers these yet, and that is the point of the PoC

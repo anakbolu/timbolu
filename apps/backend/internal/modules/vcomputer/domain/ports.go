@@ -3,10 +3,11 @@
 // backend may use to reach it.
 //
 // The module is a PoC and it is deliberately incomplete in one specific way: it
-// declares what the backend needs and provides an implementation, but nothing
-// registers it (docs/adr/0003-virtual-computer.md §3.2). That is what keeps the
-// package importable and unused — `api` and `agent-worker` behave exactly as they
-// did before it existed.
+// declares what the backend needs and provides an implementation, and the agent worker
+// registers the activities (internal/container/vcomputer.go) — but nothing in a task reaches
+// them yet. The agent task loop and its tool catalog are not wired to this port, so no tool a
+// model can call becomes a click or a command, and the approval gate that would stand in front
+// of exec has nothing to gate. The smoke workflow is what exercises the seam in the meantime.
 //
 // The port is narrow on purpose. A single "run anything on the computer" method
 // would erase the granularity the approval gates depend on

@@ -186,20 +186,55 @@ dari `file://`, jadi browser yang memblokir cookie pihak ketiga tidak akan mengi
 itu dari dalam iframe — dan websocket gagal tanpa token di `path`. Nilai disusun lewat
 `encodeURIComponent` dan dipasang sebagai atribut, tidak pernah lewat `innerHTML`.
 
-## Bagaimana activity Temporal akan memanggilnya
+## Agent worker wiring
 
-Sudah ada, belum didaftarkan. `apps/backend/internal/modules/vcomputer/` berisi port,
-klien HTTP (yang mengirim bearer token), dan activity-nya — termasuk `Navigate`; tidak satu
-pun dipanggil dari `internal/container`, jadi `api` dan `agent-worker` berperilaku persis
-seperti sebelumnya.
+Activity-nya sekarang terdaftar di `agent-worker`, bukan lagi kode yang belum dipakai.
+`apps/backend/internal/modules/vcomputer/` berisi port, klien HTTP (yang mengirim bearer
+token), dan activity-nya — termasuk `Navigate` — dan `internal/container/vcomputer.go` yang
+menyambungkannya:
 
-```go
-// internal/container/worker.go — dua baris ini yang menyambungkannya, dan sengaja
-// belum ditulis: worker yang mendaftarkan activity tanpa control plane akan
-// menggagalkan tugas yang tadinya jalan.
-computer := vcomputerservice.New(c.Config.VComputer.ControlURL, c.Config.VComputer.ControlToken, 30*time.Second)
-w.RegisterActivity(vcomputertemporal.New(vcomputertemporal.Deps{Computer: computer, Logger: c.Logger}))
+- `NewVComputerTasks(cfg, log)` membangun set activity. Alamat kosong berarti **tanpa klien**:
+  setiap activity menjawab `domain.ErrNotConfigured`, bukan memanggil alamat yang tidak
+  dimaksud. Satu baris `Info` dicatat saat start dan menyebut apakah control plane
+  terkonfigurasi — token tidak pernah masuk log.
+- `Container.openVComputer` memanggilnya saat assembly, dan tidak butuh database, Redis, atau
+  klien Temporal: komputer bot tidak bergantung pada apa yang diingat deployment.
+- `RegisterVComputerTasks(w, c)` dipanggil dari `RegisterAgentTasks` **sebelum** cabang
+  `c.Tasks == nil`, jadi worker yang runtime tugasnya mati (database sedang dimigrasi) tetap
+  bisa menjalankan sandbox. Queue-nya queue agent worker yang sama; tidak ada worker kedua.
+
+Konfigurasinya lewat environment, semuanya opsional:
+
+| Variabel | Default | Arti |
+| --- | --- | --- |
+| `VCOMPUTER_CONTROL_URL` | kosong | alamat **internal** control plane; kosong = tidak terkonfigurasi |
+| `VCOMPUTER_CONTROL_TOKEN` | kosong | rahasia bersama; harus sama dengan `VCOMPUTER_CONTROL_TOKEN` milik control plane |
+| `VCOMPUTER_CONTROL_TIMEOUT` | `30s` | batas satu panggilan; nilai yang tidak bisa di-parse menggagalkan startup |
+
+Yang terdaftar adalah **`SmokeWorkflow`** (`internal/modules/vcomputer/workflow/smoke.go`), dan
+hanya itu: `AgentTaskWorkflow` dan katalog tool belum menyentuh sandbox (ADR 0003). Satu run
+menjalankan urutan yang akan dipakai tugas sungguhan — `EnsureSession` → `Navigate` → jeda 3
+detik → `Screenshot` → `Click` → `Type` → jeda 1 detik → `Screenshot` → `Exec` — dengan
+`StartToCloseTimeout` 90 detik untuk `EnsureSession` dan 30 detik untuk sisanya, serta
+`MaximumAttempts: 3`. Hasilnya ukuran dua tangkapan (bukan byte PNG-nya), `cdp_url`, stdout
+`exec`, dan flag stub.
+
+Menjalankannya, dari checkout, dengan control plane yang hidup (lihat **Menjalankan**):
+
+```bash
+cd apps/backend
+VCOMPUTER_CONTROL_URL=http://127.0.0.1:8090 \
+VCOMPUTER_CONTROL_TOKEN=$VCOMPUTER_CONTROL_TOKEN \
+  go run ./cmd/vcomputer-smoke -bot bot-1 -url https://example.com -out /tmp/vcomputer-smoke
 ```
+
+`cmd/vcomputer-smoke` adalah alat development, bukan proses yang di-deploy: ia menaikkan
+worker-nya sendiri di queue `vcomputer-smoke` (bukan queue agent), mendaftarkan set activity
+lewat `container.RegisterVComputerTasks`, menjalankan satu workflow, mencetak hasilnya sebagai
+JSON, lalu — bila `-out` diisi — meminta satu tangkapan terakhir lewat klien HTTP dan menulis
+`after-temporal-final.png`. Flag lain: `-temporal` (`$TEMPORAL_HOST_PORT`, default
+`127.0.0.1:7233`), `-namespace` (default `default`), `-queue`, `-click-x`, `-click-y`, `-text`.
+Keluar non-nol pada kegagalan pertama.
 
 Satu catatan yang belum diselesaikan: hasil `Screenshot` membawa byte PNG lewat
 workflow, dan batas payload Temporal secara bawaan 2 MiB. Versi yang disambungkan
@@ -225,6 +260,10 @@ seharusnya menulis PNG ke object storage Jakarta dan mengembalikan kuncinya — 
   tidak butuh Docker.
 - `go test ./internal/modules/vcomputer/...` di backend menutup kontrak klien terhadap
   control plane (body yang dikirim, bearer token, PNG yang lewat utuh, sentinel error).
+- `go test ./internal/modules/vcomputer/... ./internal/container/` menutup workflow smoke
+  dengan activity yang di-mock (urutan langkah, koordinat dan teks yang sampai, tiga kali
+  percobaan lalu gagal) dan registrasinya di worker (nama workflow dan activity yang
+  terdaftar tercetak oleh `TestAgentWorkerRegistrationInventory`).
 - `scripts/e2e.sh` menjalankan jalur yang sebenarnya di Docker dan menulis buktinya ke
   `docs/poc-evidence/virtual-computer/`.
 

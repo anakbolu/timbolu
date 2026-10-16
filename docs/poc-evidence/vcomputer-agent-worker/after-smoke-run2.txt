@@ -1,0 +1,21 @@
+2026-10-16T12:07:17.312+0700	INFO	container/vcomputer.go:47	virtual computer is configured	{"control_url": "http://127.0.0.1:18090", "timeout": "30s"}
+2026-10-16T12:07:17.357+0700	INFO	temporal/logger.go:88	Started Worker	{"Namespace": "default", "TaskQueue": "vcomputer-smoke", "WorkerID": "387077@grok-bot-vm-20289901@"}
+workflow vcomputer-smoke-1792127237 run 01a1431b-7cf1-7d42-b4a3-752aa22283fa
+2026-10-16T12:07:17.374+0700	DEBUG	temporal/logger.go:44	ExecuteActivity	{"Namespace": "default", "TaskQueue": "vcomputer-smoke", "WorkerID": "387077@grok-bot-vm-20289901@", "WorkflowType": "SmokeWorkflow", "WorkflowID": "vcomputer-smoke-1792127237", "RunID": "01a1431b-7cf1-7d42-b4a3-752aa22283fa", "Attempt": 1, "ActivityID": "5", "ActivityType": "EnsureSession"}
+2026-10-16T12:07:17.462+0700	DEBUG	temporal/logger.go:44	ExecuteActivity	{"Namespace": "default", "TaskQueue": "vcomputer-smoke", "WorkerID": "387077@grok-bot-vm-20289901@", "WorkflowType": "SmokeWorkflow", "WorkflowID": "vcomputer-smoke-1792127237", "RunID": "01a1431b-7cf1-7d42-b4a3-752aa22283fa", "Attempt": 1, "ActivityID": "11", "ActivityType": "Navigate"}
+2026-10-16T12:07:17.497+0700	DEBUG	temporal/logger.go:44	NewTimer	{"Namespace": "default", "TaskQueue": "vcomputer-smoke", "WorkerID": "387077@grok-bot-vm-20289901@", "WorkflowType": "SmokeWorkflow", "WorkflowID": "vcomputer-smoke-1792127237", "RunID": "01a1431b-7cf1-7d42-b4a3-752aa22283fa", "Attempt": 1, "TimerID": "17", "Duration": "3s"}
+2026-10-16T12:07:20.508+0700	DEBUG	temporal/logger.go:44	ExecuteActivity	{"Namespace": "default", "TaskQueue": "vcomputer-smoke", "WorkerID": "387077@grok-bot-vm-20289901@", "WorkflowType": "SmokeWorkflow", "WorkflowID": "vcomputer-smoke-1792127237", "RunID": "01a1431b-7cf1-7d42-b4a3-752aa22283fa", "Attempt": 1, "ActivityID": "22", "ActivityType": "Screenshot"}
+2026-10-16T12:07:20.604+0700	DEBUG	temporal/logger.go:44	ExecuteActivity	{"Namespace": "default", "TaskQueue": "vcomputer-smoke", "WorkerID": "387077@grok-bot-vm-20289901@", "WorkflowType": "SmokeWorkflow", "WorkflowID": "vcomputer-smoke-1792127237", "RunID": "01a1431b-7cf1-7d42-b4a3-752aa22283fa", "Attempt": 1, "ActivityID": "28", "ActivityType": "Click"}
+2026-10-16T12:07:20.758+0700	DEBUG	temporal/logger.go:44	ExecuteActivity	{"Namespace": "default", "TaskQueue": "vcomputer-smoke", "WorkerID": "387077@grok-bot-vm-20289901@", "WorkflowType": "SmokeWorkflow", "WorkflowID": "vcomputer-smoke-1792127237", "RunID": "01a1431b-7cf1-7d42-b4a3-752aa22283fa", "Attempt": 1, "ActivityID": "34", "ActivityType": "Type"}
+2026-10-16T12:07:21.220+0700	DEBUG	temporal/logger.go:44	NewTimer	{"Namespace": "default", "TaskQueue": "vcomputer-smoke", "WorkerID": "387077@grok-bot-vm-20289901@", "WorkflowType": "SmokeWorkflow", "WorkflowID": "vcomputer-smoke-1792127237", "RunID": "01a1431b-7cf1-7d42-b4a3-752aa22283fa", "Attempt": 1, "TimerID": "40", "Duration": "1s"}
+2026-10-16T12:07:22.228+0700	DEBUG	temporal/logger.go:44	ExecuteActivity	{"Namespace": "default", "TaskQueue": "vcomputer-smoke", "WorkerID": "387077@grok-bot-vm-20289901@", "WorkflowType": "SmokeWorkflow", "WorkflowID": "vcomputer-smoke-1792127237", "RunID": "01a1431b-7cf1-7d42-b4a3-752aa22283fa", "Attempt": 1, "ActivityID": "45", "ActivityType": "Screenshot"}
+2026-10-16T12:07:22.350+0700	DEBUG	temporal/logger.go:44	ExecuteActivity	{"Namespace": "default", "TaskQueue": "vcomputer-smoke", "WorkerID": "387077@grok-bot-vm-20289901@", "WorkflowType": "SmokeWorkflow", "WorkflowID": "vcomputer-smoke-1792127237", "RunID": "01a1431b-7cf1-7d42-b4a3-752aa22283fa", "Attempt": 1, "ActivityID": "51", "ActivityType": "Exec"}
+{
+  "session_state": "running",
+  "cdp_url": "http://172.18.0.4:9223",
+  "screenshot_before_bytes": 36919,
+  "screenshot_after_bytes": 57309,
+  "exec_stdout": "vcomputer-smoke\nbolu\n",
+  "exec_stub": false
+}
+2026-10-16T12:07:22.418+0700	INFO	temporal/logger.go:88	Stopped Worker	{"Namespace": "default", "TaskQueue": "vcomputer-smoke", "WorkerID": "387077@grok-bot-vm-20289901@"}
