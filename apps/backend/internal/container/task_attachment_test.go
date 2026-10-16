@@ -29,7 +29,7 @@ func TestTaskAttachmentReaderReadsInsideTheWorkspaceScope(t *testing.T) {
 		}, []byte("Stok kaos merah: 7 pcs"), nil).
 		Once()
 
-	reader := taskAttachmentReader{service: service}
+	reader := taskAttachmentReader{container: &Container{Services: &Services{Chat: service}}}
 	file, err := reader.ReadAttachment(context.Background(),
 		taskdomain.Scope{UserID: userID, WorkspaceID: workspaceID}, attachmentID)
 	require.NoError(t, err)
@@ -53,19 +53,35 @@ func TestTaskAttachmentReaderReportsAReadThatFailed(t *testing.T) {
 		Return(chatdomain.Attachment{}, nil, chatdomain.ErrStorageUnavailable).
 		Once()
 
-	reader := taskAttachmentReader{service: service}
+	reader := taskAttachmentReader{container: &Container{Services: &Services{Chat: service}}}
 	_, err := reader.ReadAttachment(context.Background(), taskdomain.Scope{WorkspaceID: uuid.New()}, attachmentID)
 	require.ErrorIs(t, err, chatdomain.ErrStorageUnavailable)
 }
 
-// TestTaskAttachmentReaderIsAbsentWithoutTheChatModule: a deployment that runs no
-// conversation module has nothing that can read an upload, and says so by handing
-// the activity no reader at all.
-func TestTaskAttachmentReaderIsAbsentWithoutTheChatModule(t *testing.T) {
+// TestTaskAttachmentReaderResolvesTheChatModuleWhenAFileIsRead is issue #235's
+// unit-level gate: the task runtime is assembled before the chat module, so a
+// reader that captured the service at assembly time would be nil in every
+// process. This one holds the container and answers at call time, which is what
+// makes the order irrelevant.
+func TestTaskAttachmentReaderResolvesTheChatModuleWhenAFileIsRead(t *testing.T) {
 	c := &Container{Logger: zap.NewNop(), Services: &Services{}}
-	require.Nil(t, c.taskAttachmentReader())
+	reader := c.taskAttachmentReader()
+	require.NotNil(t, reader, "the activity set must always be handed a reader")
 
+	// The assembly the container actually performs: the reader exists before the
+	// chat module does.
+	_, err := reader.ReadAttachment(context.Background(), taskdomain.Scope{WorkspaceID: uuid.New()}, uuid.New())
+	require.ErrorIs(t, err, errNoChatModule, "a deployment with no chat module cannot read an upload")
+
+	attachmentID := uuid.New()
 	service := chatmocks.NewService(t)
+	service.EXPECT().
+		AttachmentContent(mock.Anything, mock.Anything, attachmentID).
+		Return(chatdomain.Attachment{Filename: "stok.txt", ContentType: "text/plain"}, []byte("7 pcs"), nil).
+		Once()
 	c.Services.Chat = service
-	require.NotNil(t, c.taskAttachmentReader())
+
+	file, err := reader.ReadAttachment(context.Background(), taskdomain.Scope{WorkspaceID: uuid.New()}, attachmentID)
+	require.NoError(t, err, "the module built after the reader is the one that answers")
+	require.Equal(t, []byte("7 pcs"), file.Content)
 }

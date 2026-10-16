@@ -227,24 +227,40 @@ func (c *Container) taskReplyWriter() taskdomain.ReplyWriter {
 
 // taskAttachmentReader reads a message's files for the task runtime.
 //
-// The chat service already resolves an attachment inside its workspace scope and
-// refuses one that is not there, so this is an adapter rather than a second
-// implementation: a file is read the same way whichever path asked for it.
+// The chat service is resolved when a file is read rather than captured here,
+// because the task runtime is assembled before the chat module: a task exists to
+// answer a chat message, so the chat service needs the task runtime to dispatch
+// one. A reader captured at assembly time is therefore nil in every process, and
+// every file would be named instead of read — which is what issue #235 was.
 func (c *Container) taskAttachmentReader() taskdomain.AttachmentReader {
-	if c == nil || c.Services.Chat == nil {
+	if c == nil {
 		return nil
 	}
 
-	return taskAttachmentReader{service: c.Services.Chat}
+	return taskAttachmentReader{container: c}
 }
 
+// errNoChatModule is what reading a file answers in a deployment that runs no
+// conversation module: nothing owns the uploads, so nothing can fetch one.
+var errNoChatModule = errors.New("chat: the conversation module is not configured")
+
+// taskAttachmentReader adapts the chat service to the port the task module
+// declares.
+//
+// The chat service already resolves an attachment inside its workspace scope and
+// refuses one that is not there, so this is an adapter rather than a second
+// implementation: a file is read the same way whichever path asked for it.
 type taskAttachmentReader struct {
-	service chatdomain.Service
+	container *Container
 }
 
 // ReadAttachment implements taskdomain.AttachmentReader.
 func (r taskAttachmentReader) ReadAttachment(ctx context.Context, scope taskdomain.Scope, id uuid.UUID) (taskdomain.AttachmentContent, error) {
-	attachment, content, err := r.service.AttachmentContent(ctx, chatScopeOf(scope), id)
+	if r.container == nil || r.container.Services == nil || r.container.Services.Chat == nil {
+		return taskdomain.AttachmentContent{}, errNoChatModule
+	}
+
+	attachment, content, err := r.container.Services.Chat.AttachmentContent(ctx, chatScopeOf(scope), id)
 	if err != nil {
 		return taskdomain.AttachmentContent{}, err
 	}
