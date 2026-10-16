@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -264,4 +265,36 @@ func TestAttachmentBudgetIsSpentOnTheNewestMessage(t *testing.T) {
 	require.Contains(t, captured.Messages[1].Text, "BBBB", "the newest file is the one that gets the room")
 	require.NotContains(t, captured.Messages[0].Text, "AAAA")
 	require.Contains(t, captured.Messages[0].Text, "batas total konteks lampiran tercapai")
+}
+
+// TestCallModelReadsAFileOnceWhenTwoMessagesCarryIt is issue #239 on the task
+// side: a file uploaded on its own is a message of its own, and the send that used
+// it through attachment_ids carries the same reference again. Both turns are in the
+// round, so without a rule the file is fetched twice, its text is spent twice, and
+// its picture is sent as two images.
+func TestCallModelReadsAFileOnceWhenTwoMessagesCarryIt(t *testing.T) {
+	ref, file := pngRef()
+	attachments := &stubAttachments{files: map[uuid.UUID]domain.AttachmentContent{ref.ID: file}}
+
+	var captured llmdomain.ChatRequest
+	h := newHarness(t, domain.DefaultLimits, func(deps *Deps) {
+		deps.Attachments = attachments
+		deps.Gateway = capturingGateway{onChat: func(_ llmdomain.Scope, req llmdomain.ChatRequest) (llmdomain.ChatResponse, error) {
+			captured = req
+			return llmdomain.ChatResponse{Text: "kelihatan 7", FinishReason: llmdomain.FinishStop}, nil
+		}}
+	})
+
+	_, err := callModel(t, h,
+		domain.Turn{Role: llmdomain.RoleUser, Attachments: []domain.AttachmentRef{ref}},
+		domain.Turn{Role: llmdomain.RoleUser, Text: "stoknya berapa?", Attachments: []domain.AttachmentRef{ref}},
+	)
+	require.NoError(t, err)
+
+	require.Equal(t, 1, attachments.reads, "one file is fetched once")
+	require.Len(t, captured.Messages, 1, "the file travels on the message that was written")
+	require.Equal(t, "stoknya berapa?", captured.Messages[0].Text[:len("stoknya berapa?")])
+	require.Len(t, captured.Messages[0].Images, 1, "one picture is one image part")
+	require.Equal(t, 1, strings.Count(captured.Messages[0].Text, "[Gambar foto.png"),
+		"the picture is named once")
 }

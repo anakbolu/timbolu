@@ -3,7 +3,9 @@ package activity
 import (
 	"context"
 	"errors"
+	"strings"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
@@ -27,10 +29,16 @@ var errNoAttachmentReader = errors.New("task: attachments cannot be read in this
 // The budget is spent newest first, and one renderer serves the whole round: what
 // the person just sent is what the task is about, so it gets the room, and an old
 // thread full of documents degrades into the notes that name them.
+//
+// A file is read once. The same attachment can sit on two messages — a person
+// uploads it, then links it to what they say — and fetching it twice buys the
+// model the same bytes twice: the newest mention keeps the content, and the older
+// one only loses the file, not the text beside it.
 func (a *Activities) attachmentTurns(ctx context.Context, scope domain.Scope, task domain.Task, messages []domain.Turn) []*attachtext.Turn {
 	turns := make([]*attachtext.Turn, len(messages))
 	renderer := attachtext.NewRenderer(a.deps.AttachmentLimits)
 
+	read := make(map[uuid.UUID]bool)
 	for i := len(messages) - 1; i >= 0; i-- {
 		if len(messages[i].Attachments) == 0 {
 			continue
@@ -38,6 +46,11 @@ func (a *Activities) attachmentTurns(ctx context.Context, scope domain.Scope, ta
 
 		var turn attachtext.Turn
 		for _, ref := range messages[i].Attachments {
+			if read[ref.ID] {
+				continue
+			}
+			read[ref.ID] = true
+
 			part := renderer.Render(a.readAttachment(ctx, scope, ref))
 			if part.Err != nil {
 				// A file that was meant to be read and was not is worth a line in
@@ -48,6 +61,9 @@ func (a *Activities) attachmentTurns(ctx context.Context, scope domain.Scope, ta
 				)
 			}
 			turn.Add(part)
+		}
+		if turn.Empty() {
+			continue
 		}
 		turns[i] = &turn
 	}
@@ -115,4 +131,15 @@ func attachMessage(message llmdomain.Message, attachments *attachtext.Turn, visi
 	}
 
 	return message
+}
+
+// saysNothing reports whether a rendered message contributes nothing to the
+// request: no text, no tool call, no tool answer, no picture. Only a message whose
+// whole content was a file that a newer message already carries can reach that
+// state, and sending it as a blank turn is noise the model has to account for.
+func saysNothing(message llmdomain.Message) bool {
+	return strings.TrimSpace(message.Text) == "" &&
+		len(message.ToolCalls) == 0 &&
+		len(message.ToolResults) == 0 &&
+		len(message.Images) == 0
 }

@@ -476,6 +476,12 @@ question is about does. A file the budget or a bound excludes still appears in t
 prompt, so the model can say which file it could not read rather than inventing an
 answer.
 
+A file is rendered **once**. Uploading a file and then linking it to a message
+through `attachment_ids` leaves the same attachment on two messages, so the newest
+mention keeps the content and the older one loses only the file, not the text
+beside it. Otherwise the file would spend the budget twice and a picture would be
+sent as two images.
+
 A model that cannot see pictures is handled twice over. `LLM_TEXT_ONLY_MODELS`
 names the models of the deployment that do not read them, matched against the
 configured model name case-insensitively and by prefix, and the picture is never

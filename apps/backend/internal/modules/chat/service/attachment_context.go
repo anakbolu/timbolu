@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"go.uber.org/zap"
 
 	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
@@ -58,6 +60,11 @@ func (t conversationTurn) empty() bool {
 // what a person just sent is what they are asking about, so it is the file that
 // gets the room, and an older thread full of documents degrades into the notes
 // that name them.
+//
+// A file is rendered once. Uploading a file and then linking it to a message
+// leaves the same attachment on two messages, and the model reading it twice pays
+// for it twice: the newest mention is the one that keeps the content, and the
+// older one only loses the file, not the text beside it.
 func (r *ModelResponder) conversationTurns(ctx context.Context, scope chatdomain.Scope, history []chatdomain.Message) []conversationTurn {
 	turns := make([]conversationTurn, len(history))
 	for i, message := range history {
@@ -70,6 +77,7 @@ func (r *ModelResponder) conversationTurns(ctx context.Context, scope chatdomain
 	}
 
 	renderer := attachtext.NewRenderer(r.deps.Limits)
+	read := make(map[uuid.UUID]bool)
 	for i := len(history) - 1; i >= 0; i-- {
 		if len(history[i].Attachments) == 0 {
 			continue
@@ -77,6 +85,11 @@ func (r *ModelResponder) conversationTurns(ctx context.Context, scope chatdomain
 
 		var turn attachtext.Turn
 		for _, attachment := range history[i].Attachments {
+			if read[attachment.ID] {
+				continue
+			}
+			read[attachment.ID] = true
+
 			part := renderer.Render(r.readAttachment(ctx, scope, attachment))
 			if part.Err != nil {
 				r.deps.Logger.Warn("an attachment could not be read",

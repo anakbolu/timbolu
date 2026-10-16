@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -262,6 +263,48 @@ func TestResponderSpendsTheBudgetOnTheNewestMessage(t *testing.T) {
 	require.Contains(t, messages[1].Text, "BBBB", "the newest file is the one that gets the room")
 	require.NotContains(t, messages[0].Text, "AAAA")
 	require.Contains(t, messages[0].Text, "batas total konteks lampiran tercapai")
+}
+
+// TestResponderRendersAFileOnceWhenItWasUploadedAndThenLinked is issue #239: an
+// upload with no message of its own becomes one, and the send that uses it through
+// attachment_ids attaches the same file again. Both turns are in the history, so
+// without a rule the file's text is spent twice and its picture is sent twice —
+// once per turn — while only one of them is what the person meant to say.
+func TestResponderRendersAFileOnceWhenItWasUploadedAndThenLinked(t *testing.T) {
+	storage := newMemoryStorage()
+	scope := chatdomain.Scope{WorkspaceID: uuid.New(), UserID: uuid.New()}
+
+	content := append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 16)...)
+	object, err := storage.Put(context.Background(), "attachments/w/3/foto.png", "image/png", content)
+	require.NoError(t, err)
+	foto := chatdomain.Attachment{
+		ID: uuid.New(), Filename: "foto.png", ContentType: "image/png",
+		StorageKey: object.Key, ByteSize: object.ByteSize,
+	}
+
+	// The upload is a message of its own, and the send that used it carries it
+	// again: two turns, one file.
+	uploaded := attachmentMessage("", foto)
+	linked := attachmentMessage("stoknya berapa?", foto)
+	gateway := &scriptedGateway{rounds: [][]llmdomain.StreamEvent{{
+		{Type: llmdomain.EventText, Text: "kelihatan 7"},
+		{Type: llmdomain.EventDone, FinishReason: llmdomain.FinishStop},
+	}}}
+
+	responder := NewModelResponder(ResponderDeps{Gateway: gateway, Storage: storage})
+	replyOnce(t, responder, scope, []chatdomain.Message{uploaded, linked})
+
+	calls := gateway.recordedCalls()
+	require.Len(t, calls, 1)
+
+	// The attachment-only turn has nothing left to say, and the file travels on
+	// the message that was actually written.
+	messages := calls[0].Messages
+	require.Len(t, messages, 1, "the file is one turn, not two")
+	require.Equal(t, "stoknya berapa?", strings.SplitN(messages[0].Text, "\n", 2)[0])
+	require.Len(t, messages[0].Images, 1, "one picture is one image part")
+	require.Equal(t, 1, strings.Count(messages[0].Text, "[Gambar foto.png"),
+		"the picture is named once")
 }
 
 // TestResponderKeepsAttachmentsOutOfTheSystemPrompt is the boundary the issue

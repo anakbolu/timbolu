@@ -202,3 +202,69 @@ func TestAnOversizedAttachmentIsNamedNotRead(t *testing.T) {
 	require.NotContains(t, last.Text, strings.Repeat("a", 100),
 		"the bytes of an oversized file never reach the prompt")
 }
+
+// TestAnUploadLinkedToAMessageIsReadOnce is issue #239 end to end: a file uploaded
+// on its own opens a message of its own, and the send that uses it through
+// attachment_ids links the same file to a second message. Both turns are in the
+// history, and the model must read the file once — one section, one image — because
+// the budget is spent per file, not per mention.
+func TestAnUploadLinkedToAMessageIsReadOnce(t *testing.T) {
+	fixture := newChatFixture(t, appDatabase(t))
+	storage := &attachObjects{}
+	service := chatservice.New(chatservice.Deps{
+		Conversations: fixture.repo,
+		Messages:      fixture.repo,
+		Attachments:   fixture.repo,
+		Events:        fixture.repo,
+		Storage:       storage,
+	})
+
+	conversation := fixture.directConversation(t)
+
+	// An upload with no message_id opens a message of its own.
+	uploaded, err := service.Attach(t.Context(), fixture.scope, chatdomain.AttachRequest{
+		ConversationID: conversation.ID, Filename: "foto.png",
+	}, append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 16)...))
+	require.NoError(t, err)
+
+	// The send that uses it attaches the same file to the message it belongs to.
+	sent, err := service.Send(t.Context(), fixture.scope, chatdomain.SendRequest{
+		ConversationID: conversation.ID, Text: "stoknya berapa?",
+		AttachmentIDs: []uuid.UUID{uploaded.ID},
+	})
+	require.NoError(t, err)
+	require.Len(t, sent.Message.Attachments, 1)
+	require.Equal(t, uploaded.ID, sent.Message.Attachments[0].ID, "one file, two mentions")
+
+	history, err := fixture.repo.LatestMessages(t.Context(), fixture.scope, conversation.ID, 20)
+	require.NoError(t, err)
+	require.Len(t, history, 2, "the upload is a message of its own, and the send is another")
+
+	gateway := &scriptedStreamGateway{answer: "stoknya 7 pcs"}
+	responder := chatservice.NewModelResponder(chatservice.ResponderDeps{
+		Gateway: gateway,
+		Storage: storage,
+		Logger:  zap.NewNop(),
+	})
+
+	chunks, err := responder.Reply(t.Context(), fixture.scope, chatdomain.ReplyRequest{
+		Conversation: conversation,
+		Agent:        chatdomain.AgentRef{ID: fixture.agentID, Name: "Oren"},
+		Message:      sent.Message,
+		History:      history,
+		RepairBudget: 1,
+	})
+	require.NoError(t, err)
+	for chunk := range chunks {
+		require.NotEqual(t, chatdomain.ChunkError, chunk.Kind, "the answer must not fail: %s", chunk.Err)
+	}
+
+	requests := gateway.recorded()
+	require.Len(t, requests, 1)
+	require.Len(t, requests[0].Messages, 1, "the file is one turn, not two")
+
+	last := requests[0].Messages[0]
+	require.Contains(t, last.Text, "stoknya berapa?")
+	require.Equal(t, 1, strings.Count(last.Text, "[Gambar foto.png"), "the picture is named once")
+	require.Len(t, last.Images, 1, "one picture is one image part")
+}

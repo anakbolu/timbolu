@@ -803,6 +803,11 @@ func (a *Activities) chatRequest(request workflow.ModelRequest, task domain.Task
 	// The turns map one to one: the workflow keeps the conversation in the shape
 	// the model reads, so a tool call and its result reach the provider as the
 	// pair they are rather than as loose prose.
+	//
+	// A turn that says nothing is left out rather than sent as a blank message.
+	// The only one that can appear is a message whose whole content was a file
+	// already read on a newer message, and an empty user turn is noise the model
+	// has to account for.
 	messages := make([]llmdomain.Message, 0, len(request.Messages))
 	for i, turn := range request.Messages {
 		message := llmdomain.Message{
@@ -813,6 +818,9 @@ func (a *Activities) chatRequest(request workflow.ModelRequest, task domain.Task
 		}
 		if i < len(attachments) && attachments[i] != nil {
 			message = attachMessage(message, attachments[i], vision)
+		}
+		if saysNothing(message) {
+			continue
 		}
 		messages = append(messages, message)
 	}
