@@ -298,7 +298,9 @@ export function useChat(): ChatState {
  *
  * A message event carries the whole body, so a reply that is still arriving
  * replaces the version on screen rather than appending to it. That is what makes
- * a token arriving twice harmless and a client that joined late correct.
+ * a token arriving twice harmless and a client that joined late correct. The
+ * files ride along and are replaced the same way: the event is the server's
+ * whole message, so a file it no longer holds is gone from the row.
  */
 function applyEvent(
   event: ActivityEvent,
@@ -332,15 +334,19 @@ function applyEvent(
   }
 
   setMessages((previous) => {
+    // The field is optional, so a payload written before it existed carries no
+    // list at all. That is an event with nothing to say about files, and the
+    // ones on screen stay; an empty array is the server saying there are none.
+    const payloadAttachments = Array.isArray(payload.attachments)
+      ? replaceAttachments(payload.attachments)
+      : undefined;
     const incoming: ChatMessage = {
       message_id: payload.message_id,
       conversation_id: payload.conversation_id,
       agent_id: payload.agent_id,
       user_id: payload.user_id,
       blocks: payload.blocks ?? [],
-      // A payload from before this field existed carries none, and that is a
-      // message with no files rather than a reason to drop the event.
-      attachments: Array.isArray(payload.attachments) ? payload.attachments : [],
+      attachments: payloadAttachments ?? [],
       status: payload.status,
       finish_reason: payload.finish_reason,
       created_at: event.created_at,
@@ -357,10 +363,11 @@ function applyEvent(
     next[index] = {
       ...previous[index],
       ...incoming,
-      // The message carries its files, so the same upload is seen twice: once
-      // from the request that stored it, and once from the event that followed.
-      // Merging by id is what keeps those one row instead of two.
-      attachments: mergeAttachments(previous[index].attachments, incoming.attachments),
+      // The event carries the files the server still holds, so it is the list
+      // on screen rather than one to fold in: a file dropped for retention
+      // disappears, because the latest event for the message is the whole
+      // truth. An event without the field leaves the files already shown alone.
+      attachments: payloadAttachments ?? previous[index].attachments,
     };
     return next;
   });
@@ -402,6 +409,26 @@ function mergeAttachments(known: Attachment[], incoming: Attachment[]): Attachme
   }
 
   return merged;
+}
+
+/**
+ * replaceAttachments takes the server's list as the whole truth.
+ *
+ * The order is the server's, so a file keeps the place the backend gave it, and
+ * a repeated id collapses to one row: the same file is named twice when an
+ * upload's own response and the event that followed it both carry it.
+ */
+function replaceAttachments(incoming: Attachment[]): Attachment[] {
+  const seen = new Set<string>();
+  const replaced: Attachment[] = [];
+  for (const item of incoming) {
+    if (seen.has(item.id)) {
+      continue;
+    }
+    seen.add(item.id);
+    replaced.push(item);
+  }
+  return replaced;
 }
 
 /** append adds a message once, by id, so a stream echo cannot duplicate it. */
