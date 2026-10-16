@@ -429,17 +429,23 @@ type cdpRequest struct {
 
 // loadScript is what the fake page reports when the runtime evaluates the load probe.
 // A test scripts these, which is what lets it say "this page loaded", "this page landed
-// on the browser's own error page", or "this page never finishes".
+// on the browser's own error page", "this page answered 404", or "this page never
+// finishes".
 type loadScript struct {
 	state string
 	href  string
 	title string
+	// status is the main document's response status as the browser reports it through
+	// the navigation timing entry. Zero is what a browser answers when it has none,
+	// and what the scripts above leave it at.
+	status int
 }
 
 // probe is the JSON string a DevTools answer carries for this script. The runtime
-// parses it as the document's readyState, its address, and its title.
+// parses it as the document's readyState, its address, its title, and the status of
+// the response it was loaded from.
 func (s loadScript) probe() string {
-	return fmt.Sprintf(`{"state":%q,"href":%q,"title":%q}`, s.state, s.href, s.title)
+	return fmt.Sprintf(`{"state":%q,"href":%q,"title":%q,"status":%d}`, s.state, s.href, s.title, s.status)
 }
 
 // The frame opcodes the DevTools connection uses, and the constant RFC 6455 appends to
@@ -1188,7 +1194,7 @@ func TestDockerNavigateAnswersWhatThePageLoaded(t *testing.T) {
 	// take the first answer.
 	fixture.cdp.setLoads(
 		loadScript{state: "loading", href: blankPage},
-		loadScript{state: "complete", href: landed, title: "Landing page"},
+		loadScript{state: "complete", href: landed, title: "Landing page", status: http.StatusOK},
 	)
 
 	navigation, err := fixture.runtime.Navigate(t.Context(), "bot-a", requested)
@@ -1200,6 +1206,11 @@ func TestDockerNavigateAnswersWhatThePageLoaded(t *testing.T) {
 	}
 	if navigation.Title != "Landing page" {
 		t.Fatalf("title = %q", navigation.Title)
+	}
+	// The status of the response the document came from travels with the answer: it is
+	// what lets a caller tell the page the fixture served from one it did not.
+	if navigation.HTTPStatus != http.StatusOK {
+		t.Fatalf("http status = %d, want the response the page was loaded from", navigation.HTTPStatus)
 	}
 
 	// The verification is a real DevTools conversation: Page.enable first, then the load
@@ -1268,6 +1279,46 @@ func TestDockerNavigateReportsTheBrowsersOwnErrorPage(t *testing.T) {
 	}
 	if failure.Reason == "" {
 		t.Fatal("the failure carries no reason")
+	}
+}
+
+// TestDockerNavigateReportsAnErrorPageTheServerServed is the failure a browser cannot
+// see: the fixture answers 404, and Chromium renders that response body and reports the
+// document as a perfectly loaded page — "complete", with the server's own title. The
+// status the browser recorded for the navigation is the one fact that separates "the
+// page is here" from "the server refused", so the runtime reads it and fails the
+// navigation with it rather than telling the caller a missing page loaded.
+func TestDockerNavigateReportsAnErrorPageTheServerServed(t *testing.T) {
+	fixture := newDockerFixture(t)
+
+	if _, err := fixture.runtime.Ensure(t.Context(), "bot-a"); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+
+	requested := "http://vcomputer-fixture:8080/tidak-ada-404"
+	fixture.cdp.setLoads(loadScript{
+		state:  "complete",
+		href:   requested,
+		title:  "404 Not Found",
+		status: http.StatusNotFound,
+	})
+
+	_, err := fixture.runtime.Navigate(t.Context(), "bot-a", requested)
+	var failure *NavigationError
+	if !errors.As(err, &failure) {
+		t.Fatalf("err = %v, want a *NavigationError", err)
+	}
+	if failure.URL != requested {
+		t.Fatalf("failed url = %q, want the one that was asked for %q", failure.URL, requested)
+	}
+	if failure.FinalURL != requested {
+		t.Fatalf("final url = %q, want where the browser stopped %q", failure.FinalURL, requested)
+	}
+	if failure.HTTPStatus != http.StatusNotFound {
+		t.Fatalf("status = %d, want the server's own 404", failure.HTTPStatus)
+	}
+	if !strings.Contains(failure.Reason, "404") {
+		t.Fatalf("reason = %q, want the status named", failure.Reason)
 	}
 }
 
@@ -1542,6 +1593,58 @@ func TestDockerCleanupRemovesVolumesAndReportsWhatItCouldNot(t *testing.T) {
 	for _, filter := range [][2]string{{"--filter", "label=vcomputer.bot"}, {"--filter", "name=^vcomputer-"}} {
 		if !containsPair(listing, filter[0], filter[1]) {
 			t.Fatalf("listing %v is missing %v", listing, filter)
+		}
+	}
+}
+
+// TestDockerReapRemovesRunningSandboxesAndTheirVolumes is the promise the teardown
+// rests on: a sandbox the control plane created goes away with it, running or not, and
+// so does its volume. It is the one operation that removes a container somebody may be
+// using, which is why it is not reachable over HTTP — only the shutdown path calls it,
+// and only after the server has stopped answering.
+//
+// The running container is the whole point: `docker compose down` cannot remove a
+// sandbox it never created, and a running one keeps both its volume and the internal
+// network in use, which is exactly the leftover that made a teardown look clean while
+// leaving three objects behind.
+func TestDockerReapRemovesRunningSandboxesAndTheirVolumes(t *testing.T) {
+	fixture := newDockerFixture(t)
+	fixture.docker.container(t, "vcomputer-bot-running", "running")
+	fixture.docker.container(t, "vcomputer-bot-stopped", "exited")
+	fixture.docker.volume(t, "vcomputer-bot-running-home")
+	fixture.docker.volume(t, "vcomputer-bot-stopped-home")
+
+	result, err := fixture.runtime.Reap(t.Context())
+	if err != nil {
+		t.Fatalf("reap: %v", err)
+	}
+	if result.RemovedContainers != 2 {
+		t.Fatalf("removed %d containers, want both: %+v", result.RemovedContainers, result)
+	}
+	if result.RemovedVolumes != 2 {
+		t.Fatalf("removed %d volumes, want both: %+v", result.RemovedVolumes, result)
+	}
+	if len(result.Failed) != 0 {
+		t.Fatalf("failed = %v, want none", result.Failed)
+	}
+	if state := fixture.docker.stateOf(t, "vcomputer-bot-running"); state != "" {
+		t.Fatalf("the running container is still there: %q", state)
+	}
+	if volumes := fixture.docker.volumes(t); len(volumes) != 0 {
+		t.Fatalf("volumes = %v, want none", volumes)
+	}
+
+	// The scoping is Cleanup's, and it matters more here: this is the operation that
+	// removes running containers, so a listing that was not narrowed to this
+	// deployment's label and prefix would take a second stack's sandboxes with it.
+	for _, listing := range [][]string{
+		findCall(t, fixture.docker.calls(t), "ps"),
+		findCall(t, fixture.docker.calls(t), "volume", "ls"),
+	} {
+		for _, filter := range [][2]string{{"--filter", "label=vcomputer.bot"}, {"--filter", "name=^vcomputer-"}} {
+			if !containsPair(listing, filter[0], filter[1]) {
+				t.Fatalf("listing %v is missing %v", listing, filter)
+			}
 		}
 	}
 }

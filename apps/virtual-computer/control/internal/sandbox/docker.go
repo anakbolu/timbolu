@@ -420,6 +420,31 @@ func (r *DockerRuntime) Purge(ctx context.Context, botID string) error {
 // is the realistic case — because "nothing was removed" and "nothing could be
 // removed" are different answers to a caller that just asked for a cleanup.
 func (r *DockerRuntime) Cleanup(ctx context.Context, volumes bool) (CleanupResult, error) {
+	return r.remove(ctx, false, volumes)
+}
+
+// Reap removes everything this runtime owns, running sandboxes included, and always
+// their volumes. It is what the control plane calls on its way out.
+//
+// It exists because a sandbox is not part of the compose stack: the control plane
+// creates it, so `docker compose down` cannot remove it, and a running container keeps
+// both its volume and the internal network in use — which is what turns a clean
+// teardown into leftovers an operator has to find by hand
+// (docs/adr/0003-virtual-computer.md §3.9). The scoping is the same as Cleanup's, so
+// this removes one deployment's sandboxes and never a second deployment's.
+//
+// `docker rm -f` is what removes a running container, and it is deliberate: the
+// shutdown path has already decided that this control plane's sessions are over. The
+// volumes are removed after the containers for the same reason: a volume mounted by a
+// container that still exists cannot be removed.
+func (r *DockerRuntime) Reap(ctx context.Context) (CleanupResult, error) {
+	return r.remove(ctx, true, true)
+}
+
+// remove is the one implementation of "throw away what this runtime owns". The two
+// public entry points differ in exactly two booleans, and keeping them as booleans here
+// is what makes that difference visible rather than duplicated.
+func (r *DockerRuntime) remove(ctx context.Context, running, volumes bool) (CleanupResult, error) {
 	var result CleanupResult
 
 	containers, err := r.list(ctx, []string{"ps"}, "-a", "--format", "{{.Names}}|{{.State}}")
@@ -428,10 +453,13 @@ func (r *DockerRuntime) Cleanup(ctx context.Context, volumes bool) (CleanupResul
 	}
 	for _, line := range containers {
 		name, state, found := strings.Cut(line, "|")
-		if !found || strings.TrimSpace(state) == "running" {
+		if !found || (strings.TrimSpace(state) == containerRunning && !running) {
 			continue
 		}
-		if _, err := r.docker(ctx, "rm", strings.TrimSpace(name)); err != nil {
+		// -f is only meaningful for a running container and harmless for the rest: a
+		// stopped one is removed either way, and asking for the force is what keeps
+		// the two branches from needing different commands.
+		if _, err := r.docker(ctx, "rm", "-f", strings.TrimSpace(name)); err != nil {
 			result.Failed = append(result.Failed, failureLine(err))
 			continue
 		}
@@ -589,10 +617,20 @@ func navigationFailure(target, finalURL string, err error) *NavigationError {
 }
 
 // loadProbe is the expression the verification evaluates. It answers one JSON string
-// with the three things the answer needs — whether the document finished loading,
-// where the browser actually is, and what the page calls itself — so the three
-// describe one instant rather than three slightly different ones.
-const loadProbe = `JSON.stringify({state: document.readyState, href: location.href, title: document.title})`
+// with the four things the answer needs — whether the document finished loading,
+// where the browser actually is, what the page calls itself, and what the server
+// answered for the document — so the four describe one instant rather than four
+// slightly different ones.
+//
+// The status comes from the navigation timing entry rather than from a Network event,
+// and that is the cheaper half of the same fact: this poll already runs on the target's
+// connection, `responseStatus` is the status of the response that actually committed —
+// after any redirect, which is the response a caller means by "the page" — and a
+// browser that does not report one answers 0, "not known", rather than a number that
+// would be a lie. A document that never committed has no entry, and that case is
+// already a failure: chrome-error:// for a navigation the browser could not make, and
+// the timeout below for one that never finished.
+const loadProbe = `JSON.stringify({state: document.readyState, href: location.href, title: document.title, status: (performance.getEntriesByType("navigation")[0] || {}).responseStatus || 0})`
 
 // blankPage is what a freshly created target reports before its navigation commits.
 const blankPage = "about:blank"
@@ -607,15 +645,19 @@ type loadState struct {
 	State string `json:"state"`
 	Href  string `json:"href"`
 	Title string `json:"title"`
+	// Status is the main document's HTTP status, 0 when the browser reported none.
+	Status int `json:"status"`
 }
 
 // verifyLoad drives the target's DevTools websocket until the page it opened reports
 // that it finished loading, and answers what the browser ended up showing.
 //
-// Two outcomes are failures rather than results, and they are the reason this exists:
-// a document that finishes on chrome-error:// is Chromium's own error page — the
-// sandbox reached nothing — and a document that never finishes inside navigateTimeout
-// is a page the caller must not be told loaded.
+// Three outcomes are failures rather than results, and they are the reason this
+// exists: a document that finishes on chrome-error:// is Chromium's own error page —
+// the sandbox reached nothing — a document that never finishes inside navigateTimeout
+// is a page the caller must not be told loaded, and a document that finished on a
+// 4xx/5xx response is an error page the server served, which the browser reports as a
+// perfectly loaded page and a caller cannot tell from a real one.
 func (r *DockerRuntime) verifyLoad(ctx context.Context, target string, gate SandboxTarget, opened cdpTarget) (Navigation, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.navigateTimeout)
 	defer cancel()
@@ -664,7 +706,21 @@ func (r *DockerRuntime) verifyLoad(ctx context.Context, target string, gate Sand
 			// what keeps "opened" from being mistaken for "loaded" — except when
 			// about:blank is the address that was asked for.
 			if state.State == "complete" && (state.Href != blankPage || target == blankPage) {
-				return Navigation{FinalURL: state.Href, Title: state.Title}, nil
+				// A document that finished on 4xx or 5xx is a page the server refused
+				// to serve, and reporting it as a navigation would be the same lie as
+				// reporting chrome-error:// as one: the caller asked for a page and
+				// got an error, which is exactly the case a 200-with-an-error-page
+				// used to hide. The status travels with the failure so the caller can
+				// tell a missing page (404) from a broken one (500).
+				if state.Status >= 400 {
+					return Navigation{}, &NavigationError{
+						URL:        target,
+						FinalURL:   state.Href,
+						HTTPStatus: state.Status,
+						Reason:     fmt.Sprintf("the page answered HTTP %d", state.Status),
+					}
+				}
+				return Navigation{FinalURL: state.Href, Title: state.Title, HTTPStatus: state.Status}, nil
 			}
 		}
 

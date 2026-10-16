@@ -87,8 +87,8 @@ Enam hal yang dibaca dari diagram itu:
 | `fixture/` | Satu halaman statis yang disajikan `vcomputer-fixture` di jaringan internal |
 | `demo/index.html` | Halaman statis yang menyematkan noVNC asli lewat proxy control plane |
 | `docker-compose.poc.yml` | Stack PoC: `control` + `fixture` + target build `vcomputer-sandbox`, dan dua jaringan |
-| `scripts/e2e.sh` | Checklist QA end-to-end: build, jalankan, periksa, tulis bukti, cetak PASS/FAIL |
-| `scripts/cleanup.sh` | Versi CLI dari `POST /v1/admin/cleanup`: buang container berlabel `vcomputer.bot` yang tidak jalan (`VOLUMES=1` juga membuang volumenya) |
+| `scripts/e2e.sh` | Checklist QA end-to-end: build, jalankan, periksa, tulis bukti, cetak PASS/FAIL. `STACK` dan `VCOMPUTER_CONTROL_PORT` wajib diisi — skrip berhenti sebelum menyentuh apa pun bila salah satunya kosong — dan pemeriksaan terakhirnya membuktikan `TEARDOWN=1` tidak meninggalkan container, volume, maupun jaringan bernama `${STACK}-*` |
+| `scripts/cleanup.sh` | Versi CLI dari `POST /v1/admin/cleanup`: buang container berlabel `vcomputer.bot` yang tidak jalan (`VOLUMES=1` juga membuang volumenya, `--running` ikut membuang yang sedang jalan) |
 
 ## Permukaan API
 
@@ -102,7 +102,7 @@ Enam hal yang dibaca dari diagram itu:
 | `POST` | `/v1/sessions/:bot_id/screenshot` | — | `image/png` (juga `GET`, untuk `<img>`) |
 | `POST` | `/v1/sessions/:bot_id/click` | `{"x":0,"y":0}` | `{"clicked":true}` |
 | `POST` | `/v1/sessions/:bot_id/type` | `{"text":"..."}` | `{"typed":true}` |
-| `POST` | `/v1/sessions/:bot_id/navigate` | `{"url":"http://..."}` | `200 {"navigated":true,"final_url":...,"title":...}` setelah load-nya terbukti selesai; `400` bila skemanya bukan `http`, `https`, `data`, atau `about`; `502 {"error":"navigation failed","url":...,"final_url":...}` bila halaman berakhir di `chrome-error://` atau tidak selesai dimuat dalam `VCOMPUTER_NAVIGATE_TIMEOUT` |
+| `POST` | `/v1/sessions/:bot_id/navigate` | `{"url":"http://..."}` | `200 {"navigated":true,"final_url":...,"title":...,"http_status":...}` setelah load-nya terbukti selesai dan dokumen utamanya menjawab < 400; `400` bila skemanya bukan `http`, `https`, `data`, atau `about`; `502 {"error":"navigation failed","url":...,"final_url":...,"http_status":...}` bila halaman berakhir di `chrome-error://`, tidak selesai dimuat dalam `VCOMPUTER_NAVIGATE_TIMEOUT`, **atau** dokumen utamanya menjawab 4xx/5xx |
 | `POST` | `/v1/sessions/:bot_id/exec` | `{"command":"..."}` | `ExecResult` — perintahnya benar-benar dijalankan (`stub:false`) di runtime docker |
 | `GET` | `/v1/sessions/:bot_id/novnc/...` | — | `httputil.ReverseProxy` ke gate sandbox (`/novnc/`), Host ditulis ulang jadi `localhost`, header `X-Sandbox-Secret` dipasang; upgrade websocket didukung |
 | `GET`/`POST`/`PUT`/... | `/v1/sessions/:bot_id/cdp[/...]` | — | `httputil.ReverseProxy` ke gate sandbox (`/cdp/`), sama seperti noVNC — HTTP maupun websocket; `webSocketDebuggerUrl` di jawaban `/json/list` ditulis ulang ke prefix rute ini. Method **tidak** disaring — apa pun yang datang diteruskan apa adanya dan gate yang memutuskan — karena DevTools HTTP API bukan API seragam-method: `/json/list` dan `/json/version` `GET`, `/json/new` `PUT`, `/json/close` `GET`, dan rute yang menyebut method akan menjawab `405` untuk permintaan yang sah. Rute kosong `/cdp` juga dilayani, bukan dialihkan; itulah `Session.cdp_url` |
@@ -126,12 +126,27 @@ runtime.
 **`navigate` memverifikasi load-nya, bukan cuma mengirim perintah.** Setelah
 `PUT /json/new` ke CDP, control plane menyambung ke websocket target yang baru, memanggil
 `Page.enable`, lalu berulang kali (tiap 100 ms) membaca `document.readyState`,
-`location.href`, dan `document.title` sampai `readyState` bernilai `complete` dan
-`location.href` bukan lagi `about:blank` — atau sampai `VCOMPUTER_NAVIGATE_TIMEOUT`
-habis. Kalau halaman berakhir di `chrome-error://` atau tidak selesai dimuat dalam batas
-itu, jawabannya `502 {"error":"navigation failed","url":...,"final_url":...}`; kalau
-selesai, `200 {"navigated":true,"final_url":...,"title":...}`. Sebelum ini `navigate`
-hanya berarti "perintahnya terkirim", dan halaman error lolos sebagai sukses.
+`location.href`, `document.title`, dan status HTTP dokumen utamanya sampai `readyState`
+bernilai `complete` dan `location.href` bukan lagi `about:blank` — atau sampai
+`VCOMPUTER_NAVIGATE_TIMEOUT` habis. Kalau halaman berakhir di `chrome-error://` atau tidak
+selesai dimuat dalam batas itu, jawabannya `502 {"error":"navigation failed","url":...,"final_url":...}`;
+kalau selesai, `200 {"navigated":true,"final_url":...,"title":...,"http_status":...}`.
+Sebelum ini `navigate` hanya berarti "perintahnya terkirim", dan halaman error lolos sebagai
+sukses.
+
+**Halaman yang menjawab 4xx/5xx bukan navigasi yang berhasil.** Status dokumen utamanya
+dibaca dari `performance.getEntriesByType("navigation")[0].responseStatus` di target yang
+sama, dengan polling yang sama, jadi tidak ada permintaan kedua dan tidak ada `fetch` yang
+bisa berbenturan dengan CORS. `404` dari server tetap `readyState: "complete"` dengan judul
+yang terlihat seperti halaman biasa (`404 Not Found`), dan jawaban `200 {"navigated":true}`
+untuk halaman seperti itu adalah kebohongan yang paling mudah dipercaya: worker yang
+mendapatkannya akan lanjut membaca layar yang isinya pesan error. Karena itu
+`status >= 400` pada dokumen yang sudah selesai dimuat dijawab `502` dengan `"http_status"`
+berisi status yang dikatakan halaman itu sendiri — `502 {"error":"navigation failed",
+"url":...,"final_url":...,"http_status":404}`. Yang **tidak** berubah: `http_status: 0`
+berarti "tidak ada jawaban HTTP" (`about:blank`, `data:`), bukan kegagalan, dan pada `502`
+field itu hanya muncul bila ada angkanya. Kegagalan yang bukan halaman error — timeout,
+`chrome-error://`, runtime yang tidak menjawab — tetap tidak punya status dokumen.
 
 **`cdp_url` adalah path control plane, bukan alamat sandbox.** `GET /v1/sessions/<bot>`
 mengembalikan `cdp_url: "/v1/sessions/<bot>/cdp"`, dan rute itu — sama seperti
@@ -210,31 +225,55 @@ Lalu seluruh checklist QA dalam satu perintah:
 
 ```bash
 # Build image, naikkan control + fixture, jalankan pemeriksaan, tulis bukti ke
-# docs/poc-evidence/virtual-computer, cetak PASS/FAIL per pemeriksaan.
-BUILD_NETWORK=host apps/virtual-computer/scripts/e2e.sh
+# docs/poc-evidence/virtual-computer, cetak PASS/FAIL per pemeriksaan. Dua variabel
+# pertama wajib: skrip menolak jalan tanpa keduanya.
+STACK=vc2 VCOMPUTER_CONTROL_PORT=18092 BUILD_NETWORK=host apps/virtual-computer/scripts/e2e.sh
 
 # Stack sengaja dibiarkan hidup supaya bisa diperiksa tangan; TEARDOWN=1 yang
-# membersihkannya (purge + cleanup + compose down).
-TEARDOWN=1 apps/virtual-computer/scripts/e2e.sh
-
-# Nama-nama stack bisa digeser supaya tidak bertabrakan dengan stack demo yang
-# sedang hidup; semuanya turunan dari satu variabel.
-STACK=vc2 apps/virtual-computer/scripts/e2e.sh
+# membersihkannya, dan membuktikan tidak ada sisa.
+STACK=vc2 VCOMPUTER_CONTROL_PORT=18092 TEARDOWN=1 apps/virtual-computer/scripts/e2e.sh
 ```
 
-**Satu variabel, semua nama.** `scripts/e2e.sh` menurunkan setiap nama dari
-`STACK` (default `vcomputer`): `${STACK}-internal` dan `${STACK}-edge` untuk dua
-jaringan, `${STACK}-sandbox:poc` dan `${STACK}-control:poc` untuk image yang dibangun,
-`${STACK}-control` untuk container control plane, dan `${STACK}-<bot>` untuk sandbox yang
-dibuat runtime. Variabel lain yang dibaca: `BOT` (id bot yang diuji, default `e2e-bot`),
-`COMPOSE_FILE` (file compose yang dibaca dan diperiksa precondition-nya, default
-`apps/virtual-computer/docker-compose.poc.yml`, relatif terhadap root repo), `COMPOSE`
-(seluruh invokasi compose, default `"$DOCKER compose -p $STACK -f $COMPOSE_FILE"`),
-`PREBUILT=1` (lewati semua build image), `BUILD_NETWORK=host` (build lewat
-`--network host`, perlu bila daemon build tidak bisa mengambil paket apt lewat jembatan
-`jaringannya), dan `TEARDOWN=1` (purge sesi + `POST /v1/admin/cleanup?volumes=true` +
-`cleanup.sh VOLUMES=1` + `compose down` di akhir; jalur itu tidak meninggalkan volume).
-Token di-generate sendiri kecuali `VCOMPUTER_CONTROL_TOKEN` sudah diisi; `DOCKER="sudo docker"`
+**`STACK` dan `VCOMPUTER_CONTROL_PORT` wajib, tanpa default.** Keduanya satu-satunya nama yang
+tidak bisa ditebak skrip, dan keduanya dulu punya default yang berbahaya (`vcomputer` dan
+`18090`). Setiap nama yang **dihapus** skrip ini turunan dari `STACK` — project compose, dua
+jaringan, dua image, dua container, sandbox yang dibuat runtime, dan volumenya — jadi default
+berarti satu run bisa menyebut satu stack dan menghapus stack yang lain. Port adalah
+kebalikannya: ia tidak bisa diturunkan dari `STACK`, karena compose mempublikasikan apa pun
+yang dikatakan `VCOMPUTER_CONTROL_PORT`, jadi default `18090` adalah default ke *suatu*
+control plane. Di host yang sudah menjalankan stack demo di port itu, `compose up` gagal pada
+bind — dan dulu kegagalan itu hanya dicatat sebagai note, sehingga seluruh `DELETE`, `purge`,
+dan `admin/cleanup` di bawahnya tetap dikirim ke control plane yang memang memiliki port itu:
+401 bila tokennya berbeda, dan penghapusan sandbox stack lain bila tokennya kebetulan sama.
+Karena itu keduanya `${VAR:?…}`.
+
+**Yang menghentikan run, dan yang tidak.** Satu pemeriksaan yang gagal tidak menghentikan apa
+pun: lognya memang daftar lengkap apa yang rusak, bukan hal pertama yang rusak. Empat
+kegagalan berbeda, karena semua sesudahnya akan diarahkan ke tempat yang salah: build gagal,
+`compose up` gagal, `/health` tidak menjawab 200 dalam 60 detik, dan port yang ternyata milik
+stack lain. Keempatnya berhenti lewat `finish()` — yang sekaligus membuat `TEARDOWN=1` aman
+dipakai bersama kegagalan itu, karena yang dibongkar hanya stack yang disebut run ini, atau
+tidak ada sama sekali.
+
+**Port dibuktikan sebelum dipakai.** `docker ps --filter publish=$PORT` menyebut container
+yang memegang port itu, dan jawabannya harus `${STACK}-control`; label project compose-nya
+harus `$STACK`. Itulah fakta yang diasumsikan sisa skrip: `DELETE`, `purge`, dan
+`admin/cleanup` semuanya pergi ke `127.0.0.1:$PORT`, jadi run ini membuktikan alamat itu milik
+stacknya sebelum menghapus apa pun — dan `finish()` melewati bagian HTTP dari teardown-nya
+bila pembuktian itu tidak pernah terjadi, karena satu-satunya hal yang bisa membuat
+pemeriksaan itu gagal adalah control plane milik orang lain.
+
+**Satu variabel, semua nama.** `scripts/e2e.sh` menurunkan setiap nama dari `STACK`:
+`${STACK}-internal` dan `${STACK}-edge` untuk dua jaringan, `${STACK}-sandbox:poc` dan
+`${STACK}-control:poc` untuk image yang dibangun, `${STACK}-control` untuk container control
+plane, dan `${STACK}-<bot>` untuk sandbox yang dibuat runtime. Variabel lain yang dibaca:
+`BOT` (id bot yang diuji, default `e2e-bot`), `COMPOSE_FILE` (file compose yang dibaca dan
+diperiksa precondition-nya, default `apps/virtual-computer/docker-compose.poc.yml`, relatif
+terhadap root repo), `COMPOSE` (seluruh invokasi compose, default
+`"$DOCKER compose -p $STACK -f $COMPOSE_FILE"`), `PREBUILT=1` (lewati semua build image),
+`BUILD_NETWORK=host` (build lewat `--network host`, perlu bila daemon build tidak bisa
+mengambil paket apt lewat jembatan jaringannya), dan `TEARDOWN=1` (lihat di bawah). Token
+di-generate sendiri kecuali `VCOMPUTER_CONTROL_TOKEN` sudah diisi; `DOCKER="sudo docker"`
 didukung lewat `${DOCKER:-docker}`. Skrip keluar non-nol bila ada satu pemeriksaan yang gagal.
 
 `docker-compose.poc.yml` menerima `VCOMPUTER_STACK`, `VCOMPUTER_CONTROL_IMAGE`,
@@ -263,16 +302,42 @@ yang terpilih tapi gagal dibuang — volume yang masih dipakai adalah kasus nyat
 jawabannya bertambah kunci `"failed":["<baris error docker>",...]`, dan hitungannya tetap
 jujur; `500` hanya dipakai bila daemon docker-nya sendiri tidak bisa dihubungi.
 
+**`docker compose down` sekarang benar-benar bersih — karena control plane yang membereskan.**
+Sandbox dibuat oleh control plane (`docker run`), bukan dideklarasikan di file compose, jadi
+sebelum ini `down` meninggalkan setiap sandbox yang masih hidup, volumenya, dan jaringan
+internal yang ditahan sandbox itu. Sekarang control plane menghapus sandboxnya sendiri saat
+menerima SIGTERM/SIGINT: setelah HTTP-nya berhenti (`-shutdown-grace`, 5 detik) ia menjalankan
+reap (`-reap-grace`, 60 detik) yang membuang setiap container berlabel `vcomputer.bot` dengan
+awalan nama stacknya — **termasuk yang sedang jalan** — berikut volumenya. Bedanya dengan
+`Cleanup` yang dipakai `POST /v1/admin/cleanup`: `Cleanup` sengaja tidak pernah menyentuh
+container yang jalan (ia untuk sisa yang sudah mati), sedangkan `Reap` justru sebaliknya, dan
+ia tidak punya rute HTTP sama sekali — hanya bisa dipanggil dari dalam proses, setelah sesinya
+selesai. Compose diberi `stop_grace_period: 90s` supaya docker tidak SIGKILL di tengah reap
+itu. Kegagalan reap dilaporkan sebagai log (`reaping the sandboxes failed: …`, dan satu baris
+per sisa yang gagal dibuang), bukan sebagai exit code — servernya sudah berhenti, dan yang
+dibutuhkan operator adalah hitungannya.
+
+Urutan teardown yang didokumentasikan karena itu: `docker compose down` (control plane
+menerima SIGTERM, reaps sandboxnya, lalu kedua service dan dua jaringannya hilang), dan
+`cleanup.sh --running --volumes` untuk sisa yang tidak bisa dijangkau jalur itu — stack yang
+belum sempat naik, atau control plane yang kena SIGKILL.
+
 `scripts/cleanup.sh` adalah padanan CLI-nya, untuk dipakai saat tidak ada yang bisa
 menjawab HTTP (misalnya stack sudah turun). Ia memilih container dengan filter label
-`vcomputer.bot` dan status `exited`/`created`/`dead` — container control plane dan fixture
-tidak membawa label itu, jadi keduanya tidak pernah tersentuh. `STACK` menggeser nama yang
-dicari, `DOCKER` memilih CLI-nya, dan `VOLUMES=1` (atau argumen `--volumes`) ikut membuang
-volumenya:
+`vcomputer.bot` dan awalan nama `${STACK}-` — container control plane dan fixture tidak
+membawa label itu, jadi keduanya tidak pernah tersentuh, dan awalan nama itu yang memisahkan
+dua stack di satu host. `STACK` menggeser nama yang dicari, `DOCKER` memilih CLI-nya,
+`VOLUMES=1` (atau argumen `--volumes`) ikut membuang volumenya, dan `--running` (atau
+`RUNNING=1`) melebarkan pilihannya ke container yang sedang jalan — yang dibuang lebih dulu
+sebagai container (`docker rm -f`) sebelum volumenya, karena volume yang masih dipakai tidak
+bisa dihapus:
 
 ```bash
 # Buang container sisa stack default, berikut volumenya.
-VOLUMES=1 apps/virtual-computer/scripts/cleanup.sh
+VOLUMES=1 STACK=vc2 apps/virtual-computer/scripts/cleanup.sh
+
+# Termasuk yang sedang jalan — inilah yang dipakai teardown e2e.
+STACK=vc2 apps/virtual-computer/scripts/cleanup.sh --running --volumes
 
 # Stack lain, docker lewat sudo.
 STACK=vc2 DOCKER="sudo docker" apps/virtual-computer/scripts/cleanup.sh

@@ -13,13 +13,17 @@
 #
 #   preconditions                 the tools, the compose file, and the stub screenshot are
 #                                 where this expects them
-#   build / compose-up / health   the stack starts at all
+#   build / compose-up / health-ready / stack-identity(-label)
+#                                 the stack starts at all, and the control plane answering on the
+#                                 port is this stack's — a failure in any of these stops the run,
+#                                 because everything after them would be aimed at another stack
 #   auth-401                      /v1/* is not an open door
 #   ensure-idempotent             a worker may call ensure before every task
-#   navigate-fixture / navigate-no-egress-*
-#                                 the sandbox browser reaches the internal network, and a URL
-#                                 with no route fails inside the navigate timeout with a 502
-#                                 that says why, instead of a 200 that lies
+#   navigate-fixture / navigate-404 / navigate-no-egress-*
+#                                 the sandbox browser reaches the internal network; a page that
+#                                 answers 4xx/5xx is a 502 naming the status rather than a 200
+#                                 that lies; and a URL with no route fails inside the navigate
+#                                 timeout with a 502 that says why
 #   screenshot-*                  the capture is a real PNG of a real display, not the
 #                                 placeholder the stub used to answer with
 #   click / type / screenshot-typed / typed-screenshot-differs
@@ -45,15 +49,18 @@
 #                                 second delete is still a 404
 #   purge-*                       purge ends the container and the home volume with it
 #   cleanup-*                     the admin route sweeps a stopped sandbox and its volume
-# Usage, from the repository root:
+#   teardown-*                    TEARDOWN=1 left nothing named ${STACK}-* behind: no container,
+#                                 no volume, no network
 #
-#   apps/virtual-computer/scripts/e2e.sh
-#   DOCKER="sudo docker" apps/virtual-computer/scripts/e2e.sh
-#   STACK=vc2 apps/virtual-computer/scripts/e2e.sh            # a second stack, beside a demo
-#   BUILD_NETWORK=host apps/virtual-computer/scripts/e2e.sh   # a daemon with no route out
-#   PREBUILT=1 apps/virtual-computer/scripts/e2e.sh           # the images are already tagged
-#   TEARDOWN=1 apps/virtual-computer/scripts/e2e.sh           # remove what this started
+# Usage, from the repository root. STACK and VCOMPUTER_CONTROL_PORT are required (#244): the
+# run stops before it starts anything if either is missing, because every name it removes comes
+# from the first and every request it makes goes to the second.
 #
+#   STACK=vc2 VCOMPUTER_CONTROL_PORT=18092 apps/virtual-computer/scripts/e2e.sh
+#   STACK=vc2 VCOMPUTER_CONTROL_PORT=18092 PREBUILT=1 apps/virtual-computer/scripts/e2e.sh
+#   STACK=vc2 VCOMPUTER_CONTROL_PORT=18092 BUILD_NETWORK=host apps/virtual-computer/scripts/e2e.sh
+#   STACK=vc2 VCOMPUTER_CONTROL_PORT=18092 TEARDOWN=1 apps/virtual-computer/scripts/e2e.sh
+#   DOCKER="sudo docker" STACK=vc2 VCOMPUTER_CONTROL_PORT=18092 apps/virtual-computer/scripts/e2e.sh
 # Environment:
 #   DOCKER                  the docker CLI. "sudo docker" is expected to work, which is why
 #                           every use of it below is unquoted on purpose (shellcheck SC2086
@@ -66,17 +73,18 @@
 #                           apps/virtual-computer/docker-compose.poc.yml, resolved from the
 #                           repository root this script puts itself in.
 #   OUT                     artefact directory. Default docs/poc-evidence/virtual-computer.
-#   STACK                   the name of the stack under test, and the only name this script
-#                           takes as an input — every other one is derived from it: the compose
-#                           project (`-p "$STACK"`), the two networks (${STACK}-internal,
-#                           ${STACK}-edge), the two images (${STACK}-control:poc,
-#                           ${STACK}-sandbox:poc), the control and fixture containers
-#                           (${STACK}-control, ${STACK}-fixture), and the sandbox the runtime
-#                           starts for a bot (${STACK}-<bot id>, volume ${STACK}-<bot id>-home).
-#                           Default vcomputer, which is what the compose file's own defaults
-#                           produce, so a default run uses the names this stack has always used.
-#                           The derived names are exported as the VCOMPUTER_* variables the
-#                           compose file reads, so the two sides cannot disagree about them.
+#   STACK                   REQUIRED, no default (#244). The name of the stack under test, and
+#                           the only name this script takes as an input — every other one is
+#                           derived from it: the compose project (`-p "$STACK"`), the two
+#                           networks (${STACK}-internal, ${STACK}-edge), the two images
+#                           (${STACK}-control:poc, ${STACK}-sandbox:poc), the control and fixture
+#                           containers (${STACK}-control, ${STACK}-fixture), and the sandbox the
+#                           runtime starts for a bot (${STACK}-<bot id>, volume
+#                           ${STACK}-<bot id>-home). The derived names are exported as the
+#                           VCOMPUTER_* variables the compose file reads, so the two sides cannot
+#                           disagree about them. It used to default to vcomputer, which is the one
+#                           value that makes a run reach for the stack a demo is already using;
+#                           a caller who wants that stack now says so.
 #   BOT                     bot id under test. Default e2e-bot. A second bot, ${BOT}-stale, is
 #                           started by the cleanup check and removed again by it.
 #   VCOMPUTER_CONTROL_TOKEN the control plane's token, when the caller already has one: it is
@@ -84,10 +92,12 @@
 #                           which of the two happened, and the value itself is never printed —
 #                           except inside the noVNC URL at the end, which is a page load and
 #                           cannot carry a header.
-#   VCOMPUTER_CONTROL_PORT  host port of the control plane, exported to compose so both sides
-#                           agree on it. Default 18090 — deliberately not the compose default
-#                           (8090), so a stack someone left running for a demo cannot answer
-#                           this script's requests by accident.
+#   VCOMPUTER_CONTROL_PORT  REQUIRED, no default (#244). Host port of the control plane,
+#                           exported to compose so both sides agree on it. It used to default to
+#                           18090, which is the port a stack left running on this host already
+#                           holds: `compose up` would fail on the bind, and the run — which did
+#                           not stop on that failure — would send every DELETE, purge and admin
+#                           cleanup below to the control plane that owned the port instead.
 #   VCOMPUTER_SANDBOX_GATE_PORT / VCOMPUTER_SANDBOX_NOVNC_PORT
 #                           the sandbox's gate and noVNC ports, exported to compose for the
 #                           same reason. Defaults 8443 and 6080, the sandbox image's own.
@@ -95,12 +105,30 @@
 #                           called with --no-build. It skips the build section outright rather
 #                           than only changing the `up` flags, because a build that runs anyway
 #                           is a build that can fail a run whose images were fine.
-#   TEARDOWN=1              end this run's state at the end: purge the session, sweep what is
-#                           left through POST /v1/admin/cleanup?volumes=true, run the same
-#                           sweep through scripts/cleanup.sh with VOLUMES=1, then `compose down`
-#                           and remove the two sandbox names directly. Off by default: after a
-#                           failure the containers and the per-bot volume are the state a
-#                           reviewer wants to look at.
+#   TEARDOWN=1              end this run's state at the end, and prove it: purge the session,
+#                           sweep what is left through POST /v1/admin/cleanup?volumes=true, run
+#                           scripts/cleanup.sh --running --volumes, `compose down`, and then
+#                           assert that no container, volume or network named ${STACK}-* is left
+#                           — the #245 criterion, checked rather than claimed. Off by default:
+#                           after a failure the containers and the per-bot volume are the state
+#                           a reviewer wants to look at.
+#
+# What stops the run, and why (#244). A failed check normally does not: the log is the whole
+# list of what broke, not the first thing. Three failures are different, because everything
+# after them would be aimed at the wrong place. A failed build, a failed `compose up`, or a
+# control plane that never answers /health means the stack this run is about is not up — and
+# the next thing this script would do is POST a session, which the control plane that *is*
+# listening would happily create. So those stop the run through finish(), which is also what
+# makes TEARDOWN=1 safe to pass alongside them: it tears down the stack this run named, or
+# nothing at all.
+#
+# The same reasoning is why the port is checked before the first request. `docker ps --filter
+# publish=$PORT` names the container holding the port, and it has to be ${STACK}-control,
+# carrying this stack's compose project label. That is the fact the rest of the script assumes:
+# every DELETE, purge and admin cleanup below goes to 127.0.0.1:$PORT, so the run proves that
+# address is its own stack before it removes anything — and finish() skips the HTTP half of its
+# teardown when it is not, because the only thing that check can fail on is a control plane
+# that belongs to somebody else.
 #
 # The claim the sandbox checks exist for: a sandbox is NOT unreachable from the host. Docker
 # puts the host on every bridge it creates, so the host can dial a sandbox's address; what
@@ -124,8 +152,14 @@ set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.." || exit 1
 
 DOCKER=${DOCKER:-docker}
-# STACK comes first because COMPOSE and every container name below are built from it.
-STACK=${STACK:-vcomputer}
+# STACK comes first because COMPOSE and every container name below are built from it, and it
+# has no default on purpose (#244). Every name this script removes — the compose project, the
+# two networks, the two images, the two containers, the sandbox the runtime starts and its
+# volume — is derived from it, and a default would mean a run that names one stack and reaches
+# for another: with `STACK=vcomputer` implied, a caller testing a second stack would sweep the
+# first one's sandboxes. It is required, and the failure names the variable rather than a
+# resource that turned out to be somebody else's.
+STACK=${STACK:?set STACK: this script derives every name it touches from it, and a default would let a run reach for a stack the caller never named}
 BOT=${BOT:-e2e-bot}
 STALE_BOT="${BOT}-stale"
 # COMPOSE_FILE is defined before COMPOSE because the default invocation is built from it, and
@@ -133,7 +167,15 @@ STALE_BOT="${BOT}-stale"
 COMPOSE_FILE=${COMPOSE_FILE:-apps/virtual-computer/docker-compose.poc.yml}
 COMPOSE=${COMPOSE:-"$DOCKER compose -p $STACK -f $COMPOSE_FILE"}
 OUT=${OUT:-docs/poc-evidence/virtual-computer}
-PORT=${VCOMPUTER_CONTROL_PORT:-18090}
+# The port has no default either, and that is the other half of #244. A stack's port is the one
+# name this script cannot derive from STACK — compose publishes whatever VCOMPUTER_CONTROL_PORT
+# says — so a fallback to 18090 was a fallback to *some* control plane: on a host that already
+# ran a stack there, `compose up` failed on the bind and the run carried on, sending its DELETE,
+# its purge and its admin cleanup to the control plane that did own the port. With a different
+# token those calls answered 401; with the same token they would have removed another stack's
+# sandboxes and volumes. Required, so the address every request below goes to is one the caller
+# chose.
+PORT=${VCOMPUTER_CONTROL_PORT:?set VCOMPUTER_CONTROL_PORT: it is the port the stack publishes, and a default would point this run at whichever control plane already holds it}
 # The control plane as this host reaches it, which is the address of every request below: the
 # port is the one compose was told to publish (VCOMPUTER_CONTROL_PORT above), on loopback
 # because the compose file binds it to 127.0.0.1 rather than to every interface.
@@ -272,6 +314,13 @@ sandbox_secret() { $DOCKER inspect --format '{{range .Config.Env}}{{println .}}{
 finish() {
     if [ "${TEARDOWN:-0}" = "1" ]; then
         log "teardown (TEARDOWN=1)"
+        # The HTTP half runs only when this run proved the control plane on $PORT is its own
+        # (#244). It is the half that cannot be scoped from here: `DELETE ...?purge=true` and
+        # `POST /v1/admin/cleanup` name a bot and a sweep, and the server decides the rest, so
+        # sending them to a control plane that answered on a port this run did not verify would
+        # be asking a stranger to delete a sandbox. STACK_VERIFIED is set by the stack-identity
+        # check below, and the checks that would set it are the ones that stop the run.
+        #
         # The order is the point. Purge first: it is the only path that removes the per-bot
         # volume through the API (a plain DELETE leaves it, which is what the volume-reused
         # check above is about). Then the admin sweep, which is the route that exists for
@@ -279,26 +328,43 @@ finish() {
         # when the control plane is already gone. Then the two compose services. Each step
         # prints what it answered rather than staying quiet, because a teardown that
         # half-worked is the state a reviewer has to finish by hand.
-        printf 'teardown: purge %s, admin cleanup %s\n' \
-            "$(status -X DELETE "${BASE}/v1/sessions/${BOT}?purge=true")" \
-            "$(api -o /dev/null -w '%{http_code}' -X POST "${BASE}/v1/admin/cleanup?volumes=true")"
-        # VOLUMES=1 is not optional here: TEARDOWN=1 means this run's state goes away, and a
-        # sandbox volume is this run's state. The script is the CLI equivalent of the admin
-        # route above, so it also finds anything a failed run left stopped.
-        VOLUMES=1 STACK="$STACK" DOCKER="$DOCKER" bash apps/virtual-computer/scripts/cleanup.sh ||
+        if [ "${STACK_VERIFIED:-0}" = "1" ]; then
+            printf 'teardown: purge %s, admin cleanup %s\n' \
+                "$(status -X DELETE "${BASE}/v1/sessions/${BOT}?purge=true")" \
+                "$(api -o /dev/null -w '%{http_code}' -X POST "${BASE}/v1/admin/cleanup?volumes=true")"
+        else
+            printf 'teardown: skipping the API steps: 127.0.0.1:%s was never verified as %s\n' \
+                "$PORT" "$CONTROL_CONTAINER"
+        fi
+        # --running --volumes, not VOLUMES=1: the sandboxes are created by the control plane
+        # rather than by the compose file, and the ones that matter here are the ones still
+        # running — a graceful `compose down` reaps them itself (the control plane removes what
+        # it owns on SIGTERM, docs/adr/0003-virtual-computer.md §3.9), but this branch also runs
+        # when the stack never came up, and a SIGKILLed control plane leaves its sandboxes up.
+        # The sweep is scoped to this stack's label and name prefix, so it is safe to run
+        # whether or not the port check above passed.
+        VOLUMES=1 RUNNING=1 STACK="$STACK" DOCKER="$DOCKER" bash apps/virtual-computer/scripts/cleanup.sh ||
             printf 'teardown: cleanup.sh answered non-zero; see its output above\n'
         # shellcheck disable=SC2086  # COMPOSE is a word list; see the header
         $COMPOSE down
-        # What the steps above could not reach: a sandbox that was still running (purge is the
-        # only thing that removes those, and it needs a control plane that answers) and the
-        # volumes, removed directly here so that TEARDOWN=1 leaves nothing behind even when the
-        # control plane was already gone. Both are this run's own names rather than a sweep, and
-        # both are allowed to find nothing — a purge that removed them already is the expected
-        # case, and a missing container must not fail the teardown.
+        # The proof, rather than the claim: after all of the above, nothing named after this
+        # stack may be left — no container (the control plane and the fixture go with `down`,
+        # the sandboxes with the sweep), no volume, and no network (the internal network is the
+        # one a running sandbox keeps alive, which is why it was stuck before the reap existed).
+        # It is a check like any other, so a teardown that missed something fails the run
+        # instead of printing a happy line over it.
         # shellcheck disable=SC2086  # DOCKER may be "sudo docker"
-        $DOCKER rm -f "$SANDBOX_CONTAINER" "$STALE_CONTAINER" >/dev/null 2>&1 || true
+        left_containers=$($DOCKER ps -a --filter "name=^${STACK}-" --format '{{.Names}}' 2>/dev/null | tr '\n' ' ')
         # shellcheck disable=SC2086  # DOCKER may be "sudo docker"
-        $DOCKER volume rm "$SANDBOX_VOLUME" "$STALE_VOLUME" >/dev/null 2>&1 || true
+        left_volumes=$($DOCKER volume ls -q --filter "name=^${STACK}-" 2>/dev/null | tr '\n' ' ')
+        # shellcheck disable=SC2086  # DOCKER may be "sudo docker"
+        left_networks=$($DOCKER network ls -q --filter "name=^${STACK}-" 2>/dev/null | tr '\n' ' ')
+        expect "teardown-containers" "$(printf '%s' "$left_containers" | wc -w | tr -d ' ')" 0 \
+            "the teardown must leave no container named ${STACK}-* (left: ${left_containers:-none})"
+        expect "teardown-volumes" "$(printf '%s' "$left_volumes" | wc -w | tr -d ' ')" 0 \
+            "the teardown must leave no volume named ${STACK}-* (left: ${left_volumes:-none})"
+        expect "teardown-networks" "$(printf '%s' "$left_networks" | wc -w | tr -d ' ')" 0 \
+            "the teardown must leave no network named ${STACK}-* (left: ${left_networks:-none})"
         printf 'torn down; the noVNC URL printed above is gone with it\n'
     fi
 
@@ -366,6 +432,7 @@ elif [ "${BUILD_NETWORK:-}" = "host" ]; then
         pass "build"
     else
         fail "build" "$DOCKER build --network host failed; the failure is in the log above"
+        finish
     fi
     # Both tags exist now, so `up` must not try to build them again.
     PREBUILT=1
@@ -375,6 +442,7 @@ else
         pass "build"
     else
         fail "build" "$COMPOSE --profile build build failed; the failure is in the log above"
+        finish
     fi
 fi
 
@@ -399,6 +467,12 @@ if $COMPOSE up -d $up_flags; then
     pass "compose-up"
 else
     fail "compose-up" "$COMPOSE up -d failed: the failure is in the log above"
+    # Stop here (#244). The stack this run is about did not come up, and the next thing below is
+    # a POST that creates a sandbox — which the control plane that *is* listening on this port
+    # would answer. That is the failure this whole section exists for: `compose up` failing on
+    # "port is already allocated" used to be a note, and every request after it went to the
+    # other stack.
+    finish
 fi
 
 # Nothing below can be read before the process is listening. Compose's own healthcheck is
@@ -412,8 +486,43 @@ while [ "$(status_open "${BASE}/health")" != "200" ]; do
     sleep 1
 done
 if [ "$tries" -ge 60 ]; then
-    printf 'note: /health did not answer 200 within 60s; the checks below will say so too\n'
+    fail "health-ready" "/health did not answer 200 within 60s: nothing below can run against a control plane that is not there"
+    finish
 fi
+pass "health-ready"
+
+# The port is the one thing this script cannot derive from STACK, so it proves the port before
+# it uses it (#244). Two questions, both answered by docker: which container holds
+# 127.0.0.1:$PORT, and whose stack is that container part of. Both have to name this run's stack
+# — the name is ${STACK}-control and the compose project label is $STACK — because everything
+# below addresses that port as if it were this stack's: check 12 DELETEs a session, check 13
+# purges one, check 14 sweeps stopped sandboxes and their volumes, and TEARDOWN=1 does all three
+# again. A control plane that is somebody else's would answer those calls.
+#
+# Both are checks that stop the run rather than notes, because there is no later check whose
+# result could be trusted after the port turned out to belong to another stack.
+# shellcheck disable=SC2086  # DOCKER may be "sudo docker"
+port_owner=$($DOCKER ps --filter "publish=${PORT}" --format '{{.Names}}' 2>/dev/null | head -n 1)
+if [ "$port_owner" = "$CONTROL_CONTAINER" ]; then
+    pass "stack-identity"
+else
+    fail "stack-identity" "127.0.0.1:${PORT} is held by ${port_owner:-nothing}, want ${CONTROL_CONTAINER}: every DELETE and purge below would go to that control plane"
+    finish
+fi
+
+# The name is not enough on its own: a container called ${STACK}-control that compose started for
+# another project would still be the wrong stack's. The project label is compose's own answer to
+# "who created this", and it is the same value `-p "$STACK"` sets.
+# shellcheck disable=SC2086  # DOCKER may be "sudo docker"
+port_project=$($DOCKER inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$CONTROL_CONTAINER" 2>/dev/null)
+if [ "$port_project" = "$STACK" ]; then
+    pass "stack-identity-label"
+else
+    fail "stack-identity-label" "${CONTROL_CONTAINER} carries compose project ${port_project:-<none>}, want ${STACK}"
+    finish
+fi
+# Everything after this point may talk to the control plane on $PORT: it is this stack's.
+STACK_VERIFIED=1
 
 # ----------------------------------------------------------------------------- the checks
 
@@ -458,6 +567,52 @@ case "$nav_body" in
     *'"navigated":true'*) pass "navigate-fixture-body" ;;
     *) fail "navigate-fixture-body" "the body was ${nav_body:-<empty>}, want \"navigated\":true" ;;
 esac
+
+# The body of a successful navigation carries the status the document answered with (#246): the
+# fixture serves this path with 200, and a caller that cannot see the number cannot tell a page
+# that loaded from an error page the server dressed up. 0 is the other value that appears here,
+# for a document that has no HTTP response at all (about:blank, a data: URL) — the field is
+# absent only from a 502, where there is no document to describe.
+case "$nav_body" in
+    *'"http_status":200'*) pass "navigate-fixture-http-status" ;;
+    *) fail "navigate-fixture-http-status" "the body was ${nav_body:-<empty>}, want \"http_status\":200: the response must carry the status the page answered with" ;;
+esac
+
+# The other half of #246, and the one the QA report caught: the fixture answers this path with
+# HTTP 404, and the old answer was `200 {"navigated":true,"title":"404 Not Found"}` — a
+# navigation reported as successful that put an error page on the screen. A 4xx/5xx main
+# document is now a failure: 502, with the status in the body, and it is the status the page
+# itself answered rather than a status the control plane invented.
+#
+# The path is the fixture's own 404: busybox httpd answers any missing file under /www, and
+# `tidak-ada-404` is deliberately not a file in fixture/ — a check that depended on a file
+# existing would stop checking the day someone added it.
+nav=$(api -X POST -H 'Content-Type: application/json' \
+    -d "{\"url\":\"http://${FIXTURE_CONTAINER}:8080/tidak-ada-404\"}" \
+    -w '\n%{http_code}' "${BASE}/v1/sessions/${BOT}/navigate")
+nav_body=$(printf '%s\n' "$nav" | sed '$d')
+expect "navigate-404-502" "$(printf '%s\n' "$nav" | sed -n '$p')" 502 \
+    "navigate to a path the fixture answers 404 for must fail with 502, not report navigated:true"
+missing=""
+case "$nav_body" in *'navigation failed'*) ;; *) missing="${missing} the words navigation failed" ;; esac
+case "$nav_body" in *'"http_status":404'*) ;; *) missing="${missing} \"http_status\":404" ;; esac
+if [ -z "$missing" ]; then
+    pass "navigate-404-body"
+else
+    fail "navigate-404-body" "the body was ${nav_body:-<empty>}, want the failure and the status the page answered (missing:${missing})"
+fi
+
+# Back to the page the rest of the run expects. A failed navigation leaves the browser wherever
+# it got to — the fixture's 404 document, in this case — and the two checks after this one are
+# about input reaching the display: they click into the fixture's input and type into it, which
+# only means anything while the fixture's page is the one on screen. This navigation is asserted
+# rather than assumed, because a restore that silently failed would turn check 6 into a check of
+# an error page.
+nav=$(api -X POST -H 'Content-Type: application/json' \
+    -d "{\"url\":\"http://${FIXTURE_CONTAINER}:8080/\"}" \
+    -w '\n%{http_code}' "${BASE}/v1/sessions/${BOT}/navigate")
+expect "navigate-fixture-restored" "$(printf '%s\n' "$nav" | sed -n '$p')" 200 \
+    "navigating back to the fixture must answer 200: the click and type checks below need its page on screen"
 
 # The other half, and the one a worker depends on: the internal network has no route out, so a
 # navigation to the internet cannot succeed — and it must not answer 200 as if it had, nor hang

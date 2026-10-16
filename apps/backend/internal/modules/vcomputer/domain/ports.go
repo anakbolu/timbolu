@@ -47,9 +47,18 @@ var (
 	// cannot name a container, a URL whose scheme is not one of the four it accepts,
 	// or an empty command.
 	ErrInvalidInput = errors.New("vcomputer: the control plane refused the request")
-	// ErrUnavailable is the control plane being unreachable or failing. It is worth
-	// retrying, unlike the three above.
+	// ErrUnavailable is the control plane being unreachable or failing in a way that
+	// may pass. It is worth retrying, unlike the three above.
 	ErrUnavailable = errors.New("vcomputer: the control plane is unavailable")
+	// ErrNavigationFailed is a navigation the control plane carried out and that
+	// still did not put the page in front of the caller: the browser landed on its
+	// own error page, the document never finished loading inside the control
+	// plane's navigate timeout, or the page answered 4xx/5xx. It is not retryable
+	// for the same reason a refused request is not: the same URL produces the same
+	// answer, so a retry spends the budget reaching it again — and a page that is
+	// temporarily down is better handled by a caller that decides to try later than
+	// by a retry policy that cannot tell the two apart.
+	ErrNavigationFailed = errors.New("vcomputer: the navigation failed")
 )
 
 // Session is one bot's virtual computer, as much of it as the backend needs: where

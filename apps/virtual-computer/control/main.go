@@ -18,6 +18,12 @@
 // without it rather than coming up as an unauthenticated way to reach every bot's
 // desktop. Only /health is answered without it.
 //
+// On SIGTERM or SIGINT it stops serving and then removes the sandboxes it created,
+// running ones included, together with their volumes. That is the half of a teardown
+// the compose file cannot do: a sandbox is created by this process rather than declared
+// in the stack, so `docker compose down` would leave it — and the internal network and
+// volumes it keeps in use — behind (docs/adr/0003-virtual-computer.md §3.9).
+//
 // Run: VCOMPUTER_CONTROL_TOKEN=... go run . -runtime docker
 package main
 
@@ -50,6 +56,7 @@ func run() error {
 	addr := flag.String("addr", defaultAddr(), "listen address; keep it on the internal network")
 	runtimeName := flag.String("runtime", defaultRuntime(), "sandbox runtime: docker (real containers) or memory (records actions, needs no Docker)")
 	shutdownGrace := flag.Duration("shutdown-grace", 5*time.Second, "how long to let in-flight requests finish on SIGTERM")
+	reapGrace := flag.Duration("reap-grace", 60*time.Second, "how long the sandboxes this control plane created may take to go away on shutdown")
 	flag.Parse()
 
 	token := strings.TrimSpace(os.Getenv("VCOMPUTER_CONTROL_TOKEN"))
@@ -104,6 +111,32 @@ func run() error {
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("shutdown: %w", err)
 	}
+
+	// The sandboxes go away with the process that owns them, and this is the only
+	// place that happens. They are not part of the compose stack — the control plane
+	// created them — so `docker compose down` cannot remove them, and a running one
+	// keeps its volume and the internal network in use, which is exactly the leftover
+	// an operator would have to hunt down by hand (docs/adr/0003-virtual-computer.md
+	// §3.9). Doing it here rather than only in a script is what makes the documented
+	// teardown — `docker compose down` — actually clean.
+	//
+	// The grace period is separate from the shutdown one and much longer, because it
+	// bounds a different thing: stopping a sandbox is a container going down, not an
+	// HTTP request finishing. A failure here is reported rather than swallowed, but it
+	// does not turn a clean shutdown into a failed one — the server has already
+	// stopped, and the operator needs the count, not an exit code.
+	reapCtx, stopReap := context.WithTimeout(context.Background(), *reapGrace)
+	defer stopReap()
+	reaped, err := runtime.Reap(reapCtx)
+	if err != nil {
+		logger.Printf("reaping the sandboxes failed: %v", err)
+	} else {
+		logger.Printf("reaped %d sandbox(es) and %d volume(s)", reaped.RemovedContainers, reaped.RemovedVolumes)
+	}
+	for _, failure := range reaped.Failed {
+		logger.Printf("could not reap: %s", failure)
+	}
+
 	return <-errs
 }
 

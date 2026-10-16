@@ -180,9 +180,10 @@ func (r *InMemoryRuntime) Type(_ context.Context, botID string, text string) err
 // docker runtime applies before it hands a URL to Chromium.
 //
 // The answer says the browser landed on the URL it was given, because the stub
-// cannot redirect, and carries no title, because there is no document: a stub that
-// invented a title would be inventing the one thing this method is supposed to
-// report.
+// cannot redirect, and carries no title and no HTTP status, because there is no
+// document and no response: a stub that invented either would be inventing the two
+// things this method is supposed to report. A caller that reads HTTPStatus has to
+// treat 0 as "not known" for exactly this reason.
 func (r *InMemoryRuntime) Navigate(_ context.Context, botID string, targetURL string) (Navigation, error) {
 	id, err := cleanBotID(botID)
 	if err != nil {
@@ -229,6 +230,20 @@ func (r *InMemoryRuntime) Purge(_ context.Context, botID string) error {
 // built against the stub reads the same fields it will read in production.
 func (r *InMemoryRuntime) Cleanup(_ context.Context, _ bool) (CleanupResult, error) {
 	return CleanupResult{}, nil
+}
+
+// Reap forgets every session, which for the stub is the whole of what it owns: there
+// is no container and no volume to remove, only the records. It answers the count it
+// actually removed so the shape matches the real runtime's — a caller that logged
+// "0 containers" from a stub run would otherwise have no way to tell a stub from a
+// stack with nothing in it.
+func (r *InMemoryRuntime) Reap(_ context.Context) (CleanupResult, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	result := CleanupResult{RemovedContainers: len(r.sessions)}
+	clear(r.sessions)
+	return result, nil
 }
 
 // GateTarget is where the control plane's proxies forward to. The stub owns no

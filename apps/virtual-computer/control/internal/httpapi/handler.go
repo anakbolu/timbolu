@@ -345,10 +345,13 @@ func (s *Server) typeText(w http.ResponseWriter, r *http.Request) {
 // docker runtime refuses, so a caller cannot discover the difference by trying.
 //
 // The answer is not "the command was sent": the runtime waits until the document has
-// finished loading, so a page that ended on the browser's error page, or that never
-// finished, is a failure the caller can see. `final_url` is where the browser went
-// rather than what was asked for, because a redirect is a normal outcome and a caller
-// holding only the request URL cannot tell that one happened.
+// finished loading, so a page that ended on the browser's error page, that answered
+// 4xx/5xx, or that never finished, is a failure the caller can see. `final_url` is
+// where the browser went rather than what was asked for, because a redirect is a
+// normal outcome and a caller holding only the request URL cannot tell that one
+// happened. `http_status` is the status of the response the document came from, which
+// is what makes "the fixture served the page" checkable rather than assumed: 0 means
+// the browser reported none, e.g. an about: or data: document.
 func (s *Server) navigate(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		URL string `json:"url"`
@@ -363,9 +366,10 @@ func (s *Server) navigate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"navigated": true,
-		"final_url": navigation.FinalURL,
-		"title":     navigation.Title,
+		"navigated":   true,
+		"final_url":   navigation.FinalURL,
+		"title":       navigation.Title,
+		"http_status": navigation.HTTPStatus,
 	})
 }
 
@@ -767,20 +771,28 @@ func (s *Server) decode(w http.ResponseWriter, r *http.Request, into any) bool {
 // whole error contract of this surface, so it lives in one place.
 //
 // A failed navigation is its own case because it is the one failure that carries
-// facts the caller needs: which URL was asked for, and where the browser ended up
-// instead. 502 rather than 400 because the request was well formed — the browser could
-// not carry it out, which is not the caller's mistake.
+// facts the caller needs: which URL was asked for, where the browser ended up
+// instead, and — when the server answered at all — the status it answered with.
+// 502 rather than 400 because the request was well formed — the browser could not
+// carry it out, which is not the caller's mistake.
 func (s *Server) fail(w http.ResponseWriter, action string, err error) {
 	var navigation *sandbox.NavigationError
 
 	switch {
 	case errors.As(err, &navigation):
 		s.log.Printf("%s: %v", action, err)
-		writeJSON(w, http.StatusBadGateway, map[string]any{
+		answer := map[string]any{
 			"error":     "navigation failed",
 			"url":       navigation.URL,
 			"final_url": navigation.FinalURL,
-		})
+		}
+		// Left out when the browser reported none rather than answered 0: a caller
+		// branching on the status has to be able to tell "the server said 404" from
+		// "nothing here knows a status", and an omitted key says the second.
+		if navigation.HTTPStatus != 0 {
+			answer["http_status"] = navigation.HTTPStatus
+		}
+		writeJSON(w, http.StatusBadGateway, answer)
 	case errors.Is(err, sandbox.ErrNoBotID),
 		errors.Is(err, sandbox.ErrInvalidBotID),
 		errors.Is(err, sandbox.ErrNoCommand),

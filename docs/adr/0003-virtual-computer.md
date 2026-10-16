@@ -19,6 +19,7 @@
 | Jaringan | Control API hanya di jaringan Docker internal — tidak dipublikasikan, tidak ada di internet publik. Sisi sandbox sebaliknya: yang melindungi CDP dan noVNC adalah **gate**, bukan topologi jaringan |
 | Permukaan sandbox | Semua proses mengikat loopback; satu-satunya listener di alamat container adalah `vcomputer-gate` di `GATE_PORT` (`8443`), dan setiap rutenya menuntut rahasia per sandbox (§3.8) |
 | Aksi keluar | `write_external` dari sandbox tetap lewat draf + persetujuan; PoC **men-stub** jalur ini |
+| Teardown | Sandbox dibuat control plane, bukan compose, jadi control plane pula yang menghapusnya saat berhenti — container yang sedang jalan dan volumenya ikut (§3.9); `scripts/e2e.sh TEARDOWN=1` membuktikannya |
 | Bukan PoC | Kubernetes/gVisor, snapshot, lease layar, satu komputer per workspace |
 
 ## 1. Konteks
@@ -190,6 +191,86 @@ operatornya sendiri. Konsekuensi yang mengikuti: rahasianya harus bisa dibaca ke
 setelah control plane restart, karena itu ia diambil dari
 `docker inspect --format '{{json .Config.Env}}'` saat record sesi dibangun ulang.
 
+### 3.9 Teardown: sandbox adalah milik control plane, bukan milik compose
+
+**Keputusan.** Control plane menghapus sandboxnya sendiri saat prosesnya berhenti: setelah
+`server.Shutdown` selesai (`-shutdown-grace`, default `5s`) ia menjalankan `Runtime.Reap`
+(`-reap-grace`, default `60s`), yang membuang setiap container berlabel `vcomputer.bot` dengan
+awalan nama stacknya — **container yang sedang jalan termasuk** — beserta volumenya. Compose
+memberi `vcomputer-control` `stop_grace_period: 90s` supaya docker tidak mengirim SIGKILL di
+tengah reap itu. Kegagalan reap dicatat sebagai log (`reaping the sandboxes failed: …`, satu baris
+per sisa yang gagal), bukan sebagai exit code.
+
+**Alasan.** Sandbox tidak dideklarasikan di `docker-compose.poc.yml`: control plane yang
+membuatnya (`docker run`), satu per bot, saat `Ensure`. Konsekuensinya `docker compose down` —
+jalur teardown yang didokumentasikan — tidak bisa membuangnya, dan satu sandbox yang masih hidup
+menahan volumenya sekaligus **jaringan internalnya**, sehingga sisa sebuah run bukan satu container
+yang kelihatan di `docker ps` melainkan tiga jenis objek. Sebelum ini jawabannya adalah skrip yang
+harus diingat operator; sekarang jawabannya adalah proses yang memiliki sandbox itu, yang memang
+satu-satunya pihak yang tahu sandbox mana miliknya.
+
+**Mengapa `Reap` terpisah dari `Cleanup`.** `Cleanup` — yang dipakai `POST /v1/admin/cleanup` —
+punya janji yang didokumentasikan: ia **tidak pernah** menyentuh container yang sedang jalan, karena
+ia untuk sisa yang sudah mati, dan rutenya token-protected tapi tetap sebuah rute HTTP. `Reap`
+justru sebaliknya pada dua hal: yang sedang jalan memang sasarannya, dan ia tidak punya rute HTTP
+sama sekali — hanya bisa dipanggil dari dalam proses, setelah HTTP-nya berhenti, jadi tidak ada
+permintaan yang bisa memicunya. Menggabungkan keduanya akan membuat salah satu janji itu bohong.
+
+**Yang dibeli, dan yang tidak.** Yang dibeli: `docker compose down` benar-benar bersih untuk stack
+yang berhenti dengan rapi, dan itu dibuktikan `scripts/e2e.sh` (`TEARDOWN=1` memeriksa tiga hal
+setelahnya: nol container, nol volume, nol jaringan bernama `${STACK}-*`). Yang **tidak** dibeli:
+control plane yang kena SIGKILL (`docker kill`, OOM, host mati) tidak sempat reap, dan sandboxnya
+tinggal; untuk itu ada `scripts/cleanup.sh --running --volumes`, yang memilih dengan label dan
+awalan nama stack yang sama.
+
+### 3.10 Halaman yang menjawab 4xx/5xx bukan navigasi yang berhasil
+
+**Keputusan.** `navigate` membaca status HTTP dokumen utamanya, dan `status >= 400` pada dokumen
+yang sudah `complete` dijawab `502 {"error":"navigation failed","url":...,"final_url":...,"http_status":<status>}`.
+Statusnya diambil dari `performance.getEntriesByType("navigation")[0].responseStatus` di target CDP
+yang sama dengan polling `readyState` yang sudah ada (tiap 100 ms), jadi tidak ada permintaan kedua
+dan tidak ada `fetch` yang bisa berbenturan dengan CORS. Jawaban `200` membawa `http_status` juga;
+`0` berarti "tidak ada jawaban HTTP" (`about:blank`, `data:`), dan pada `502` field itu hanya muncul
+bila ada angkanya.
+
+**Alasan.** `404` dari server tetap `readyState: "complete"`, dengan judul yang terlihat seperti
+halaman biasa (`404 Not Found`), dan jawaban `200 {"navigated":true}` untuk halaman seperti itu
+adalah kebohongan yang paling mudah dipercaya: worker yang menerimanya akan lanjut membaca layar
+yang isinya pesan error, dan kegagalan itu muncul jauh di hilir sebagai "modelnya salah membaca
+halaman". Verifikasi load yang lama hanya membuktikan *sesuatu* sudah dimuat, bukan bahwa yang
+dimuat adalah halaman yang diminta.
+
+**Batasnya.** Yang diperiksa adalah status dokumen utamanya, bukan status setiap subresource, dan
+bukan isi halaman: halaman yang menjawab `200` dengan pesan error di dalamnya tetap lolos — itu
+penilaian model, bukan penilaian control plane. Halaman error yang tidak punya jawaban HTTP
+(`chrome-error://`, timeout) tetap gagal lewat jalur yang sudah ada, tanpa `http_status`.
+
+### 3.11 `scripts/e2e.sh`: berhenti, bukan mencatat, saat alamatnya salah
+
+**Keputusan.** `STACK` dan `VCOMPUTER_CONTROL_PORT` wajib (`${VAR:?…}`), tanpa default; build,
+`compose up`, dan `/health` yang gagal menghentikan run lewat `finish()`; dan sebelum permintaan
+pertama yang mengubah apa pun, skrip membuktikan port yang disapanya milik stacknya —
+`docker ps --filter publish=$PORT --format '{{.Names}}'` harus menjawab `${STACK}-control`, dan
+label `com.docker.compose.project` container itu harus `$STACK`. Bila pembuktian itu tidak pernah
+terjadi, `finish()` melewati bagian HTTP dari teardown-nya (`purge` dan `admin/cleanup`) dan hanya
+menjalankan `cleanup.sh --running --volumes` yang sudah dibatasi label dan awalan nama.
+
+**Alasan.** Default `STACK=vcomputer` dan `VCOMPUTER_CONTROL_PORT=18090` adalah default ke stack
+yang paling mungkin sudah hidup di host itu, dan kedua bahayanya berbeda: `STACK` menentukan setiap
+nama yang **dihapus**, sedangkan port menentukan ke mana setiap permintaan **dikirim** — dan port
+tidak bisa diturunkan dari `STACK`, karena compose mempublikasikan apa pun yang dikatakan
+`VCOMPUTER_CONTROL_PORT`. Di host yang sudah menjalankan stack demo, `compose up` gagal pada bind,
+dan kegagalan itu dulu hanya dicatat sebagai note sehingga `DELETE`, `purge`, dan `admin/cleanup`
+berikutnya tetap pergi ke control plane yang memang memiliki port itu: 401 bila tokennya berbeda,
+penghapusan sandbox stack lain bila tokennya kebetulan sama. Pemeriksaan identitas itu karena itu
+bukan kehati-hatian tambahan melainkan syarat agar sisa skrip boleh berjalan.
+
+**Yang dibeli, dan yang tidak.** Yang dibeli: satu run tidak bisa menyentuh stack yang tidak
+disebutnya, dan kegagalan precondition tidak lagi menyamar sebagai kegagalan pemeriksaan.
+Yang **tidak** dibeli: skrip ini tetap tidak tahu apa yang ada di host, jadi dua run paralel dengan
+`STACK` berbeda tetap aman hanya karena port dan nama yang berbeda — bukan karena skripnya
+mengoordinasikan apa pun.
+
 ## 4. Konsekuensi
 
 - **Bukan sandbox untuk kode tak tepercaya.** Prompt injection dari halaman yang dibaca browser tetap
@@ -203,9 +284,10 @@ setelah control plane restart, karena itu ia diambil dari
 - **`navigate` membuktikan halamannya termuat, bukan hanya perintahnya terkirim.** Control plane
   menyambung ke websocket target CDP yang baru, memanggil `Page.enable`, membaca
   `document.readyState`/`location.href`, dan menunggu event load sampai
-  `VCOMPUTER_NAVIGATE_TIMEOUT` (default `15s`). Halaman yang berakhir di `chrome-error://` atau tidak
-  selesai dimuat dijawab `502 {"error":"navigation failed",...}`, bukan `200`. Tanpa itu, "navigate
-  sukses" berarti "perintahnya terkirim", dan halaman error lolos sebagai bukti.
+  `VCOMPUTER_NAVIGATE_TIMEOUT` (default `15s`). Halaman yang berakhir di `chrome-error://`, tidak
+  selesai dimuat, **atau menjawab 4xx/5xx pada dokumen utamanya** dijawab
+  `502 {"error":"navigation failed",...,"http_status":<status>}`, bukan `200`. Tanpa itu, "navigate
+  sukses" berarti "perintahnya terkirim", dan halaman error lolos sebagai bukti (§3.10).
 - **Sisa sandbox bisa dibuang dengan sengaja, dan volumenya ikut kalau diminta.**
   `DELETE /v1/sessions/<bot>` tetap berarti "hentikan container, simpan volume"; `?purge=true`
   menambahkan `docker rm -f` container dan `docker volume rm` volume rumahnya, jadi `Ensure`
@@ -214,6 +296,12 @@ setelah control plane restart, karena itu ia diambil dari
   jalan dan — bila `volumes=true` — volume berlabel sama, dengan jawaban
   `{"removed_containers":N,"removed_volumes":M}`. Label itu dipasang saat volume dibuat justru supaya
   pembersihan ini bisa menargetkan dirinya sendiri tanpa menyentuh container stack lain.
+- **Teardown yang bersih adalah pekerjaan control plane, bukan pekerjaan operator.** Sandbox tidak
+  ada di file compose, jadi `docker compose down` tidak bisa membuangnya; sekarang control plane
+  yang melakukannya saat berhenti, karena ia satu-satunya pihak yang tahu sandbox mana miliknya
+  (§3.9). Untuk control plane yang mati paksa — SIGKILL, OOM — `scripts/cleanup.sh --running
+  --volumes` tetap ada, dan `scripts/e2e.sh` dengan `TEARDOWN=1` membuktikan hasilnya: nol container,
+  nol volume, nol jaringan bernama `${STACK}-*`.
 - **Tidak ada perubahan pada jalur produksi.** Paket `internal/modules/vcomputer` dan control plane
   belum didaftarkan di `container`/`agent-worker` saat keputusan ini diambil, jadi `api` dan worker
   berperilaku persis seperti sebelumnya. Revisi 2026-10-16 mengubah bagian ini: activity-nya
@@ -227,12 +315,12 @@ setelah control plane restart, karena itu ia diambil dari
 - `apps/virtual-computer/README.md` — diagram arsitektur, daftar permukaan API + aturan token, semantik `navigate` dan `cdp_url`, rahasia sandbox, tabel environment, cara menjalankan (uji modul dan `scripts/e2e.sh`), pembersihan sisa (purge + `cleanup.sh`), trade-off `docker.sock`, dan daftar hal yang masih di-stub.
 - `apps/virtual-computer/sandbox/{Dockerfile,entrypoint.sh}` — image: Xvfb → fluxbox → x11vnc → websockify/noVNC → Chromium, plus `vcomputer-gate` (dibangun di satu stage `Dockerfile` dan disalin ke image) sebagai satu-satunya listener di alamat jaringan container.
 - `apps/virtual-computer/sandbox/gate/` — `vcomputer-gate`: modul Go sendiri (hanya stdlib, tanpa `go.sum`), karena ia berjalan di domain kepercayaan yang berbeda dari control plane. Menyajikan `/healthz` terbuka dan memproksikan `/cdp/*` + `/novnc/*` ke loopback setelah memeriksa `X-Sandbox-Secret`.
-- `apps/virtual-computer/control/` — control plane (modul Go terpisah, hanya stdlib) plus `Dockerfile`-nya (`docker:27-cli`, berjalan sebagai root dengan socket host ter-mount): `Runtime` dengan `InMemoryRuntime` (tanpa Docker, dipakai uji) dan `DockerRuntime` (nyata, lewat CLI docker), siklus hidup sesi termasuk `purge`, klien gate (rahasia per sandbox, proxy `/cdp/` dan `/novnc/`), verifikasi load di `navigate`, dan `admin/cleanup`.
+- `apps/virtual-computer/control/` — control plane (modul Go terpisah, hanya stdlib) plus `Dockerfile`-nya (`docker:27-cli`, berjalan sebagai root dengan socket host ter-mount): `Runtime` dengan `InMemoryRuntime` (tanpa Docker, dipakai uji) dan `DockerRuntime` (nyata, lewat CLI docker), siklus hidup sesi termasuk `purge`, klien gate (rahasia per sandbox, proxy `/cdp/` dan `/novnc/`), verifikasi load di `navigate` (termasuk status HTTP dokumennya), `admin/cleanup`, dan `Reap` yang dijalankan saat proses berhenti (§3.9).
 - `apps/virtual-computer/docker-compose.poc.yml` — service `control` (dua jaringan, port hanya di loopback) dan `fixture` (`busybox httpd` di jaringan internal), plus service `vcomputer-sandbox` sebagai target build di profil `build`. Nama-namanya diparameterkan (`VCOMPUTER_STACK` dan kawan-kawan) dengan default yang menjaga nama aslinya, supaya dua stack bisa hidup berdampingan di satu host. Sandbox per bot tidak ada di file ini: runtime yang membuatnya, dengan volume per bot.
 - `apps/virtual-computer/fixture/index.html` — halaman uji yang bisa dibuka browser sandbox tanpa internet.
-- `apps/virtual-computer/scripts/{e2e.sh,cleanup.sh}` — checklist end-to-end (build, naikkan stack, periksa, tulis bukti, cetak PASS/FAIL) dan pembersih CLI container/volume sisa.
+- `apps/virtual-computer/scripts/{e2e.sh,cleanup.sh}` — checklist end-to-end (build, naikkan stack, periksa, tulis bukti, cetak PASS/FAIL) dan pembersih CLI container/volume sisa. `e2e.sh` menuntut `STACK` dan `VCOMPUTER_CONTROL_PORT`, berhenti saat precondition-nya gagal, membuktikan port yang disapanya milik stacknya, dan dengan `TEARDOWN=1` membuktikan tidak ada sisa `${STACK}-*` (§3.11); `cleanup.sh` menerima `--running` untuk ikut membuang sandbox yang sedang jalan (§3.9).
 - `apps/virtual-computer/demo/index.html` — halaman statis yang menyematkan noVNC asli lewat proxy control plane; tanpa mock desktop.
-- `apps/backend/internal/modules/vcomputer/{domain,service,temporal,workflow}` — port `ComputerUseClient` (termasuk `Navigate`), klien HTTP dengan bearer token, activity-nya, dan `SmokeWorkflow`. **Terdaftar di agent worker** sejak Revisi 2026-10-16 (`internal/container/vcomputer.go`, `cmd/vcomputer-smoke`).
+- `apps/backend/internal/modules/vcomputer/{domain,service,temporal,workflow}` — port `ComputerUseClient` (termasuk `Navigate`), klien HTTP dengan bearer token, activity-nya, dan `SmokeWorkflow`. **Terdaftar di agent worker** sejak Revisi 2026-10-16 (`internal/container/vcomputer.go`, `cmd/vcomputer-smoke`). Sejak Revisi QA PR #234, `502 {"error":"navigation failed"}` dipetakan ke sentinel `ErrNavigationFailed` dan dijadikan **non-retryable** di Temporal; hanya kegagalan transport yang tetap bisa diulang.
 - `go.work` — memuat modul control dan modul gate supaya `go test` di dalamnya jalan dari checkout; modul produk tidak berubah.
 
 ## Revisi 2026-10-16 setelah QA PR #178
@@ -355,6 +443,40 @@ PoC-nya sekarang punya jalur dari worker ke sandbox. Yang berubah, dan batasnya:
 
 Batas §1 dan §4 tentang jalur produksi karena itu berlaku dengan satu pengecualian: yang
 terdaftar adalah activity dan satu workflow smoke, bukan loop tugas agennya.
+
+## Revisi 2026-10-16 setelah QA PR #234
+
+QA menolak PR #234 karena empat hal: teardown yang didokumentasikan tidak membersihkan sandbox,
+`scripts/e2e.sh` bisa mengarah ke stack lain, halaman error lolos sebagai navigasi yang berhasil,
+dan kegagalan navigasi diulang tanpa guna oleh Temporal. Keputusan di atas tetap berlaku kecuali di
+bagian yang disebut di sini.
+
+- **Teardown: control plane menghapus sandboxnya sendiri** (§3.9). `Runtime` mendapat `Reap`, yang
+  dijalankan setelah `server.Shutdown` (`-shutdown-grace` 5 detik, `-reap-grace` 60 detik) dan
+  membuang setiap container berlabel `vcomputer.bot` berawalan nama stacknya — yang sedang jalan
+  termasuk — beserta volumenya; `vcomputer-control` diberi `stop_grace_period: 90s` supaya docker
+  tidak SIGKILL di tengahnya. `Cleanup` tetap tidak pernah menyentuh container yang jalan, dan
+  `scripts/cleanup.sh` mendapat `--running` (atau `RUNNING=1`) untuk jalur CLI-nya.
+  `scripts/e2e.sh` dengan `TEARDOWN=1` membuktikan hasilnya: nol container, nol volume, nol jaringan
+  bernama `${STACK}-*`.
+- **`scripts/e2e.sh` menuntut `STACK` dan `VCOMPUTER_CONTROL_PORT`, dan berhenti saat precondition-nya
+  gagal** (§3.11). Keduanya `${VAR:?…}`, tanpa default `vcomputer`/`18090`; build, `compose up`, dan
+  `/health` yang gagal memanggil `finish()` alih-alih melanjutkan ke pemeriksaan berikutnya; dan
+  sebelum permintaan yang mengubah apa pun, skrip membuktikan `127.0.0.1:$PORT` dipegang
+  `${STACK}-control` dengan label project `$STACK`. Bila pembuktian itu tidak terjadi, teardown
+  melewati `purge` dan `admin/cleanup` dan hanya menjalankan `cleanup.sh --running --volumes`.
+- **`navigate` menolak halaman 4xx/5xx** (§3.10). Status HTTP dokumen utamanya dibaca dari
+  `performance.getEntriesByType("navigation")[0].responseStatus` di polling yang sama, `status >= 400`
+  dijawab `502 {"error":"navigation failed",...,"http_status":<status>}`, dan `200` membawa
+  `http_status` juga. `scripts/e2e.sh` menambah pemeriksaan `navigate-404-*` terhadap fixture
+  (`/tidak-ada-404`), dan `navigate-fixture-http-status` untuk sisi `200`-nya.
+- **Kegagalan navigasi tidak diulang lagi.** `502 {"error":"navigation failed"}` dipetakan klien
+  backend ke sentinel `domain.ErrNavigationFailed` (bukan `ErrUnavailable`), dan activity `Navigate`
+  membungkusnya dengan `temporal.NewNonRetryableApplicationError` bertipe `NavigationFailed`: URL yang
+  sama akan menjawab hal yang sama, jadi percobaan kedua hanya membuang waktu dan kuota. Yang tetap
+  bisa diulang: kegagalan transport dan control plane yang tidak menjawab (`ErrUnavailable`).
+  `cmd/vcomputer-smoke` sekarang memakai `http://vcomputer-fixture:8080/` sebagai contoh URL-nya,
+  karena sandbox memang tidak punya egress.
 
 ## Keputusan yang tetap terbuka
 

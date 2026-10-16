@@ -117,27 +117,41 @@ type ExecResult struct {
 // see that.
 type Navigation struct {
 	// FinalURL is where the browser landed, which differs from the URL the caller
-	// asked for after a redirect. A navigation that ends on chrome-error:// never
-	// reaches the caller as a Navigation: it is a NavigationError.
+	// asked for after a redirect. A navigation that ends on chrome-error://, or on a
+	// document the server answered 4xx/5xx for, never reaches the caller as a
+	// Navigation: it is a NavigationError.
 	FinalURL string `json:"final_url"`
 	// Title is the loaded document's title, empty when the page has none.
 	Title string `json:"title"`
+	// HTTPStatus is the status of the response the document was loaded from — after
+	// any redirect, which is the response a caller means by "the page". It is 0 when
+	// the browser reported none: an about: or data: document has no response, and the
+	// memory runtime has no browser at all. A caller that branches on it has to read 0
+	// as "not known" rather than as a status, which is why the successful ones are the
+	// only statuses that ever appear here.
+	HTTPStatus int `json:"http_status"`
 }
 
 // NavigationError is a navigation that reached the browser but not the page: the
 // browser refused to open the URL, the document never finished loading inside the
-// timeout, or it finished on chrome-error:// — which is what Chromium shows when
-// there was nothing at the address, and what a sandbox with no egress produces for
-// every address outside its own network.
+// timeout, it finished on chrome-error:// — which is what Chromium shows when there
+// was nothing at the address, and what a sandbox with no egress produces for every
+// address outside its own network — or it finished on a response the server answered
+// 4xx/5xx for, which is a page the caller must not be told loaded.
 //
-// It carries both URLs and a reason so the caller can tell "the page is broken"
-// from "the sandbox could not reach it", and the control plane answers 502 with
-// them rather than the 200 a plain error would produce.
+// It carries both URLs, the status when there was one, and a reason, so the caller
+// can tell "the page is broken" from "the sandbox could not reach it", and the
+// control plane answers 502 with them rather than the 200 a plain error would
+// produce.
 type NavigationError struct {
 	// URL is what the caller asked for.
 	URL string
 	// FinalURL is where the browser stopped, empty when it never reported one.
 	FinalURL string
+	// HTTPStatus is the status the document's response carried, 0 when there was
+	// none: a navigation that ended on chrome-error:// never got a response, and one
+	// that never finished loading may not have reported one yet.
+	HTTPStatus int
 	// Reason is the short human-readable cause.
 	Reason string
 }
@@ -200,6 +214,17 @@ type Runtime interface {
 	// their home volumes, and it never touches a running container: a running
 	// sandbox belongs to a session somebody is using.
 	Cleanup(ctx context.Context, volumes bool) (CleanupResult, error)
+	// Reap removes everything this runtime owns — running sandboxes included, and
+	// always their volumes — and it is what the control plane calls on its way out.
+	//
+	// It is the opposite of Cleanup on purpose, and it is not reachable over HTTP:
+	// a sandbox is created by the control plane rather than by the compose file, so
+	// nothing else can remove it, and a stack that is going down would otherwise
+	// leave running containers holding the network and the volumes that were
+	// supposed to go with it. A caller must have decided that the sessions are
+	// over: this is the one operation in the interface that destroys state a person
+	// may still want.
+	Reap(ctx context.Context) (CleanupResult, error)
 	// Screenshot is the current desktop as PNG bytes.
 	Screenshot(ctx context.Context, botID string) ([]byte, error)
 	// Click presses a point on the desktop.
@@ -210,7 +235,10 @@ type Runtime interface {
 	// ended up showing. Only http, https, data, and about are accepted, and the
 	// runtime refuses the rest rather than asking the browser to interpret them.
 	// A page that does not load is a *NavigationError, not a success: the caller
-	// asked for a page, and answering "navigated" would be a lie.
+	// asked for a page, and answering "navigated" would be a lie. That covers the
+	// browser's own error page, a document that never finished loading inside the
+	// timeout, and a document the server answered 4xx/5xx for — the last one is a
+	// response, but not the page that was asked for.
 	Navigate(ctx context.Context, botID string, targetURL string) (Navigation, error)
 	// GateTarget is where the session's sandbox gate listens, and the secret it
 	// wants. The control plane proxies /v1/sessions/<bot>/novnc/ and

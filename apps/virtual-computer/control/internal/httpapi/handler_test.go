@@ -313,7 +313,7 @@ func TestNavigateRefusesWhatABrowserShouldNotOpen(t *testing.T) {
 // happened.
 func TestNavigateReportsWhereTheBrowserEndedUp(t *testing.T) {
 	runtime := newGateRuntime("http://127.0.0.1:1")
-	runtime.navigation = &sandbox.Navigation{FinalURL: "https://example.com/riset/", Title: "Riset microVM"}
+	runtime.navigation = &sandbox.Navigation{FinalURL: "https://example.com/riset/", Title: "Riset microVM", HTTPStatus: http.StatusOK}
 	if _, err := runtime.Ensure(t.Context(), "bot-nav"); err != nil {
 		t.Fatalf("ensure: %v", err)
 	}
@@ -325,9 +325,10 @@ func TestNavigateReportsWhereTheBrowserEndedUp(t *testing.T) {
 		t.Fatalf("navigate: status = %d, body = %s", status, body)
 	}
 	var answer struct {
-		Navigated bool   `json:"navigated"`
-		FinalURL  string `json:"final_url"`
-		Title     string `json:"title"`
+		Navigated  bool   `json:"navigated"`
+		FinalURL   string `json:"final_url"`
+		Title      string `json:"title"`
+		HTTPStatus int    `json:"http_status"`
 	}
 	if err := json.Unmarshal(body, &answer); err != nil {
 		t.Fatalf("decode the navigate answer: %v (body = %s)", err, body)
@@ -340,6 +341,11 @@ func TestNavigateReportsWhereTheBrowserEndedUp(t *testing.T) {
 	}
 	if answer.Title != "Riset microVM" {
 		t.Fatalf("title = %q, want the document's title", answer.Title)
+	}
+	// The status of the response the document came from is part of the answer: a caller
+	// that asked the fixture for a page can see that the fixture served it.
+	if answer.HTTPStatus != http.StatusOK {
+		t.Fatalf("http_status = %d, want the response the page was loaded from", answer.HTTPStatus)
 	}
 	if len(runtime.navigations) != 1 || runtime.navigations[0] != "https://example.com/riset" {
 		t.Fatalf("navigations = %v, want the url the caller asked for", runtime.navigations)
@@ -354,9 +360,10 @@ func TestNavigateReportsWhereTheBrowserEndedUp(t *testing.T) {
 func TestNavigateReportsAFailedNavigationAs502(t *testing.T) {
 	runtime := newGateRuntime("http://127.0.0.1:1")
 	runtime.navigateErr = &sandbox.NavigationError{
-		URL:      "https://example.com/",
-		FinalURL: "chrome-error://chromewebdata/",
-		Reason:   "the page ended on the browser's error page",
+		URL:        "https://example.com/",
+		FinalURL:   "chrome-error://chromewebdata/",
+		HTTPStatus: http.StatusNotFound,
+		Reason:     "the page answered HTTP 404",
 	}
 	server := httptest.NewServer(New(runtime, log.New(io.Discard, "", 0), WithToken(testToken)))
 	t.Cleanup(server.Close)
@@ -366,9 +373,10 @@ func TestNavigateReportsAFailedNavigationAs502(t *testing.T) {
 		t.Fatalf("navigate: status = %d, body = %s, want 502", status, body)
 	}
 	var failure struct {
-		Error    string `json:"error"`
-		URL      string `json:"url"`
-		FinalURL string `json:"final_url"`
+		Error      string `json:"error"`
+		URL        string `json:"url"`
+		FinalURL   string `json:"final_url"`
+		HTTPStatus int    `json:"http_status"`
 	}
 	if err := json.Unmarshal(body, &failure); err != nil {
 		t.Fatalf("decode the failure: %v (body = %s)", err, body)
@@ -378,6 +386,11 @@ func TestNavigateReportsAFailedNavigationAs502(t *testing.T) {
 	}
 	if failure.URL != "https://example.com/" || failure.FinalURL != "chrome-error://chromewebdata/" {
 		t.Fatalf("failure = %+v, want both URLs", failure)
+	}
+	// And the status the server answered with, which is what tells a missing page from a
+	// broken one: 502 says the navigation failed, the status says why.
+	if failure.HTTPStatus != http.StatusNotFound {
+		t.Fatalf("http_status = %d, want the status the page answered with", failure.HTTPStatus)
 	}
 }
 

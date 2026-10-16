@@ -134,6 +134,13 @@ services:
     image: ${VCOMPUTER_CONTROL_IMAGE:-vcomputer-control:poc}
     container_name: ${VCOMPUTER_CONTROL_CONTAINER:-vcomputer-control}
     restart: unless-stopped
+    # How long docker waits between SIGTERM and SIGKILL. It has to outlast the control
+    # plane's own reap: on the way out the process removes the sandboxes it created —
+    # running ones included, with their volumes — because they are not part of this
+    # stack and `down` cannot see them (docs/adr/0003-virtual-computer.md §3.9). The
+    # default ten seconds is shorter than that work, and a SIGKILL in the middle of it
+    # is exactly the leftover this file is trying to avoid.
+    stop_grace_period: 90s
     environment:
       VCOMPUTER_CONTROL_ADDR: ":8090"
       # No default, on purpose: an empty token is a control plane that would start a
