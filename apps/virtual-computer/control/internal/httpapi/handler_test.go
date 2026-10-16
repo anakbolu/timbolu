@@ -408,7 +408,7 @@ func TestNoVNCProxyForwardsTheDesktopAndTradesTheTokenForACookie(t *testing.T) {
 	t.Cleanup(control.Close)
 
 	// The page load carries the token in the URL and no Authorization header.
-	page := control.URL + "/v1/sessions/bot-a/novnc/vnc.html?autoconnect=1&resize=scale&token=" + testToken
+	page := control.URL + "/v1/sessions/bot-a/novnc/vnc.html?autoconnect=true&resize=scale&token=" + testToken
 	response, err := http.Get(page)
 	if err != nil {
 		t.Fatalf("get the novnc page: %v", err)

@@ -119,8 +119,10 @@
     var socketPath = "v1/sessions/" + encodeURIComponent(bot) +
       "/novnc/websockify?token=" + encodeURIComponent(token);
 
+    // autoconnect must be the literal "true": noVNC 1.3 (Debian bookworm's `novnc`)
+    // only autoconnects for `autoconnect=true`, otherwise it stops at the Connect screen.
     return "http://127.0.0.1:" + encodeURIComponent(port) + prefix +
-      "vnc.html?autoconnect=1&resize=scale" +
+      "vnc.html?autoconnect=true&resize=scale" +
       "&path=" + encodeURIComponent(socketPath) +
       "&token=" + encodeURIComponent(token);
   }

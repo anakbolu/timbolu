@@ -189,8 +189,12 @@ const (
 // proxies it, so a browser only ever reaches the control plane and the sandbox
 // network stays internal. `path` is relative on purpose — noVNC resolves the
 // websocket URL against the page it was loaded from.
+//
+// autoconnect must be the literal "true": the noVNC 1.3 shipped by Debian
+// bookworm's `novnc` package only autoconnects for `autoconnect=true`, so any
+// other spelling (`1`, `yes`, empty) leaves the browser on the Connect screen.
 func NoVNCPath(botID string) string {
-	return "/v1/sessions/" + botID + "/novnc/vnc.html?autoconnect=1&resize=scale&path=v1/sessions/" + botID + "/novnc/websockify"
+	return "/v1/sessions/" + botID + "/novnc/vnc.html?autoconnect=true&resize=scale&path=v1/sessions/" + botID + "/novnc/websockify"
 }
 
 // sandboxURL is an address on the sandbox network. Both the CDP endpoint and the

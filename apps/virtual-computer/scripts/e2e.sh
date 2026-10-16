@@ -425,7 +425,7 @@ log "the session is up: open this in a browser"
 # and the log is the evidence file, so it stays in the log.
 novnc_path=$(json_str "$back" novnc_url)
 if [ -z "$novnc_path" ]; then
-    novnc_path="/v1/sessions/${BOT}/novnc/vnc.html?autoconnect=1&resize=scale&path=v1/sessions/${BOT}/novnc/websockify"
+    novnc_path="/v1/sessions/${BOT}/novnc/vnc.html?autoconnect=true&resize=scale&path=v1/sessions/${BOT}/novnc/websockify"
 fi
 case "$novnc_path" in
     *\?*) sep='&' ;;

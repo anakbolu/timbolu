@@ -59,7 +59,7 @@ func TestSessionNamesFollowTheContainerContract(t *testing.T) {
 	// unreachable from outside (docs/adr/0003-virtual-computer.md §3.6). The `path`
 	// parameter is relative on purpose, so noVNC resolves the websocket against the
 	// page it was loaded from rather than against the sandbox.
-	wantNoVNC := "/v1/sessions/bot-a/novnc/vnc.html?autoconnect=1&resize=scale&path=v1/sessions/bot-a/novnc/websockify"
+	wantNoVNC := "/v1/sessions/bot-a/novnc/vnc.html?autoconnect=true&resize=scale&path=v1/sessions/bot-a/novnc/websockify"
 	if session.NoVNCURL != wantNoVNC {
 		t.Fatalf("novnc url = %q, want %q", session.NoVNCURL, wantNoVNC)
 	}

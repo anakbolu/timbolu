@@ -176,7 +176,7 @@ belakang proxy yang memfilter request — persis seperti riset §4.2.
 `apps/virtual-computer/demo/index.html` adalah halaman statis: buka langsung dari berkas,
 tanpa build dan tanpa server. Isi `token`, `bot_id`, dan port control plane (default
 `8090`), lalu tekan **Buka desktop**. Halaman menyetel `iframe.src` ke
-`http://127.0.0.1:<port>/v1/sessions/<bot>/novnc/vnc.html?autoconnect=1&resize=scale&path=...`,
+`http://127.0.0.1:<port>/v1/sessions/<bot>/novnc/vnc.html?autoconnect=true&resize=scale&path=...`,
 jadi yang muncul adalah noVNC asli lewat proxy control plane — desktop yang sesungguhnya,
 bukan mock CSS.
 
