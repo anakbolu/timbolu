@@ -836,8 +836,12 @@ The virtual computer (PoC, `docs/adr/0003-virtual-computer.md`) is
 `VCOMPUTER_CONTROL_URL` (the control plane's **internal** address; empty means no
 virtual computer, and the activities then answer `ErrNotConfigured`),
 `VCOMPUTER_CONTROL_TOKEN` (the shared secret every `/v1` route requires, never
-logged), and `VCOMPUTER_CONTROL_TIMEOUT` (bounds one call; a value that will not
-parse fails the startup). The agent worker registers the module's activities and
+logged; an address with no token is a startup warning, because that deployment is
+refused on every call), and `VCOMPUTER_CONTROL_TIMEOUT` (bounds one call; a value
+that will not parse fails the startup). A missing control plane and a refused token
+are answered as non-retryable Temporal errors (`VComputerNotConfigured`), so a
+configuration mistake fails a run on the first attempt; an unreachable control plane
+stays retryable. The agent worker registers the module's activities and
 `SmokeWorkflow` on its own queue; `cmd/vcomputer-smoke` runs one of them end to end
 from a checkout. The agent task loop and its tool catalog do not reach the sandbox
 yet.

@@ -1,0 +1,15 @@
+$ curl -H 'Authorization: Bearer wrong-token' /v1/sessions/bot1
+{"error":"the token is not valid"}
+ HTTP 401
+$ curl (tanpa header)
+{"error":"a bearer token is required"}
+ HTTP 401
+
+$ go test ./internal/modules/vcomputer/... (retry/permanent)
+--- PASS: TestUnreachableControlPlaneIsRetryable (0.00s)
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/service	0.013s
+--- PASS: TestConfigurationMistakesAreNotRetryable (0.00s)
+--- PASS: TestTransientFailuresStayRetryable (0.00s)
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/temporal	0.006s
+--- PASS: TestSmokeWorkflowFailsAConfigurationMistakeOnTheFirstAttempt (0.00s)
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/workflow	0.048s
