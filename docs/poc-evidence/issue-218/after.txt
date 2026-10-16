@@ -1,0 +1,57 @@
+$ curl -H 'Authorization: Bearer wrong-token' /v1/sessions/bot1
+{"error":"the token is not valid"}
+ HTTP 401
+$ curl (tanpa header)
+{"error":"a bearer token is required"}
+ HTTP 401
+
+$ go test ./internal/modules/vcomputer/... (retry/permanent)
+--- PASS: TestUnreachableControlPlaneIsRetryable (0.00s)
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/service	0.013s
+--- PASS: TestConfigurationMistakesAreNotRetryable (0.00s)
+--- PASS: TestTransientFailuresStayRetryable (0.00s)
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/temporal	0.006s
+--- PASS: TestSmokeWorkflowFailsAConfigurationMistakeOnTheFirstAttempt (0.00s)
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/workflow	0.048s
+
+$ go build -o /tmp/vcomputer-control ./apps/virtual-computer/control   # kode AFTER
+$ VCOMPUTER_CONTROL_TOKEN=right-token /tmp/vcomputer-control -addr 127.0.0.1:18091 -runtime memory
+
+$ curl -H 'Authorization: Bearer wrong-token' -X POST 127.0.0.1:18091/v1/sessions -d '{"bot_id":"bot-a"}'
+{"error":"the token is not valid"}
+ HTTP 401
+
+# Control plane yang MASIH berjalan dengan kode BEFORE (container vcomputer-control, 18090):
+$ curl -H 'Authorization: Bearer wrong-token' -X POST 127.0.0.1:18090/v1/sessions -d '{"bot_id":"bot-a"}'
+{"error":"a bearer token is required"}
+ HTTP 401
+
+$ VCOMPUTER_CONTROL_URL=http://127.0.0.1:18091 VCOMPUTER_CONTROL_TOKEN=wrong-token \
+    TEMPORAL_HOST_PORT=127.0.0.1:47233 go run ./cmd/vcomputer-smoke -bot bot-218 \
+    -url http://vcomputer-fixture:8080/ -queue vcomputer-smoke-218
+INFO  container/vcomputer.go:58 virtual computer is configured {"control_url": "http://127.0.0.1:18091", "timeout": "30s"}
+DEBUG temporal/logger.go:44 ExecuteActivity {"ActivityType": "EnsureSession", "Attempt": 1}
+ERROR temporal/logger.go:88 Activity error. {"ActivityType": "EnsureSession", "Attempt": 1,
+      "Error": "vcomputer: the control plane is not configured: the token is not valid (type: VComputerNotConfigured, retryable: false): vcomputer: the control plane is not configured: the token is not valid"}
+exit 1
+
+$ temporal workflow show -w vcomputer-smoke-1792134351   # ringkas: event yang menyebut percobaan
+ACTIVITY_TASK_SCHEDULED EnsureSession
+ACTIVITY_TASK_STARTED   attempt=1
+ACTIVITY_TASK_FAILED    type=VComputerNotConfigured message=vcomputer: the control plane is not configured: the token is not valid
+WORKFLOW_EXECUTION_FAILED
+# satu percobaan saja; BEFORE (issue #218) mencapai attempt 3.
+
+$ VCOMPUTER_CONTROL_URL=http://127.0.0.1:18091 VCOMPUTER_CONTROL_TOKEN= ... (URL terisi, token kosong)
+WARN  container/vcomputer.go:52 virtual computer is configured without a token: VCOMPUTER_CONTROL_TOKEN is empty, so every call will be refused with a 401 {"control_url": "http://127.0.0.1:18091", "timeout": "30s"}
+ERROR temporal/logger.go:88 Activity error. {"ActivityType": "EnsureSession", "Attempt": 1,
+      "Error": "vcomputer: the control plane is not configured: a bearer token is required (type: VComputerNotConfigured, retryable: false): ..."}
+
+$ VCOMPUTER_CONTROL_TOKEN=right-token ... (token cocok)
+exit 0
+{"session_state":"running","cdp_url":"http://vcomputer-bot-218:9223","screenshot_before_bytes":1497,
+ "screenshot_after_bytes":1497,"exec_stdout":"stub runtime: not executed: echo vcomputer-smoke && whoami","exec_stub":true}
+
+# Batas: alamat kosong (ErrNotConfigured tanpa klien) dibuktikan unit test
+# TestAnUnconfiguredDeploymentIsNotRetried; cmd/vcomputer-smoke menolak start bila URL kosong,
+# jadi jalur itu tidak dijalankan di sini.

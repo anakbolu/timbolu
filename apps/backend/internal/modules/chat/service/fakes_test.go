@@ -641,10 +641,13 @@ func (d *memoryDirectory) Active(ref chatdomain.AgentRef) bool {
 // memoryStorage is an in-process object store.
 type memoryStorage struct {
 	objects map[string][]byte
+	// failDeleteKeys refuses the delete of a key, which is how a test drives the
+	// "the object could not be removed, so the row stays" path.
+	failDeleteKeys map[string]bool
 }
 
 func newMemoryStorage() *memoryStorage {
-	return &memoryStorage{objects: map[string][]byte{}}
+	return &memoryStorage{objects: map[string][]byte{}, failDeleteKeys: map[string]bool{}}
 }
 
 func (s *memoryStorage) Put(_ context.Context, key, contentType string, content []byte) (chatdomain.StoredObject, error) {
@@ -666,6 +669,9 @@ func (s *memoryStorage) Get(_ context.Context, key string) ([]byte, error) {
 }
 
 func (s *memoryStorage) Delete(_ context.Context, key string) error {
+	if s.failDeleteKeys[key] {
+		return fmt.Errorf("storage: delete refused: %s", key)
+	}
 	delete(s.objects, key)
 	return nil
 }

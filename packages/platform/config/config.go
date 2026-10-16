@@ -130,7 +130,10 @@ type VComputerConfig struct {
 	ControlURL string `mapstructure:"ControlURL" validate:"optional"`
 	// Token is the control plane's shared secret, sent as a bearer on every request. It must
 	// match the VCOMPUTER_CONTROL_TOKEN the control plane was started with; a mismatch comes
-	// back as a 401 and is reported as a configuration mistake rather than retried.
+	// back as a 401 and the worker reports it as a configuration mistake — a non-retryable
+	// activity error — rather than spending its attempts on the same refused header. An address
+	// with an empty token is a startup warning rather than a quiet success: that deployment
+	// looks complete and is refused on every call.
 	Token string `mapstructure:"Token" validate:"optional"`
 	// Timeout bounds one call to the control plane. Zero takes the client's own default, which
 	// is generous on purpose: a screenshot of a cold sandbox includes the container starting.

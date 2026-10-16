@@ -137,6 +137,39 @@ export function ChatView({
     return agents.find((agent) => agent.id === participant.agent_id) ?? null;
   }, [chat.active, agents]);
 
+  /**
+   * waiting is the one line that stands for an answer being prepared.
+   *
+   * The router may name the Bolu before its message exists, and that message
+   * carries no text until the first block lands, so both are the same wait and
+   * are drawn once. A message that already has content is its own bubble, and
+   * the row is over.
+   */
+  const waiting = useMemo(() => {
+    const streaming = chat.messages.filter(isBusy);
+    const last = streaming[streaming.length - 1];
+    if (last && (last.blocks.length > 0 || last.attachments.length > 0)) {
+      return null;
+    }
+    if (!last && !chat.responder) {
+      return null;
+    }
+    // A responder the router named without an id is still a Bolu to wait on.
+    const agentId = last?.agent_id || chat.responder?.agentId || null;
+    const agent = agents.find((candidate) => candidate.id === agentId) ?? null;
+    const participant = chat.active?.participants.find((item) => item.agent_id === agentId);
+    return {
+      name: agent?.name ?? participant?.name ?? chat.responder?.name ?? "Bolu",
+      // A Bolu that has since been deleted is still drawn as the crew member its
+      // name maps to, the same fallback a message from it uses.
+      face: agent ? crewFor(agent) : allBot("Oren"),
+      // The sentence a Bolu wrote for its own state is the most specific status
+      // the stream carries, and it belongs to one Bolu: another thread's line
+      // must not be read as this one's.
+      text: chat.activity?.agentId === agentId ? chat.activity.text : "Sedang memikirkan…",
+    };
+  }, [agents, chat.active, chat.activity, chat.messages, chat.responder]);
+
   // The circle beside a user message carries the account's initial: the store has
   // no display name, and the email is what a person recognises as their own.
   const userInitial = user?.email ? user.email.charAt(0).toUpperCase() : "?";
@@ -319,14 +352,18 @@ export function ChatView({
                 />
               ))}
 
-              {chat.responder ? (
-                <div className="flex items-center gap-2 text-sm text-bolu-muted">
-                  <span className="dots inline-flex gap-1">
-                    <Dot />
-                    <Dot delay="150ms" />
-                    <Dot delay="300ms" />
+              {waiting ? (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="flex items-center gap-2.5 text-sm text-bolu-muted"
+                >
+                  <Bolu member={waiting.face} expression="mikir" size={22} className="flex-none" />
+                  {/* The name is inside the pulsing text rather than a separate
+                      line: one row is the whole state, and it is read once. */}
+                  <span className="motion-safe:animate-soft-pulse">
+                    {waiting.name} · {waiting.text}
                   </span>
-                  {chat.responder.name} sedang menyiapkan jawaban
                 </div>
               ) : null}
 
@@ -580,11 +617,10 @@ function authorFace(
 
 /**
  * MessageRow renders one message, from the user or from a Bolu.
- *
- * A reply that is still arriving is marked in two places: the avatar pulses, so
- * the answer is visibly being written by that Bolu, and a "sedang menulis…" line
- * closes the bubble, so a long answer that has already filled the screen still
- * says it is not finished. The dots are what an answer with no text yet shows.
+ * A reply that is still arriving with nothing to show yet draws no bubble at
+ * all: the waiting row above the composer's end of the thread is the one line
+ * that says a Bolu is working, and a bubble would be a second one. The moment
+ * the first block lands the bubble is the answer, and it streams into place.
  */
 function MessageRow({
   message,
@@ -600,16 +636,15 @@ function MessageRow({
 }) {
   const fromAgent = Boolean(message.agent_id);
   const notice = describeResult(message);
-  const writing = isBusy(message);
-  // The server opens an empty message for an upload that named none, and that
-  // message is published before the file is stored, so its `message.new` carries
-  // nothing yet. There is no bubble to draw until the update that names the file
-  // arrives, and drawing one would be an empty box with padding in it.
+  // A message with nothing in it is not drawn: the server opens an empty message
+  // for an upload that named none and publishes it before the file is stored,
+  // and a reply that is still being prepared has no blocks yet either. The
+  // waiting row stands for both, and an empty box with padding stands for
+  // neither.
   const empty =
     message.blocks.length === 0 &&
     message.attachments.length === 0 &&
     notice === null &&
-    !writing &&
     !message.task_id;
   if (empty) {
     return null;
@@ -618,19 +653,13 @@ function MessageRow({
   // What the attachment list hangs from inside the bubble. It is the first thing
   // in it for a message that is only files, and an `mt-2` there is a gap above
   // nothing.
-  const stacked = message.blocks.length > 0 || notice !== null || writing;
+  const stacked = message.blocks.length > 0 || notice !== null;
 
   return (
     <article className={fromAgent ? "flex items-start gap-2.5" : "flex justify-end gap-2.5"}>
       {fromAgent && face ? (
-        <span className="relative mt-0.5 flex-none">
+        <span className="mt-0.5 flex-none">
           <Bolu member={face} expression="senang" size={36} />
-          {writing ? (
-            <span
-              aria-hidden
-              className="absolute inset-0 rounded-full ring-2 ring-bolu-accent/40 motion-safe:animate-pulse"
-            />
-          ) : null}
         </span>
       ) : null}
 
@@ -646,14 +675,6 @@ function MessageRow({
               : "rounded-[20px_20px_6px_20px] bg-bolu-ink px-4 py-2.5 text-[15px] text-white"
           }
         >
-          {writing && message.blocks.length === 0 ? (
-            <span className="inline-flex gap-1 text-bolu-muted">
-              <Dot />
-              <Dot delay="150ms" />
-              <Dot delay="300ms" />
-            </span>
-          ) : null}
-
           {message.blocks.map((block, index) => (
             <Block key={`${message.message_id}-${index}`} block={block} />
           ))}
@@ -683,17 +704,6 @@ function MessageRow({
               ))}
             </ul>
           ) : null}
-
-          {writing ? (
-            <p className="mt-1.5 flex items-center gap-2 text-[13px] text-bolu-muted">
-              <span className="dots inline-flex gap-1" aria-hidden>
-                <Dot />
-                <Dot delay="150ms" />
-                <Dot delay="300ms" />
-              </span>
-              <span className="motion-safe:animate-pulse">sedang menulis…</span>
-            </p>
-          ) : null}
         </div>
 
         {/* A message that opened a task says so, and the way in is the task itself: the work behind
@@ -718,16 +728,6 @@ function MessageRow({
         </span>
       ) : null}
     </article>
-  );
-}
-
-function Dot({ delay = "0ms" }: { delay?: string }) {
-  return (
-    <span
-      aria-hidden
-      className="inline-block size-1.5 animate-bounce rounded-full bg-current"
-      style={{ animationDelay: delay }}
-    />
   );
 }
 

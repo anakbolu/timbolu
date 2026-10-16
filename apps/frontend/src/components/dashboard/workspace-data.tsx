@@ -53,6 +53,7 @@ import {
 } from "@/lib/api";
 import { moveAgentTo } from "@/lib/dashboard-view";
 import { connect, type RealtimeConnection, type RealtimeStatus } from "@/lib/realtime";
+import { NO_WORKSPACE_MESSAGE } from "@/lib/workspace-messages";
 
 /** Hub is the integration hub's reads, kept together because a screen needs them together. */
 export type Hub = {
@@ -371,7 +372,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const decide = useCallback(
     async (draftId: string, decision: "approve" | "revise" | "cancel", note = "") => {
       const id = workspaceIdRef.current;
-      if (!id) return { ok: false, message: "Pilih workspace dulu." };
+      if (!id) return { ok: false, message: NO_WORKSPACE_MESSAGE };
       const result = await decideDraftRequest(id, draftId, decision, note);
       if (!result.ok) return { ok: false, message: result.message };
       await loadDrafts(id);
@@ -385,7 +386,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     async (instruction: string) => {
       const id = workspaceIdRef.current;
       const text = instruction.trim();
-      if (!id) return { ok: false, message: "Pilih workspace dulu." };
+      if (!id) return { ok: false, message: NO_WORKSPACE_MESSAGE };
       if (!text) return { ok: false, message: "Tulis dulu tugasnya." };
 
       const workers = agentsRef.current.filter((agent) => agent.status !== "resting");
@@ -432,7 +433,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const moveAgent = useCallback(
     async (agentId: string, teamId: string, index: number) => {
       const id = workspaceIdRef.current;
-      if (!id) return { ok: false, message: "Pilih workspace dulu." };
+      if (!id) return { ok: false, message: NO_WORKSPACE_MESSAGE };
 
       const previous = teams;
       const next = moveAgentTo(previous, agentId, teamId, index);

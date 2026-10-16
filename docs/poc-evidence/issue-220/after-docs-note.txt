@@ -1,0 +1,18 @@
+-from a checkout, and the run ends the sandbox it started rather than leaving a
+-container behind for an operator to delete (`-keep-session` asks for the opposite).
++from a checkout, and the run stops the sandbox it started rather than leaving it
++running for an operator to delete (`-keep-session` asks for the opposite). That stop is
++not a purge: the in-memory runtime forgets the session, so `GET /v1/sessions/<bot>` is
++404 afterwards, while the Docker runtime answers 200 with `state: "stopped"` and leaves
++the Exited container and its `vcomputer-<bot>-home` volume for an explicit teardown.
++`StopSession` bukan purge, dan kedua runtime menjawabnya berbeda. Di runtime `memory`,
++`Stop` melupakan record sesinya, jadi `GET /v1/sessions/<bot>` sesudahnya `404`. Di runtime
++`docker`, `Stop` hanya menjalankan `docker stop`: `GET` sesudahnya tetap `200` dengan
++`state:"stopped"`, dan container `vcomputer-<bot>` dalam keadaan Exited beserta volume
++`vcomputer-<bot>-home` tetap ada sampai dihapus eksplisit (`docker rm -f vcomputer-<bot>`,
++`docker volume rm vcomputer-<bot>-home`) — bukan `404`.
++  `Stop` melupakan record sesi, jadi `GET /v1/sessions/<bot>` sesudahnya `404`. Di runtime
++  `docker` yang nyata, `Stop` hanya `docker stop` dan menjawab `200` (`{"stopped":true}`;
++  `GET` sesudahnya `200` dengan `state:"stopped"`): container `vcomputer-<bot>` tertinggal
++  dalam keadaan Exited bersama volume `vcomputer-<bot>-home`, dan keduanya hanya hilang lewat
++  teardown eksplisit — bukan `404`.

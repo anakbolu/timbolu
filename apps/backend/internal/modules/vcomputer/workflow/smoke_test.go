@@ -36,6 +36,11 @@ type smokeHarness struct {
 	text    vcomputertemporal.TypeRequest
 	exec    vcomputertemporal.ExecRequest
 	execOut domain.ExecResult
+	// stopped is the bot of every StopSession the run scheduled, and stopErr is what it
+	// answers. The bot id is recorded rather than a count because the cleanup is the one
+	// call whose whole point is naming the sandbox to take down.
+	stopped []string
+	stopErr error
 }
 
 func newSmokeHarness(t *testing.T) *smokeHarness {
@@ -95,6 +100,13 @@ func newSmokeHarness(t *testing.T) *smokeHarness {
 			return h.execOut, nil
 		})
 
+	env.OnActivity(activities.StopSession, mock.Anything, mock.Anything).Return(
+		func(_ context.Context, request vcomputertemporal.SessionRequest) error {
+			h.order = append(h.order, "StopSession")
+			h.stopped = append(h.stopped, request.BotID)
+			return h.stopErr
+		})
+
 	return h
 }
 
@@ -110,8 +122,8 @@ func smokeInput() SmokeInput {
 
 // TestSmokeWorkflowDrivesEveryStep is what the run is for: every activity the module offers
 // reaches the sandbox, in the order a task would use them — the session first, then the page,
-// then a capture, the input, the second capture, and the command — and what they answered is
-// what the result reports.
+// then a capture, the input, the second capture, the command, and last the stop that takes the
+// sandbox back down — and what they answered is what the result reports.
 func TestSmokeWorkflowDrivesEveryStep(t *testing.T) {
 	h := newSmokeHarness(t)
 	h.session = domain.Session{State: domain.StateRunning, CDPURL: "http://10.0.0.2:9223"}
@@ -132,9 +144,15 @@ func TestSmokeWorkflowDrivesEveryStep(t *testing.T) {
 	require.True(t, result.ExecStub)
 
 	require.Equal(t,
-		[]string{"EnsureSession", "Navigate", "Screenshot", "Click", "Type", "Screenshot", "Exec"},
+		[]string{"EnsureSession", "Navigate", "Screenshot", "Click", "Type", "Screenshot", "Exec", "StopSession"},
 		h.order,
-		"every step runs once, in the order a task would use them")
+		"every step runs once, in the order a task would use them, and the sandbox is stopped last")
+
+	// The cleanup is what stops a smoke run from leaving a container behind, so the bot it
+	// names is asserted rather than the call alone: a stop of some other sandbox is not a
+	// cleanup.
+	require.Equal(t, []string{"bot-42"}, h.stopped)
+	require.True(t, result.SessionStopped)
 
 	// The captures are reported as sizes, and the sizes are the ones the control plane
 	// answered: the bytes themselves stay in the activity's own result.
@@ -174,6 +192,134 @@ func TestSmokeWorkflowStopsWhenNavigateFails(t *testing.T) {
 	require.True(t, h.env.IsWorkflowCompleted())
 	require.ErrorContains(t, h.env.GetWorkflowError(), domain.ErrInvalidInput.Error())
 
-	require.Equal(t, []string{"EnsureSession", "Navigate", "Navigate", "Navigate"}, h.order,
+	require.Equal(t, []string{"EnsureSession", "Navigate", "Navigate", "Navigate", "StopSession"}, h.order,
 		"the refused navigation is attempted the configured three times and then fails the run")
+
+	// The sandbox the run made is still taken down. This is the case the cleanup exists for:
+	// a run that failed halfway would otherwise leave a container and its volume running with
+	// nothing left to stop them.
+	require.Equal(t, []string{"bot-42"}, h.stopped)
+}
+
+// TestSmokeWorkflowKeepsTheSessionWhenAsked is the opt-out: when the input says so, the run
+// leaves the desktop up and says in its result that it did. That is for looking at the screen
+// after the run — the reason the command takes a final capture — and the result has to be
+// honest about it, because "no container left behind" is what every other run promises.
+func TestSmokeWorkflowKeepsTheSessionWhenAsked(t *testing.T) {
+	h := newSmokeHarness(t)
+	h.session = domain.Session{State: domain.StateRunning}
+
+	in := smokeInput()
+	in.KeepSession = true
+	h.env.ExecuteWorkflow(SmokeWorkflow, in)
+
+	require.True(t, h.env.IsWorkflowCompleted())
+	require.NoError(t, h.env.GetWorkflowError())
+
+	var result SmokeResult
+	require.NoError(t, h.env.GetWorkflowResult(&result))
+	require.False(t, result.SessionStopped)
+	require.Empty(t, h.stopped, "KeepSession means the sandbox is deliberately left running")
+	require.Equal(t,
+		[]string{"EnsureSession", "Navigate", "Screenshot", "Click", "Type", "Screenshot", "Exec"},
+		h.order,
+		"every step but the cleanup runs")
+}
+
+// TestSmokeWorkflowFailsWhenTheCleanupFails: a session that would not stop is a leftover
+// container, which is the whole complaint this cleanup answers. The run reports it as a
+// failure rather than as a success with a note, because a run that said it was done while a
+// sandbox was still up is exactly the state nobody would look at again.
+func TestSmokeWorkflowFailsWhenTheCleanupFails(t *testing.T) {
+	h := newSmokeHarness(t)
+	h.session = domain.Session{State: domain.StateRunning}
+	h.stopErr = domain.ErrUnavailable
+
+	h.env.ExecuteWorkflow(SmokeWorkflow, smokeInput())
+
+	require.True(t, h.env.IsWorkflowCompleted())
+	require.ErrorContains(t, h.env.GetWorkflowError(), domain.ErrUnavailable.Error())
+	// The cleanup runs under the same retry policy as every other step, so an unavailable
+	// control plane is tried the configured three times before the run gives up.
+	require.Equal(t,
+		[]string{"EnsureSession", "Navigate", "Screenshot", "Click", "Type", "Screenshot", "Exec",
+			"StopSession", "StopSession", "StopSession"},
+		h.order,
+		"the steps ran and the run failed on the cleanup rather than on a step")
+}
+
+// TestSmokeWorkflowReportsBothFailures: a step that failed and a sandbox that would not stop
+// are different answers, and the second one is the one an operator has to act on — the run
+// failed *and* left a container behind. So the run says both rather than dropping the cleanup
+// into the step's error, which is what a substitution would do.
+func TestSmokeWorkflowReportsBothFailures(t *testing.T) {
+	h := newSmokeHarness(t)
+	h.session = domain.Session{State: domain.StateRunning}
+	h.navigateErr = domain.ErrInvalidInput
+	h.stopErr = domain.ErrUnavailable
+
+	h.env.ExecuteWorkflow(SmokeWorkflow, smokeInput())
+
+	require.True(t, h.env.IsWorkflowCompleted())
+	err := h.env.GetWorkflowError()
+	require.ErrorContains(t, err, domain.ErrInvalidInput.Error())
+	require.ErrorContains(t, err, domain.ErrUnavailable.Error())
+	require.Equal(t, []string{"bot-42", "bot-42", "bot-42"}, h.stopped,
+		"the cleanup is retried like every other step, and every attempt names the sandbox it failed to stop")
+}
+
+// countingClient is the control plane as a deployment with the wrong token sees it: every call
+// answers ErrNotConfigured, and the count is what says whether Temporal asked again.
+type countingClient struct {
+	calls int
+}
+
+func (c *countingClient) EnsureSession(context.Context, string) (domain.Session, error) {
+	c.calls++
+	return domain.Session{}, domain.ErrNotConfigured
+}
+
+func (c *countingClient) StopSession(context.Context, string) error { return domain.ErrNotConfigured }
+
+func (c *countingClient) Screenshot(context.Context, string) ([]byte, error) {
+	return nil, domain.ErrNotConfigured
+}
+
+func (c *countingClient) Click(context.Context, string, int, int) error {
+	return domain.ErrNotConfigured
+}
+
+func (c *countingClient) Type(context.Context, string, string) error {
+	return domain.ErrNotConfigured
+}
+
+func (c *countingClient) Navigate(context.Context, string, string) error {
+	return domain.ErrNotConfigured
+}
+
+func (c *countingClient) Exec(context.Context, string, string) (domain.ExecResult, error) {
+	return domain.ExecResult{}, domain.ErrNotConfigured
+}
+
+// TestSmokeWorkflowFailsAConfigurationMistakeOnTheFirstAttempt: a deployment pointed at a
+// control plane that refuses its token fails the run at once, not after the retry budget is
+// spent on the same header. That is what a QA run of #218 saw the opposite of: EnsureSession
+// reached attempt three against a wrong VCOMPUTER_CONTROL_TOKEN.
+//
+// The real activity set is registered rather than the harness's mocks, because the
+// non-retryability lives in the activity: a mocked error would say nothing about it.
+func TestSmokeWorkflowFailsAConfigurationMistakeOnTheFirstAttempt(t *testing.T) {
+	suite := &testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(SmokeWorkflow)
+
+	client := &countingClient{}
+	env.RegisterActivity(vcomputertemporal.New(vcomputertemporal.Deps{Computer: client}))
+
+	env.ExecuteWorkflow(SmokeWorkflow, smokeInput())
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.ErrorContains(t, env.GetWorkflowError(), domain.ErrNotConfigured.Error())
+	require.Equal(t, 1, client.calls,
+		"a configuration mistake fails the run on the first attempt rather than on the third")
 }
