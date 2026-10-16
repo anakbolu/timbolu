@@ -557,15 +557,34 @@ func TestLoadReadsTheVComputerSettings(t *testing.T) {
 	require.Equal(t, 90*time.Second, cfg.VComputer.Timeout)
 }
 
-// TestLoadRejectsAMalformedVComputerSetting: a timeout that will not parse is an error rather
-// than a silent fall back to the default, for the same reason a mistyped quota is — a bound that
-// quietly becomes something else is only discovered when a call behaves unlike its configuration.
-func TestLoadRejectsAMalformedVComputerSetting(t *testing.T) {
+// TestLoadWarnsAboutAMalformedVComputerTimeout: a timeout that will not parse is not a reason to
+// refuse to start.
+//
+// This is the one setting whose bad value is warned about and ignored rather than fatal, and the
+// reason is what it bounds: the virtual computer is an optional PoC (docs/adr/0003-virtual-computer.md),
+// so a typo in its timeout must not take down the agent worker and the task, routine and memory
+// workflows that have nothing to do with a sandbox (issue #219). What stands is the timeout the
+// config file carries, so a deployment that raised it deliberately keeps what it raised it to.
+func TestLoadWarnsAboutAMalformedVComputerTimeout(t *testing.T) {
 	clearOverrides(t)
 	t.Setenv("ENVIRONMENT", "local")
-	t.Setenv("VCOMPUTER_CONTROL_TIMEOUT", "sebentar")
+	t.Setenv("VCOMPUTER_CONTROL_TIMEOUT", "banana")
 
-	_, err := Load()
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "VCOMPUTER_CONTROL_TIMEOUT")
+	cfg, err := Load()
+	require.NoError(t, err, "an unparseable optional timeout must not fail the startup")
+	require.Equal(t, 30*time.Second, cfg.VComputer.Timeout, "the configured default stands")
+
+	warnings := cfg.Warnings()
+	require.Len(t, warnings, 1)
+	require.Contains(t, warnings[0], "VCOMPUTER_CONTROL_TIMEOUT")
+	require.Contains(t, warnings[0], "banana")
+	require.Contains(t, warnings[0], "30s", "the warning says what is in effect instead")
+
+	// A value that parses still overrides, and the ignored one is not carried into the warnings of
+	// the next load: a config is told what its own environment was, not what the last one said.
+	t.Setenv("VCOMPUTER_CONTROL_TIMEOUT", "90s")
+	cfg, err = Load()
+	require.NoError(t, err)
+	require.Equal(t, 90*time.Second, cfg.VComputer.Timeout)
+	require.Empty(t, cfg.Warnings())
 }

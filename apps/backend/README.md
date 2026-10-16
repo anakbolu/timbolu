@@ -837,10 +837,11 @@ The virtual computer (PoC, `docs/adr/0003-virtual-computer.md`) is
 virtual computer, and the activities then answer `ErrNotConfigured`),
 `VCOMPUTER_CONTROL_TOKEN` (the shared secret every `/v1` route requires, never
 logged), and `VCOMPUTER_CONTROL_TIMEOUT` (bounds one call; a value that will not
-parse fails the startup). The agent worker registers the module's activities and
-`SmokeWorkflow` on its own queue; `cmd/vcomputer-smoke` runs one of them end to end
-from a checkout. The agent task loop and its tool catalog do not reach the sandbox
-yet.
+parse is warned about and ignored — the timeout the config file carries stands —
+because an optional feature's bad value must not take the worker down). The agent
+worker registers the module's activities and `SmokeWorkflow` on its own queue;
+`cmd/vcomputer-smoke` runs one of them end to end from a checkout. The agent task
+loop and its tool catalog do not reach the sandbox yet.
 
 Deployment and region decisions: `docs/adr/0001-temporal-dan-region.md`.
 Test strategy and gates: `docs/testing.md`.

@@ -170,7 +170,9 @@ func mergeLayer(into, layer map[string]any) {
 //
 // A value that cannot be parsed is an error rather than a silent default: a
 // mistyped quota silently becomes "unlimited", which is the kind of mistake that
-// is only discovered on the invoice.
+// is only discovered on the invoice. The one exception is a bound on an optional
+// feature whose absence is a working deployment — see the virtual computer's
+// timeout below, which is warned about and ignored instead.
 func loadFromEnv(cfg *Config) error {
 	overrides := map[string]*string{
 		"ENVIRONMENT":                     &cfg.Application.Environment,
@@ -491,9 +493,25 @@ func loadFromEnv(cfg *Config) error {
 	if v := os.Getenv("VCOMPUTER_CONTROL_TIMEOUT"); v != "" {
 		timeout, err := time.ParseDuration(v)
 		if err != nil {
-			return fmt.Errorf("parse VCOMPUTER_CONTROL_TIMEOUT: %w", err)
+			// Warned about and ignored rather than fatal, unlike every other duration here. The
+			// virtual computer is an optional PoC (docs/adr/0003-virtual-computer.md) and this
+			// bounds one call to it, so a typo in it took down the whole agent worker — and with
+			// it the task, routine and memory workflows that have nothing to do with a sandbox
+			// (issue #219). The value that stands is the one the config file carries, which is the
+			// 30s both shipped files set; a deployment that raised it deliberately keeps what it
+			// raised it to. A deployment that carries no config file at all (loadFromFile allows
+			// that) reaches the client's own 30s fallback, so the warning names the file's value
+			// only when there is one and never claims a number that is not in effect.
+			standing := "the timeout the client defaults to"
+			if cfg.VComputer.Timeout > 0 {
+				standing = fmt.Sprintf("the configured timeout of %s", cfg.VComputer.Timeout)
+			}
+			cfg.warnings = append(cfg.warnings, fmt.Sprintf(
+				"VCOMPUTER_CONTROL_TIMEOUT=%q is not a duration, so it is ignored and %s stands: %v",
+				v, standing, err))
+		} else {
+			cfg.VComputer.Timeout = timeout
 		}
-		cfg.VComputer.Timeout = timeout
 	}
 
 	if v := os.Getenv("PLAN_DAILY_COST_MICROS"); v != "" {

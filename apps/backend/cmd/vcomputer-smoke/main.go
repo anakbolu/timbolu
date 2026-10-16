@@ -43,8 +43,8 @@ import (
 	"github.com/robzlabz/employeebot/packages/platform/config"
 )
 
-// defaultTimeout is what one call to the control plane gets when VCOMPUTER_CONTROL_TIMEOUT
-// says nothing, matching the configuration default.
+// defaultTimeout is what one call to the control plane gets when VCOMPUTER_CONTROL_TIMEOUT says
+// nothing or says something that is not a duration, matching the configuration default.
 const defaultTimeout = 30 * time.Second
 
 // runTimeout bounds the whole run. A smoke run is a person watching it, and a sandbox that
@@ -88,10 +88,7 @@ func run() error {
 		return errors.New("VCOMPUTER_CONTROL_URL is empty: there is no control plane to smoke")
 	}
 
-	timeout, err := controlTimeout()
-	if err != nil {
-		return err
-	}
+	timeout := controlTimeout()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -177,19 +174,25 @@ func run() error {
 	return nil
 }
 
-// controlTimeout reads VCOMPUTER_CONTROL_TIMEOUT the way the configuration does, so a value
-// this command accepts is a value a deployment accepts.
-func controlTimeout() (time.Duration, error) {
+// controlTimeout reads VCOMPUTER_CONTROL_TIMEOUT the way the configuration does, so a value this
+// command accepts is a value a deployment accepts: one that will not parse is reported and the
+// default is used rather than the run refused, which is what the loader does with it (issue #219).
+func controlTimeout() time.Duration {
 	raw := strings.TrimSpace(os.Getenv("VCOMPUTER_CONTROL_TIMEOUT"))
 	if raw == "" {
-		return defaultTimeout, nil
+		return defaultTimeout
 	}
 
 	timeout, err := time.ParseDuration(raw)
 	if err != nil {
-		return 0, fmt.Errorf("parse VCOMPUTER_CONTROL_TIMEOUT: %w", err)
+		// On stderr, so the JSON a caller reads and diffs stays the only thing on stdout.
+		fmt.Fprintf(os.Stderr,
+			"vcomputer-smoke: VCOMPUTER_CONTROL_TIMEOUT=%q is not a duration, using %s: %v\n",
+			raw, defaultTimeout, err)
+
+		return defaultTimeout
 	}
-	return timeout, nil
+	return timeout
 }
 
 // saveFinalCapture asks the control plane for one more screenshot and writes it to outDir.
