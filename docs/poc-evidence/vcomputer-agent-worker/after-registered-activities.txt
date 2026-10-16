@@ -1,0 +1,14 @@
+=== RUN   TestAgentWorkerRegistrationInventory
+    vcomputer_wiring_test.go:138: registered: workflow github.com/robzlabz/employeebot/apps/backend/internal/platform/temporal.WorkerPingWorkflow
+    vcomputer_wiring_test.go:138: registered: workflow github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/workflow.SmokeWorkflow
+    vcomputer_wiring_test.go:142: registered: activity github.com/robzlabz/employeebot/apps/backend/internal/platform/temporal.WorkerPingActivity
+    vcomputer_wiring_test.go:142: registered: activity Activities.Click
+    vcomputer_wiring_test.go:142: registered: activity Activities.EnsureSession
+    vcomputer_wiring_test.go:142: registered: activity Activities.Exec
+    vcomputer_wiring_test.go:142: registered: activity Activities.Navigate
+    vcomputer_wiring_test.go:142: registered: activity Activities.Screenshot
+    vcomputer_wiring_test.go:142: registered: activity Activities.StopSession
+    vcomputer_wiring_test.go:142: registered: activity Activities.Type
+--- PASS: TestAgentWorkerRegistrationInventory (0.00s)
+PASS
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/container	0.016s
