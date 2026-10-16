@@ -8,14 +8,14 @@
  * final event replaces it with the canonical body.
  */
 
-import { ArrowUp, History, Paperclip, X } from "lucide-react";
+import { ArrowUp, Check, History, Paperclip, X } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Bolu } from "@/components/bolu/bolu";
 import { useWorkspace } from "@/components/dashboard/workspace-data";
-import { uploadAttachment, type Agent, type ChatConversation, type ChatMessage } from "@/lib/api";
+import { uploadStagedAttachment, type Agent, type ApiError, type ChatConversation, type ChatMessage } from "@/lib/api";
 import { allBot, type CrewMember } from "@/lib/crew";
 import { crewFor, expressionOf, stateOf } from "@/lib/dashboard-view";
 
@@ -31,18 +31,51 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 /**
- * One file waiting for the message it belongs to.
+ * One file the composer is holding for the message being written.
  *
- * The backend refuses a file that names no message, so a chosen file is held
- * here — as the `File` itself, not as a row the server has never seen — until
- * the message it will hang from exists.
+ * It is uploaded as soon as it is picked, so the send that names it is the same
+ * call that stores the message: the file travels with the words rather than
+ * after them, and the reply sees it on the turn it was sent with.
  */
 type QueuedFile = {
   id: string;
   file: File;
-  status: "queued" | "uploading" | "failed";
+  status: "uploading" | "uploaded" | "failed";
+  /** How much of the file has left, from 0 to 1. */
+  progress: number;
+  /** What the API calls the stored file, once it holds it. */
+  attachmentId?: string;
+  /** Why an upload or a send was refused, in the composer's words. */
   error?: string;
 };
+
+/** What the composer says when the API refuses a send, by the reason it gave. */
+const SEND_ERROR: Record<string, string> = {
+  invalid_attachment_id: "Lampiran tidak valid. Hapus lalu unggah ulang.",
+  attachment_not_found: "Lampiran sudah kedaluwarsa atau tidak ditemukan. Unggah ulang.",
+  attachment_already_bound: "Lampiran ini sudah terkirim di pesan lain. Unggah ulang.",
+  invalid_input: "Tulis pesan atau lampirkan file dulu.",
+};
+
+/** sendErrorText turns a refused send into the one line the composer shows. */
+function sendErrorText(error: ApiError): string {
+  return (error.code ? SEND_ERROR[error.code] : undefined) ?? error.message;
+}
+
+/**
+ * blamedAttachments names the files a refused send is about.
+ *
+ * The API names the offending id only when the id itself could not be read. A
+ * file that is gone or already bound comes back as a code with no id at all, and
+ * then any of them could be the one, which is what an empty list means here.
+ */
+function blamedAttachments(error: ApiError): string[] {
+  if (error.code !== "invalid_attachment_id") {
+    return [];
+  }
+  const quoted = /"([^"]+)"/.exec(error.message);
+  return quoted ? [quoted[1]] : [];
+}
 
 const STATUS_CLASS: Record<string, string> = {
   connecting: "bg-bolu-panel text-bolu-muted",
@@ -80,10 +113,12 @@ export function ChatView({
   const { agents, user } = useWorkspace();
   const [draft, setDraft] = useState("");
   const [queued, setQueued] = useState<QueuedFile[]>([]);
-  const [uploading, setUploading] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const opened = useRef<string | null>(null);
   const picker = useRef<HTMLInputElement | null>(null);
+  // The uploads in flight, by chip, so removing one drops its request too.
+  const uploads = useRef(new Map<string, AbortController>());
 
   // The newest message is what a person came to read, so the thread is kept at the
   // bottom instead of the browser: on open, as a reply streams in, and when a block
@@ -196,11 +231,35 @@ export function ChatView({
   const userInitial = user?.email ? user.email.charAt(0).toUpperCase() : "?";
 
   const hasFiles = queued.length > 0;
-  // A file the backend will accept has to name the message it hangs from, and
-  // that message is the text. So a queued file does not stand in for the text:
-  // sending an empty one would either drop the file or hang it off somebody
-  // else's message, and the composer says so instead of doing either.
-  const canSend = Boolean(chat.active) && !chat.sending && !uploading && draft.trim() !== "";
+  const activeId = chat.active?.id ?? null;
+  const uploading = queued.some((item) => item.status === "uploading");
+  const failed = queued.some((item) => item.status === "failed");
+  const uploaded = queued.filter((item) => item.status === "uploaded");
+  // A staged file is uploaded before the message exists, so a send is allowed
+  // with files and no words: the message is then the files themselves.
+  const canSend =
+    Boolean(chat.active) &&
+    !chat.sending &&
+    !uploading &&
+    !failed &&
+    (draft.trim() !== "" || uploaded.length > 0);
+
+  // A chip belongs to the thread it was picked in: the API refuses a message in
+  // another thread that names a file staged for this one, so a switch drops the
+  // chips instead of letting the next send fail on all of them.
+  const stagedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (stagedFor.current === activeId) {
+      return;
+    }
+    stagedFor.current = activeId;
+    for (const controller of uploads.current.values()) {
+      controller.abort();
+    }
+    uploads.current.clear();
+    setQueued((previous) => (previous.length === 0 ? previous : []));
+    setSendError(null);
+  }, [activeId]);
 
   function queueFiles(files: FileList | null) {
     if (!files || files.length === 0) {
@@ -213,48 +272,83 @@ export function ChatView({
       // A key has to survive two files of the same name chosen in one go.
       id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2)}`,
       file,
-      status: "queued" as const,
+      status: "uploading" as const,
+      progress: 0,
     }));
     setQueued((previous) => [...previous, ...picked]);
+    setSendError(null);
     // The picker is reset so choosing the same file again is still a change.
     if (picker.current) {
       picker.current.value = "";
     }
+    for (const item of picked) {
+      void upload(item.id, item.file);
+    }
   }
 
   /**
-   * uploadQueued hangs the waiting files from the message that was just stored.
+   * upload stages one file and reports how far it has got.
    *
-   * Each file is its own request: one failure leaves the others alone, the chip
-   * that failed keeps its place with the reason, and the ones that succeeded are
-   * dropped from the queue because the bubble now shows them.
+   * The request is its own, so one file failing leaves the others alone: the chip
+   * that failed keeps its place with the reason and a retry, and the ones that
+   * succeeded hold the id the send will carry.
    */
-  async function uploadQueued(message: ChatMessage, files: QueuedFile[]) {
+  async function upload(id: string, file: File) {
     const workspaceId = chat.workspaceId;
-    if (!workspaceId) {
+    const conversationId = chat.active?.id;
+    setQueued((previous) =>
+      previous.map((entry) =>
+        entry.id === id ? { ...entry, status: "uploading", progress: 0, error: undefined } : entry,
+      ),
+    );
+    if (!workspaceId || !conversationId) {
+      // The composer only offers the picker with a thread open, so this is the
+      // thread closing underneath an upload rather than a state to recover from.
+      setQueued((previous) =>
+        previous.map((entry) =>
+          entry.id === id ? { ...entry, status: "failed", error: "Obrolan belum siap." } : entry,
+        ),
+      );
       return;
     }
 
-    setUploading(true);
-    const failed: QueuedFile[] = [];
+    const controller = new AbortController();
+    uploads.current.set(id, controller);
+    const result = await uploadStagedAttachment(
+      workspaceId,
+      conversationId,
+      file,
+      (fraction) =>
+        setQueued((previous) =>
+          previous.map((entry) => (entry.id === id ? { ...entry, progress: fraction } : entry)),
+        ),
+      controller.signal,
+    );
+    uploads.current.delete(id);
 
-    for (const item of files) {
-      setQueued((previous) =>
-        previous.map((entry) => (entry.id === item.id ? { ...entry, status: "uploading" } : entry)),
-      );
-
-      const result = await uploadAttachment(workspaceId, message.conversation_id, item.file, message.message_id);
-      if (result.ok) {
-        chat.attachToMessage(message.message_id, [result.data]);
-        continue;
-      }
-      failed.push({ ...item, status: "failed", error: result.message });
+    // An aborted upload is a chip that is gone: dropping it from state was the
+    // abort, so there is nothing left to mark.
+    if (!result.ok && result.code === "aborted") {
+      return;
     }
+    setQueued((previous) =>
+      previous.map((entry) => {
+        if (entry.id !== id) {
+          return entry;
+        }
+        return result.ok
+          ? { ...entry, status: "uploaded", progress: 1, attachmentId: result.data.attachment_id }
+          : { ...entry, status: "failed", error: result.message };
+      }),
+    );
+  }
 
-    // Succeeded chips are cleared; failed ones stay with their file still held,
-    // so a retry is the next send rather than picking the file again.
-    setQueued(failed);
-    setUploading(false);
+  /** removeQueued drops one chip, and its upload with it. */
+  function removeQueued(id: string) {
+    uploads.current.get(id)?.abort();
+    uploads.current.delete(id);
+    setQueued((previous) => previous.filter((entry) => entry.id !== id));
+    setSendError(null);
   }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -264,18 +358,31 @@ export function ChatView({
       return;
     }
 
-    // The files are read before the draft is cleared: they are sent with the
-    // message that is about to be stored, not with the next one.
-    const files = queued;
-    setDraft("");
     // Sending is a person looking for the answer, so the thread returns to its
     // newest message even if they had scrolled up to read something older.
     pin();
 
-    const message = await chat.send(text);
-    if (message && files.length > 0) {
-      await uploadQueued(message, files);
+    const attachmentIds = uploaded.flatMap((item) => (item.attachmentId ? [item.attachmentId] : []));
+    const result = await chat.send(text, attachmentIds);
+    if (!result.ok) {
+      // The draft and the chips stay: the files are still staged, so what is
+      // wrong is one of them and the composer marks which.
+      const message = sendErrorText(result);
+      const blamed = blamedAttachments(result);
+      setSendError(message);
+      setQueued((previous) =>
+        previous.map((entry) =>
+          entry.status === "uploaded" && (blamed.length === 0 || blamed.includes(entry.attachmentId ?? ""))
+            ? { ...entry, status: "failed", error: message }
+            : entry,
+        ),
+      );
+      return;
     }
+
+    setSendError(null);
+    setDraft("");
+    setQueued([]);
   }
 
   return (
@@ -414,21 +521,51 @@ export function ChatView({
                       <span className="max-w-[180px] truncate">{item.file.name}</span>
                       <span className="text-[11px] text-bolu-muted">{formatBytes(item.file.size)}</span>
                       {item.status === "uploading" ? (
-                        <span className="text-[11px] text-bolu-muted">mengunggah…</span>
+                        <span
+                          role="status"
+                          className="flex items-center gap-1.5"
+                          aria-label={`Mengunggah ${item.file.name}`}
+                        >
+                          <span className="h-1 w-14 overflow-hidden rounded-full bg-bolu-track">
+                            <span
+                              className="block h-full rounded-full bg-bolu-accent"
+                              style={{ width: `${Math.round(item.progress * 100)}%` }}
+                            />
+                          </span>
+                          <span className="text-[11px] text-bolu-muted">
+                            {Math.round(item.progress * 100)}%
+                          </span>
+                        </span>
+                      ) : null}
+                      {item.status === "uploaded" ? (
+                        <span className="flex items-center gap-0.5 text-[11px] text-bolu-lunas">
+                          <Check size={13} strokeWidth={2.6} aria-hidden="true" />
+                          siap
+                        </span>
                       ) : null}
                       {/* The reason is on the chip rather than in one banner: two
                           files can fail for two different reasons. */}
                       {item.status === "failed" && item.error ? (
-                        <span className="text-[11px]">{item.error}</span>
+                        <span className="max-w-[200px] truncate text-[11px]">{item.error}</span>
                       ) : null}
+                      {item.status === "failed" ? (
+                        <button
+                          type="button"
+                          aria-label={`Coba lagi ${item.file.name}`}
+                          onClick={() => void upload(item.id, item.file)}
+                          className="shrink-0 cursor-pointer rounded-full border border-bolu-belum/40 bg-transparent px-2 py-0.5 text-[11px] font-medium text-bolu-belum"
+                        >
+                          Coba lagi
+                        </button>
+                      ) : null}
+                      {/* A chip can be dropped at any time: the file belongs to no
+                          message yet, so removing it is local — and it takes the
+                          upload with it when one is still running. */}
                       <button
                         type="button"
                         aria-label={`Buang ${item.file.name}`}
-                        disabled={item.status === "uploading"}
-                        onClick={() =>
-                          setQueued((previous) => previous.filter((entry) => entry.id !== item.id))
-                        }
-                        className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-bolu-muted disabled:opacity-40"
+                        onClick={() => removeQueued(item.id)}
+                        className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-bolu-muted"
                       >
                         <X size={13} strokeWidth={2.5} aria-hidden="true" />
                       </button>
@@ -448,7 +585,7 @@ export function ChatView({
                 <button
                   type="button"
                   aria-label="Lampirkan berkas"
-                  disabled={!chat.active || uploading}
+                  disabled={!chat.active}
                   onClick={() => picker.current?.click()}
                   className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-bolu-muted hover:text-bolu-ink disabled:opacity-40"
                 >
@@ -464,8 +601,8 @@ export function ChatView({
                     }
                   }}
                   placeholder={
-                    hasFiles && draft.trim() === ""
-                      ? "Tulis pesan untuk lampiran ini"
+                    uploaded.length > 0 && draft.trim() === ""
+                      ? "Kirim lampiran saja, atau tulis pesan"
                       : chat.active
                         ? "Suruh atau tanya apa saja…"
                         : "Pilih obrolan dulu"
@@ -487,10 +624,22 @@ export function ChatView({
                 </button>
               </div>
 
-              {/* The send button is disabled while a file waits with no text, and a
-                  disabled control says nothing about why: the hint does. */}
-              {hasFiles && draft.trim() === "" ? (
-                <p className="px-3 text-[12px] text-bolu-muted">Tulis pesan untuk lampiran ini.</p>
+              {/* A disabled control says nothing about why it is disabled, so the
+                  composer says it: a refused send, or a file still uploading. */}
+              {sendError ? (
+                <p role="alert" className="px-3 text-[12px] text-bolu-belum">
+                  {sendError}
+                </p>
+              ) : null}
+              {failed ? (
+                <p className="px-3 text-[12px] text-bolu-muted">
+                  Hapus atau unggah ulang lampiran yang gagal untuk mengirim.
+                </p>
+              ) : null}
+              {uploading ? (
+                <p role="status" className="px-3 text-[12px] text-bolu-muted">
+                  Menunggu lampiran selesai diunggah…
+                </p>
               ) : null}
             </div>
           </form>
