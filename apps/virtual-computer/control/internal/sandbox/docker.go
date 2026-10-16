@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -55,10 +54,11 @@ type DockerRuntime struct {
 	// share it: that network is how it reaches the gate, and it is the reason no port
 	// is ever published.
 	network string
-	// namePrefix scopes every name this runtime creates: the container is
-	// <prefix>-<bot id> and the volume <prefix>-<bot id>-home. It is also the scope
-	// Cleanup works in, so two deployments can share one docker host without
-	// removing each other's sandboxes.
+	// namePrefix names every object this runtime creates — the container is
+	// <prefix>-<bot id> and the volume <prefix>-<bot id>-home — and it is written into
+	// the stackLabel of each, which is what scopes Cleanup and Reap: a name prefix is a
+	// prefix, so it is the label rather than the name that keeps two deployments on one
+	// docker host from removing each other's sandboxes (#263).
 	namePrefix string
 	// novncPort and gatePort are the ports the sandbox listens on inside its own
 	// network. They are configuration, not constants: the control plane passes them
@@ -195,8 +195,8 @@ func WithSandboxPorts(novncPort, gatePort string) DockerOption {
 	}
 }
 
-// WithNamePrefix sets what this runtime's containers and volumes are named after,
-// and therefore which objects Cleanup considers its own.
+// WithNamePrefix sets what this runtime's containers and volumes are named after, and the
+// stack label they carry — which is what Cleanup and Reap consider this runtime's own.
 func WithNamePrefix(prefix string) DockerOption {
 	return func(r *DockerRuntime) {
 		if trimmed := strings.TrimSpace(prefix); trimmed != "" {
@@ -279,11 +279,14 @@ func (r *DockerRuntime) Ensure(ctx context.Context, botID string) (Session, erro
 
 	// The volume holds /home/bolu: the Chromium profile and the bot's files. It is
 	// created once and reused, which is what makes "log in once, continue tomorrow"
-	// possible without keeping the process alive (riset §2.3). The label is what
+	// possible without keeping the process alive (riset §2.3). Both labels are what
 	// Cleanup finds it by later: a name pattern is a convention, a label is a record,
-	// and the difference is what keeps a cleanup from removing a stranger's volume.
+	// and the stack label is what keeps a cleanup from matching a stack whose name
+	// merely starts with this one's (#263).
 	if _, err := r.docker(ctx, "volume", "create",
-		"--label", botLabel+"="+id, volumeName(r.namePrefix, id)); err != nil {
+		"--label", botLabel+"="+id,
+		"--label", stackLabel+"="+r.namePrefix,
+		volumeName(r.namePrefix, id)); err != nil {
 		return Session{}, fmt.Errorf("vcomputer: create the session volume: %w", err)
 	}
 
@@ -444,14 +447,16 @@ func (r *DockerRuntime) Cleanup(ctx context.Context, volumes bool) (CleanupResul
 }
 
 // Reap removes everything this runtime owns, running sandboxes included, and always
-// their volumes. It is what the control plane calls on its way out.
+// their volumes. It is what the control plane calls on its way out — when
+// VCOMPUTER_REAP_ON_SHUTDOWN=1 asked for it, and not otherwise (#263): a restart is
+// not a teardown, and the volume it would remove is the session.
 //
 // It exists because a sandbox is not part of the compose stack: the control plane
 // creates it, so `docker compose down` cannot remove it, and a running container keeps
-// both its volume and the internal network in use — which is what turns a clean
-// teardown into leftovers an operator has to find by hand
-// (docs/adr/0003-virtual-computer.md §3.9). The scoping is the same as Cleanup's, so
-// this removes one deployment's sandboxes and never a second deployment's.
+// both its volume and the internal network in use — which is what turns a teardown into
+// leftovers an operator has to find by hand (docs/adr/0003-virtual-computer.md §3.9).
+// The scoping is the same as Cleanup's, so this removes one deployment's sandboxes and
+// never a second deployment's.
 //
 // `docker rm -f` is what removes a running container, and it is deliberate: the
 // shutdown path has already decided that this control plane's sessions are over. The
@@ -504,10 +509,11 @@ func (r *DockerRuntime) remove(ctx context.Context, running, volumes bool) (Clea
 	return result, nil
 }
 
-// list runs a listing command scoped to what this runtime owns: the label every
-// sandbox carries, and the name prefix that keeps two deployments on one host apart.
-// `docker` treats `name=` as a regular expression for containers and for volumes
-// alike, which is why the prefix is anchored.
+// list runs a listing command scoped to what this runtime owns: the two labels every
+// sandbox carries — `vcomputer.bot` says it is a sandbox, `vcomputer.stack` says whose —
+// and no name pattern. The stack label is the exact scope (#263): a prefix is a prefix,
+// so the default `vcomputer` also matches `vcomputer-qa-bot`, while a label records who
+// created the object.
 //
 // The command arrives as its words rather than as one string because the scoping
 // flags belong between the command and the listing's own arguments, and the command
@@ -519,7 +525,7 @@ func (r *DockerRuntime) list(ctx context.Context, command []string, args ...stri
 	scoped = append(scoped, command...)
 	scoped = append(scoped,
 		"--filter", "label="+botLabel,
-		"--filter", "name=^"+regexp.QuoteMeta(r.namePrefix)+"-",
+		"--filter", "label="+stackLabel+"="+r.namePrefix,
 	)
 	scoped = append(scoped, args...)
 
@@ -903,7 +909,7 @@ func (r *DockerRuntime) run(ctx context.Context, botID, secret string) ([]byte, 
 		name:    containerName(r.namePrefix, botID),
 		image:   r.image,
 		network: r.network,
-		labels:  []string{botLabel + "=" + botID},
+		labels:  []string{botLabel + "=" + botID, stackLabel + "=" + r.namePrefix},
 		mounts:  []mount{{source: volumeName(r.namePrefix, botID), target: homeDir}},
 		env: []envVar{
 			{key: "NOVNC_PORT", value: r.novncPort},

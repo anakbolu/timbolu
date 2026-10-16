@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Remove the virtual-computer sandboxes a stack left behind: the containers the control
+# Remove the virtual-computer sandboxes one stack left behind: the containers the control
 # plane stopped (or created and never got running), and — with VOLUMES=1 — the home volumes
 # that go with them. With --running it takes the sandboxes that are still up as well, which
 # is the mode a teardown needs.
@@ -15,47 +15,52 @@
 # declared in the compose file, so `docker compose down` does not know about it, and the
 # default mode deliberately leaves a running one alone — a running sandbox is a session
 # somebody is using, and a "cleanup" that killed it would be the opposite of what the word
-# means. The control plane reaps its own sandboxes on SIGTERM (docs/adr/0003-virtual-computer.md
-# §3.9), so a graceful `down` needs nothing here. This mode is for the teardown that had no
-# grace: a control plane that was SIGKILLed, a docker host where the stack was removed out
-# from under it, or a `down` whose stop grace expired first. Those sandboxes hold their
-# volumes and the stack's internal network, and without this the leftovers have to be found
-# by hand — which is what #245 was.
+# means. A control plane that shuts down keeps its sandboxes too (#263: only
+# VCOMPUTER_REAP_ON_SHUTDOWN=1 makes it remove them), because a restart is not a teardown,
+# so this mode is the documented teardown — the one that works whether or not the process
+# got a SIGTERM at all. It is also the answer for a control plane that was SIGKILLed, a
+# docker host where the stack was removed out from under it, or a `down` whose stop grace
+# expired first. Those sandboxes hold their volumes and the stack's internal network, and
+# without this the leftovers have to be found by hand — which is what #245 was.
 #
 # It never touches the control plane, the fixture, or the socket proxy: none of the three
 # carries the `vcomputer.bot` label (the runtime puts that label on the containers and volumes
 # it creates for a bot, control/internal/sandbox/docker.go), so the label filter is what stops
-# a cleanup from taking the running stack down with it. The name filter is what keeps two
-# stacks on one host from taking each other's sandboxes: a sandbox is named
-# <stack>-<bot id>, so the stack is the scope.
+# a cleanup from taking the running stack down with it. The stack label — `vcomputer.stack`
+# — is what keeps two stacks on one host apart, and it is a label rather than the name
+# prefix on purpose (#263): a prefix is a prefix, so `name=^vcomputer-` also matches the
+# sandboxes of a stack called `vcomputer-qa`, while a label records who created the object.
 #
-# Usage, from the repository root:
+# Usage, from the repository root. STACK is required, and there is no default (#263): the
+# default was `vcomputer`, which is the one value that makes a cleanup reach for the stack a
+# demo is already using.
 #
-#   apps/virtual-computer/scripts/cleanup.sh              # stopped sandboxes only
-#   VOLUMES=1 apps/virtual-computer/scripts/cleanup.sh    # ... and their volumes
-#   apps/virtual-computer/scripts/cleanup.sh --volumes
-#   apps/virtual-computer/scripts/cleanup.sh --running --volumes   # after a teardown
+#   STACK=vc2 apps/virtual-computer/scripts/cleanup.sh              # stopped sandboxes only
+#   STACK=vc2 VOLUMES=1 apps/virtual-computer/scripts/cleanup.sh    # ... and their volumes
+#   STACK=vc2 apps/virtual-computer/scripts/cleanup.sh --volumes
+#   STACK=vc2 apps/virtual-computer/scripts/cleanup.sh --running --volumes   # the teardown
 #   STACK=vc2 DOCKER="sudo docker" apps/virtual-computer/scripts/cleanup.sh
 #
 # Environment:
 #   DOCKER   the docker CLI. Default `docker`. "sudo docker" is expected to work, which is
 #            why every use of it below is unquoted on purpose (shellcheck SC2086 is
 #            silenced where it fires, with that reason).
-#   STACK    the stack whose leftovers are removed. Default vcomputer — the same default as
-#            scripts/e2e.sh and docker-compose.poc.yml.
+#   STACK    REQUIRED, no default (#263). The stack whose leftovers are removed: it is both
+#            the name prefix and the `vcomputer.stack` label the runtime wrote on the
+#            sandboxes it created.
 #   VOLUMES  set to 1 to remove the volumes as well. Off by default: a volume is a bot's
 #            home directory, and deleting one is a data decision rather than a cleanup
 #            step. The label is what makes it findable, not what makes it disposable.
 #   RUNNING  set to 1 to include the sandboxes that are still running, and to remove their
 #            volumes in the same pass. This is the destructive mode: it ends sessions that
-#            nobody asked it to end, so it is off by default and it is never what
-#            `docker compose down` needs while the control plane is shutting down
-#            gracefully.
+#            nobody asked it to end, so it is off by default. It is what a teardown of this
+#            stack uses, and it is the mode that makes one possible at all now that the
+#            control plane keeps its sandboxes on SIGTERM (#263).
 
 set -euo pipefail
 
 DOCKER=${DOCKER:-docker}
-STACK=${STACK:-vcomputer}
+STACK=${STACK:-}
 VOLUMES=${VOLUMES:-0}
 RUNNING=${RUNNING:-0}
 
@@ -68,7 +73,7 @@ for arg in "$@"; do
             RUNNING=1
             ;;
         -h | --help)
-            printf 'usage: [STACK=%s] [VOLUMES=1] [RUNNING=1] [DOCKER="sudo docker"] %s [--volumes] [--running]\n' "$STACK" "$0"
+            printf 'usage: STACK=%s [VOLUMES=1] [RUNNING=1] [DOCKER="sudo docker"] %s [--volumes] [--running]\n' "${STACK:-<stack>}" "$0"
             exit 0
             ;;
         *)
@@ -78,17 +83,25 @@ for arg in "$@"; do
     esac
 done
 
+# STACK is required and has no default (#263). The default used to be `vcomputer`, which is
+# the one value that makes a cleanup reach for the stack a demo is already using: every name
+# this script removes is derived from STACK, so a default is a decision about somebody else's
+# containers. Checked after the arguments so `--help` works without it.
+if [ -z "$STACK" ]; then
+    printf 'cleanup.sh: set STACK: it is the stack whose sandboxes are removed, and a default would let a cleanup reach for a stack the caller never named\n' >&2
+    exit 2
+fi
+
 removed=0
 failed=0
 
-# The scope is the same in both modes — the label every sandbox carries and the name
-# prefix that ties it to this stack — and the status filters are what make the default "not
-# running". RUNNING=1 drops them, and that is the whole difference between the modes: the
-# removal below forces either way, so a running container and a stopped one need no
-# different command.
+# The scope is exact: the label every sandbox carries, and the label that says this stack
+# created it. The status filters are what make the default "not running". RUNNING=1 drops
+# them, and that is the whole difference between the modes: the removal below forces either
+# way, so a running container and a stopped one need no different command.
 container_filters=(
     --filter label=vcomputer.bot
-    --filter "name=^${STACK}-"
+    --filter "label=vcomputer.stack=${STACK}"
 )
 if [ "$RUNNING" != "1" ]; then
     # Stopped sandboxes, in every state that means "not running": `exited` is the one the
@@ -123,12 +136,11 @@ done
 
 if [ "$VOLUMES" = "1" ]; then
     # The same two filters as above, for the same two reasons: the label finds what the
-    # runtime created for a bot, the name scopes it to this stack (a volume is
-    # <stack>-<bot id>-home).
+    # runtime created for a bot, the stack label scopes it to this stack.
     # shellcheck disable=SC2086  # DOCKER may be "sudo docker"
     volumes=$($DOCKER volume ls -q \
         --filter label=vcomputer.bot \
-        --filter "name=^${STACK}-")
+        --filter "label=vcomputer.stack=${STACK}")
 
     # shellcheck disable=SC2086  # the list is newline-separated volume names on purpose
     for volume in $volumes; do

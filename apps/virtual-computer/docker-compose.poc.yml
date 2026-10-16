@@ -286,12 +286,12 @@ services:
     image: ${VCOMPUTER_CONTROL_IMAGE:-vcomputer-control:poc}
     container_name: ${VCOMPUTER_CONTROL_CONTAINER:-vcomputer-control}
     restart: unless-stopped
-    # How long docker waits between SIGTERM and SIGKILL. It has to outlast the control
-    # plane's own reap: on the way out the process removes the sandboxes it created —
-    # running ones included, with their volumes — because they are not part of this
-    # stack and `down` cannot see them (docs/adr/0003-virtual-computer.md §3.9). The
-    # default ten seconds is shorter than that work, and a SIGKILL in the middle of it
-    # is exactly the leftover this file is trying to avoid.
+    # How long docker waits between SIGTERM and SIGKILL. It is long on purpose, and it is
+    # only needed when the opt-in below is on: a control plane that keeps its sandboxes
+    # stops in well under a second, while one that was asked to remove them has a
+    # container to stop and a volume to delete for every session (docs/adr/0003-virtual-computer.md
+    # §3.9). A SIGKILL in the middle of that work is exactly the leftover this file is
+    # trying to avoid, so the grace is sized for the slow path rather than the fast one.
     stop_grace_period: 90s
     environment:
       VCOMPUTER_CONTROL_ADDR: ":8090"
@@ -318,10 +318,19 @@ services:
       VCOMPUTER_SANDBOX_NETWORK: ${VCOMPUTER_SANDBOX_NETWORK:-${VCOMPUTER_INTERNAL_NETWORK:-vcomputer-internal}}
       VCOMPUTER_SANDBOX_NOVNC_PORT: ${VCOMPUTER_SANDBOX_NOVNC_PORT:-6080}
       VCOMPUTER_SANDBOX_GATE_PORT: ${VCOMPUTER_SANDBOX_GATE_PORT:-8443}
-      # The runtime names a bot's container and volume after this, so the prefix is the
-      # stack: it is what keeps two stacks' sandboxes apart on one host, both for a human
-      # reading `docker ps` and for the cleanup routes, which work in that scope.
+      # The runtime names a bot's container and volume after this, and writes it into the
+      # `vcomputer.stack` label every sandbox carries: the label is what scopes a cleanup
+      # and a reap to this stack exactly (#263), where a name prefix would also match a
+      # stack called `${VCOMPUTER_STACK}-qa`.
       VCOMPUTER_SANDBOX_NAME_PREFIX: ${VCOMPUTER_STACK:-vcomputer}
+      # Off by default, and the default is the point (#263): a restart — `compose restart`,
+      # `up -d --force-recreate` for an image upgrade, a daemon restart — is a SIGTERM to
+      # this process, not a decision that the sessions are over, and reaping on the way out
+      # would take every bot's home volume (its Chromium profile and its files) with it. A
+      # deployment that is ending the stack rather than restarting it sets this to 1, or
+      # runs scripts/cleanup.sh --running --volumes, which works whether or not this
+      # process got the signal at all.
+      VCOMPUTER_REAP_ON_SHUTDOWN: ${VCOMPUTER_REAP_ON_SHUTDOWN:-0}
       VCOMPUTER_EXEC_TIMEOUT: ${VCOMPUTER_EXEC_TIMEOUT:-30s}
       VCOMPUTER_NAVIGATE_TIMEOUT: ${VCOMPUTER_NAVIGATE_TIMEOUT:-15s}
       SCREEN_GEOMETRY: ${SCREEN_GEOMETRY:-1280x800x24}

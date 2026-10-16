@@ -20,6 +20,7 @@ import (
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/sse"
+	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/vision"
 )
 
 // DefaultBaseURL is the public endpoint.
@@ -327,13 +328,20 @@ func (c *Client) do(ctx context.Context, body []byte, stream bool) (*http.Respon
 		return nil, rateLimitError(resp)
 	case resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnprocessableEntity:
 		defer func() { _ = resp.Body.Close() }()
-		return nil, statusError(resp, domain.ErrInvalidRequest)
+		message := errorBody(resp)
+		// A refusal that names the picture is a capability this model lacks rather
+		// than a complaint about the request: another provider in the chain may read
+		// it, and the caller can answer without it.
+		if vision.Refused(message) {
+			return nil, statusError(resp, message, domain.ErrUnsupported)
+		}
+		return nil, statusError(resp, message, domain.ErrInvalidRequest)
 	case resp.StatusCode >= 500:
 		defer func() { _ = resp.Body.Close() }()
-		return nil, statusError(resp, domain.ErrProviderUnavailable)
+		return nil, statusError(resp, errorBody(resp), domain.ErrProviderUnavailable)
 	default:
 		defer func() { _ = resp.Body.Close() }()
-		return nil, statusError(resp, domain.ErrProviderUnavailable)
+		return nil, statusError(resp, errorBody(resp), domain.ErrProviderUnavailable)
 	}
 }
 
@@ -345,8 +353,8 @@ func rateLimitError(resp *http.Response) error {
 	return fmt.Errorf("%w: %s", domain.ErrRateLimited, message)
 }
 
-func statusError(resp *http.Response, sentinel error) error {
-	return fmt.Errorf("%w: %s returned %d: %s", sentinel, resp.Request.URL.Host, resp.StatusCode, errorBody(resp))
+func statusError(resp *http.Response, message string, sentinel error) error {
+	return fmt.Errorf("%w: %s returned %d: %s", sentinel, resp.Request.URL.Host, resp.StatusCode, message)
 }
 
 func errorBody(resp *http.Response) string {

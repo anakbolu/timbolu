@@ -18,11 +18,13 @@
 // without it rather than coming up as an unauthenticated way to reach every bot's
 // desktop. Only /health is answered without it.
 //
-// On SIGTERM or SIGINT it stops serving and then removes the sandboxes it created,
-// running ones included, together with their volumes. That is the half of a teardown
-// the compose file cannot do: a sandbox is created by this process rather than declared
-// in the stack, so `docker compose down` would leave it — and the internal network and
-// volumes it keeps in use — behind (docs/adr/0003-virtual-computer.md §3.9).
+// On SIGTERM or SIGINT it stops serving and keeps the sandboxes it created, with their
+// volumes: a restart is not a teardown, and a sandbox that went away with the process
+// would take the bot's home volume — its browser profile and its files — with it
+// (docs/adr/0003-virtual-computer.md §3.5, issue #263). Removing them is opt-in through
+// VCOMPUTER_REAP_ON_SHUTDOWN=1, for a run that is tearing the stack down rather than
+// restarting it; the documented teardown is scripts/cleanup.sh --running --volumes, which
+// works whether or not this process got the chance to run (§3.9).
 //
 // Run: VCOMPUTER_CONTROL_TOKEN=... go run . -runtime docker
 package main
@@ -56,7 +58,7 @@ func run() error {
 	addr := flag.String("addr", defaultAddr(), "listen address; keep it on the internal network")
 	runtimeName := flag.String("runtime", defaultRuntime(), "sandbox runtime: docker (real containers) or memory (records actions, needs no Docker)")
 	shutdownGrace := flag.Duration("shutdown-grace", 5*time.Second, "how long to let in-flight requests finish on SIGTERM")
-	reapGrace := flag.Duration("reap-grace", 60*time.Second, "how long the sandboxes this control plane created may take to go away on shutdown")
+	reapGrace := flag.Duration("reap-grace", 60*time.Second, "how long the sandboxes this control plane created may take to go away, when VCOMPUTER_REAP_ON_SHUTDOWN=1 asks for it")
 	flag.Parse()
 
 	token := strings.TrimSpace(os.Getenv("VCOMPUTER_CONTROL_TOKEN"))
@@ -112,29 +114,39 @@ func run() error {
 		return fmt.Errorf("shutdown: %w", err)
 	}
 
-	// The sandboxes go away with the process that owns them, and this is the only
-	// place that happens. They are not part of the compose stack — the control plane
-	// created them — so `docker compose down` cannot remove them, and a running one
-	// keeps its volume and the internal network in use, which is exactly the leftover
-	// an operator would have to hunt down by hand (docs/adr/0003-virtual-computer.md
-	// §3.9). Doing it here rather than only in a script is what makes the documented
-	// teardown — `docker compose down` — actually clean.
+	// The sandboxes are kept, not reaped. This process is restarted for ordinary reasons —
+	// `compose restart`, `up -d --force-recreate` for an image upgrade, a daemon restart —
+	// and every one of them is a SIGTERM to this process, not a decision that the sessions
+	// are over. Reaping here would delete the bot's home volume with them, which is the
+	// browser profile and the files that volume exists for (docs/adr/0003-virtual-computer.md
+	// §3.5). A control plane that dies with sessions running is not a teardown.
 	//
-	// The grace period is separate from the shutdown one and much longer, because it
-	// bounds a different thing: stopping a sandbox is a container going down, not an
-	// HTTP request finishing. A failure here is reported rather than swallowed, but it
-	// does not turn a clean shutdown into a failed one — the server has already
-	// stopped, and the operator needs the count, not an exit code.
-	reapCtx, stopReap := context.WithTimeout(context.Background(), *reapGrace)
-	defer stopReap()
-	reaped, err := runtime.Reap(reapCtx)
-	if err != nil {
-		logger.Printf("reaping the sandboxes failed: %v", err)
+	// Removing them is therefore opt-in: VCOMPUTER_REAP_ON_SHUTDOWN=1, for a caller that is
+	// ending the stack rather than restarting it (scripts/e2e.sh's teardown reaches for
+	// scripts/cleanup.sh instead, which works whether or not this process got a SIGTERM at
+	// all). Without it the log line names the two ways to remove what is left, so an operator
+	// does not have to guess where a sandbox went — or why it is still there.
+	//
+	// The grace period is separate from the shutdown one and much longer, because it bounds a
+	// different thing: stopping a sandbox is a container going down, not an HTTP request
+	// finishing. A failure here is reported rather than swallowed, but it does not turn a
+	// clean shutdown into a failed one — the server has already stopped, and the operator
+	// needs the count, not an exit code.
+	if reapOnShutdown() {
+		reapCtx, stopReap := context.WithTimeout(context.Background(), *reapGrace)
+		defer stopReap()
+		reaped, err := runtime.Reap(reapCtx)
+		if err != nil {
+			logger.Printf("reaping the sandboxes failed: %v", err)
+		} else {
+			logger.Printf("reaped %d sandbox(es) and %d volume(s)", reaped.RemovedContainers, reaped.RemovedVolumes)
+		}
+		for _, failure := range reaped.Failed {
+			logger.Printf("could not reap: %s", failure)
+		}
 	} else {
-		logger.Printf("reaped %d sandbox(es) and %d volume(s)", reaped.RemovedContainers, reaped.RemovedVolumes)
-	}
-	for _, failure := range reaped.Failed {
-		logger.Printf("could not reap: %s", failure)
+		logger.Print("keeping the sandboxes this process created, with their volumes: sessions outlive a restart. " +
+			"To remove them, run scripts/cleanup.sh --running --volumes with STACK set, or start this process with VCOMPUTER_REAP_ON_SHUTDOWN=1 before a teardown")
 	}
 
 	return <-errs
@@ -182,4 +194,20 @@ func defaultRuntime() string {
 		return name
 	}
 	return "memory"
+}
+
+// reapOnShutdown reports whether this process was asked to remove the sandboxes it created on
+// the way out. It is opt-in and off by default (#263): the value of a session is its home
+// volume, and a SIGTERM is what an ordinary restart looks like, so the destructive answer has
+// to be the one somebody asked for rather than the one they get by doing nothing.
+//
+// Only "1" and "true" count. Anything else — unset, empty, "0", "no" — means keep, so a
+// deployment that sets the variable to anything other than an explicit yes cannot lose data by
+// typo, and a compose file can pass it through without deciding the question.
+func reapOnShutdown() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("VCOMPUTER_REAP_ON_SHUTDOWN"))) {
+	case "1", "true":
+		return true
+	}
+	return false
 }

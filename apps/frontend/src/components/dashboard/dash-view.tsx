@@ -37,10 +37,22 @@ const HEADING = "font-display text-[22px] font-semibold";
 
 /** Dasbor is the overview screen. */
 export function DashView() {
-  const { user, drafts, tasks, agents, events, status, decide, sendTask } = useWorkspace();
+  const { user, drafts, tasks, agents, events, status, ready, workspaceID, decide, sendTask } =
+    useWorkspace();
   const [instruction, setInstruction] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // The composer is the one action on this screen that can be reached before the
+  // store has its first answer, and the id it needs comes from that answer. Until
+  // both are there the control is closed and says why, so a click cannot turn into
+  // a message about a workspace that was merely still loading.
+  const workspaceReady = ready && workspaceID !== null;
+
+  // Every sentence the composer can raise presupposes the workspace, so none of
+  // them is shown before it is there: a notice from the loading window goes away by
+  // itself the moment the id lands rather than sitting under the field.
+  const currentNotice = workspaceReady ? notice : null;
 
   const now = useMemo(() => new Date(), []);
   const stats = useMemo(
@@ -53,9 +65,17 @@ export function DashView() {
 
   const initials = (user?.email ?? "A").slice(0, 1).toUpperCase();
 
+  // The standing hint is a statement about the roster, so it waits for the roster:
+  // "no Bolu yet" is not true of an account whose agents simply have not arrived,
+  // and the button already carries the loading state.
+  const hint =
+    agents.length === 0
+      ? "Belum ada Bolu untuk disuruh. Buat satu dulu di halaman Tim."
+      : "Tugas otomatis diteruskan ke anggota yang paling cocok, dan obrolannya muncul di daftar kiri.";
+
   async function send() {
     const text = instruction.trim();
-    if (!text || busy) return;
+    if (!text || busy || !workspaceReady) return;
     setBusy(true);
     const outcome = await sendTask(text);
     setBusy(false);
@@ -103,22 +123,20 @@ export function DashView() {
           onKeyDown={(event) => {
             if (event.key === "Enter") void send();
           }}
+          disabled={!workspaceReady}
           placeholder="misalnya: tagih semua invoice yang telat"
-          className="min-h-[46px] min-w-0 flex-[1_1_260px] rounded-full border-0 bg-white px-[18px] text-bolu-ink"
+          className="min-h-[46px] min-w-0 flex-[1_1_260px] rounded-full border-0 bg-white px-[18px] text-bolu-ink disabled:opacity-60"
         />
         <button
           type="button"
           onClick={() => void send()}
-          disabled={busy || instruction.trim() === ""}
-          className="min-h-[46px] cursor-pointer rounded-full border-0 bg-bolu-accent px-[22px] font-bold text-white disabled:opacity-60"
+          disabled={busy || !workspaceReady || instruction.trim() === ""}
+          className="min-h-[46px] cursor-pointer rounded-full border-0 bg-bolu-accent px-[22px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {busy ? "Mengirim…" : "Kirim tugas"}
+          {busy ? "Mengirim…" : workspaceReady ? "Kirim tugas" : "Memuat workspace…"}
         </button>
         <div className="basis-full text-[14px] opacity-75">
-          {notice ??
-            (agents.length === 0
-              ? "Belum ada Bolu untuk disuruh. Buat satu dulu di halaman Tim."
-              : "Tugas otomatis diteruskan ke anggota yang paling cocok, dan obrolannya muncul di daftar kiri.")}
+          {currentNotice ?? (workspaceReady ? hint : null)}
         </div>
       </div>
 

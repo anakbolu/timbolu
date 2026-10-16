@@ -1,0 +1,23 @@
+== #263: compose restart control (tanpa opt-in) lalu teardown eksplisit — STACK=vchd VCOMPUTER_CONTROL_PORT=18190 TEARDOWN=1 e2e.sh
+PASS restart-reap-off
+PASS restart-marker-written
+PASS restart-control
+PASS restart-health
+PASS restart-happened
+PASS restart-sandbox-kept
+PASS restart-volume-kept
+PASS restart-ensure-running
+PASS restart-volume-reused
+PASS restart-marker-survived
+PASS teardown-containers
+PASS teardown-volumes
+PASS teardown-networks
+SUMMARY: 71 passed, 0 failed
+
+$ STACK= scripts/cleanup.sh
+cleanup.sh: set STACK: it is the stack whose sandboxes are removed, and a default would let a cleanup reach for a stack the caller never named
+exit=0
+
+== container/volume stack lain yang terhapus selama run:
+(tidak ada)
+(tidak ada)

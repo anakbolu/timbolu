@@ -97,6 +97,12 @@ Llm:
   TokensPerPeriod: 0
   # How many providers one request tries before it gives up.
   ChainLimit: 3
+  # The models of this deployment that cannot read a picture. Matched against the
+  # configured model name case-insensitively and by prefix, so `llama3.1` covers
+  # `llama3.1:8b`. Everything not named is assumed to see; a model that is
+  # text-only but not listed still answers, because the gateway reads the
+  # provider's own refusal and retries without the picture.
+  TextOnlyModels: []
 
 Plan:
   # The cost ceiling of one day per workspace, in micro-rupiah. Zero means
@@ -112,6 +118,23 @@ Tasks:
   MaxTokens: 120000
   MaxHandoffDepth: 2
   MaxToolResultBytes: 16384
+
+# How much of a message's attachments reaches the model. Every field is
+# optional; a zero falls back to the product default. ATTACHMENT_CONTEXT_*
+# overrides them from the environment, so a deployment can tighten a bound
+# without a new image.
+#
+# A file bigger than MaxFileBytes is named rather than read, and the text of the
+# files of one request is capped at MaxCharsTotal: a conversation with several
+# documents in it answers from the newest one and names the rest.
+AttachmentContext:
+  # 10 MiB, checked before the object is fetched.
+  MaxFileBytes: 10485760
+  MaxCharsPerFile: 20000
+  MaxCharsTotal: 60000
+  # Pictures sent as vision input rather than described.
+  MaxImages: 4
+  MaxImageBytes: 5242880
 
 Memory:
   # The workspace memory travels in every call, so the cap is in tokens rather

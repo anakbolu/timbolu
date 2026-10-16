@@ -93,7 +93,7 @@ func newFakeDocker(t *testing.T) *fakeDocker {
 // `inspect`, `ps`, and the lifecycle read, so the fake behaves the way a daemon's would.
 //
 // What it deliberately does not do is re-implement `docker`'s filter matching: the
-// runtime asks a listing for the label and the name prefix it owns, and the test
+// runtime asks a listing for the two labels it owns, and the test
 // asserts that argv. The fake answers what a daemon that had applied those filters
 // would have answered.
 //
@@ -914,9 +914,14 @@ func TestDockerEnsureCreatesAHardenedContainerAndWaitsForTheBrowser(t *testing.T
 
 	calls := fixture.docker.calls(t)
 	volume := findCall(t, calls, "volume", "create")
-	// The label is what a cleanup finds the volume by later: a name pattern is a
-	// convention, a label is a record.
-	if want := []string{"volume", "create", "--label", "vcomputer.bot=bot-a", "vcomputer-bot-a-home"}; !equalArgv(volume, want) {
+	// The labels are what a cleanup finds the volume by later: a name pattern is a
+	// convention, a label is a record, and the stack label is the exact scope (#263).
+	if want := []string{
+		"volume", "create",
+		"--label", "vcomputer.bot=bot-a",
+		"--label", "vcomputer.stack=vcomputer",
+		"vcomputer-bot-a-home",
+	}; !equalArgv(volume, want) {
 		t.Fatalf("volume call = %v, want %v", volume, want)
 	}
 
@@ -929,6 +934,7 @@ func TestDockerEnsureCreatesAHardenedContainerAndWaitsForTheBrowser(t *testing.T
 	for _, required := range [][2]string{
 		{"--name", "vcomputer-bot-a"},
 		{"--label", "vcomputer.bot=bot-a"},
+		{"--label", "vcomputer.stack=vcomputer"},
 		{"--network", "vcomputer-internal"},
 		{"--volume", "vcomputer-bot-a-home:/home/bolu"},
 		{"--env", "NOVNC_PORT=" + DefaultNOVNCPort},
@@ -1540,11 +1546,11 @@ func TestDockerCleanupRemovesStoppedContainersAndNeverARunningOne(t *testing.T) 
 		t.Fatalf("the stopped container is still there: %q", state)
 	}
 
-	// The listing is scoped to what this runtime owns — the label every sandbox carries,
-	// and the name prefix that keeps two deployments on one host apart — and a cleanup
-	// that was not asked for volumes never touches one.
+	// The listing is scoped to what this runtime owns — the two labels every sandbox
+	// carries, the stack one being the exact scope (#263) — and a cleanup that was not
+	// asked for volumes never touches one.
 	listing := findCall(t, fixture.docker.calls(t), "ps")
-	for _, filter := range [][2]string{{"--filter", "label=vcomputer.bot"}, {"--filter", "name=^vcomputer-"}} {
+	for _, filter := range scopeFilters {
 		if !containsPair(listing, filter[0], filter[1]) {
 			t.Fatalf("listing %v is missing %v", listing, filter)
 		}
@@ -1590,7 +1596,7 @@ func TestDockerCleanupRemovesVolumesAndReportsWhatItCouldNot(t *testing.T) {
 	}
 
 	listing := findCall(t, fixture.docker.calls(t), "volume", "ls")
-	for _, filter := range [][2]string{{"--filter", "label=vcomputer.bot"}, {"--filter", "name=^vcomputer-"}} {
+	for _, filter := range scopeFilters {
 		if !containsPair(listing, filter[0], filter[1]) {
 			t.Fatalf("listing %v is missing %v", listing, filter)
 		}
@@ -1636,12 +1642,12 @@ func TestDockerReapRemovesRunningSandboxesAndTheirVolumes(t *testing.T) {
 
 	// The scoping is Cleanup's, and it matters more here: this is the operation that
 	// removes running containers, so a listing that was not narrowed to this
-	// deployment's label and prefix would take a second stack's sandboxes with it.
+	// deployment's labels would take a second stack's sandboxes with it.
 	for _, listing := range [][]string{
 		findCall(t, fixture.docker.calls(t), "ps"),
 		findCall(t, fixture.docker.calls(t), "volume", "ls"),
 	} {
-		for _, filter := range [][2]string{{"--filter", "label=vcomputer.bot"}, {"--filter", "name=^vcomputer-"}} {
+		for _, filter := range scopeFilters {
 			if !containsPair(listing, filter[0], filter[1]) {
 				t.Fatalf("listing %v is missing %v", listing, filter)
 			}
@@ -1668,7 +1674,7 @@ func TestDockerListingsPutTheirFiltersAfterTheVerb(t *testing.T) {
 	if got := findCall(t, calls, "ps"); !equalArgv(got, []string{
 		"ps",
 		"--filter", "label=vcomputer.bot",
-		"--filter", "name=^vcomputer-",
+		"--filter", "label=vcomputer.stack=vcomputer",
 		"-a", "--format", "{{.Names}}|{{.State}}",
 	}) {
 		t.Fatalf("container listing = %v", got)
@@ -1676,11 +1682,45 @@ func TestDockerListingsPutTheirFiltersAfterTheVerb(t *testing.T) {
 	if got := findCall(t, calls, "volume", "ls"); !equalArgv(got, []string{
 		"volume", "ls",
 		"--filter", "label=vcomputer.bot",
-		"--filter", "name=^vcomputer-",
+		"--filter", "label=vcomputer.stack=vcomputer",
 		"--format", "{{.Name}}",
 	}) {
 		t.Fatalf("volume listing = %v", got)
 	}
+}
+
+// TestDockerScopeIsTheStackLabelNotTheNamePrefix is #263's footnote as a test: the name
+// prefix is a prefix, so a listing filtered by `name=^vcomputer-` also matches
+// `vcomputer-qa-bot` — a second stack whose sandboxes and home volumes a cleanup would
+// then remove. The stack label records who created the object, so the filter is exact.
+func TestDockerScopeIsTheStackLabelNotTheNamePrefix(t *testing.T) {
+	fixture := newDockerFixture(t, WithNamePrefix("vcomputer-qa"))
+	fixture.docker.container(t, "vcomputer-qa-bot-a", "exited")
+
+	if _, err := fixture.runtime.Cleanup(t.Context(), true); err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+
+	for _, listing := range [][]string{
+		findCall(t, fixture.docker.calls(t), "ps"),
+		findCall(t, fixture.docker.calls(t), "volume", "ls"),
+	} {
+		if !containsPair(listing, "--filter", "label=vcomputer.stack=vcomputer-qa") {
+			t.Fatalf("listing %v is not scoped to this stack's label", listing)
+		}
+		// The default stack's name filter is the one that matched this stack's
+		// containers: it must not be there at all.
+		if containsPair(listing, "--filter", "name=^vcomputer-") {
+			t.Fatalf("listing %v still scopes by name prefix: it would match vcomputer-qa's sandboxes", listing)
+		}
+	}
+}
+
+// scopeFilters is the scoping every listing carries: one label says the object is a
+// sandbox, the other says which stack owns it.
+var scopeFilters = [][2]string{
+	{"--filter", "label=vcomputer.bot"},
+	{"--filter", "label=vcomputer.stack=vcomputer"},
 }
 
 // TestDockerActionsOnAMissingContainerAreNoSession keeps a 404 honest: every action

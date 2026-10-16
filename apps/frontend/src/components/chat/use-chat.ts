@@ -29,21 +29,33 @@ import {
   openDirectConversation,
   sendMessage,
 } from "@/lib/api";
+import { CHAT_EVENT_TYPES } from "@/lib/realtime";
 
-/** The events the chat renders. Everything else is another view's business. */
-const CHAT_EVENTS: Record<string, true> = {
-  "message.new": true,
-  "message.updated": true,
-  "router.decision": true,
-  // A Bolu says what it is doing through its own state, which is the only
-  // status the stream carries while an answer is still being prepared.
-  "agent.state": true,
-};
+// The events the chat renders are the list the stream subscribes to, so the
+// fallback's listeners and this filter cannot drift apart.
 
 export type RouterNotice = {
   agentId: string;
   reason: string;
   source: string;
+};
+
+/**
+ * HistorySnapshot is the read the open thread was built from.
+ *
+ * The stream carries the same messages the history does, and after a reconnect
+ * it carries them again from the backlog. A frame written before the history was
+ * read is older than what the screen already shows, so applying it would put the
+ * thread back to a state the server has since moved past — which is what makes a
+ * slow replay overwrite a fresh page. The ids and the moment of the read are
+ * kept together so those frames can be told apart from real ones.
+ */
+type HistorySnapshot = {
+  conversationId: string;
+  /** When the server answered the read, as epoch milliseconds. */
+  at: number;
+  /** The messages that read returned. */
+  ids: Set<string>;
 };
 
 export type ChatState = {
@@ -121,6 +133,9 @@ export function useChat(): ChatState {
   // The open conversation is read inside the event handler, which is registered
   // once: a ref keeps the handler from being torn down on every switch.
   const activeID = useRef<string | null>(null);
+  // The history the open thread was built from, read by the stream handler that
+  // outlives the render which created it.
+  const snapshot = useRef<HistorySnapshot | null>(null);
 
   useEffect(() => {
     activeID.current = active?.id ?? null;
@@ -138,12 +153,17 @@ export function useChat(): ChatState {
       setResponder(null);
       setActivity(null);
       cursor.current = undefined;
+      snapshot.current = null;
       setHasMore(false);
 
       if (!workspaceId) {
         return;
       }
 
+      // The moment the read starts: the fallback for when the server's own clock
+      // is not in the response, and early enough that a frame written after it
+      // counts as news rather than as replay.
+      const startedAt = Date.now();
       void (async () => {
         const result = await listMessages(workspaceId, conversation.id, undefined, 40);
         if (!result.ok) {
@@ -156,6 +176,11 @@ export function useChat(): ChatState {
         cursor.current = result.data.next_cursor;
         setHasMore(result.data.has_more);
         setError(null);
+        snapshot.current = {
+          conversationId: conversation.id,
+          at: result.serverDate ?? startedAt,
+          ids: new Set(result.data.messages.map((message) => message.message_id)),
+        };
       })();
     },
     [workspaceId],
@@ -195,6 +220,9 @@ export function useChat(): ChatState {
       return;
     }
 
+    // The page is read before it is applied, so the moment the read started is
+    // what the older rows are measured against.
+    const startedAt = Date.now();
     setLoadingOlder(true);
     const result = await listMessages(workspaceId, active.id, cursor.current, 40);
     setLoadingOlder(false);
@@ -208,6 +236,20 @@ export function useChat(): ChatState {
     setMessages((previous) => [...[...result.data.messages].reverse(), ...previous]);
     cursor.current = result.data.next_cursor;
     setHasMore(result.data.has_more);
+
+    // These rows are history too, so a frame older than this read must not put the
+    // thread back to what it said before. The open conversation's snapshot is
+    // extended rather than replaced: the newer page is the later truth.
+    const known = snapshot.current;
+    const ids = known && known.conversationId === active.id ? known.ids : new Set<string>();
+    for (const message of result.data.messages) {
+      ids.add(message.message_id);
+    }
+    snapshot.current = {
+      conversationId: active.id,
+      at: result.serverDate ?? startedAt,
+      ids,
+    };
   }, [workspaceId, active, loadingOlder]);
 
   const send = useCallback(
@@ -260,7 +302,7 @@ export function useChat(): ChatState {
   // The stream: the store's connection, filtered to this conversation.
   useEffect(() => {
     const unsubscribe = subscribe((event: ActivityEvent) => {
-      if (CHAT_EVENTS[event.type] !== true) {
+      if (!CHAT_EVENT_TYPES.includes(event.type)) {
         return;
       }
       if (event.conversation_id && event.conversation_id !== activeID.current) {
@@ -269,7 +311,7 @@ export function useChat(): ChatState {
         void reloadConversations();
         return;
       }
-      applyEvent(event, setMessages, setRouterNotice, setResponder, setActivity);
+      applyEvent(event, snapshot.current, setMessages, setRouterNotice, setResponder, setActivity);
     });
 
     return unsubscribe;
@@ -312,13 +354,22 @@ export function useChat(): ChatState {
  *
  * A message event carries the whole body, so a reply that is still arriving
  * replaces the version on screen rather than appending to it. That is what makes
- * a token arriving twice harmless and a client that joined late correct.
+ * a token arriving twice harmless and a client that joined late correct. The
+ * files ride along and are replaced the same way: the event is the server's
+ * whole message, so a file it no longer holds is gone from the row.
  *
  * The two other events are what a client knows before the answer has any text:
  * which Bolu the router chose, and what that Bolu says it is doing.
+ *
+ * `snapshot` is the history the open thread was built from. A message event that
+ * was written before that read is not news — it is the backlog a reconnect
+ * replays — and applying it would put a message the server has since moved past
+ * back on screen, so it is dropped. A message the read did not return is applied
+ * as usual: it is one this client has not seen.
  */
 function applyEvent(
   event: ActivityEvent,
+  snapshot: HistorySnapshot | null,
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
   setRouterNotice: React.Dispatch<React.SetStateAction<RouterNotice | null>>,
   setResponder: React.Dispatch<React.SetStateAction<{ agentId: string; name: string } | null>>,
@@ -371,16 +422,29 @@ function applyEvent(
     return;
   }
 
+  if (snapshot && snapshot.ids.has(payload.message_id)) {
+    const written = Date.parse(event.created_at);
+    // An unparsable timestamp counts as news: dropping a real update over a field
+    // this client cannot read is the worse of the two mistakes.
+    if (Number.isFinite(written) && written < snapshot.at) {
+      return;
+    }
+  }
+
   setMessages((previous) => {
+    // The field is optional, so a payload written before it existed carries no
+    // list at all. That is an event with nothing to say about files, and the
+    // ones on screen stay; an empty array is the server saying there are none.
+    const payloadAttachments = Array.isArray(payload.attachments)
+      ? replaceAttachments(payload.attachments)
+      : undefined;
     const incoming: ChatMessage = {
       message_id: payload.message_id,
       conversation_id: payload.conversation_id,
       agent_id: payload.agent_id,
       user_id: payload.user_id,
       blocks: payload.blocks ?? [],
-      // A payload from before this field existed carries none, and that is a
-      // message with no files rather than a reason to drop the event.
-      attachments: Array.isArray(payload.attachments) ? payload.attachments : [],
+      attachments: payloadAttachments ?? [],
       status: payload.status,
       finish_reason: payload.finish_reason,
       created_at: event.created_at,
@@ -397,10 +461,11 @@ function applyEvent(
     next[index] = {
       ...previous[index],
       ...incoming,
-      // The message carries its files, so the same upload is seen twice: once
-      // from the request that stored it, and once from the event that followed.
-      // Merging by id is what keeps those one row instead of two.
-      attachments: mergeAttachments(previous[index].attachments, incoming.attachments),
+      // The event carries the files the server still holds, so it is the list
+      // on screen rather than one to fold in: a file dropped for retention
+      // disappears, because the latest event for the message is the whole
+      // truth. An event without the field leaves the files already shown alone.
+      attachments: payloadAttachments ?? previous[index].attachments,
     };
     return next;
   });
@@ -443,6 +508,26 @@ function mergeAttachments(known: Attachment[], incoming: Attachment[]): Attachme
   }
 
   return merged;
+}
+
+/**
+ * replaceAttachments takes the server's list as the whole truth.
+ *
+ * The order is the server's, so a file keeps the place the backend gave it, and
+ * a repeated id collapses to one row: the same file is named twice when an
+ * upload's own response and the event that followed it both carry it.
+ */
+function replaceAttachments(incoming: Attachment[]): Attachment[] {
+  const seen = new Set<string>();
+  const replaced: Attachment[] = [];
+  for (const item of incoming) {
+    if (seen.has(item.id)) {
+      continue;
+    }
+    seen.add(item.id);
+    replaced.push(item);
+  }
+  return replaced;
 }
 
 /** append adds a message once, by id, so a stream echo cannot duplicate it. */

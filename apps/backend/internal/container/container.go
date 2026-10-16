@@ -270,6 +270,14 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Container, e
 		return nil, err
 	}
 
+	// What the loader could not use from the environment is said here, which is the first point
+	// in the process with a logger. The process starts either way — that is the whole reason the
+	// loader collected these instead of refusing — so the one thing left is that a person reading
+	// the log learns which setting was ignored before a call behaves unlike its configuration.
+	for _, warning := range cfg.Warnings() {
+		log.Warn(warning)
+	}
+
 	c := &Container{Config: cfg, Logger: log}
 
 	// Telemetry comes first: everything assembled after it may start a span, and a provider

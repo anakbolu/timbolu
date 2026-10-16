@@ -20,6 +20,7 @@ import (
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/sse"
+	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/vision"
 )
 
 // DefaultBaseURL is used when a configuration does not name one.
@@ -318,13 +319,21 @@ func (c *Client) post(ctx context.Context, path string, body []byte, stream bool
 		return nil, rateLimitError(resp)
 	case resp.StatusCode == http.StatusRequestEntityTooLarge, resp.StatusCode == http.StatusBadRequest:
 		defer func() { _ = resp.Body.Close() }()
-		return nil, statusError(resp, domain.ErrInvalidRequest)
+		message := errorBody(resp)
+		// A provider that names the picture is not complaining about the request: it
+		// is saying this model cannot read one, which is a capability the chain
+		// lacks — another provider may have it, and the caller can answer without
+		// the picture. A 413 is a bound, and stays a malformed request.
+		if resp.StatusCode == http.StatusBadRequest && vision.Refused(message) {
+			return nil, statusError(resp, message, domain.ErrUnsupported)
+		}
+		return nil, statusError(resp, message, domain.ErrInvalidRequest)
 	case resp.StatusCode >= 500:
 		defer func() { _ = resp.Body.Close() }()
-		return nil, statusError(resp, domain.ErrProviderUnavailable)
+		return nil, statusError(resp, errorBody(resp), domain.ErrProviderUnavailable)
 	default:
 		defer func() { _ = resp.Body.Close() }()
-		return nil, statusError(resp, domain.ErrProviderUnavailable)
+		return nil, statusError(resp, errorBody(resp), domain.ErrProviderUnavailable)
 	}
 }
 
@@ -339,10 +348,12 @@ func rateLimitError(resp *http.Response) error {
 	return fmt.Errorf("%w: %s", domain.ErrRateLimited, message)
 }
 
-func statusError(resp *http.Response, sentinel error) error {
-	return fmt.Errorf("%w: %s returned %d: %s", sentinel, resp.Request.URL.Host, resp.StatusCode, errorBody(resp))
+func statusError(resp *http.Response, message string, sentinel error) error {
+	return fmt.Errorf("%w: %s returned %d: %s", sentinel, resp.Request.URL.Host, resp.StatusCode, message)
 }
 
+// errorBody reads the provider's message, which is what says whether a refusal
+// was about the picture or about the request.
 func errorBody(resp *http.Response) string {
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 	if err != nil {
