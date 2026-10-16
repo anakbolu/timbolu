@@ -80,21 +80,24 @@ type SendRequest struct {
 	Reply bool
 	// ForAttachment opens a message that will carry an upload; it may have no text.
 	ForAttachment bool
-	// AgentID pins the responder. In a group it overrides the router, which is
-	// what an explicit "@Bolu" does.
+	// AgentID pins the responder, which is what a client that resolved a mention
+	// itself sends. In a group it overrides both the router and the names in the
+	// text, so exactly this one Bolu answers.
 	AgentID uuid.UUID
 }
 
 // SendResult is what storing a message produced.
 type SendResult struct {
 	Message Message
-	// ReplyMessageID is the placeholder the answer will fill. It is set as soon
-	// as a reply was started, so a client can follow that one message rather
-	// than every message of the conversation.
-	ReplyMessageID uuid.UUID
-	// Responder is the Bolu that will answer, which the group router decided.
-	Responder *AgentRef
-	// Routed says the router chose, rather than the caller pinning a Bolu.
+	// ReplyMessageIDs are the placeholders the answers will fill, in the order the
+	// Bolu were picked. They are set as soon as a reply was started, so a client can
+	// follow those messages rather than every message of the conversation.
+	ReplyMessageIDs []uuid.UUID
+	// Responders are the Bolu that will answer. A group message that names two Bolu
+	// gets two answers, so this is a list rather than one Bolu.
+	Responders []AgentRef
+	// Routed says the group router chose, rather than the caller pinning a Bolu or
+	// the message naming one.
 	Routed bool
 }
 

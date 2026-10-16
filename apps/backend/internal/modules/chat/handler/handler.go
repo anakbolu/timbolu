@@ -135,10 +135,12 @@ type participantPayload struct {
 }
 
 type sendPayload struct {
-	Message        chatdomain.MessagePayload `json:"message"`
-	ReplyMessageID string                    `json:"reply_message_id,omitempty"`
-	Responder      *participantPayload       `json:"responder,omitempty"`
-	Routed         bool                      `json:"routed"`
+	Message chatdomain.MessagePayload `json:"message"`
+	// ReplyMessageIDs are the placeholders the answers fill, in the order the Bolu
+	// were picked: one per Bolu that will answer.
+	ReplyMessageIDs []string             `json:"reply_message_ids,omitempty"`
+	Responders      []participantPayload `json:"responders,omitempty"`
+	Routed          bool                 `json:"routed"`
 }
 
 type pagePayload struct {
@@ -339,13 +341,14 @@ func (h *Handler) Send(c *fiber.Ctx) error {
 	}
 
 	payload := sendPayload{
-		Message:        chatdomain.WireMessage(result.Message),
-		ReplyMessageID: idString(result.ReplyMessageID),
-		Routed:         result.Routed,
+		Message: chatdomain.WireMessage(result.Message),
+		Routed:  result.Routed,
 	}
-	if result.Responder != nil {
-		responder := toParticipantPayloadAgent(*result.Responder)
-		payload.Responder = &responder
+	for _, id := range result.ReplyMessageIDs {
+		payload.ReplyMessageIDs = append(payload.ReplyMessageIDs, id.String())
+	}
+	for _, responder := range result.Responders {
+		payload.Responders = append(payload.Responders, toParticipantPayloadAgent(responder))
 	}
 
 	return response.Success(c, fiber.StatusCreated, "message sent", payload)

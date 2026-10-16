@@ -198,7 +198,7 @@ func TestATasksAttachmentContentReachesTheModel(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	placeholder, err := fixture.repo.GetMessage(ctx, fixture.scope, sent.ReplyMessageID)
+	placeholder, err := fixture.repo.GetMessage(ctx, fixture.scope, sent.ReplyMessageIDs[0])
 	require.NoError(t, err)
 	require.NotEqual(t, uuid.Nil, placeholder.TaskID, "the message must be handed to the durable runtime")
 

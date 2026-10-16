@@ -55,14 +55,14 @@ func TestSendOpensATaskWhenTheRuntimeIsConfigured(t *testing.T) {
 	require.Len(t, tasks.requests, 1, "a message with a runtime behind it opens exactly one task")
 	opened := tasks.requests[0]
 	require.Equal(t, conversation.ID, opened.ConversationID)
-	require.Equal(t, result.ReplyMessageID, opened.MessageID,
+	require.Equal(t, result.ReplyMessageIDs[0], opened.MessageID,
 		"the task fills the placeholder the chat module wrote, which is what puts the answer in the thread")
 	require.Equal(t, h.agent.ID, opened.AgentID)
 	require.Equal(t, chatdomain.TriggerChat, opened.Trigger)
 	require.Equal(t, "Rekap pesanan hari ini", opened.Title)
 
 	// The placeholder carries the task id, which is what a client follows.
-	stored, err := h.store.GetMessage(context.Background(), h.scope, result.ReplyMessageID)
+	stored, err := h.store.GetMessage(context.Background(), h.scope, result.ReplyMessageIDs[0])
 	require.NoError(t, err)
 	require.Equal(t, tasks.taskID, stored.TaskID)
 	require.Equal(t, chatdomain.MessageStreaming, stored.Status,
@@ -88,7 +88,7 @@ func TestSendMarksThePlaceholderFailedWhenTheTaskCannotOpen(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "open task")
 
-	stored, err := h.store.GetMessage(context.Background(), h.scope, result.ReplyMessageID)
+	stored, err := h.store.GetMessage(context.Background(), h.scope, result.ReplyMessageIDs[0])
 	require.NoError(t, err)
 	require.Equal(t, chatdomain.MessageFailed, stored.Status)
 	require.Contains(t, stored.FinishReason, "temporal is unreachable")
@@ -108,7 +108,7 @@ func TestSendAnswersInProcessWithoutARuntime(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	answered := h.waitForMessage(t, result.ReplyMessageID, func(message chatdomain.Message) bool {
+	answered := h.waitForMessage(t, result.ReplyMessageIDs[0], func(message chatdomain.Message) bool {
 		return message.Status == chatdomain.MessageComplete
 	})
 	require.Equal(t, uuid.Nil, answered.TaskID, "no runtime means no task behind the answer")

@@ -72,9 +72,11 @@ func TestAMemoryRequestIsAnsweredByTheModuleThatStoredIt(t *testing.T) {
 		Reply:          true,
 	})
 	require.NoError(t, err)
-	require.NotEqual(t, uuid.Nil, result.ReplyMessageID, "the confirmation is the reply the client follows")
+	require.Len(t, result.ReplyMessageIDs, 1, "the confirmation is the reply the client follows")
+	require.NotEqual(t, uuid.Nil, result.ReplyMessageIDs[0])
+	require.Len(t, result.Responders, 1, "the module that stored the row is the one that answered")
 
-	confirmation := harness.waitForMessage(t, result.ReplyMessageID, func(message chatdomain.Message) bool {
+	confirmation := harness.waitForMessage(t, result.ReplyMessageIDs[0], func(message chatdomain.Message) bool {
 		return message.Status == chatdomain.MessageComplete && len(message.Blocks) > 0
 	})
 
@@ -118,7 +120,7 @@ func TestAnOrdinaryMessageGoesToTheTaskRuntime(t *testing.T) {
 
 	require.Len(t, memory.remembered, 1, "the module is asked about every message")
 	require.Len(t, starter.started, 1, "and a message that is not a request still opens a task")
-	require.NotEqual(t, uuid.Nil, result.ReplyMessageID)
+	require.Len(t, result.ReplyMessageIDs, 1)
 }
 
 // TestEveryMessagePushesTheExtractionOut: the debounce is what makes extraction

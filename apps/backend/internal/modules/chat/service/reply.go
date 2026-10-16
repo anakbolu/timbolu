@@ -85,59 +85,78 @@ func (s *Service) Send(ctx context.Context, scope chatdomain.Scope, req chatdoma
 		return result, nil
 	}
 
-	responder, decision, routed, err := s.pickResponder(ctx, scope, conversation, userMessage, req.AgentID)
+	picks, err := s.pickResponders(ctx, scope, conversation, userMessage, req.AgentID, text)
 	if err != nil {
 		return result, err
 	}
-	result.Responder = &responder
-	result.Routed = routed
 
 	if s.deps.Memory != nil {
 		// A message that asks for something to be remembered is answered here
 		// instead of by the model: the module that stores it is the module that
 		// names what it stored, so the confirmation cannot describe a row that
 		// does not exist. It also costs no tokens.
-		if handled, err := s.remember(ctx, scope, conversation, responder, userMessage, text, &result); handled {
+		if handled, err := s.remember(ctx, scope, conversation, picks[0].Agent, userMessage, text, &result); handled {
+			// One Bolu wrote the confirmation, so one Bolu is what answered: the
+			// list must not name the ones whose answer never started.
+			result.Responders = []chatdomain.AgentRef{picks[0].Agent}
 			return result, err
 		}
 	}
 
-	// The placeholder is written before the answer starts, so a client can show
-	// the Bolu thinking and follow that one message rather than every message of
-	// the thread. It also means a crash mid-answer leaves a visible partial
-	// rather than nothing.
-	placeholder, err := s.deps.Messages.Append(ctx, scope, chatdomain.Message{
-		ConversationID: conversation.ID,
-		AuthorAgentID:  responder.ID,
-		Blocks:         []chatdomain.Block{},
-		Status:         chatdomain.MessageStreaming,
-	})
-	if err != nil {
-		return result, err
+	// Every picked Bolu answers: a group message that names two of them is a
+	// request to two of them, and the answer of one is not the answer of the
+	// other.
+	result.Responders = make([]chatdomain.AgentRef, 0, len(picks))
+	for _, pick := range picks {
+		result.Responders = append(result.Responders, pick.Agent)
 	}
-	result.ReplyMessageID = placeholder.ID
+	// Routed describes how the message was addressed, and naming a Bolu is not
+	// the router's doing; only the router's own pick reports itself.
+	result.Routed = picks[0].Routed
 
-	s.emitMessage(ctx, scope, placeholder, conversation.ID, chatdomain.EventMessageNew)
-	if routed {
-		s.emitRouterDecision(ctx, scope, conversation, userMessage, decision)
+	for _, pick := range picks {
+		// The placeholder is written before the answer starts, so a client can show
+		// the Bolu thinking and follow that one message rather than every message of
+		// the thread. It also means a crash mid-answer leaves a visible partial
+		// rather than nothing.
+		placeholder, err := s.deps.Messages.Append(ctx, scope, chatdomain.Message{
+			ConversationID: conversation.ID,
+			AuthorAgentID:  pick.Agent.ID,
+			Blocks:         []chatdomain.Block{},
+			Status:         chatdomain.MessageStreaming,
+		})
+		if err != nil {
+			return result, err
+		}
+		result.ReplyMessageIDs = append(result.ReplyMessageIDs, placeholder.ID)
+
+		s.emitMessage(ctx, scope, placeholder, conversation.ID, chatdomain.EventMessageNew)
+		if pick.Routed {
+			s.emitRouterDecision(ctx, scope, conversation, userMessage, pick.Decision)
+		}
+
+		// The durable runtime owns the answer when it is configured. A task survives
+		// the request, a restart, and an approval that takes hours; the in-process
+		// reply below does not, which is why it is the fallback rather than the
+		// default.
+		if s.deps.Tasks != nil {
+			dispatched, err := s.dispatchTask(ctx, scope, conversation, pick.Agent, userMessage, placeholder, text, result)
+			result = dispatched
+			if err != nil {
+				return result, err
+			}
+			continue
+		}
+
+		// The reply runs on a context of its own: the request that started it ends
+		// as soon as the message is stored, and the answer must not end with it.
+		replyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), replyTimeout)
+
+		go func() {
+			defer cancel()
+			s.runReply(replyCtx, scope, conversation, pick.Agent, userMessage, placeholder)
+		}()
 	}
-
-	// The durable runtime owns the answer when it is configured. A task survives
-	// the request, a restart, and an approval that takes hours; the in-process
-	// reply below does not, which is why it is the fallback rather than the
-	// default.
-	if s.deps.Tasks != nil {
-		return s.dispatchTask(ctx, scope, conversation, responder, userMessage, placeholder, text, result)
-	}
-
-	// The reply runs on a context of its own: the request that started it ends
-	// as soon as the message is stored, and the answer must not end with it.
-	replyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), replyTimeout)
-
-	go func() {
-		defer cancel()
-		s.runReply(replyCtx, scope, conversation, responder, userMessage, placeholder)
-	}()
 
 	return result, nil
 }
@@ -210,26 +229,44 @@ func (s *Service) resolveAttachments(ctx context.Context, scope chatdomain.Scope
 	return attachments, nil
 }
 
-// pickResponder decides which Bolu answers.
+// responderPick is one Bolu that will answer, and how it was chosen.
+type responderPick struct {
+	Agent chatdomain.AgentRef
+	// Decision is the router's decision, and only a routed pick carries one: a
+	// pinned Bolu and a named one were asked for by the caller, and the message
+	// itself says so, so there is no judgement to record.
+	Decision chatdomain.RouterDecision
+	// Routed says the router chose this Bolu, rather than the caller pinning one or
+	// the message naming one.
+	Routed bool
+}
+
+// pickResponders decides which Bolu answer.
 //
-// A pinned Bolu wins, which is what an explicit "@Bolu" in a group is. A direct
-// thread answers with the one Bolu it is with. A group goes to the router.
-func (s *Service) pickResponder(ctx context.Context, scope chatdomain.Scope, conversation chatdomain.Conversation, message chatdomain.Message, pinned uuid.UUID) (chatdomain.AgentRef, chatdomain.RouterDecision, bool, error) {
+// A pinned Bolu wins, which is what a client that resolved a mention itself sends.
+// A direct thread answers with the one Bolu it is with. A group message that names
+// Bolu goes to the ones it names, and each of them answers — naming two is asking
+// two. A group message that names nobody goes to the router, which picks exactly
+// one.
+func (s *Service) pickResponders(ctx context.Context, scope chatdomain.Scope, conversation chatdomain.Conversation, message chatdomain.Message, pinned uuid.UUID, text string) ([]responderPick, error) {
 	agents, err := s.agentsOf(ctx, scope, conversation)
 	if err != nil {
-		return chatdomain.AgentRef{}, chatdomain.RouterDecision{}, false, err
+		return nil, err
 	}
 	if len(agents) == 0 {
-		return chatdomain.AgentRef{}, chatdomain.RouterDecision{}, false, chatdomain.ErrNoResponder
+		return nil, chatdomain.ErrNoResponder
 	}
 
 	if pinned != uuid.Nil {
 		for _, agent := range agents {
 			if agent.ID == pinned {
-				return agent, chatdomain.RouterDecision{AgentID: pinned, Reason: "diminta langsung", Source: chatdomain.RouterSourceFallback}, false, nil
+				return []responderPick{{
+					Agent:    agent,
+					Decision: chatdomain.RouterDecision{AgentID: pinned, Reason: "diminta langsung", Source: chatdomain.RouterSourceFallback},
+				}}, nil
 			}
 		}
-		return chatdomain.AgentRef{}, chatdomain.RouterDecision{}, false, chatdomain.ErrAgentNotInConversation
+		return nil, chatdomain.ErrAgentNotInConversation
 	}
 
 	if conversation.Kind == chatdomain.KindDirect {
@@ -237,26 +274,40 @@ func (s *Service) pickResponder(ctx context.Context, scope chatdomain.Scope, con
 		if !s.deps.Agents.Active(agent) {
 			// A resting Bolu is left alone rather than woken: the switch is the
 			// user's, and a reply would contradict it.
-			return chatdomain.AgentRef{}, chatdomain.RouterDecision{}, false, fmt.Errorf("%w: %s sedang istirahat", chatdomain.ErrNoResponder, agent.Name)
+			return nil, fmt.Errorf("%w: %s sedang istirahat", chatdomain.ErrNoResponder, agent.Name)
 		}
-		return agent, chatdomain.RouterDecision{AgentID: agent.ID, Reason: "obrolan langsung", Source: chatdomain.RouterSourceFallback, Candidates: 1}, false, nil
+		return []responderPick{{
+			Agent:    agent,
+			Decision: chatdomain.RouterDecision{AgentID: agent.ID, Reason: "obrolan langsung", Source: chatdomain.RouterSourceFallback, Candidates: 1},
+		}}, nil
+	}
+
+	// The names in the message come first: a person who types "@Biru" has said who
+	// they want, and a router that second-guessed them would be answering a
+	// question nobody asked.
+	if named := mentioned(agents, text); len(named) > 0 {
+		picks := make([]responderPick, 0, len(named))
+		for _, agent := range named {
+			picks = append(picks, responderPick{Agent: agent})
+		}
+		return picks, nil
 	}
 
 	if s.deps.Router == nil {
-		return chatdomain.AgentRef{}, chatdomain.RouterDecision{}, false, chatdomain.ErrNoResponder
+		return nil, chatdomain.ErrNoResponder
 	}
 
 	decision, err := s.deps.Router.Pick(ctx, scope, conversation, message)
 	if err != nil {
-		return chatdomain.AgentRef{}, chatdomain.RouterDecision{}, false, err
+		return nil, err
 	}
 	for _, agent := range agents {
 		if agent.ID == decision.AgentID {
-			return agent, decision, true, nil
+			return []responderPick{{Agent: agent, Decision: decision, Routed: true}}, nil
 		}
 	}
 
-	return chatdomain.AgentRef{}, chatdomain.RouterDecision{}, false, chatdomain.ErrNoResponder
+	return nil, chatdomain.ErrNoResponder
 }
 
 // agentsOf returns the Bolu of a conversation, in the order the participants are

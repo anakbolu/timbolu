@@ -361,6 +361,24 @@ task id on that message, so a client follows the answer from the message rather
 than watching the whole thread. A dispatch that cannot be opened marks the
 placeholder `failed` instead of leaving it streaming forever.
 
+The send response carries `reply_message_ids` and `responders`, both lists: one
+entry per Bolu that will answer, in the order they were picked. A group message
+that names two Bolu is addressed to two, and each answers in its own message.
+
+Who answers a message in a **group**:
+
+| The message | Who answers |
+| --- | --- |
+| Names one or more Bolu (`@Biru`, `@Biru Muda`) | Exactly the ones named, in the order the names appear |
+| Names nobody | The router picks one |
+| Carries `agent_id` | That Bolu, whatever the text says |
+
+A name is matched case-insensitively and whole-word, and the longest name wins, so
+a roster with both `Biru` and `Biru Muda` reaches the one that was typed. A name
+is only a name after an `@`: the word alone is not a call. A Bolu outside the
+group cannot be reached by name — it is not a candidate, so the router decides. A
+direct thread always answers with its own Bolu, whatever the text says.
+
 An upload is checked before anything is written, and the check is on both halves
 of the file: the extension must be one the deployment allows
 (`ATTACHMENT_ALLOWED_EXTENSIONS`, which can only narrow the module's own list of

@@ -157,7 +157,7 @@ func TestNoticesAndBlocksReachTheClient(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	reply := h.waitForMessage(t, result.ReplyMessageID, settled)
+	reply := h.waitForMessage(t, result.ReplyMessageIDs[0], settled)
 	require.Equal(t, chatdomain.MessageComplete, reply.Status)
 	require.Len(t, reply.Blocks, 3, "text, chart, then the text after it")
 
@@ -192,7 +192,7 @@ func TestAnUnreadableBlockChunkIsSkipped(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	reply := h.waitForMessage(t, result.ReplyMessageID, settled)
+	reply := h.waitForMessage(t, result.ReplyMessageIDs[0], settled)
 	require.Equal(t, chatdomain.MessageComplete, reply.Status)
 	require.Len(t, reply.Blocks, 1)
 	require.Contains(t, string(reply.Blocks[0].Body), "Ini jawabannya")
@@ -281,7 +281,7 @@ func TestAgentStateEventsArePublished(t *testing.T) {
 		ConversationID: conversation.ID, Text: "halo", Reply: true,
 	})
 	require.NoError(t, err)
-	h.waitForMessage(t, result.ReplyMessageID, settled)
+	h.waitForMessage(t, result.ReplyMessageIDs[0], settled)
 
 	states := h.store.eventsOfType(chatdomain.EventAgentState)
 	require.NotEmpty(t, states, "the dashboard is built from these")
@@ -321,7 +321,7 @@ func TestAReplyThatCannotBeStoredIsReported(t *testing.T) {
 
 	// The placeholder stays in "streaming": the write failed, so the answer was
 	// never recorded, and claiming otherwise would be a lie.
-	stored, err := h.store.GetMessage(context.Background(), h.scope, result.ReplyMessageID)
+	stored, err := h.store.GetMessage(context.Background(), h.scope, result.ReplyMessageIDs[0])
 	require.NoError(t, err)
 	require.Equal(t, chatdomain.MessageStreaming, stored.Status)
 }
