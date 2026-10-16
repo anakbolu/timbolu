@@ -124,8 +124,8 @@ export function OnboardingForm() {
     const workspaceID = workspace.data.workspace.id;
     setActiveWorkspaceId(workspaceID);
 
-    // Onboarding seeds Tim Bolu and Tim Hore, so the first team is where the
-    // first Bolu belongs and the person is not asked a question with one answer.
+    // Onboarding seeds Tim Bolu, so the team the first Bolu belongs to is the
+    // workspace's own and the person is not asked to invent one first.
     const team = workspace.data.teams[0]?.id;
     if (team) {
       const bolu = await createAgent(workspaceID, {

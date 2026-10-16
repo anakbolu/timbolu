@@ -54,12 +54,11 @@ func scope() domain.Scope {
 }
 
 func TestOnboard(t *testing.T) {
-	t.Run("creates the workspace with its two default teams", func(t *testing.T) {
+	t.Run("creates the workspace with its one default team", func(t *testing.T) {
 		h := newHarness(t)
 		userID := uuid.New()
 		workspace := domain.Workspace{ID: uuid.New(), Name: "Toko Sinar", Timezone: "Asia/Jakarta"}
 		boluTeam := domain.Team{ID: uuid.New(), Name: "Tim Bolu", Kind: "bolu"}
-		horeTeam := domain.Team{ID: uuid.New(), Name: "Tim Hore", Kind: "hore"}
 
 		h.repo.EXPECT().Onboard(mock.Anything, userID, mock.Anything).
 			RunAndReturn(func(_ context.Context, _ uuid.UUID, req domain.OnboardRequest) (domain.OnboardResult, error) {
@@ -68,7 +67,7 @@ func TestOnboard(t *testing.T) {
 				require.Equal(t, "Asia/Makassar", req.Timezone)
 				return domain.OnboardResult{
 					Workspace: workspace,
-					Teams:     []domain.Team{boluTeam, horeTeam},
+					Teams:     []domain.Team{boluTeam},
 					Created:   true,
 				}, nil
 			}).Once()
@@ -80,7 +79,8 @@ func TestOnboard(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.True(t, result.Created)
-		require.Len(t, result.Teams, 2)
+		require.Len(t, result.Teams, 1)
+		require.Equal(t, "Tim Bolu", result.Teams[0].Name)
 	})
 
 	t.Run("defaults the timezone and does not re-provision on a retry", func(t *testing.T) {

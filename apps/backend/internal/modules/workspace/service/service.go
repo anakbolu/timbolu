@@ -82,8 +82,8 @@ func New(deps Deps) domain.Service {
 	}
 }
 
-// Onboard creates the workspace, makes the caller its owner, and creates the two
-// default teams. Submitting twice returns the same workspace.
+// Onboard creates the workspace, makes the caller its owner, and creates the
+// default team. Submitting twice returns the same workspace.
 func (s *service) Onboard(ctx context.Context, userID uuid.UUID, req domain.OnboardRequest) (domain.OnboardResult, error) {
 	if userID == uuid.Nil {
 		return domain.OnboardResult{}, domain.ErrNotMember

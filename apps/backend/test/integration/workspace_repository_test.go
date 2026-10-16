@@ -104,17 +104,13 @@ func TestWorkspaceRepositoryOnboarding(t *testing.T) {
 	ctx := t.Context()
 	fixture := newWorkspaceFixture(t, appDatabase(t))
 
-	t.Run("creates the workspace with an owner and two teams", func(t *testing.T) {
+	t.Run("creates the workspace with an owner and one team", func(t *testing.T) {
 		require.Equal(t, "Toko Sinar", fixture.workspace.Name)
 		require.Equal(t, workspacedomain.RoleOwner, fixture.workspace.Role)
-		require.Len(t, fixture.teams, 2)
+		require.Len(t, fixture.teams, 1, "onboarding creates one team, not a second empty one")
 
-		names := map[string]string{}
-		for _, team := range fixture.teams {
-			names[team.Kind] = team.Name
-		}
-		require.Equal(t, "Tim Bolu", names["bolu"])
-		require.Equal(t, "Tim Hore", names["hore"])
+		require.Equal(t, "Tim Bolu", fixture.teams[0].Name)
+		require.Equal(t, "bolu", fixture.teams[0].Kind)
 	})
 
 	t.Run("is idempotent", func(t *testing.T) {
@@ -126,7 +122,7 @@ func TestWorkspaceRepositoryOnboarding(t *testing.T) {
 		require.False(t, again.Created, "a repeated onboarding must not create a second workspace")
 		require.Equal(t, fixture.workspace.ID, again.Workspace.ID)
 		require.Equal(t, "Toko Sinar", again.Workspace.Name, "the existing workspace must be returned unchanged")
-		require.Len(t, again.Teams, 2)
+		require.Len(t, again.Teams, 1, "the repeated call must not add a team either")
 	})
 
 	t.Run("lists the workspace with the caller's role", func(t *testing.T) {
@@ -165,7 +161,8 @@ func TestWorkspaceRepositoryOnboarding(t *testing.T) {
 
 		teams, err := fixture.repo.Teams(ctx, fixture.scope)
 		require.NoError(t, err)
-		require.Len(t, teams, 2)
+		require.Len(t, teams, 1)
+		require.Equal(t, "Tim Bolu", teams[0].Name)
 	})
 
 	t.Run("updates the profile", func(t *testing.T) {
@@ -430,10 +427,11 @@ func TestWorkspaceRepositoryTenantIsolation(t *testing.T) {
 			})
 		require.Error(t, err, "writing into another workspace must fail")
 
-		// And the other workspace is unchanged.
+		// And the other workspace is unchanged: still its one team, no Penyusup.
 		teams, err := second.repo.Teams(ctx, second.scope)
 		require.NoError(t, err)
-		require.Len(t, teams, 2)
+		require.Len(t, teams, 1)
+		require.Equal(t, "Tim Bolu", teams[0].Name)
 	})
 
 	t.Run("removing a member of another workspace is refused", func(t *testing.T) {

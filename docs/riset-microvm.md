@@ -285,18 +285,18 @@ jalur MCP. Ini masuk akal hanya bila MCP terbukti terlalu longgar untuk kebutuha
 ## 6. Satu komputer per workspace, dipakai bersama beberapa Bolu
 
 **Keputusan cakupan: satu komputer per *workspace*.** Bolu hidup di dalam workspace, tim
-(Tim Bolu / Tim Hore) mengelompokkannya, dan grup obrolan bersifat sementara — jadi unit yang
+(Tim Bolu) mengelompokkannya, dan grup obrolan bersifat sementara — jadi unit yang
 bertahan lama dan punya data adalah workspace. Satu komputer per workspace juga langsung cocok
 dengan jalur MCP, yang memang workspace-scoped: **satu server MCP, satu sandbox, banyak Bolu**.
 
 | Cakupan | Komputer per workspace | Isolasi | Biaya | Kapan dipilih |
 | --- | --- | --- | --- | --- |
 | **Per workspace** | 1 | Antar-Bolu berbagi berkas & mesin | Paling murah | **Dipilih** — unit yang bertahan lama, punya data, dan cocok dengan jalur MCP |
-| Per tim (Tim Bolu / Tim Hore) | 2 (satu per tim) | Terpisah antar-tim | 2× | **Ditolak** — lihat alasan di bawah |
+| Per tim | 1 per tim | Terpisah antar-tim | N× | **Ditolak** — lihat alasan di bawah |
 | Per Bolu (isu #4 asli) | N | Paling ketat | N× RAM | Hanya bila memang wajib terpisah |
 
-**Kenapa per tim ditolak.** Tim bukan batas yang nyata di Bolu: hanya ada dua tim tetap (Tim Bolu
-dan Tim Hore) dan keduanya dibuat otomatis, tidak ada endpoint untuk membuat tim sendiri. RLS
+**Kenapa per tim ditolak.** Tim bukan batas yang nyata di Bolu: onboarding membuat satu tim tetap
+(Tim Bolu) dan tidak ada endpoint untuk membuat tim sendiri. RLS
 dikunci ke `workspace_id`, bukan `team_id`, jadi tim bukan batas data maupun keamanan. Bolu dari
 tim berbeda pun bisa berada dalam satu grup obrolan. Menjadikannya cakupan komputer hanya akan
 **menggandakan biaya RAM** tanpa menambah pemisahan yang berarti.

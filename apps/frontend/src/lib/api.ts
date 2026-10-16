@@ -531,7 +531,7 @@ export function googleStartURL(): string {
   return `${API_URL}/api/auth/google/start`;
 }
 
-/** onboard creates the workspace and returns it with the two default teams. */
+/** onboard creates the workspace and returns it with the default team. */
 export function onboard(input: {
   name: string;
   business_field: string;
@@ -690,7 +690,7 @@ export type Integration = {
   status: string;
 };
 
-/** listAgentTeams returns Tim Bolu and Tim Hore with their agents. */
+/** listAgentTeams returns the workspace's teams with their agents. */
 export function listAgentTeams(workspaceId: string): Promise<ApiResult<AgentTeam[]>> {
   return request<AgentTeam[]>("/teams", { workspace: workspaceId });
 }

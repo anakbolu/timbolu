@@ -62,7 +62,9 @@ CREATE TABLE members (
 CREATE UNIQUE INDEX members_workspace_user_key ON members (workspace_id, user_id);
 CREATE INDEX members_user_idx ON members (user_id);
 
--- A workspace always starts with two teams: Tim Bolu and Tim Hore.
+-- Teams group a workspace's Bolu. A new workspace is created with one of them
+-- (Tim Bolu, kind 'bolu'); 'hore' is the kind the second seeded team used to
+-- carry and is kept so workspaces created before it was dropped still read.
 CREATE TABLE teams (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,

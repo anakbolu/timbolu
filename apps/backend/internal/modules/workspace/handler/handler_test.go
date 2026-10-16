@@ -87,7 +87,7 @@ func TestOnboardHandler(t *testing.T) {
 	userID := uuid.New()
 	workspaceID := uuid.New()
 
-	t.Run("returns the workspace and its two default teams", func(t *testing.T) {
+	t.Run("returns the workspace and its one default team", func(t *testing.T) {
 		service := mocks.NewService(t)
 		service.EXPECT().Onboard(mock.Anything, userID, domain.OnboardRequest{
 			Name:          "Toko Sinar",
@@ -97,7 +97,6 @@ func TestOnboardHandler(t *testing.T) {
 			Workspace: domain.Workspace{ID: workspaceID, Name: "Toko Sinar", Role: domain.RoleOwner},
 			Teams: []domain.Team{
 				{ID: uuid.New(), Name: "Tim Bolu", Kind: "bolu"},
-				{ID: uuid.New(), Name: "Tim Hore", Kind: "hore"},
 			},
 			Created: true,
 		}, nil).Once()
@@ -109,7 +108,6 @@ func TestOnboardHandler(t *testing.T) {
 		require.Equal(t, fiber.StatusOK, resp.Code)
 		require.Contains(t, resp.Body.String(), `"created":true`)
 		require.Contains(t, resp.Body.String(), "Tim Bolu")
-		require.Contains(t, resp.Body.String(), "Tim Hore")
 	})
 
 	t.Run("400 for a malformed body", func(t *testing.T) {

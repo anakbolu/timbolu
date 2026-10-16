@@ -368,10 +368,17 @@ const HORE_SEEDS = [
   },
 ] satisfies BotSeed[];
 
-/** The "Tim Hore" crew — the dashboard's Tim lain section shows only these. */
+/**
+ * The second crew of the design mock (`design/keluarga-bolu-dashboard.html`),
+ * where a "Tim lain" section shows these three. Nothing in the product renders
+ * them: a workspace has the one team onboarding creates, and its Bolu are the
+ * rows the registry holds. They are kept because the landing and dashboard art
+ * draws them, and because `ALL_BOTS` uses them as the face pool for a Bolu whose
+ * name is none of the seeds.
+ */
 export const HORE: CrewMember[] = HORE_SEEDS.map(mk);
 
-/** Every bot the dashboard knows about: Tim Bolu plus Tim Hore. */
+/** Every bot the art knows about: the six registry profiles plus the mock crew. */
 export const ALL_BOTS: CrewMember[] = [...CREW, ...HORE];
 
 /** The logo reuses Oren's body with the "open" mouth. */
@@ -396,7 +403,7 @@ export function bot(name: string): CrewMember {
   return found;
 }
 
-/** Dashboard-wide bot lookup covering both teams. */
+/** Bot lookup over every seed the art knows, for the screens that draw a placeholder. */
 export function allBot(name: string): CrewMember {
   const found = ALL_BOTS.find((member) => member.name === name);
   if (!found) throw new Error(`Unknown crew member: ${name}`);
