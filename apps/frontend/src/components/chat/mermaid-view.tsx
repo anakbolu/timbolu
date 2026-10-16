@@ -16,19 +16,85 @@
 import { useEffect, useRef, useState } from "react";
 import mermaid from "mermaid";
 
+import { useResolvedTheme } from "@/hooks/use-theme";
 import type { MermaidBlock } from "@/lib/api";
+import type { ResolvedTheme } from "@/lib/theme";
 
-mermaid.initialize({
-  startOnLoad: false,
-  // A diagram in a chat is a figure, not a splash of colour.
-  theme: "neutral",
-  // strict keeps a diagram from reaching outside itself: no links, no scripts.
-  securityLevel: "strict",
-  fontFamily: "inherit",
-});
+/**
+ * configure tells Mermaid what colour to draw a diagram in.
+ *
+ * Mermaid writes its own `<style>` into the SVG it produces, so it does not read
+ * this app's tokens and cannot be left to the cascade: without this, a diagram
+ * arrives wearing Mermaid's own greys on this product's page, and its dark theme
+ * is a different dark from ours. The palette below is read off the document at
+ * draw time — the same approach the chart adapter takes — so the diagram is the
+ * product's palette rather than a second one beside it.
+ *
+ * Nothing here is conditional on which theme is active: the tokens already are
+ * the answer, and reading them after the class has been applied is what makes one
+ * function enough for both.
+ */
+function configure(): void {
+  const style = getComputedStyle(document.documentElement);
+  const read = (name: string) => style.getPropertyValue(name).trim();
+
+  const ink = read("--color-bolu-ink");
+  const body = read("--color-bolu-body");
+  const muted = read("--color-bolu-muted");
+  const border = read("--color-bolu-border");
+  const panel = read("--color-bolu-panel");
+  const surface = read("--color-bolu-surface");
+  const hover = read("--color-bolu-hover");
+  const accent = read("--color-bolu-accent");
+
+  mermaid.initialize({
+    startOnLoad: false,
+    // "base" is the only theme that honours `themeVariables`: the named themes
+    // each carry their own palette and overwrite the variables given here, which
+    // is how a diagram ends up in Mermaid's dark rather than in this product's.
+    theme: "base",
+    // strict keeps a diagram from reaching outside itself: no links, no scripts.
+    securityLevel: "strict",
+    fontFamily: "inherit",
+    themeVariables: {
+      background: surface,
+      // A node is a surface, not a panel: the diagram sits inside a message
+      // bubble, and a box drawn in the bubble's own colour would have no edge.
+      primaryColor: surface,
+      primaryTextColor: ink,
+      primaryBorderColor: border,
+      secondaryColor: panel,
+      secondaryTextColor: body,
+      secondaryBorderColor: border,
+      tertiaryColor: hover,
+      tertiaryTextColor: body,
+      tertiaryBorderColor: border,
+      // The lines and the arrowheads.
+      lineColor: muted,
+      textColor: body,
+      // A cluster is a grouping, so it is drawn as a panel behind its members.
+      clusterBkg: panel,
+      clusterBorder: border,
+      // The one colour that means "this product" in a diagram: the notes and the
+      // active edges, in the same blue the rest of the app uses.
+      noteBkgColor: panel,
+      noteTextColor: body,
+      noteBorderColor: border,
+      edgeLabelBackground: surface,
+      // Mermaid's own blue for an active or highlighted edge.
+      activeTaskBkgColor: accent,
+      activeTaskBorderColor: accent,
+      titleColor: ink,
+    },
+  });
+}
 
 export default function MermaidView({ block }: { block: MermaidBlock }) {
-  return <MermaidDiagram key={block.code} block={block} />;
+  const theme = useResolvedTheme();
+  // Keyed by the theme as well as the code: Mermaid bakes its colours into the
+  // markup it returns, so a theme change has to draw the diagram again rather
+  // than restyle it.
+  return <MermaidDiagram key={`${theme}:${block.code}`} block={block} theme={theme} />;
 }
 
 /**
@@ -38,7 +104,7 @@ export default function MermaidView({ block }: { block: MermaidBlock }) {
  * "rendering" state starts correct without an effect writing it, and a stale
  * render cannot land on the new source.
  */
-function MermaidDiagram({ block }: { block: MermaidBlock }) {
+function MermaidDiagram({ block, theme }: { block: MermaidBlock; theme: ResolvedTheme }) {
   const container = useRef<HTMLDivElement>(null);
   // The initial state is "rendering", and a code change returns to it because the
   // component is keyed by the code below rather than by a state write here.
@@ -50,6 +116,7 @@ function MermaidDiagram({ block }: { block: MermaidBlock }) {
 
     void (async () => {
       try {
+        configure();
         // parse() is the check the architecture document asks for, and it throws
         // with the offending line, which is what makes the repair loop useful.
         await mermaid.parse(block.code);
@@ -72,7 +139,7 @@ function MermaidDiagram({ block }: { block: MermaidBlock }) {
     return () => {
       disposed = true;
     };
-  }, [block.code]);
+  }, [block.code, theme]);
 
   return (
     <figure className="my-1">

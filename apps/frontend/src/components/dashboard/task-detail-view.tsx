@@ -44,17 +44,17 @@ import {
 
 import { useWorkspace } from "./workspace-data";
 
-const CARD = "rounded-md border border-bolu-border bg-white";
+const CARD = "rounded-md border border-bolu-border bg-bolu-surface";
 const HEADING = "font-display text-[22px] font-semibold";
 const BUTTON =
-  "min-h-10 cursor-pointer rounded-md border border-bolu-border bg-white px-3.5 text-[14px] font-medium text-bolu-ink transition hover:border-bolu-accent disabled:cursor-default disabled:opacity-50";
+  "min-h-10 cursor-pointer rounded-md border border-bolu-border bg-bolu-surface px-3.5 text-[14px] font-medium text-bolu-ink transition hover:border-bolu-accent disabled:cursor-default disabled:opacity-50";
 
 /** KIND_TONE is how each round reads at a glance: the model, a tool, or the answer. */
 const KIND_TONE: Record<string, string> = {
   think: "border-bolu-border bg-bolu-panel/60 text-bolu-body",
   tool_call: "border-bolu-accent/40 bg-bolu-accent/5 text-bolu-accent",
   tool_result: "border-bolu-lunas/30 bg-bolu-lunas/8 text-bolu-lunas",
-  final: "border-bolu-ink/20 bg-bolu-ink/5 text-bolu-ink",
+  final: "border-bolu-ink/20 bg-bolu-solid/5 text-bolu-ink",
 };
 
 /** TaskDetailView is one task's page. */
@@ -268,7 +268,7 @@ export function TaskDetailView({ taskID }: { taskID: string }) {
                   <span className="w-8 flex-none text-right font-mono text-[13px] text-bolu-muted">{step.seq}</span>
                   <span
                     className={`rounded-full border px-2.5 py-0.5 text-[12px] font-semibold ${
-                      KIND_TONE[step.kind] ?? "border-bolu-border bg-white text-bolu-body"
+                      KIND_TONE[step.kind] ?? "border-bolu-border bg-bolu-surface text-bolu-body"
                     }`}
                   >
                     {taskStepLabel(step.kind)}

@@ -1,15 +1,47 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* Dark mode is a class on the root element rather than the media query alone,
+   because the product offers the choice: a person who wants the dark theme on a
+   laptop that reports light has to be able to have it, and a person who follows
+   the system has to keep following it when the system changes. The class is put
+   there before the first paint by the script in layout.tsx, and kept in step by
+   src/lib/theme.ts. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   /* Keluarga Bolu palette. */
   --color-bolu-bg: #f5f6fb;
   --color-bolu-ink: #1e1b2e;
+  /* `ink` is the text colour, and text has to invert — so the solid fill the
+     product also uses it for (the lit nav row, the primary button, the outgoing
+     chat bubble) is its own pair of tokens. A fill that stays dark in both themes
+     would be a smudge on a dark page; the pair inverts instead. */
+  --color-bolu-solid: #1e1b2e;
+  --color-bolu-solid-ink: #ffffff;
   --color-bolu-muted: #5e5b70;
   --color-bolu-body: #3e3b52;
   --color-bolu-border: #e3e5ef;
   --color-bolu-accent: #1f7fd6;
+  /* The pressed/darker step of the accent, for a button that darkens under the
+     cursor. It is a token rather than a literal because the dark theme's accent
+     is lighter, and its pressed step has to go up rather than down. */
+  --color-bolu-accent-strong: #1a6cba;
+  /* A Bolu's own tint: a pastel the crew carries, and one of the few colours
+     that does not follow the theme — it is a character's colour, not a surface.
+     It is always light, so the ink that sits on it is always dark. */
+  --color-bolu-tint: #fde7da;
+  --color-bolu-on-tint: #1e1b2e;
+  /* A link is accent-coloured text on the page background, which is a different
+     job from accent as a fill: on a dark page the brand blue is too dim to read
+     as a link, so the two are separate tokens. */
+  --color-bolu-link: #1b6fc2;
+  --color-bolu-link-hover: #0f4f8f;
   --color-bolu-panel: #e9ecf8;
+  /* The raised state: a hovered row, an open menu item. It is the panel tint in
+     the light theme, and a step above the panel in the dark one, where the panel
+     and the surface are already close together. */
+  --color-bolu-hover: #e9ecf8;
   --color-bolu-panel-dot: #d3d8ee;
   --color-bolu-surface: #ffffff;
   --color-bolu-lunas: #1e7a43;
@@ -21,6 +53,9 @@
   --color-bolu-flag: #e2602b;
   --color-bolu-live: #2fa65a;
   --color-bolu-rest: #8b88a0;
+  /* The veil behind a drawer. It is its own token because a black veil over a
+     dark page hides nothing: the dark theme needs more of it. */
+  --color-bolu-scrim: rgb(30 27 46 / 0.4);
 
   --font-sans: var(--font-figtree), system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-display: var(--font-fredoka), var(--font-figtree), system-ui, sans-serif;
@@ -31,34 +66,34 @@
      project's palette. Every value is a Keluarga Bolu colour or a step away from
      one, which is what makes a registry component look like the rest of the
      product instead of like a default theme dropped into it. */
-  --color-background: #ffffff;
+  --color-background: var(--color-bolu-surface);
   --color-foreground: var(--color-bolu-ink);
-  --color-card: #ffffff;
+  --color-card: var(--color-bolu-surface);
   --color-card-foreground: var(--color-bolu-ink);
-  --color-popover: #ffffff;
+  --color-popover: var(--color-bolu-surface);
   --color-popover-foreground: var(--color-bolu-ink);
-  --color-primary: var(--color-bolu-ink);
-  --color-primary-foreground: #ffffff;
+  --color-primary: var(--color-bolu-solid);
+  --color-primary-foreground: var(--color-bolu-solid-ink);
   --color-secondary: var(--color-bolu-panel);
   --color-secondary-foreground: var(--color-bolu-ink);
   --color-muted: var(--color-bolu-panel);
   --color-muted-foreground: var(--color-bolu-muted);
-  --color-accent: var(--color-bolu-panel);
+  --color-accent: var(--color-bolu-hover);
   --color-accent-foreground: var(--color-bolu-ink);
-  --color-destructive: #b4421f;
-  --color-destructive-foreground: #ffffff;
+  --color-destructive: var(--color-bolu-belum);
+  --color-destructive-foreground: var(--color-bolu-solid-ink);
   --color-border: var(--color-bolu-border);
   --color-input: var(--color-bolu-border);
   --color-ring: var(--color-bolu-accent);
 
   /* The sidebar is a surface, not a dark panel: the product's own shell is a
-     white sidebar on the page's own background, and the operator surface keeps
+     sidebar on the page's own background, and the operator surface keeps
      that so the two read as one product. */
-  --color-sidebar: #ffffff;
+  --color-sidebar: var(--color-bolu-surface);
   --color-sidebar-foreground: var(--color-bolu-ink);
-  --color-sidebar-primary: var(--color-bolu-ink);
-  --color-sidebar-primary-foreground: #ffffff;
-  --color-sidebar-accent: var(--color-bolu-panel);
+  --color-sidebar-primary: var(--color-bolu-solid);
+  --color-sidebar-primary-foreground: var(--color-bolu-solid-ink);
+  --color-sidebar-accent: var(--color-bolu-hover);
   --color-sidebar-accent-foreground: var(--color-bolu-ink);
   --color-sidebar-border: var(--color-bolu-border);
   --color-sidebar-ring: var(--color-bolu-accent);
@@ -105,11 +140,11 @@
   }
 
   a {
-    color: #1b6fc2;
+    color: var(--color-bolu-link);
   }
 
   a:hover {
-    color: #0f4f8f;
+    color: var(--color-bolu-link-hover);
   }
 
   ::selection {
@@ -129,6 +164,51 @@
   details summary::-webkit-details-marker {
     display: none;
   }
+}
+
+/* ------------------------------------------------------------------- dark --
+   The dark theme is the same palette, re-derived rather than inverted. Each
+   family keeps its hue and moves along the ladder: the page goes under the
+   surface, the surface goes under the panel, and every tint that was a wash on
+   white becomes a lift off black. The semantic colours move the other way,
+   because a green that reads on white is too dark to read on black — they
+   brighten until they carry the same meaning at the same weight.
+
+   Everything here is a token override, so no component knows which theme it is
+   drawn in: a screen that uses bg-bolu-surface is correct in both, and only a
+   hardcoded colour would need a rule of its own. */
+.dark {
+  --color-bolu-bg: #100e19;
+  --color-bolu-ink: #edeaf6;
+  --color-bolu-solid: #edeaf6;
+  --color-bolu-solid-ink: #100e19;
+  --color-bolu-muted: #a5a1b8;
+  --color-bolu-body: #cfcbdd;
+  --color-bolu-border: #322e46;
+  --color-bolu-accent: #4f9fe6;
+  --color-bolu-accent-strong: #6fb4f0;
+  --color-bolu-link: #7cbdf2;
+  --color-bolu-link-hover: #a8d5f8;
+  --color-bolu-panel: #0b0a13;
+  --color-bolu-hover: #262238;
+  --color-bolu-panel-dot: #2a2640;
+  --color-bolu-surface: #1c1929;
+  --color-bolu-lunas: #5cc47f;
+  --color-bolu-belum: #f08a63;
+  --color-bolu-line: #2a2640;
+  --color-bolu-chip: #3d3853;
+  --color-bolu-track: #3d3853;
+  --color-bolu-flag: #f2a06a;
+  --color-bolu-live: #5cc47f;
+  --color-bolu-rest: #9a97ad;
+  --color-bolu-scrim: rgb(0 0 0 / 0.66);
+}
+
+/* The browser is told too: it draws the scrollbar, the caret, the autofill and
+   the default form controls from this, and a dark page with a white scrollbar
+   reads as a bug. */
+.dark {
+  color-scheme: dark;
 }
 
 /* ---------------------------------------------------------------- motion --
@@ -184,7 +264,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #5e5b70;
+  background: var(--color-bolu-muted);
   margin-right: 4px;
   animation: dot 1.2s infinite;
 }
@@ -366,6 +446,18 @@
   background-color: var(--color-bolu-panel);
   background-image: radial-gradient(var(--color-bolu-panel-dot) 1.4px, transparent 1.6px);
   background-size: 22px 22px;
+}
+
+/* The mock workspace on the landing page wears the tab's own pastel. In the dark
+   theme that pastel is a light block on a dark page, so the tint is blended into
+   the panel instead: the tab still reads as its own colour, and the mock screens
+   inside it stay the surfaces they are everywhere else. */
+.intip-panel {
+  background: var(--tint);
+}
+
+.dark .intip-panel {
+  background: color-mix(in oklab, var(--tint) 14%, var(--color-bolu-panel));
 }
 
 /* -------------------------------------------------------- bolu character --

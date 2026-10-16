@@ -32,7 +32,7 @@ import {
 
 import { useWorkspace } from "./workspace-data";
 
-const CARD = "rounded-md border border-bolu-border bg-white";
+const CARD = "rounded-md border border-bolu-border bg-bolu-surface";
 const HEADING = "font-display text-[22px] font-semibold";
 
 /** Dasbor is the overview screen. */
@@ -98,11 +98,11 @@ export function DashView() {
           <button
             type="button"
             aria-label="Notifikasi"
-            className="flex size-11 cursor-pointer items-center justify-center rounded-full border border-bolu-border bg-white"
+            className="flex size-11 cursor-pointer items-center justify-center rounded-full border border-bolu-border bg-bolu-surface"
           >
             <Bell size={20} strokeWidth={2} aria-hidden="true" />
           </button>
-          <div className="flex size-11 items-center justify-center rounded-full bg-[#FDE7DA] font-display font-bold">
+          <div className="flex size-11 items-center justify-center rounded-full bg-bolu-tint font-display font-bold text-bolu-on-tint">
             {initials}
           </div>
         </div>
@@ -111,7 +111,7 @@ export function DashView() {
       {/* Suruh Bolu: the one place a task is given. The backend's router is what
           decides which Bolu answers, so the message goes into the team's group
           thread and the choice is made there rather than guessed here. */}
-      <div className="flex flex-wrap items-center gap-3.5 rounded-md bg-bolu-ink p-[18px_20px] text-white">
+      <div className="flex flex-wrap items-center gap-3.5 rounded-md bg-bolu-solid p-[18px_20px] text-bolu-solid-ink">
         <label htmlFor="suruh" className="flex-none font-display text-[19px] font-semibold max-[760px]:basis-full">
           Suruh Bolu
         </label>
@@ -125,13 +125,13 @@ export function DashView() {
           }}
           disabled={!workspaceReady}
           placeholder="misalnya: tagih semua invoice yang telat"
-          className="min-h-[46px] min-w-0 flex-[1_1_260px] rounded-full border-0 bg-white px-[18px] text-bolu-ink disabled:opacity-60"
+          className="min-h-[46px] min-w-0 flex-[1_1_260px] rounded-full border-0 bg-bolu-surface px-[18px] text-bolu-ink disabled:opacity-60"
         />
         <button
           type="button"
           onClick={() => void send()}
           disabled={busy || !workspaceReady || instruction.trim() === ""}
-          className="min-h-[46px] cursor-pointer rounded-full border-0 bg-bolu-accent px-[22px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-[46px] cursor-pointer rounded-full border-0 bg-bolu-accent px-[22px] font-bold text-bolu-solid-ink disabled:cursor-not-allowed disabled:opacity-60"
         >
           {busy ? "Mengirim…" : workspaceReady ? "Kirim tugas" : "Memuat workspace…"}
         </button>
@@ -198,14 +198,14 @@ export function DashView() {
                   <div className="flex flex-none gap-1.5">
                     <Link
                       href="/chat"
-                      className="flex min-h-10 items-center rounded-full border-2 border-bolu-ink bg-white px-3.5 text-[14px] font-semibold text-bolu-ink no-underline hover:text-bolu-ink"
+                      className="flex min-h-10 items-center rounded-full border-2 border-bolu-ink bg-bolu-surface px-3.5 text-[14px] font-semibold text-bolu-ink no-underline hover:text-bolu-ink"
                     >
                       Buka obrolan
                     </Link>
                     <button
                       type="button"
                       onClick={() => void decide(row.draft.draft_id, "approve")}
-                      className="min-h-10 cursor-pointer rounded-full border-0 bg-bolu-ink px-3.5 text-[14px] font-bold text-white"
+                      className="min-h-10 cursor-pointer rounded-full border-0 bg-bolu-solid px-3.5 text-[14px] font-bold text-bolu-solid-ink"
                     >
                       Setujui
                     </button>
@@ -242,8 +242,8 @@ export function DashView() {
                         size={32}
                       />
                     ) : (
-                      <div className="flex size-8 items-center justify-center rounded-full bg-bolu-ink">
-                        <Check size={16} strokeWidth={3} color="#FFFFFF" aria-hidden="true" />
+                      <div className="flex size-8 items-center justify-center rounded-full bg-bolu-solid">
+                        <Check size={16} strokeWidth={3} className="text-bolu-solid-ink" aria-hidden="true" />
                       </div>
                     )}
                   </div>

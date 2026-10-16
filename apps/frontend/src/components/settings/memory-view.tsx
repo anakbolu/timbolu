@@ -508,13 +508,13 @@ export function MemoryView() {
                 name="content"
                 rows={3}
                 placeholder="Ongkir Bandung 18 ribu"
-                className="w-full rounded-md border border-bolu-border bg-white px-3 py-2"
+                className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3 py-2"
               />
             </label>
 
             <label className="mb-3 block text-sm">
               <span className="mb-1 block text-bolu-muted">Jenis</span>
-              <select name="kind" className="w-full rounded-md border border-bolu-border bg-white px-3 py-2">
+              <select name="kind" className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3 py-2">
                 {KIND_ORDER.map((kind) => (
                   <option key={kind} value={kind}>
                     {KIND_LABEL[kind]}
@@ -525,7 +525,7 @@ export function MemoryView() {
 
             <label className="mb-3 block text-sm">
               <span className="mb-1 block text-bolu-muted">Lapisan</span>
-              <select name="layer" className="w-full rounded-md border border-bolu-border bg-white px-3 py-2">
+              <select name="layer" className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3 py-2">
                 <option value={MAIN}>Memori utama (semua Bolu)</option>
                 {agents.map((agent) => (
                   <option key={agent.id} value={agent.id}>
@@ -543,7 +543,7 @@ export function MemoryView() {
             <button
               type="submit"
               disabled={busy}
-              className="min-h-10 w-full rounded-full bg-bolu-accent px-4 font-semibold text-white disabled:opacity-60"
+              className="min-h-10 w-full rounded-full bg-bolu-accent px-4 font-semibold text-bolu-solid-ink disabled:opacity-60"
             >
               Simpan
             </button>
@@ -560,7 +560,7 @@ export function MemoryView() {
               <input
                 name="source"
                 placeholder="katalog-ongkir.txt"
-                className="w-full rounded-md border border-bolu-border bg-white px-3 py-2"
+                className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3 py-2"
               />
             </label>
 
@@ -570,13 +570,13 @@ export function MemoryView() {
                 name="text"
                 rows={5}
                 placeholder="Tempel teks dokumen di sini."
-                className="w-full rounded-md border border-bolu-border bg-white px-3 py-2"
+                className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3 py-2"
               />
             </label>
 
             <label className="mb-3 block text-sm">
               <span className="mb-1 block text-bolu-muted">Lapisan</span>
-              <select name="layer" className="w-full rounded-md border border-bolu-border bg-white px-3 py-2">
+              <select name="layer" className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3 py-2">
                 <option value={MAIN}>Berlaku untuk seluruh workspace</option>
                 {agents.map((agent) => (
                   <option key={agent.id} value={agent.id}>
@@ -589,7 +589,7 @@ export function MemoryView() {
             <button
               type="submit"
               disabled={busy}
-              className="min-h-10 w-full rounded-full bg-bolu-ink px-4 font-semibold text-white disabled:opacity-60"
+              className="min-h-10 w-full rounded-full bg-bolu-solid px-4 font-semibold text-bolu-solid-ink disabled:opacity-60"
             >
               Simpan &amp; indeks
             </button>
@@ -717,12 +717,12 @@ function MemoryList({
                     name="content"
                     rows={3}
                     defaultValue={memory.content}
-                    className="w-full rounded-md border border-bolu-border bg-white px-3 py-2 text-sm"
+                    className="w-full rounded-md border border-bolu-border bg-bolu-surface px-3 py-2 text-sm"
                   />
                   <select
                     name="kind"
                     defaultValue={memory.kind}
-                    className="rounded-md border border-bolu-border bg-white px-3 py-2 text-sm"
+                    className="rounded-md border border-bolu-border bg-bolu-surface px-3 py-2 text-sm"
                   >
                     {KIND_ORDER.map((kind) => (
                       <option key={kind} value={kind}>
@@ -734,7 +734,7 @@ function MemoryList({
                     <button
                       type="submit"
                       disabled={busy}
-                      className="min-h-9 rounded-full bg-bolu-accent px-3.5 text-sm font-semibold text-white disabled:opacity-60"
+                      className="min-h-9 rounded-full bg-bolu-accent px-3.5 text-sm font-semibold text-bolu-solid-ink disabled:opacity-60"
                     >
                       Simpan
                     </button>
@@ -769,7 +769,7 @@ function MemoryList({
               <button
                 type="button"
                 onClick={() => setEditing(editing === memory.id ? null : memory.id)}
-                className="rounded-md border border-bolu-border px-2.5 py-1 transition hover:bg-bolu-panel/60"
+                className="rounded-md border border-bolu-border px-2.5 py-1 transition hover:bg-bolu-hover/60"
               >
                 {editing === memory.id ? "Tutup" : "Ubah"}
               </button>
@@ -777,7 +777,7 @@ function MemoryList({
                 type="button"
                 onClick={() => void onPin(memory)}
                 disabled={busy}
-                className="rounded-md border border-bolu-border px-2.5 py-1 transition hover:bg-bolu-panel/60 disabled:opacity-50"
+                className="rounded-md border border-bolu-border px-2.5 py-1 transition hover:bg-bolu-hover/60 disabled:opacity-50"
               >
                 {memory.pinned ? "Lepas" : "Sematkan"}
               </button>
@@ -805,7 +805,7 @@ function MemoryList({
                 type="button"
                 onClick={() => void onMove(memory, MAIN)}
                 disabled={busy}
-                className="rounded-full border border-bolu-border px-2 py-0.5 transition hover:bg-bolu-panel/60 disabled:opacity-50"
+                className="rounded-full border border-bolu-border px-2 py-0.5 transition hover:bg-bolu-hover/60 disabled:opacity-50"
               >
                 Memori utama
               </button>
@@ -818,7 +818,7 @@ function MemoryList({
                   type="button"
                   onClick={() => void onMove(memory, agent.id)}
                   disabled={busy}
-                  className="rounded-full border border-bolu-border px-2 py-0.5 transition hover:bg-bolu-panel/60 disabled:opacity-50"
+                  className="rounded-full border border-bolu-border px-2 py-0.5 transition hover:bg-bolu-hover/60 disabled:opacity-50"
                 >
                   {agent.name}
                 </button>

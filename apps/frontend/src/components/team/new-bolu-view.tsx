@@ -26,10 +26,10 @@ import {
 import { useWorkspace } from "@/components/dashboard/workspace-data";
 import { createAgent } from "@/lib/api";
 
-const CARD = "rounded-md border border-bolu-border bg-white";
+const CARD = "rounded-md border border-bolu-border bg-bolu-surface";
 const HEADING = "font-display text-[22px] font-semibold";
 const FIELD =
-  "min-h-11 w-full rounded-md border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent";
+  "min-h-11 w-full rounded-md border border-bolu-border bg-bolu-surface px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent";
 const LABEL = "flex flex-col gap-1.5 text-[14px] font-semibold";
 
 export function NewBoluView() {
@@ -122,7 +122,7 @@ export function NewBoluView() {
                     className={`flex size-[54px] cursor-pointer items-center justify-center rounded-md border-2 ${
                       candidate === shape
                         ? "border-bolu-ink bg-bolu-panel"
-                        : "border-bolu-line bg-white hover:border-bolu-track"
+                        : "border-bolu-line bg-bolu-surface hover:border-bolu-track"
                     }`}
                   >
                     <Bolu shape={candidate} color={color} size={40} still />
@@ -201,7 +201,7 @@ export function NewBoluView() {
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className="min-h-11 cursor-pointer rounded-full bg-bolu-ink px-6 font-bold text-white disabled:opacity-50"
+                className="min-h-11 cursor-pointer rounded-full bg-bolu-solid px-6 font-bold text-bolu-solid-ink disabled:opacity-50"
               >
                 {busy ? "Membuat…" : "Buat Bolu"}
               </button>

@@ -204,7 +204,7 @@ export function AuthScene({ mode }: { mode: "login" | "signup" }) {
               >
                 <div
                   key={act}
-                  className="pop rounded-[12px] border-2 bg-white px-1.5 py-1 text-center text-[10px] font-semibold leading-[1.25] sm:text-[12px]"
+                  className="pop rounded-[12px] border-2 bg-bolu-surface px-1.5 py-1 text-center text-[10px] font-semibold leading-[1.25] sm:text-[12px]"
                   style={{ borderColor: color }}
                 >
                   {act}
@@ -221,10 +221,10 @@ export function AuthScene({ mode }: { mode: "login" | "signup" }) {
 
               {/* Desk front edge, over the feet: the bot works behind its desk. */}
               <div className="absolute -left-[16%] -right-[16%] bottom-[-4%] h-[10%] rounded-[3px] bg-[#C99A6B]" />
-              <span className="absolute bottom-[2%] left-[12%] h-[6%] w-[6%] rounded-[2px] bg-white" />
+              <span className="absolute bottom-[2%] left-[12%] h-[6%] w-[6%] rounded-[2px] bg-bolu-surface" />
               <span className="absolute bottom-[2%] right-[14%] h-[7%] w-[6%] rounded-[2px] bg-[#2B2840]" />
 
-              <div className="absolute left-1/2 top-[84%] -translate-x-1/2 whitespace-nowrap rounded-[6px] bg-white/85 px-1.5 pb-0.5 text-center">
+              <div className="absolute left-1/2 top-[84%] -translate-x-1/2 whitespace-nowrap rounded-[6px] bg-bolu-surface/85 px-1.5 pb-0.5 text-center">
                 <div className="font-display text-[11px] font-semibold leading-[1.2] sm:text-[12px]">
                   {member.name}
                 </div>
@@ -238,7 +238,7 @@ export function AuthScene({ mode }: { mode: "login" | "signup" }) {
         })}
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-[20px] border border-bolu-border bg-white px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-[20px] border border-bolu-border bg-bolu-surface px-4 py-3">
         <span className="font-display text-[14px] font-semibold">Barusan selesai</span>
         {scene.done.map((text, i) => (
           <span key={text} className="flex items-center gap-2 text-[14px] text-bolu-body">

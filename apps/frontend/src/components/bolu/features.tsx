@@ -6,7 +6,7 @@ function FeatureIcon({ kind }: { kind: (typeof FEATURES)[number]["icon"] }) {
   const shared = {
     width: 34,
     height: 34,
-    stroke: "#1E1B2E",
+    stroke: "currentColor",
     strokeWidth: 2,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
@@ -41,7 +41,7 @@ export function Features() {
         {FEATURES.map((feature) => (
           <li
             key={feature.title}
-            className="flex flex-col gap-2.5 rounded-xl border border-bolu-border bg-white p-[26px]"
+            className="flex flex-col gap-2.5 rounded-xl border border-bolu-border bg-bolu-surface p-[26px]"
           >
             <FeatureIcon kind={feature.icon} />
             <div className="font-display text-[22px] font-semibold">{feature.title}</div>

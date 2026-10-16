@@ -106,7 +106,7 @@ export function GroupView() {
       ) : null}
 
       <div className="grid gap-[18px] lg:grid-cols-[1fr_360px]">
-        <section className="flex flex-col gap-2.5 rounded-md border border-bolu-border bg-white p-5">
+        <section className="flex flex-col gap-2.5 rounded-md border border-bolu-border bg-bolu-surface p-5">
           <h2 className="font-display text-[22px] font-semibold">Grup yang ada</h2>
           {groups.length === 0 ? (
             <p className="rounded-md border border-dashed border-bolu-border px-4 py-6 text-[15px] text-bolu-muted">
@@ -177,7 +177,7 @@ export function GroupView() {
           )}
         </section>
 
-        <section className="flex flex-col gap-2.5 rounded-md border border-bolu-border bg-white p-5">
+        <section className="flex flex-col gap-2.5 rounded-md border border-bolu-border bg-bolu-surface p-5">
           <h2 className="font-display text-[22px] font-semibold">Buat grup</h2>
           {agents.length === 0 ? (
             <p className="text-[15px] text-bolu-muted">
@@ -192,7 +192,7 @@ export function GroupView() {
                   onChange={(event) => setTitle(event.target.value)}
                   required
                   placeholder="mis. Grup operasional"
-                  className="min-h-11 w-full rounded-md border border-bolu-border bg-white px-3.5 text-[15px] font-normal outline-none focus:border-bolu-accent"
+                  className="min-h-11 w-full rounded-md border border-bolu-border bg-bolu-surface px-3.5 text-[15px] font-normal outline-none focus:border-bolu-accent"
                 />
               </label>
 
@@ -229,7 +229,7 @@ export function GroupView() {
               <button
                 type="submit"
                 disabled={busy || selected.length === 0 || title.trim() === ""}
-                className="min-h-11 cursor-pointer rounded-full bg-bolu-ink px-5 font-bold text-white disabled:opacity-50"
+                className="min-h-11 cursor-pointer rounded-full bg-bolu-solid px-5 font-bold text-bolu-solid-ink disabled:opacity-50"
               >
                 {busy ? "Membuat…" : "Buat grup"}
               </button>

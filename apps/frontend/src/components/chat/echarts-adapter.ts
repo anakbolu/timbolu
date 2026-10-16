@@ -39,10 +39,41 @@ export type ChartHandle = {
   resize: () => void;
 };
 
+/**
+ * The categorical palette. It does not follow the theme: a series is the same
+ * colour in both, so a screenshot of a chart and the chart beside it agree. Only
+ * the furniture — text, axes, grid, the gap between slices — is themed.
+ */
 const PALETTE = ["#1F7FD6", "#2FA65A", "#E2602B", "#A855F7", "#EAB308", "#EC4899", "#14B8A6", "#8B88A0"];
 
-const AXIS_COLOR = "#8B88A0";
-const TEXT_COLOR = "#3E3B52";
+/** The colours a chart reads out of the theme, resolved to values a canvas can paint. */
+export type ChartPalette = {
+  text: string;
+  axis: string;
+  border: string;
+  grid: string;
+  surface: string;
+};
+
+/**
+ * readChartPalette reads the theme off the document.
+ *
+ * It reads rather than imports because ECharts paints into a canvas, and a canvas
+ * cannot resolve `var(--x)` — the value has to be a colour by the time it is
+ * drawn. Reading at draw time is also what makes a chart follow a theme change
+ * without a second stylesheet.
+ */
+export function readChartPalette(): ChartPalette {
+  const style = getComputedStyle(document.documentElement);
+  const read = (name: string) => style.getPropertyValue(name).trim();
+  return {
+    text: read("--color-bolu-body"),
+    axis: read("--color-bolu-rest"),
+    border: read("--color-bolu-border"),
+    grid: read("--color-bolu-line"),
+    surface: read("--color-bolu-surface"),
+  };
+}
 
 /**
  * toECharts translates the specification into an option object.
@@ -51,11 +82,11 @@ const TEXT_COLOR = "#3E3B52";
  * what keeps the adapter verifiable: the alternative is a browser test for
  * arithmetic that has nothing to do with the browser.
  */
-export function toECharts(spec: ChartSpec): echarts.EChartsCoreOption {
+export function toECharts(spec: ChartSpec, palette: ChartPalette): echarts.EChartsCoreOption {
   const title = spec.title
     ? {
         text: spec.title,
-        textStyle: { color: TEXT_COLOR, fontSize: 14, fontWeight: 600 },
+        textStyle: { color: palette.text, fontSize: 14, fontWeight: 600 },
       }
     : undefined;
 
@@ -66,7 +97,7 @@ export function toECharts(spec: ChartSpec): echarts.EChartsCoreOption {
 
   const legend =
     spec.kind === "pie" || (spec.series && spec.series.length > 1)
-      ? { bottom: 0, textStyle: { color: TEXT_COLOR } }
+      ? { bottom: 0, textStyle: { color: palette.text } }
       : undefined;
 
   if (spec.kind === "pie") {
@@ -82,8 +113,8 @@ export function toECharts(spec: ChartSpec): echarts.EChartsCoreOption {
           // A donut rather than a disc: the hole is where the total goes, and a
           // pie with many slices stays readable.
           avoidLabelOverlap: true,
-          itemStyle: { borderColor: "#FFFFFF", borderWidth: 2 },
-          label: { color: TEXT_COLOR },
+          itemStyle: { borderColor: palette.surface, borderWidth: 2 },
+          label: { color: palette.text },
           data: (spec.slices ?? []).map((slice) => ({ name: slice.name, value: slice.value })),
         },
       ],
@@ -96,8 +127,8 @@ export function toECharts(spec: ChartSpec): echarts.EChartsCoreOption {
       tooltip,
       grid: gridFor(spec),
       color: PALETTE,
-      xAxis: axisFor(spec.x_label, "value"),
-      yAxis: axisFor(spec.y_label, "value"),
+      xAxis: axisFor(spec.x_label, "value", undefined, false, palette),
+      yAxis: axisFor(spec.y_label, "value", undefined, false, palette),
       series: [
         {
           type: "scatter",
@@ -119,11 +150,11 @@ export function toECharts(spec: ChartSpec): echarts.EChartsCoreOption {
     legend,
     grid: gridFor(spec),
     color: PALETTE,
-    xAxis: axisFor(spec.x_label, "category", spec.categories),
+    xAxis: axisFor(spec.x_label, "category", spec.categories, false, palette),
     // A bar chart is read by comparing lengths, so its axis has to start at zero
     // or the difference between two bars is exaggerated. A line chart is read by
     // its shape, where a zoomed axis is the point.
-    yAxis: axisFor(spec.y_label, "value", undefined, spec.kind !== "bar"),
+    yAxis: axisFor(spec.y_label, "value", undefined, spec.kind !== "bar", palette),
     series: (spec.series ?? []).map((entry) => ({
       name: entry.name,
       type: seriesType,
@@ -153,16 +184,17 @@ function gridFor(spec: ChartSpec): Record<string, number | boolean> {
 function axisFor(
   label: string | undefined,
   kind: "category" | "value",
-  categories?: string[],
-  zoomToData = false,
+  categories: string[] | undefined,
+  zoomToData: boolean,
+  palette: ChartPalette,
 ) {
   const base = {
     type: kind,
     name: label,
-    nameTextStyle: { color: AXIS_COLOR },
-    axisLine: { lineStyle: { color: "#E3E5EF" } },
-    axisLabel: { color: AXIS_COLOR },
-    splitLine: { lineStyle: { color: "#EEF0F6" } },
+    nameTextStyle: { color: palette.axis },
+    axisLine: { lineStyle: { color: palette.border } },
+    axisLabel: { color: palette.axis },
+    splitLine: { lineStyle: { color: palette.grid } },
   };
 
   if (kind === "category") {
@@ -182,10 +214,14 @@ function formatNumber(value: number): string {
  * The chart is created once per element and updated in place afterwards, which is
  * what keeps a streamed message from rebuilding the canvas on every token.
  */
-export function renderChart(element: HTMLElement, spec: ChartSpec): ChartHandle {
+export function renderChart(
+  element: HTMLElement,
+  spec: ChartSpec,
+  palette: ChartPalette,
+): ChartHandle {
   const existing = echarts.getInstanceByDom(element);
   const chart = existing ?? echarts.init(element, undefined, { renderer: "canvas" });
-  chart.setOption(toECharts(spec), true);
+  chart.setOption(toECharts(spec, palette), true);
 
   return {
     dispose: () => chart.dispose(),

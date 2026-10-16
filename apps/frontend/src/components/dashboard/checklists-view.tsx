@@ -24,10 +24,10 @@ import { crewFor, expressionOf, relativeAge, stateOf } from "@/lib/dashboard-vie
 
 import { useWorkspace } from "./workspace-data";
 
-const CARD = "rounded border border-bolu-border bg-white";
+const CARD = "rounded border border-bolu-border bg-bolu-surface";
 const CHIP = (on: boolean) =>
   `min-h-9 cursor-pointer rounded-full border px-3 text-[13px] font-medium transition ${
-    on ? "border-bolu-ink bg-bolu-ink text-white" : "border-bolu-border bg-white text-bolu-muted hover:border-bolu-accent"
+    on ? "border-bolu-ink bg-bolu-solid text-bolu-solid-ink" : "border-bolu-border bg-bolu-surface text-bolu-muted hover:border-bolu-accent"
   }`;
 
 /** How many plans to read. One page is enough: a Bolu holds one open list at a time. */
@@ -156,7 +156,7 @@ function PlanCard({ plan, agent }: { plan: Checklist; agent?: Agent }) {
 
         <span
           className={`flex-none rounded-full px-2.5 py-1 text-[12px] font-semibold ${
-            plan.status === "active" ? "bg-bolu-ink text-white" : "bg-bolu-line text-bolu-muted"
+            plan.status === "active" ? "bg-bolu-solid text-bolu-solid-ink" : "bg-bolu-line text-bolu-muted"
           }`}
         >
           {plan.status === "active" ? "Berjalan" : "Selesai"}
@@ -208,7 +208,7 @@ function Line({ item }: { item: ChecklistItem }) {
     <span className="flex items-start gap-2">
       <span
         className={`mt-[2px] flex size-4 flex-none items-center justify-center rounded-[4px] border ${
-          item.done ? "border-bolu-accent bg-bolu-accent text-white" : "border-bolu-border bg-white"
+          item.done ? "border-bolu-accent bg-bolu-accent text-bolu-solid-ink" : "border-bolu-border bg-bolu-surface"
         }`}
         aria-hidden
       >

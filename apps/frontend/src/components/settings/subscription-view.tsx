@@ -34,7 +34,7 @@ import {
   payInvoice,
 } from "@/lib/api";
 
-const CARD = "rounded-md border border-bolu-border bg-white";
+const CARD = "rounded-md border border-bolu-border bg-bolu-surface";
 /**
  * PAGE is the frame a screen inside the shell uses.
  *
@@ -329,7 +329,7 @@ export function SubscriptionView() {
           <div className="mt-5">
             <div className="h-2 w-full overflow-hidden rounded-full bg-bolu-panel">
               <div
-                className={`h-full rounded-full ${subscription.read_only ? "bg-bolu-belum" : "bg-bolu-ink"}`}
+                className={`h-full rounded-full ${subscription.read_only ? "bg-bolu-belum" : "bg-bolu-solid"}`}
                 style={{ width: `${Math.min(subscription.used_percent, 100)}%` }}
               />
             </div>
@@ -374,7 +374,7 @@ export function SubscriptionView() {
                     type="button"
                     disabled={busy}
                     onClick={() => pay(invoice)}
-                    className="min-h-10 rounded-full bg-bolu-ink px-4 font-bold text-white disabled:opacity-50"
+                    className="min-h-10 rounded-full bg-bolu-solid px-4 font-bold text-bolu-solid-ink disabled:opacity-50"
                   >
                     {invoice.payment_instructions ? "Tampilkan cara bayar" : "Minta cara bayar"}
                   </button>

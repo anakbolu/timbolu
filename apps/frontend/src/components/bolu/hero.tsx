@@ -21,7 +21,7 @@ export function Hero() {
           cek dan setujui.
         </p>
         <div className="mt-1 flex flex-wrap gap-3">
-          <StartLink className="inline-flex min-h-12 items-center rounded-full bg-bolu-accent px-[26px] py-3.5 text-[18px] font-bold text-white no-underline hover:text-white">
+          <StartLink className="inline-flex min-h-12 items-center rounded-full bg-bolu-accent px-[26px] py-3.5 text-[18px] font-bold text-bolu-solid-ink no-underline hover:text-bolu-solid-ink">
             Coba gratis
           </StartLink>
           <a

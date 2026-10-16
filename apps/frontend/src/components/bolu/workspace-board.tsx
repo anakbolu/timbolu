@@ -6,7 +6,7 @@ import { BotSvg } from "@/components/bolu/bot-svg";
 import { ACT_INTERVAL_MS, CREW, FEED, FEED_AGES } from "@/lib/crew";
 
 function CheckMark() {
-  return <Check size={18} strokeWidth={3} color="#2FA65A" aria-hidden="true" />;
+  return <Check size={18} strokeWidth={3} className="text-bolu-live" aria-hidden="true" />;
 }
 
 /**
@@ -32,7 +32,7 @@ export function WorkspaceBoard() {
         <div className="flex items-center gap-2.5 font-semibold">
           <span
             aria-hidden="true"
-            className="inline-block size-2.5 rounded-full bg-[#2FA65A]"
+            className="inline-block size-2.5 rounded-full bg-bolu-live"
           />
           Ruang kerja · semua sedang bekerja
         </div>
@@ -45,16 +45,16 @@ export function WorkspaceBoard() {
           return (
             <li
               key={bot.name}
-              className="flex flex-col items-center gap-3 rounded-xl bg-white p-3.5 pb-4"
+              className="flex flex-col items-center gap-3 rounded-xl bg-bolu-surface p-3.5 pb-4"
             >
               <div
-                className="box-border flex min-h-[76px] w-full flex-col justify-between gap-2 rounded-xl px-3 py-2.5"
+                className="box-border flex min-h-[76px] w-full flex-col justify-between gap-2 rounded-xl px-3 py-2.5 text-bolu-on-tint"
                 style={{ background: bot.tint }}
               >
                 <div key={act} className="pop text-[14px] font-semibold leading-[1.3]">
                   {act}
                 </div>
-                <div className="h-1.5 overflow-hidden rounded-xl bg-[rgb(30_27_46_/_0.1)]">
+                <div className="h-1.5 overflow-hidden rounded-xl bg-[rgb(30_27_46_/_0.12)]">
                   <div
                     className="bar h-full rounded-xl"
                     style={{ width: "40%", background: bot.color, animationDelay: bot.delay }}
@@ -73,7 +73,7 @@ export function WorkspaceBoard() {
         })}
       </ul>
 
-      <div className="flex flex-wrap items-center gap-x-7 gap-y-2.5 rounded-xl bg-white px-[18px] py-3.5">
+      <div className="flex flex-wrap items-center gap-x-7 gap-y-2.5 rounded-xl bg-bolu-surface px-[18px] py-3.5">
         <div className="font-display font-semibold">Barusan selesai</div>
         {feed.map((item) => (
           <div

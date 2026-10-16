@@ -31,7 +31,7 @@ import { crewFor, expressionOf, stateOf } from "@/lib/dashboard-view";
 import { WhatsAppPanel } from "./whatsapp-panel";
 import { useWorkspace } from "./workspace-data";
 
-const CARD = "rounded-md border border-bolu-border bg-white";
+const CARD = "rounded-md border border-bolu-border bg-bolu-surface";
 const HEADING = "font-display text-[22px] font-semibold";
 
 /** STATUS_LABEL says what a connection's state means, in the user's words. */
@@ -43,9 +43,9 @@ const STATUS_LABEL: Record<string, string> = {
 
 /** STATUS_DOT is the dot beside a connection's state, matching the design. */
 const STATUS_DOT: Record<string, string> = {
-  connected: "#2FA65A",
-  needs_relogin: "#E2602B",
-  disconnected: "#8B88A0",
+  connected: "var(--color-bolu-live)",
+  needs_relogin: "var(--color-bolu-flag)",
+  disconnected: "var(--color-bolu-rest)",
 };
 
 /** OUTCOME says what a finished authorization flow did. */
@@ -258,7 +258,7 @@ export function IntegrationsPanel() {
             disimpan terenkripsi dan hanya dibuka saat dipakai.
           </p>
         </div>
-        <label className="flex min-h-[46px] flex-[0_1_300px] items-center gap-2 rounded-full border border-bolu-chip bg-white px-4">
+        <label className="flex min-h-[46px] flex-[0_1_300px] items-center gap-2 rounded-full border border-bolu-chip bg-bolu-surface px-4">
           <Search size={18} strokeWidth={2.2} aria-hidden="true" />
           <span className="sr-only">Cari aplikasi</span>
           <input
@@ -297,8 +297,8 @@ export function IntegrationsPanel() {
             onClick={() => setCategory(item)}
             className={`min-h-10 cursor-pointer rounded-full border px-3.5 text-[14px] font-semibold ${
               item === category
-                ? "border-bolu-ink bg-bolu-ink text-white"
-                : "border-bolu-border bg-white text-bolu-ink"
+                ? "border-bolu-ink bg-bolu-solid text-bolu-solid-ink"
+                : "border-bolu-border bg-bolu-surface text-bolu-ink"
             }`}
           >
             {item}
@@ -330,7 +330,7 @@ export function IntegrationsPanel() {
               return (
                 <li
                   key={connection.integration_id}
-                  className="flex flex-col gap-3 rounded-md border border-bolu-border bg-white p-4"
+                  className="flex flex-col gap-3 rounded-md border border-bolu-border bg-bolu-surface p-4"
                 >
                   <div className="flex items-center gap-3">
                     <Tile app={connection.app} size={48} />
@@ -343,7 +343,7 @@ export function IntegrationsPanel() {
                     <span className="inline-flex flex-none items-center gap-1.5 text-[13px] font-bold">
                       <span
                         className="size-2 rounded-full"
-                        style={{ backgroundColor: STATUS_DOT[connection.status] ?? "#8B88A0" }}
+                        style={{ backgroundColor: STATUS_DOT[connection.status] ?? "var(--color-bolu-rest)" }}
                       />
                       {STATUS_LABEL[connection.status] ?? connection.status}
                     </span>
@@ -393,7 +393,7 @@ export function IntegrationsPanel() {
                           type="button"
                           disabled={busy}
                           onClick={() => void connect(connection.app)}
-                          className="min-h-10 cursor-pointer rounded-full bg-bolu-ink px-4 text-[14px] font-semibold text-white disabled:opacity-50"
+                          className="min-h-10 cursor-pointer rounded-full bg-bolu-solid px-4 text-[14px] font-semibold text-bolu-solid-ink disabled:opacity-50"
                         >
                           Sambungkan ulang
                         </button>
@@ -405,7 +405,7 @@ export function IntegrationsPanel() {
                       onClick={() =>
                         setOpenAgent((previous) => (previous === "grants" ? "" : "grants"))
                       }
-                      className="min-h-10 cursor-pointer rounded-full border-2 border-bolu-ink bg-white px-4 text-[14px] font-semibold text-bolu-ink"
+                      className="min-h-10 cursor-pointer rounded-full border-2 border-bolu-ink bg-bolu-surface px-4 text-[14px] font-semibold text-bolu-ink"
                     >
                       Atur akses
                     </button>
@@ -481,7 +481,7 @@ export function IntegrationsPanel() {
                             aria-pressed={permission === "read"}
                             onClick={() => void grant(agent.id, connection.integration_id, "read")}
                             className={`min-h-9 cursor-pointer rounded-full border px-3 text-[13px] font-semibold disabled:opacity-50 ${
-                              permission === "read" ? "border-bolu-ink bg-bolu-ink text-white" : "border-bolu-border"
+                              permission === "read" ? "border-bolu-ink bg-bolu-solid text-bolu-solid-ink" : "border-bolu-border"
                             }`}
                           >
                             Baca
@@ -495,7 +495,7 @@ export function IntegrationsPanel() {
                             }
                             className={`min-h-9 cursor-pointer rounded-full border px-3 text-[13px] font-semibold disabled:opacity-50 ${
                               permission === "read_write"
-                                ? "border-bolu-ink bg-bolu-ink text-white"
+                                ? "border-bolu-ink bg-bolu-solid text-bolu-solid-ink"
                                 : "border-bolu-border"
                             }`}
                           >
@@ -550,7 +550,7 @@ export function IntegrationsPanel() {
               return (
                 <li
                   key={adapter.app}
-                  className="flex flex-col gap-2.5 rounded-md border border-bolu-border bg-white p-4"
+                  className="flex flex-col gap-2.5 rounded-md border border-bolu-border bg-bolu-surface p-4"
                 >
                   <div className="flex items-center gap-3">
                     <Tile app={adapter.app} size={44} />
@@ -576,7 +576,7 @@ export function IntegrationsPanel() {
                         type="button"
                         disabled={busy}
                         onClick={() => void connect(adapter.app)}
-                        className="min-h-10 cursor-pointer rounded-full bg-bolu-ink px-4 text-[14px] font-bold text-white disabled:opacity-50"
+                        className="min-h-10 cursor-pointer rounded-full bg-bolu-solid px-4 text-[14px] font-bold text-bolu-solid-ink disabled:opacity-50"
                       >
                         {already ? "Hubungkan lagi" : "Hubungkan"}
                       </button>
@@ -750,7 +750,7 @@ function MCPForm({
       <button
         type="submit"
         disabled={busy || app.trim() === "" || endpoint.trim() === ""}
-        className="min-h-11 cursor-pointer rounded-full bg-bolu-ink px-5 font-bold text-white disabled:opacity-50"
+        className="min-h-11 cursor-pointer rounded-full bg-bolu-solid px-5 font-bold text-bolu-solid-ink disabled:opacity-50"
       >
         {busy ? "Menambah…" : "Tambah server"}
       </button>

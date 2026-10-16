@@ -269,7 +269,7 @@ export function ChatView({
       />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center gap-3 border-b border-bolu-border bg-white px-6 py-3 max-[760px]:px-3">
+        <header className="flex flex-wrap items-center gap-3 border-b border-bolu-border bg-bolu-surface px-6 py-3 max-[760px]:px-3">
           {/* Below 760px the panel is a drawer, so the thread needs its way in. From
               761px up the list is always there and this button would be noise. */}
           <button
@@ -327,7 +327,7 @@ export function ChatView({
                 type="button"
                 onClick={() => void chat.loadOlder()}
                 disabled={chat.loadingOlder}
-                className="mx-auto mb-3 block cursor-pointer rounded-full border border-bolu-border px-3 py-1 text-sm text-bolu-muted transition hover:bg-bolu-panel/60 disabled:opacity-50"
+                className="mx-auto mb-3 block cursor-pointer rounded-full border border-bolu-border px-3 py-1 text-sm text-bolu-muted transition hover:bg-bolu-hover/60 disabled:opacity-50"
               >
                 {chat.loadingOlder ? "Memuat…" : "Muat pesan lama"}
               </button>
@@ -386,7 +386,7 @@ export function ChatView({
                       className={`flex items-center gap-1.5 rounded-full border py-1 pl-3 pr-1 text-[13px] ${
                         item.status === "failed"
                           ? "border-bolu-belum/40 bg-bolu-belum/8 text-bolu-belum"
-                          : "border-bolu-border bg-white text-bolu-body"
+                          : "border-bolu-border bg-bolu-surface text-bolu-body"
                       }`}
                     >
                       <span className="max-w-[180px] truncate">{item.file.name}</span>
@@ -415,7 +415,7 @@ export function ChatView({
                 </ul>
               ) : null}
 
-              <div className="flex items-center gap-2 rounded-full border border-bolu-border bg-white py-1.5 pl-1.5 pr-1.5">
+              <div className="flex items-center gap-2 rounded-full border border-bolu-border bg-bolu-surface py-1.5 pl-1.5 pr-1.5">
                 <input
                   ref={picker}
                   type="file"
@@ -455,7 +455,7 @@ export function ChatView({
                   type="submit"
                   aria-label="Kirim"
                   disabled={!canSend}
-                  className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-bolu-accent text-white disabled:opacity-50"
+                  className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-bolu-accent text-bolu-solid-ink disabled:opacity-50"
                 >
                   {chat.sending || uploading ? (
                     "…"
@@ -671,8 +671,8 @@ function MessageRow({
         <div
           className={
             fromAgent
-              ? "rounded-[6px_20px_20px_20px] border border-bolu-border bg-white px-4 py-2.5"
-              : "rounded-[20px_20px_6px_20px] bg-bolu-ink px-4 py-2.5 text-[15px] text-white"
+              ? "rounded-[6px_20px_20px_20px] border border-bolu-border bg-bolu-surface px-4 py-2.5"
+              : "rounded-[20px_20px_6px_20px] bg-bolu-solid px-4 py-2.5 text-[15px] text-bolu-solid-ink"
           }
         >
           {message.blocks.map((block, index) => (
@@ -723,7 +723,7 @@ function MessageRow({
       {/* mt-6 clears the name line above the bubble, so the circle sits beside the
           message rather than beside the label. */}
       {!fromAgent ? (
-        <span className="mt-6 flex size-9 flex-none items-center justify-center rounded-full bg-bolu-accent text-[15px] font-bold text-white">
+        <span className="mt-6 flex size-9 flex-none items-center justify-center rounded-full bg-bolu-accent text-[15px] font-bold text-bolu-solid-ink">
           {initial}
         </span>
       ) : null}

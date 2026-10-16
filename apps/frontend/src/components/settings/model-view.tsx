@@ -339,14 +339,14 @@ export function ModelView() {
                           type="button"
                           onClick={() => void test(provider)}
                           disabled={busy}
-                          className="rounded-md border border-bolu-border px-2.5 py-1 transition hover:bg-bolu-panel/60 disabled:opacity-50"
+                          className="rounded-md border border-bolu-border px-2.5 py-1 transition hover:bg-bolu-hover/60 disabled:opacity-50"
                         >
                           Uji
                         </button>
                         <button
                           type="button"
                           onClick={() => setEditing(provider)}
-                          className="rounded-md border border-bolu-border px-2.5 py-1 transition hover:bg-bolu-panel/60"
+                          className="rounded-md border border-bolu-border px-2.5 py-1 transition hover:bg-bolu-hover/60"
                         >
                           Ubah
                         </button>
@@ -449,7 +449,7 @@ export function ModelView() {
                 <button
                   type="submit"
                   disabled={busy}
-                  className="rounded-md bg-bolu-accent px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+                  className="rounded-md bg-bolu-accent px-4 py-2 text-sm font-medium text-bolu-solid-ink transition hover:opacity-90 disabled:opacity-50"
                 >
                   Simpan model
                 </button>
@@ -619,7 +619,7 @@ export function ModelView() {
               <button
                 type="submit"
                 disabled={busy}
-                className="rounded-md bg-bolu-accent px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+                className="rounded-md bg-bolu-accent px-4 py-2 text-sm font-medium text-bolu-solid-ink transition hover:opacity-90 disabled:opacity-50"
               >
                 {editing ? "Simpan perubahan" : "Tambah"}
               </button>
@@ -627,7 +627,7 @@ export function ModelView() {
                 <button
                   type="button"
                   onClick={() => setEditing(null)}
-                  className="rounded-md border border-bolu-border px-4 py-2 text-sm transition hover:bg-bolu-panel/60"
+                  className="rounded-md border border-bolu-border px-4 py-2 text-sm transition hover:bg-bolu-hover/60"
                 >
                   Batal
                 </button>

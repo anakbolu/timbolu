@@ -1,6 +1,7 @@
 "use client";
 
 import { MoveRight } from "lucide-react";
+import type { CSSProperties } from "react";
 import { useState } from "react";
 import { BotSvg } from "@/components/bolu/bot-svg";
 import {
@@ -14,7 +15,7 @@ import {
 
 function InvoiceMock() {
   return (
-    <div className="flex flex-col gap-[18px] rounded-xl bg-white p-7">
+    <div className="flex flex-col gap-[18px] rounded-xl bg-bolu-surface p-7">
       <div className="flex flex-wrap justify-between gap-3">
         <div>
           <div className="font-display text-[28px] font-bold">Invoice</div>
@@ -55,7 +56,7 @@ function InvoiceMock() {
         <button
           type="button"
           disabled
-          className="min-h-11 rounded-full border-0 bg-bolu-ink px-[22px] py-3 font-semibold text-white"
+          className="min-h-11 rounded-full border-0 bg-bolu-solid px-[22px] py-3 font-semibold text-bolu-solid-ink"
         >
           Setujui &amp; kirim
         </button>
@@ -74,9 +75,9 @@ function InvoiceMock() {
 
 function WhatsAppMock() {
   return (
-    <div className="flex max-w-[520px] flex-col overflow-hidden rounded-xl bg-white">
-      <div className="flex items-center gap-3 bg-bolu-ink px-5 py-3.5 text-white">
-        <div className="flex size-9 items-center justify-center rounded-full bg-[#F59ABF] font-bold text-bolu-ink">
+    <div className="flex max-w-[520px] flex-col overflow-hidden rounded-xl bg-bolu-surface">
+      <div className="flex items-center gap-3 bg-bolu-solid px-5 py-3.5 text-bolu-solid-ink">
+        <div className="flex size-9 items-center justify-center rounded-full bg-[#F59ABF] font-bold text-bolu-on-tint">
           R
         </div>
         <div>
@@ -84,15 +85,15 @@ function WhatsAppMock() {
           <div className="text-[13px] opacity-75">pelanggan</div>
         </div>
       </div>
-      <div className="flex flex-col gap-3 bg-[#F3F4F9] p-5">
-        <div className="max-w-[80%] self-start rounded-[16px_16px_16px_4px] bg-white px-3.5 py-2.5 text-[15px]">
+      <div className="flex flex-col gap-3 bg-bolu-panel p-5">
+        <div className="max-w-[80%] self-start rounded-[16px_16px_16px_4px] bg-bolu-surface px-3.5 py-2.5 text-[15px]">
           Kak, pesanan atas nama Rina udah dikirim belum?
         </div>
-        <div className="max-w-[80%] self-end rounded-[16px_16px_4px_16px] bg-[#D6ECFF] px-3.5 py-2.5 text-[15px]">
+        <div className="max-w-[80%] self-end rounded-[16px_16px_4px_16px] bg-bolu-accent/15 px-3.5 py-2.5 text-[15px]">
           Halo Kak Rina! Pesananmu sudah dikirim hari ini lewat [KURIR], nomor resinya [NO
           RESI]. Terima kasih sudah belanja ya.
         </div>
-        <div className="max-w-[80%] self-start rounded-[16px_16px_16px_4px] bg-white px-3.5 py-2.5 text-[15px]">
+        <div className="max-w-[80%] self-start rounded-[16px_16px_16px_4px] bg-bolu-surface px-3.5 py-2.5 text-[15px]">
           Siap kak, makasih. Kalau mau order lagi masih ready?
         </div>
         <div className="flex items-center gap-2 self-end text-[14px] text-bolu-muted">
@@ -110,14 +111,14 @@ function WhatsAppMock() {
 
 function RekapMock() {
   return (
-    <div className="flex flex-col gap-3.5 rounded-xl bg-white p-6">
+    <div className="flex flex-col gap-3.5 rounded-xl bg-bolu-surface p-6">
       <div className="flex flex-wrap justify-between gap-2">
         <div className="font-display text-[24px] font-bold">Rekap pesanan minggu ini</div>
         <div className="text-[14px] text-bolu-muted">diperbarui Ijo barusan</div>
       </div>
       <div className="overflow-x-auto">
         <div className="flex min-w-[520px] flex-col text-[15px]">
-          <div className="grid grid-cols-[1fr_1.4fr_1.6fr_1.2fr_1fr] gap-2.5 rounded-xl bg-[#F3F4F9] px-3 py-2.5 font-semibold">
+          <div className="grid grid-cols-[1fr_1.4fr_1.6fr_1.2fr_1fr] gap-2.5 rounded-xl bg-bolu-panel px-3 py-2.5 font-semibold">
             <span>Tanggal</span>
             <span>Pelanggan</span>
             <span>Barang</span>
@@ -150,7 +151,7 @@ function RekapMock() {
 
 function ArsipMock() {
   return (
-    <div className="flex flex-col gap-3 rounded-xl bg-white p-6">
+    <div className="flex flex-col gap-3 rounded-xl bg-bolu-surface p-6">
       <div className="font-display text-[24px] font-bold">
         Folder Unduhan → Arsip/2026/Oktober
       </div>
@@ -203,7 +204,7 @@ export function WorkspaceTabs() {
               aria-controls="intip-panel"
               onClick={() => setTab(entry.id)}
               className={`min-h-11 rounded-full border-2 border-bolu-ink px-5 py-2.5 font-semibold ${
-                selected ? "bg-bolu-ink text-white" : "bg-white text-bolu-ink"
+                selected ? "bg-bolu-solid text-bolu-solid-ink" : "bg-bolu-surface text-bolu-ink"
               }`}
             >
               {entry.label}
@@ -217,8 +218,12 @@ export function WorkspaceTabs() {
         role="tabpanel"
         aria-labelledby={`tab-${tab}`}
         tabIndex={0}
-        className="flex flex-wrap items-start gap-7 rounded-xl p-7"
-        style={{ background: current.tint }}
+        className="intip-panel flex flex-wrap items-start gap-7 rounded-xl p-7"
+        // The tab's own pastel, handed to the stylesheet rather than painted
+        // here: the light theme uses it as the backdrop of the mock workspace,
+        // and the dark theme has to blend it into the panel instead of putting a
+        // light block on a dark page.
+        style={{ "--tint": current.tint } as CSSProperties}
       >
         <div className="min-w-0 flex-[999_1_460px]">
           {tab === "inv" ? <InvoiceMock /> : null}
@@ -234,7 +239,7 @@ export function WorkspaceTabs() {
               return (
                 <li
                   key={`${current.id}-${step.who}-${step.text}`}
-                  className="flex items-center gap-3.5 rounded-xl border border-bolu-border bg-white py-3 pl-3 pr-4"
+                  className="flex items-center gap-3.5 rounded-xl border border-bolu-border bg-bolu-surface py-3 pl-3 pr-4"
                 >
                   <BotSvg bot={member} className="size-12 flex-none" />
                   <div className="flex min-w-0 flex-col gap-0.5">

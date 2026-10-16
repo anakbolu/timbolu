@@ -2,6 +2,7 @@ import Link from "next/link";
 import { BotSvg } from "@/components/bolu/bot-svg";
 import { StartLink } from "@/components/bolu/start-link";
 import { SiteNavMenu } from "@/components/bolu/site-nav-menu";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { LOGO } from "@/lib/crew";
 
 const LINKS = [
@@ -32,9 +33,10 @@ export function SiteNav() {
             {link.label}
           </Link>
         ))}
-        <StartLink className="inline-flex min-h-11 items-center rounded-full bg-bolu-ink px-5 py-[11px] font-semibold text-white no-underline">
+        <StartLink className="inline-flex min-h-11 items-center rounded-full bg-bolu-solid px-5 py-[11px] font-semibold text-bolu-solid-ink no-underline">
           Coba gratis
         </StartLink>
+        <ThemeToggle />
       </nav>
 
       <SiteNavMenu links={LINKS} />

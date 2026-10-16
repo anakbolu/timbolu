@@ -273,14 +273,14 @@ export function TeamView() {
                       <button
                         type="button"
                         onClick={() => void open(agent)}
-                        className={`flex w-full items-center gap-3 rounded-md border px-4 py-3 text-left transition hover:bg-bolu-panel/50 ${
+                        className={`flex w-full items-center gap-3 rounded-md border px-4 py-3 text-left transition hover:bg-bolu-hover/50 ${
                           selected?.id === agent.id ? "border-bolu-accent bg-bolu-panel/50" : "border-bolu-border bg-bolu-surface"
                         }`}
                       >
                         <span
                           aria-hidden
                           className="inline-block size-8 shrink-0 rounded-full"
-                          style={{ backgroundColor: agent.color || "#8b88a0" }}
+                          style={{ backgroundColor: agent.color || "var(--color-bolu-rest)" }}
                         />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate font-medium">{agent.name}</span>
@@ -317,7 +317,7 @@ export function TeamView() {
                 <button
                   type="submit"
                   disabled={busy}
-                  className="rounded-md bg-bolu-accent px-3.5 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                  className="rounded-md bg-bolu-accent px-3.5 py-2 text-sm font-semibold text-bolu-solid-ink disabled:opacity-60"
                 >
                   Tambah
                 </button>
@@ -398,7 +398,7 @@ export function TeamView() {
                 <button
                   type="submit"
                   disabled={busy}
-                  className="w-full rounded-md bg-bolu-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                  className="w-full rounded-md bg-bolu-accent px-4 py-2 text-sm font-semibold text-bolu-solid-ink disabled:opacity-60"
                 >
                   Simpan profil
                 </button>

@@ -25,7 +25,7 @@ export const TIMEZONES = [
 ];
 
 /** ACCENT is the primary blue: the "today" bar and the primary buttons. */
-export const ACCENT = "#1F7FD6";
+export const ACCENT = "var(--color-bolu-accent)";
 
 /**
  * The look each derived state is posed with.
@@ -61,11 +61,11 @@ export const STATE_LINE: Record<string, string> = {
 
 /** The dot beside a Bolu's face, per derived state. */
 export const STATE_DOT: Record<string, string> = {
-  working: "#1E7A43",
-  thinking: "#2FA65A",
-  waiting: "#E2602B",
-  idle: "#4A86E8",
-  resting: "#8B88A0",
+  working: "var(--color-bolu-lunas)",
+  thinking: "var(--color-bolu-live)",
+  waiting: "var(--color-bolu-flag)",
+  idle: "var(--color-bolu-accent)",
+  resting: "var(--color-bolu-rest)",
 };
 
 /** A stat card: a label, the number, and what the number counts. */
@@ -196,30 +196,30 @@ export type TaskState = {
  */
 export function taskState(task: { status: string; health: string }): TaskState {
   if (task.status === "succeeded") {
-    return { label: "Selesai", color: "#1E7A43", note: "", live: false };
+    return { label: "Selesai", color: "var(--color-bolu-lunas)", note: "", live: false };
   }
   if (task.status === "failed") {
-    return { label: "Gagal", color: "#B4421F", note: "", live: false };
+    return { label: "Gagal", color: "var(--color-bolu-belum)", note: "", live: false };
   }
   if (task.status === "canceled") {
-    return { label: "Dibatalkan", color: "#5E5B70", note: "dihentikan sebelum selesai", live: false };
+    return { label: "Dibatalkan", color: "var(--color-bolu-muted)", note: "dihentikan sebelum selesai", live: false };
   }
   if (task.status === "waiting_approval" || task.health === "waiting") {
-    return { label: "Menunggu kamu", color: "#E2602B", note: "", live: true };
+    return { label: "Menunggu kamu", color: "var(--color-bolu-flag)", note: "", live: true };
   }
   if (task.health === "stuck") {
     return {
       label: "Terhenti",
-      color: "#B4421F",
+      color: "var(--color-bolu-belum)",
       note: "detaknya berhenti; mungkin worker-nya mati",
       live: true,
     };
   }
   if (task.status === "queued") {
-    return { label: "Antre", color: "#5E5B70", note: "", live: true };
+    return { label: "Antre", color: "var(--color-bolu-muted)", note: "", live: true };
   }
 
-  return { label: "Berjalan", color: "#2E6FE0", note: "", live: true };
+  return { label: "Berjalan", color: "var(--color-bolu-accent)", note: "", live: true };
 }
 
 /** taskTriggerLabel says how the task was started. */
@@ -456,7 +456,7 @@ export function buildWeek(tasks: Task[], now = new Date()): WeekBar[] {
       day: day.label,
       label: day.count === 0 ? "" : String(day.count),
       h: isFuture ? "6px" : `${Math.round(Math.min(1, day.count / peak) * 140)}px`,
-      bg: isFuture ? "#E3E5EF" : isToday ? ACCENT : "#1E1B2E",
+      bg: isFuture ? "var(--color-bolu-border)" : isToday ? ACCENT : "var(--color-bolu-solid)",
       weight: isToday ? 700 : 500,
     };
   });

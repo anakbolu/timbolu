@@ -12,6 +12,7 @@ import { useState } from "react";
 import { Menu, X } from "lucide-react";
 
 import { StartLink } from "@/components/bolu/start-link";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 export function SiteNavMenu({
   links,
@@ -27,7 +28,7 @@ export function SiteNavMenu({
         aria-label="Buka menu"
         aria-expanded={open}
         onClick={() => setOpen(true)}
-        className="flex size-11 cursor-pointer items-center justify-center rounded-xl border border-bolu-border bg-white text-bolu-ink min-[761px]:hidden"
+        className="flex size-11 cursor-pointer items-center justify-center rounded-xl border border-bolu-border bg-bolu-surface text-bolu-ink min-[761px]:hidden"
       >
         <Menu size={22} strokeWidth={2} aria-hidden="true" />
       </button>
@@ -35,13 +36,13 @@ export function SiteNavMenu({
       {open ? (
         <div
           onClick={() => setOpen(false)}
-          className="fixed inset-0 z-[35] bg-[rgba(30,27,46,0.4)] min-[761px]:hidden"
+          className="fixed inset-0 z-[35] bg-bolu-scrim min-[761px]:hidden"
         />
       ) : null}
 
       <nav
         aria-label="Navigasi utama"
-        className={`fixed inset-y-0 right-0 z-40 flex w-[min(320px,86vw)] flex-col gap-1.5 bg-white p-5 transition-transform duration-200 min-[761px]:hidden ${
+        className={`fixed inset-y-0 right-0 z-40 flex w-[min(320px,86vw)] flex-col gap-1.5 bg-bolu-surface p-5 transition-transform duration-200 min-[761px]:hidden ${
           open ? "translate-x-0 shadow-[0_10px_40px_rgba(30,27,46,0.25)]" : "translate-x-full"
         }`}
       >
@@ -63,7 +64,7 @@ export function SiteNavMenu({
               key={link.href}
               href={link.href}
               onClick={() => setOpen(false)}
-              className="min-h-[52px] rounded-xl px-3.5 text-[17px] font-bold text-bolu-ink no-underline hover:bg-bolu-panel/60"
+              className="min-h-[52px] rounded-xl px-3.5 text-[17px] font-bold text-bolu-ink no-underline hover:bg-bolu-hover/60"
             >
               {link.label}
             </Link>
@@ -72,10 +73,17 @@ export function SiteNavMenu({
 
         <StartLink
           onClick={() => setOpen(false)}
-          className="mt-3 inline-flex min-h-11 items-center justify-center rounded-full bg-bolu-ink px-5 py-[11px] font-semibold text-white no-underline"
+          className="mt-3 inline-flex min-h-11 items-center justify-center rounded-full bg-bolu-solid px-5 py-[11px] font-semibold text-bolu-solid-ink no-underline"
         >
           Coba gratis
         </StartLink>
+
+        {/* The phone's nav row is hidden, so the theme control comes with it:
+            the drawer is the only place the landing page offers on a phone. */}
+        <div className="mt-4 flex items-center justify-between gap-2 border-t border-bolu-line pt-4">
+          <span className="text-[15px] font-bold text-bolu-muted">Tampilan</span>
+          <ThemeToggle />
+        </div>
       </nav>
     </>
   );

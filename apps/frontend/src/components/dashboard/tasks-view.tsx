@@ -32,13 +32,13 @@ import { relativeAge, taskState, taskTriggerLabel } from "@/lib/dashboard-view";
 import { ChecklistsView } from "./checklists-view";
 import { useWorkspace } from "./workspace-data";
 
-const CARD = "rounded-md border border-bolu-border bg-white";
+const CARD = "rounded-md border border-bolu-border bg-bolu-surface";
 const HEADING = "font-display text-[22px] font-semibold";
 const BUTTON =
-  "min-h-10 cursor-pointer rounded-md border border-bolu-border bg-white px-3.5 text-[14px] font-medium text-bolu-ink transition hover:border-bolu-accent disabled:cursor-default disabled:opacity-50";
+  "min-h-10 cursor-pointer rounded-md border border-bolu-border bg-bolu-surface px-3.5 text-[14px] font-medium text-bolu-ink transition hover:border-bolu-accent disabled:cursor-default disabled:opacity-50";
 const CHIP = (on: boolean) =>
   `min-h-9 cursor-pointer rounded-full border px-3 text-[13px] font-medium transition ${
-    on ? "border-bolu-ink bg-bolu-ink text-white" : "border-bolu-border bg-white text-bolu-muted hover:border-bolu-accent"
+    on ? "border-bolu-ink bg-bolu-solid text-bolu-solid-ink" : "border-bolu-border bg-bolu-surface text-bolu-muted hover:border-bolu-accent"
   }`;
 
 /** The statuses a person can narrow to. Empty is "semua". */
@@ -181,7 +181,7 @@ export function TasksView() {
             <select
               value={agentID}
               onChange={(event) => setAgentID(event.target.value)}
-              className="min-h-10 rounded-md border border-bolu-border bg-white px-2.5 text-[14px] text-bolu-ink"
+              className="min-h-10 rounded-md border border-bolu-border bg-bolu-surface px-2.5 text-[14px] text-bolu-ink"
             >
               <option value="">Semua Bolu</option>
               {agents.map((agent) => (
@@ -197,7 +197,7 @@ export function TasksView() {
             <select
               value={limit}
               onChange={(event) => setLimit(Number(event.target.value))}
-              className="min-h-10 rounded-md border border-bolu-border bg-white px-2.5 text-[14px] text-bolu-ink"
+              className="min-h-10 rounded-md border border-bolu-border bg-bolu-surface px-2.5 text-[14px] text-bolu-ink"
             >
               {LIMITS.map((option) => (
                 <option key={option} value={option}>

@@ -41,3 +41,12 @@ Source fragments and earlier exports the ports were taken from.
 `characters.tsx` holds the shapes, expressions and palette; `bolu.tsx` renders
 them. Live previews of either the artboards or the generator are separate
 exported pages, so the `.html` files here are the only place their values live.
+
+## Dark theme
+
+None of these artboards has a dark variant: they are the light theme only, and the
+values above are the light values. The dark theme in `apps/frontend/src/app/globals.css`
+is therefore **not a port** — it is derived from this palette by keeping each family's
+hue and moving it along the ladder, so "the reference wins" does not apply to it.
+A change to a light value here still has to be reflected in the `.dark` block by hand,
+because nothing generates one from the other.

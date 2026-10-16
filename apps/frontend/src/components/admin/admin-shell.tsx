@@ -35,6 +35,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import type { User } from "@/lib/api";
 import { LOGO } from "@/lib/crew";
 
@@ -130,6 +131,7 @@ export function AdminShell({ user, children }: { user: User; children: React.Rea
         <header className="sticky top-0 z-10 flex h-14 flex-none items-center gap-2 border-b border-border bg-background/85 px-4 backdrop-blur">
           <SidebarTrigger />
           <h1 className="font-display text-lg font-bold">{title}</h1>
+          <ThemeToggle className="ml-auto" />
         </header>
         <div className="flex-1 bg-bolu-bg">{children}</div>
       </SidebarInset>
