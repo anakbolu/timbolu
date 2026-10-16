@@ -359,9 +359,9 @@ export function ChatView({
                   className="flex items-center gap-2.5 text-sm text-bolu-muted"
                 >
                   <Bolu member={waiting.face} expression="mikir" size={22} className="flex-none" />
-                  {/* The name is inside the shimmering text rather than a separate
+                  {/* The name is inside the pulsing text rather than a separate
                       line: one row is the whole state, and it is read once. */}
-                  <span className="motion-safe:animate-pulse">
+                  <span className="motion-safe:animate-soft-pulse">
                     {waiting.name} · {waiting.text}
                   </span>
                 </div>
