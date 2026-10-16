@@ -1,0 +1,184 @@
+// Package temporal holds the Temporal activities a worker will register to drive a
+// bot's virtual computer.
+//
+// It is a thin layer for the same reason the other modules' activity packages are:
+// the workflow package must stay free of the module's services so replay stays
+// deterministic, and the client must stay free of the SDK so a unit test can call it
+// without a Temporal server. An activity is where those two meet, and it does
+// nothing but translate one request into one call.
+//
+// Nothing registers these yet, and that is the point of the PoC
+// (docs/adr/0003-virtual-computer.md §3.2): the package compiles, is importable, and
+// is unused. Wiring it is a two-line change in
+// internal/container/worker.go — `vcomputertemporal.New(...)` plus
+// `w.RegisterActivity(...)` — and it is deliberately not made here, because a worker
+// that registers an activity whose control plane is missing would fail tasks that
+// used to work.
+//
+// The activities are named after the control plane's routes rather than after the
+// tools a model sees. Tools carry labels and grants (docs/riset-microvm.md §5.1);
+// these are the mechanics underneath them, and one tool call may become more than
+// one activity.
+package temporal
+
+import (
+	"context"
+	"time"
+
+	"go.uber.org/zap"
+
+	"github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/domain"
+)
+
+// Deps are the activity dependencies. The client is the only required one.
+type Deps struct {
+	// Computer is the control plane. A nil client is a deployment without a virtual
+	// computer, and every activity says so instead of panicking.
+	Computer domain.ComputerUseClient
+	// Logger is optional; the activities log the failures a caller cannot see from
+	// the return value alone, such as a screenshot that came back empty.
+	Logger *zap.Logger
+}
+
+// Activities is the set a worker registers.
+type Activities struct {
+	deps Deps
+}
+
+// New builds the activity set.
+func New(deps Deps) *Activities {
+	return &Activities{deps: deps}
+}
+
+// SessionRequest names the bot an activity acts on. Every request carries it: a
+// computer belongs to one bot, and an activity that guessed which would be an
+// activity that can drive the wrong desktop.
+type SessionRequest struct {
+	BotID string `json:"bot_id"`
+}
+
+// ClickRequest is one press. The coordinates come from a model reading a
+// screenshot, so they are what the model believes it saw — the control plane is what
+// decides whether they land on anything.
+type ClickRequest struct {
+	BotID string `json:"bot_id"`
+	X     int    `json:"x"`
+	Y     int    `json:"y"`
+}
+
+// TypeRequest is one string sent to the focused window.
+type TypeRequest struct {
+	BotID string `json:"bot_id"`
+	Text  string `json:"text"`
+}
+
+// ExecRequest is one command. It is the request that must never reach this activity
+// without an approval behind it: riset §5.1 labels `computer.exec` write_external,
+// because a shell command has no machine-readable shape to gate on.
+type ExecRequest struct {
+	BotID   string `json:"bot_id"`
+	Command string `json:"command"`
+}
+
+// ScreenshotResult carries a capture back through the workflow.
+//
+// TODO: a screenshot is up to a few hundred kilobytes and Temporal's default payload
+// limit is 2 MiB, so this is fine for a PoC and wrong for a loop that takes one
+// capture per step. The version that gets wired should write the PNG to the object
+// storage in Jakarta and return the key, which is the claim-check rule ADR 0001
+// already applies to everything else a workflow touches.
+type ScreenshotResult struct {
+	PNG        []byte    `json:"png"`
+	Bytes      int       `json:"bytes"`
+	CapturedAt time.Time `json:"captured_at"`
+}
+
+// EnsureSession makes sure the bot has a computer, and is safe to call before every
+// task: the control plane creates the session once and returns it afterwards.
+//
+// It is the first activity of any task that needs a desktop, because every other
+// activity fails with ErrNoSession when it is skipped.
+func (a *Activities) EnsureSession(ctx context.Context, request SessionRequest) (domain.Session, error) {
+	return a.client().EnsureSession(ctx, request.BotID)
+}
+
+// StopSession ends a session and keeps its volume.
+//
+// It exists so a reaper or an explicit "matikan komputer" action has somewhere to
+// call. It is deliberately not called at the end of a task: a session that ends with
+// the task that used it would lose the browser profile it was kept for, which is the
+// opposite of what the persistent volume is for.
+func (a *Activities) StopSession(ctx context.Context, request SessionRequest) error {
+	return a.client().StopSession(ctx, request.BotID)
+}
+
+// Screenshot is the desktop as it is now. The workflow decides what to do with the
+// bytes; this activity only fetches them.
+func (a *Activities) Screenshot(ctx context.Context, request SessionRequest) (ScreenshotResult, error) {
+	png, err := a.client().Screenshot(ctx, request.BotID)
+	if err != nil {
+		return ScreenshotResult{}, err
+	}
+	if len(png) == 0 {
+		// An empty capture is not a failure of the sandbox, but it is useless to the
+		// model, and returning it silently would turn into "the screen is blank" in a
+		// task summary rather than into a bug.
+		if a.deps.Logger != nil {
+			a.deps.Logger.Warn("vcomputer: the control plane answered an empty screenshot",
+				zap.String("bot_id", request.BotID))
+		}
+	}
+	return ScreenshotResult{PNG: png, Bytes: len(png), CapturedAt: time.Now()}, nil
+}
+
+// Click presses a point on the desktop.
+func (a *Activities) Click(ctx context.Context, request ClickRequest) error {
+	return a.client().Click(ctx, request.BotID, request.X, request.Y)
+}
+
+// Type sends text to the focused window.
+func (a *Activities) Type(ctx context.Context, request TypeRequest) error {
+	return a.client().Type(ctx, request.BotID, request.Text)
+}
+
+// Exec runs one command inside the sandbox and answers what it printed.
+//
+// The PoC's control plane echoes the command with `stub: true` instead of running
+// it. A caller must read that field rather than the exit code: a stub that returned
+// exit 0 with no output would look like a command that succeeded and printed
+// nothing.
+func (a *Activities) Exec(ctx context.Context, request ExecRequest) (domain.ExecResult, error) {
+	return a.client().Exec(ctx, request.BotID, request.Command)
+}
+
+// client is the single place the "no control plane" case is turned into an error, so
+// every activity answers the same way when a deployment forgot to configure one.
+func (a *Activities) client() domain.ComputerUseClient {
+	if a == nil || a.deps.Computer == nil {
+		return unconfigured{}
+	}
+	return a.deps.Computer
+}
+
+// unconfigured is the client a deployment without a control plane gets. It exists so
+// the check is one branch in one place rather than a nil test in every activity, and
+// so the error names the missing configuration rather than the call that hit it.
+type unconfigured struct{}
+
+func (unconfigured) EnsureSession(context.Context, string) (domain.Session, error) {
+	return domain.Session{}, domain.ErrNotConfigured
+}
+
+func (unconfigured) StopSession(context.Context, string) error { return domain.ErrNotConfigured }
+
+func (unconfigured) Screenshot(context.Context, string) ([]byte, error) {
+	return nil, domain.ErrNotConfigured
+}
+
+func (unconfigured) Click(context.Context, string, int, int) error { return domain.ErrNotConfigured }
+
+func (unconfigured) Type(context.Context, string, string) error { return domain.ErrNotConfigured }
+
+func (unconfigured) Exec(context.Context, string, string) (domain.ExecResult, error) {
+	return domain.ExecResult{}, domain.ErrNotConfigured
+}

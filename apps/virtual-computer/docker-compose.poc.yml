@@ -1,0 +1,109 @@
+# The PoC's own stack: the control plane and one sandbox, on their own network.
+#
+# It is a separate file on purpose. `docker-compose.yml` at the repository root is the
+# product: Postgres, Redis, Temporal, and the four processes that serve customers.
+# This file starts none of them, and the product starts none of this — the PoC must be
+# runnable and removable without touching what customers use
+# (docs/adr/0003-virtual-computer.md §3.2).
+#
+# Run:  docker compose -f apps/virtual-computer/docker-compose.poc.yml up --build
+# Then: open apps/virtual-computer/demo/index.html and press "Cek API".
+#
+# Environment variables:
+#   VCOMPUTER_RUNTIME      memory | docker — which runtime the control plane uses.
+#                          `memory` is the default: it starts with no Docker access at
+#                          all and answers the same API, which is what makes the
+#                          demo page work on a laptop.
+#   VCOMPUTER_CONTROL_ADDR listen address inside the control container.
+#   SCREEN_GEOMETRY        the sandbox display, e.g. 1280x800x24.
+#   VNC_PASSWORD           optional. Unset means noVNC is reachable without a password,
+#                          which is only acceptable because 6080 is bound to
+#                          127.0.0.1 and the container sits on an internal network.
+#   SANDBOX_IMAGE          the tag the sandbox service is built as, so a real runtime
+#                          knows what to start.
+
+name: vcomputer-poc
+
+services:
+  # The control plane: session lifecycle plus screenshot / click / type / exec, on an
+  # internal address. Nothing about a customer's data reaches it beyond the bot id.
+  vcomputer-control:
+    build:
+      # The context is the control directory: the module is self-contained, so the
+      # image does not need the repository root the way the backend's does.
+      context: ./control
+    image: vcomputer-control:poc
+    container_name: vcomputer-control
+    restart: unless-stopped
+    environment:
+      VCOMPUTER_CONTROL_ADDR: ":8090"
+      # `docker` is the skeleton: it refuses every call with the command it would run,
+      # which is the honest answer until the Docker client is implemented.
+      VCOMPUTER_RUNTIME: ${VCOMPUTER_RUNTIME:-memory}
+    ports:
+      # Bound to the loopback interface on purpose. The control plane speaks for every
+      # bot at once and has no authentication in the PoC, so publishing it on 0.0.0.0
+      # would put a desktop for any bot id on the network. The demo page runs on the
+      # host, which is the only reason it is published at all.
+      - "127.0.0.1:8090:8090"
+    healthcheck:
+      test: ["CMD", "/vcomputer-control", "-h"]
+      # The image is distroless: there is no shell and no curl, so the healthcheck can
+      # only prove the binary exists and parses. A real deployment adds a `/health`
+      # probe from its orchestrator, which is where this belongs anyway.
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - vcomputer
+
+  # here so a person can watch the desktop at http://localhost:6080/vnc.html.
+  #
+  # It is NOT how the PoC drives a bot: the control plane's docker runtime is a
+  # skeleton, so this service exists to prove the image and to show the desktop. That
+  # is why it has no dependency on the control plane and the control plane does not
+  # depend on it.
+  vcomputer-sandbox-example:
+    build:
+      context: ./sandbox
+    image: ${SANDBOX_IMAGE:-vcomputer-sandbox:poc}
+    container_name: vcomputer-sandbox-example
+    restart: unless-stopped
+    environment:
+      SCREEN_GEOMETRY: ${SCREEN_GEOMETRY:-1280x800x24}
+      # Empty means no VNC password. Set it for anything reachable beyond this host.
+      VNC_PASSWORD: ${VNC_PASSWORD:-}
+    ports:
+      # noVNC only. Port 5900 (raw VNC) and 9222 (Chromium CDP) are deliberately not
+      # published: VNC has no transport encryption and CDP drives the whole browser,
+      # so both stay inside the sandbox network.
+      - "127.0.0.1:6080:6080"
+    volumes:
+      # The persistent half of the session: Chromium's profile and the bot's home.
+      # A named volume rather than a bind mount, so the same file works on a machine
+      # with no checkout, and so `docker compose down -v` is the only way to lose a
+      # login.
+      - bot-session-demo:/home/bolu
+    # Hardening, matching docs/adr/0003-virtual-computer.md §3.3: the sandbox is a
+    # container, so it is run as one that cannot escalate. No privileged mode, no
+    # devices, no docker socket — and none of them can be added on EasyPanel anyway.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Bounds so one sandbox cannot take the node: Chromium plus Xvfb is the heaviest
+    # thing this stack runs, and a runaway tab must not become a runaway host.
+    mem_limit: 2g
+    pids_limit: 512
+    networks:
+      - vcomputer
+
+networks:
+  # Its own network, so a sandbox cannot reach Postgres, Redis, or Temporal even if it
+  # is compromised. The control plane is on it; nothing else in the product is.
+  vcomputer:
+    name: vcomputer-poc
+
+volumes:
+  # Per bot in the real runtime (`vcomputer-<bot_id>-home`); one example here.
+  bot-session-demo:
