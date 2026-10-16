@@ -31,6 +31,10 @@ x-backend-env: &backend-env
   # renders. Local development writes to a directory inside the container.
   STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
   STORAGE_LOCAL_ROOT: /data/storage
+  # Which file types an upload may be, by extension, comma separated. It can only
+  # narrow the module's own list, so empty is the list of images, PDFs, office
+  # documents, and text.
+  ATTACHMENT_ALLOWED_EXTENSIONS: ${ATTACHMENT_ALLOWED_EXTENSIONS:-}
   # The origin the sandboxed documents are served from. Locally the API serves
   # them itself; production points this at a separate host.
   CONTENT_ORIGIN: ${CONTENT_ORIGIN:-http://localhost:8080}

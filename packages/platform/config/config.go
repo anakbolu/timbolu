@@ -553,6 +553,11 @@ type StorageConfig struct {
 	// explicitly: the document is served from a different host than the app, so
 	// `frame-ancestors 'self'` would refuse every frame and break the block.
 	ContentFrameAncestors []string `mapstructure:"ContentFrameAncestors" validate:"optional"`
+	// AttachmentAllowedExtensions narrows which file types a chat upload may be,
+	// by extension. It can only narrow: an extension the chat module does not
+	// know is ignored, and an executable can never be named. Empty means the
+	// module's default list.
+	AttachmentAllowedExtensions []string `mapstructure:"AttachmentAllowedExtensions" validate:"optional"`
 }
 
 // LoggingConfig holds structured logging settings.

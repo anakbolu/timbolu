@@ -1,17 +1,28 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
+	"net/textproto"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 
 	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
+	chathandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/handler"
 	chatservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/service"
+	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
+	"github.com/robzlabz/employeebot/packages/platform/database"
 )
 
 // attachObjects is an in-memory object store: the test is about Postgres rows.
@@ -63,6 +74,11 @@ func newAttachService(fixture *chatFixture) *chatservice.Service {
 	})
 }
 
+// pngOf and pdfOf build content a sniffer reads as those types, because an upload is
+// checked against its bytes as well as its name.
+func pngOf(text string) []byte { return append([]byte("\x89PNG\r\n\x1a\n"), text...) }
+func pdfOf(text string) []byte { return append([]byte("%PDF-1.4\n"), text...) }
+
 // attachedEvent finds the newest message event for a message that carries
 // attachments, decoded the way the SSE stream sends it.
 func messageEventsFor(t *testing.T, fixture *chatFixture, messageID uuid.UUID) []chatdomain.MessagePayload {
@@ -96,8 +112,8 @@ func TestAttachWithoutMessageShowsTheFile(t *testing.T) {
 	})
 	require.NoError(t, err)
 	_, err = service.Attach(t.Context(), fixture.scope, chatdomain.AttachRequest{
-		MessageID: opened.Message.ID, Filename: "a.png", ContentType: "image/png",
-	}, []byte("png-bytes"))
+		MessageID: opened.Message.ID, Filename: "a.png",
+	}, pngOf("png-bytes"))
 	require.NoError(t, err)
 
 	page, err := service.History(t.Context(), fixture.scope, conversation.ID, chatdomain.Cursor{})
@@ -127,8 +143,8 @@ func TestAttachWithMessageShowsTheFile(t *testing.T) {
 	require.NoError(t, err)
 	for _, name := range []string{"satu.pdf", "dua.pdf"} {
 		_, err = service.Attach(t.Context(), fixture.scope, chatdomain.AttachRequest{
-			MessageID: sent.Message.ID, Filename: name, ContentType: "application/pdf",
-		}, []byte(name))
+			MessageID: sent.Message.ID, Filename: name,
+		}, pdfOf(name))
 		require.NoError(t, err)
 	}
 
@@ -139,4 +155,110 @@ func TestAttachWithMessageShowsTheFile(t *testing.T) {
 	events := messageEventsFor(t, fixture, sent.Message.ID)
 	require.NotEmpty(t, events)
 	require.Len(t, events[len(events)-1].Attachments, 2)
+}
+
+// TestDeletingOneFileKeepsTheOthers: the row and the message's read model go together, and
+// the read model is rebuilt from the rows that are still there, so a message carrying two
+// files must keep the one that was not deleted.
+func TestDeletingOneFileKeepsTheOthers(t *testing.T) {
+	fixture := newChatFixture(t, appDatabase(t))
+	service := newAttachService(fixture)
+	conversation := fixture.directConversation(t)
+
+	first, err := service.Attach(t.Context(), fixture.scope, chatdomain.AttachRequest{
+		ConversationID: conversation.ID, Filename: "satu.png",
+	}, pngOf("satu"))
+	require.NoError(t, err)
+	second, err := service.Attach(t.Context(), fixture.scope, chatdomain.AttachRequest{
+		MessageID: first.MessageID, Filename: "dua.png",
+	}, pngOf("dua"))
+	require.NoError(t, err)
+
+	message, err := fixture.repo.Delete(t.Context(), fixture.scope, first.ID)
+	require.NoError(t, err)
+	require.Len(t, message.Attachments, 1)
+	require.Equal(t, second.ID, message.Attachments[0].ID)
+
+	stored, err := fixture.repo.GetMessage(t.Context(), fixture.scope, first.MessageID)
+	require.NoError(t, err)
+	require.Len(t, stored.Attachments, 1, "the file that was not deleted stays on the message")
+	require.Equal(t, second.ID, stored.Attachments[0].ID)
+
+	// The sweep retries after a partial failure, so deleting a row that is already gone
+	// converges: no message to publish, and no error to report as work not done.
+	again, err := fixture.repo.Delete(t.Context(), fixture.scope, first.ID)
+	require.NoError(t, err)
+	require.Equal(t, uuid.Nil, again.ID)
+}
+
+// attachApp serves the chat routes over the fixture's identity, which is what a multipart
+// upload needs: the type check runs at the HTTP boundary, and so does the part header a
+// client attaches to its file.
+func attachApp(t *testing.T, fixture *chatFixture, service *chatservice.Service) *fiber.App {
+	t.Helper()
+
+	app := fiber.New(fiber.Config{DisableStartupMessage: true})
+	group := app.Group("/api", func(c *fiber.Ctx) error {
+		middleware.SetIdentity(c, fixture.userID, "owner@example.com")
+		middleware.SetScope(c, database.Scope{UserID: fixture.userID, WorkspaceID: fixture.workspace})
+		return c.Next()
+	})
+	chathandler.Routes(group, chathandler.New(service, zap.NewNop()))
+	return app
+}
+
+// uploadClaimingType posts one file whose part carries a Content-Type of its own, which is
+// the claim a client is free to make.
+func uploadClaimingType(t *testing.T, app *fiber.App, conversationID uuid.UUID, filename, claimedType string, content []byte) (int, chatdomain.AttachmentPayload) {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	header := textproto.MIMEHeader{}
+	header.Set("Content-Disposition", `form-data; name="file"; filename="`+filename+`"`)
+	header.Set("Content-Type", claimedType)
+	part, err := writer.CreatePart(header)
+	require.NoError(t, err)
+	_, err = part.Write(content)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/conversations/"+conversationID.String()+"/attachments", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp, err := app.Test(req, -1)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	raw, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	var envelope struct {
+		Data chatdomain.AttachmentPayload `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &envelope))
+	return resp.StatusCode, envelope.Data
+}
+
+// TestTheTypeAClientClaimsIsNotTheTypeStored: the download endpoint serves the type on the
+// row, so a part header must not reach it. Both uploads here pass the allowlist either way;
+// what they prove is which half of the request decides, and the client is told the same
+// thing that was written.
+func TestTheTypeAClientClaimsIsNotTheTypeStored(t *testing.T) {
+	fixture := newChatFixture(t, appDatabase(t))
+	service := newAttachService(fixture)
+	app := attachApp(t, fixture, service)
+	conversation := fixture.directConversation(t)
+
+	status, stored := uploadClaimingType(t, app, conversation.ID, "catatan.txt", "image/png", []byte("halo"))
+	require.Equal(t, fiber.StatusCreated, status)
+	require.Equal(t, "text/plain", stored.ContentType, "the extension decides, not the claim")
+
+	status, stored = uploadClaimingType(t, app, conversation.ID, "foto.png", "text/plain", pngOf("foto"))
+	require.Equal(t, fiber.StatusCreated, status)
+	require.Equal(t, "image/png", stored.ContentType)
+
+	row, err := service.Attachment(t.Context(), fixture.scope, uuid.MustParse(stored.ID))
+	require.NoError(t, err)
+	require.Equal(t, "image/png", row.ContentType, "what a download later serves is what was written")
 }

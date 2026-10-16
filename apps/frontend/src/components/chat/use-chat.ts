@@ -20,6 +20,7 @@ import { useWorkspace } from "@/components/dashboard/workspace-data";
 import {
   ApiResult,
   ActivityEvent,
+  Attachment,
   ChatConversation,
   ChatMessage,
   MessageEventPayload,
@@ -66,7 +67,23 @@ export type ChatState = {
    * the store's first read lands.
    */
   openByID: (conversationId: string) => boolean;
-  send: (text: string, agentId?: string) => Promise<void>;
+  /**
+   * send stores a message and answers with it.
+   *
+   * The message is what an attachment has to name — the backend refuses a file
+   * that belongs to no message — so the caller needs the row it just wrote, not
+   * only the fact that the write happened. Null is a message that was not
+   * stored, and the error is already in `error`.
+   */
+  send: (text: string, agentId?: string) => Promise<ChatMessage | null>;
+  /**
+   * attachToMessage merges uploaded files into a message already on screen.
+   *
+   * An upload is a second request that finishes after the message is rendered,
+   * and the stream keeps replacing that message with the server's version, so
+   * the files are merged into the row rather than waited for before it is shown.
+   */
+  attachToMessage: (messageId: string, attachments: Attachment[]) => void;
   loadOlder: () => Promise<void>;
   refresh: () => Promise<void>;
 };
@@ -181,9 +198,9 @@ export function useChat(): ChatState {
   }, [workspaceId, active, loadingOlder]);
 
   const send = useCallback(
-    async (text: string, agentId?: string) => {
+    async (text: string, agentId?: string): Promise<ChatMessage | null> => {
       if (!workspaceId || !active) {
-        return;
+        return null;
       }
 
       setSending(true);
@@ -196,7 +213,7 @@ export function useChat(): ChatState {
 
       if (!result.ok) {
         setError(result.message);
-        return;
+        return null;
       }
 
       setError(null);
@@ -212,9 +229,20 @@ export function useChat(): ChatState {
       // The reply placeholder is not added here: it arrives on the stream, which
       // is what makes a second tab show the same conversation.
       await reloadConversations();
+      return result.data.message;
     },
     [workspaceId, active, reloadConversations],
   );
+
+  const attachToMessage = useCallback((messageId: string, attachments: Attachment[]) => {
+    setMessages((previous) =>
+      previous.map((message) =>
+        message.message_id === messageId
+          ? { ...message, attachments: mergeAttachments(message.attachments, attachments) }
+          : message,
+      ),
+    );
+  }, []);
 
   // The stream: the store's connection, filtered to this conversation.
   useEffect(() => {
@@ -259,6 +287,7 @@ export function useChat(): ChatState {
     openByAgent,
     openByID,
     send,
+    attachToMessage,
     loadOlder,
     refresh,
   };
@@ -309,7 +338,9 @@ function applyEvent(
       agent_id: payload.agent_id,
       user_id: payload.user_id,
       blocks: payload.blocks ?? [],
-      attachments: [],
+      // A payload from before this field existed carries none, and that is a
+      // message with no files rather than a reason to drop the event.
+      attachments: Array.isArray(payload.attachments) ? payload.attachments : [],
       status: payload.status,
       finish_reason: payload.finish_reason,
       created_at: event.created_at,
@@ -323,7 +354,14 @@ function applyEvent(
     // The stored message is the whole message, so an update replaces it rather
     // than merging: a merge would keep a block the server removed.
     const next = [...previous];
-    next[index] = { ...previous[index], ...incoming, attachments: previous[index].attachments };
+    next[index] = {
+      ...previous[index],
+      ...incoming,
+      // The message carries its files, so the same upload is seen twice: once
+      // from the request that stored it, and once from the event that followed.
+      // Merging by id is what keeps those one row instead of two.
+      attachments: mergeAttachments(previous[index].attachments, incoming.attachments),
+    };
     return next;
   });
 
@@ -335,6 +373,35 @@ function applyEvent(
 /** readString narrows one field of a streamed payload. */
 function readString(value: unknown): string | undefined {
   return typeof value === "string" && value !== "" ? value : undefined;
+}
+
+/**
+ * mergeAttachments folds files into the ones already shown.
+ *
+ * Keyed by id, because the same file is seen twice: once from the request that
+ * stored it and once from the message event that followed, and the two must be
+ * one row. The order already on screen is kept so a file does not move while it
+ * is being read, and the server's copy of a row replaces the local one.
+ */
+function mergeAttachments(known: Attachment[], incoming: Attachment[]): Attachment[] {
+  if (incoming.length === 0) {
+    return known;
+  }
+
+  const merged = [...known];
+  const at = new Map(merged.map((item, index) => [item.id, index]));
+
+  for (const item of incoming) {
+    const index = at.get(item.id);
+    if (index === undefined) {
+      at.set(item.id, merged.length);
+      merged.push(item);
+      continue;
+    }
+    merged[index] = item;
+  }
+
+  return merged;
 }
 
 /** append adds a message once, by id, so a stream echo cannot duplicate it. */

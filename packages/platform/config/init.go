@@ -325,6 +325,20 @@ func loadFromEnv(cfg *Config) error {
 		cfg.Storage.ContentFrameAncestors = ancestors
 	}
 
+	if v := os.Getenv("ATTACHMENT_ALLOWED_EXTENSIONS"); v != "" {
+		extensions := make([]string, 0, 8)
+		for _, extension := range strings.Split(v, ",") {
+			// A leading dot is how a person writes an extension and the chat module
+			// spells them without one, and `.PNG` and `png` name the same type, so the
+			// value is normalized here: what the module reads is one spelling.
+			trimmed := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(extension), "."))
+			if trimmed != "" {
+				extensions = append(extensions, trimmed)
+			}
+		}
+		cfg.Storage.AttachmentAllowedExtensions = extensions
+	}
+
 	if v := os.Getenv("S3_USE_SSL"); v != "" {
 		useSSL, err := strconv.ParseBool(v)
 		if err != nil {

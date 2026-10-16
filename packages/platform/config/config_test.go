@@ -30,6 +30,7 @@ func clearOverrides(t *testing.T) {
 		"AUTH_REQUIRE_EMAIL_VERIFICATION",
 		"MAIL_DRIVER", "MAIL_TIMEOUT_SECONDS",
 		"VCOMPUTER_CONTROL_URL", "VCOMPUTER_CONTROL_TOKEN", "VCOMPUTER_CONTROL_TIMEOUT",
+		"CONTENT_FRAME_ANCESTORS", "ATTACHMENT_ALLOWED_EXTENSIONS",
 	} {
 		t.Setenv(key, "")
 	}
@@ -315,6 +316,25 @@ func TestMailTimeoutSecondsBoundsOneDelivery(t *testing.T) {
 	t.Setenv("MAIL_TIMEOUT_SECONDS", "soon")
 	_, err = Load()
 	require.Error(t, err)
+}
+
+// TestAttachmentAllowedExtensionsComeFromTheEnvironment: the chat module's allowlist is
+// deployment policy, and a person writes an extension with its dot. Both spellings are
+// read, blanks between commas are dropped, and the field is left empty — which the module
+// reads as "the default list" — when nothing is set.
+func TestAttachmentAllowedExtensionsComeFromTheEnvironment(t *testing.T) {
+	clearOverrides(t)
+	t.Setenv("ENVIRONMENT", "local")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Empty(t, cfg.Storage.AttachmentAllowedExtensions, "empty means the module's default list")
+
+	t.Setenv("ATTACHMENT_ALLOWED_EXTENSIONS", " .PNG ,pdf, ,txt")
+	cfg, err = Load()
+	require.NoError(t, err)
+	require.Equal(t, []string{"png", "pdf", "txt"}, cfg.Storage.AttachmentAllowedExtensions,
+		"the dot is stripped, the case is lowered, and blanks are dropped")
 }
 
 // TestAnUnknownEnvironmentStillLoadsTheBase: a deployment that mistypes its environment name gets the

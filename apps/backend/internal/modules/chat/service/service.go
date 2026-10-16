@@ -51,6 +51,11 @@ type Config struct {
 	// StreamFlush is how often a growing reply is written and published. Zero
 	// means the default below.
 	StreamFlush time.Duration
+	// AttachmentAllowedExtensions narrows which file types an upload may be, by
+	// extension. Empty means the default list. It can only narrow: an extension
+	// outside the table this package knows is ignored, and an executable can
+	// never be named, because an allowlist is a policy and that is not.
+	AttachmentAllowedExtensions []string
 }
 
 // DefaultStreamFlush is the flush interval of a streaming reply.
@@ -102,6 +107,7 @@ func New(deps Deps) *Service {
 	if settings.StreamFlush <= 0 {
 		settings.StreamFlush = DefaultStreamFlush
 	}
+	settings.AttachmentAllowedExtensions = allowedExtensions(settings.AttachmentAllowedExtensions, deps.Logger)
 
 	return &Service{deps: deps, settings: settings, clock: time.Now}
 }
@@ -252,15 +258,21 @@ func (s *Service) Events(ctx context.Context, scope chatdomain.Scope, afterID in
 }
 
 // Attach stores a file and returns its metadata.
+//
+// It is one call for both shapes of an upload. With a MessageID the file joins a
+// message that already exists. Without one the file *is* the message: the carrier
+// is opened inside the same transaction that records the row, so an upload that
+// cannot be stored leaves neither a row nor an empty bubble, and the only event a
+// client sees is the new message — never a carrier announced and then filled.
+//
+// Nothing is written before the type is checked and the bytes are accepted, and
+// the type is derived from the extension rather than taken from the request.
 func (s *Service) Attach(ctx context.Context, scope chatdomain.Scope, req chatdomain.AttachRequest, content []byte) (chatdomain.Attachment, error) {
 	if err := requireWorkspace(scope); err != nil {
 		return chatdomain.Attachment{}, err
 	}
 	if s.deps.Storage == nil {
 		return chatdomain.Attachment{}, chatdomain.ErrStorageUnavailable
-	}
-	if req.MessageID == uuid.Nil {
-		return chatdomain.Attachment{}, fmt.Errorf("%w: message id is required", chatdomain.ErrInvalidInput)
 	}
 	if len(content) == 0 {
 		return chatdomain.Attachment{}, fmt.Errorf("%w: the file is empty", chatdomain.ErrInvalidInput)
@@ -270,18 +282,30 @@ func (s *Service) Attach(ctx context.Context, scope chatdomain.Scope, req chatdo
 			chatdomain.ErrInvalidInput, chatdomain.AttachmentMaxBytes)
 	}
 
-	// The message must exist in this workspace before a file may point at it.
-	if _, err := s.deps.Messages.GetMessage(ctx, scope, req.MessageID); err != nil {
+	// A file with no name has no extension either, which the type check refuses: the stored
+	// name is the one the client sent, so there is nothing to fall back to.
+	filename := strings.TrimSpace(req.Filename)
+
+	// The type is settled before the first write: a refused upload must not open a
+	// message, leave an object, or publish anything.
+	contentType, err := validateAttachment(filename, content, s.settings.AttachmentAllowedExtensions)
+	if err != nil {
 		return chatdomain.Attachment{}, err
 	}
 
-	filename := strings.TrimSpace(req.Filename)
-	if filename == "" {
-		filename = "lampiran"
-	}
-	contentType := strings.TrimSpace(req.ContentType)
-	if contentType == "" {
-		contentType = "application/octet-stream"
+	opensMessage := req.MessageID == uuid.Nil
+	if opensMessage {
+		if req.ConversationID == uuid.Nil {
+			return chatdomain.Attachment{}, fmt.Errorf("%w: a message id or a conversation id is required",
+				chatdomain.ErrInvalidInput)
+		}
+		// The thread must exist in this workspace before a message may be opened in it.
+		if _, err := s.deps.Conversations.GetConversation(ctx, scope, req.ConversationID); err != nil {
+			return chatdomain.Attachment{}, err
+		}
+	} else if _, err := s.deps.Messages.GetMessage(ctx, scope, req.MessageID); err != nil {
+		// The message must exist in this workspace before a file may point at it.
+		return chatdomain.Attachment{}, err
 	}
 
 	attachmentID := uuid.New()
@@ -295,21 +319,36 @@ func (s *Service) Attach(ctx context.Context, scope chatdomain.Scope, req chatdo
 		return chatdomain.Attachment{}, fmt.Errorf("chat: store attachment: %w", err)
 	}
 
-	stored, err := s.deps.Attachments.Save(ctx, scope, chatdomain.Attachment{
+	attachment := chatdomain.Attachment{
 		ID:             attachmentID,
 		MessageID:      req.MessageID,
 		StorageKey:     object.Key,
 		Filename:       filename,
 		ContentType:    contentType,
 		ChecksumSHA256: object.ChecksumSHA256,
-	}, content)
-	if err != nil {
-		// The row is the record, so a failure to write it must not leave the
-		// object behind.
-		if deleteErr := s.deps.Storage.Delete(ctx, key); deleteErr != nil && s.deps.Logger != nil {
-			s.deps.Logger.Warn("attachment object left behind after a failed write",
-				zap.String("key", key), zap.Error(deleteErr))
+	}
+
+	if opensMessage {
+		message, stored, err := s.deps.Attachments.SaveWithNewMessage(ctx, scope, chatdomain.Message{
+			ConversationID: req.ConversationID,
+			AuthorUserID:   scope.UserID,
+			Blocks:         []chatdomain.Block{},
+			Status:         chatdomain.MessageComplete,
+		}, attachment, content)
+		if err != nil {
+			s.discardObject(ctx, key, err)
+			return chatdomain.Attachment{}, err
 		}
+
+		// One event, and it is "new": the message did not exist before this request,
+		// so there is no earlier event a client could have rendered.
+		s.emitMessage(ctx, scope, message, message.ConversationID, chatdomain.EventMessageNew)
+		return stored, nil
+	}
+
+	stored, err := s.deps.Attachments.Save(ctx, scope, attachment, content)
+	if err != nil {
+		s.discardObject(ctx, key, err)
 		return chatdomain.Attachment{}, err
 	}
 
@@ -327,6 +366,18 @@ func (s *Service) Attach(ctx context.Context, scope chatdomain.Scope, req chatdo
 	}
 
 	return stored, nil
+}
+
+// discardObject removes an object whose row could not be written.
+//
+// The row is the record, so a failure to write it must not leave the object
+// behind; the reason it failed is the caller's error and is not replaced by a
+// second failure to clean up.
+func (s *Service) discardObject(ctx context.Context, key string, cause error) {
+	if err := s.deps.Storage.Delete(ctx, key); err != nil && s.deps.Logger != nil {
+		s.deps.Logger.Warn("attachment object left behind after a failed write",
+			zap.String("key", key), zap.Error(err), zap.Error(cause))
+	}
 }
 
 // Attachment returns the metadata of one attachment.
@@ -371,6 +422,10 @@ func (s *Service) AttachmentContent(ctx context.Context, scope chatdomain.Scope,
 //
 // The bytes counted are the ones whose row was actually removed, so the number a monitor reads
 // is storage that is really gone rather than storage that was attempted.
+//
+// Removing the row also drops the file from the message's read model, and the message that comes
+// back is published as an update: a client renders the column and not the rows, so a sweep that
+// stayed quiet would leave the file on screen and its download 404.
 func (s *Service) PruneAttachments(ctx context.Context, scope chatdomain.Scope, olderThan time.Time, limit int) (chatdomain.AttachmentPrune, error) {
 	if err := requireWorkspace(scope); err != nil {
 		return chatdomain.AttachmentPrune{}, err
@@ -400,9 +455,13 @@ func (s *Service) PruneAttachments(ctx context.Context, scope chatdomain.Scope, 
 			continue
 		}
 
-		if err := s.deps.Attachments.Delete(ctx, scope, attachment.ID); err != nil {
+		message, err := s.deps.Attachments.Delete(ctx, scope, attachment.ID)
+		if err != nil {
 			failures = append(failures, fmt.Errorf("chat: remove attachment row: %w", err))
 			continue
+		}
+		if message.ID != uuid.Nil {
+			s.emitMessage(ctx, scope, message, message.ConversationID, chatdomain.EventMessageUpdated)
 		}
 
 		result.Count++

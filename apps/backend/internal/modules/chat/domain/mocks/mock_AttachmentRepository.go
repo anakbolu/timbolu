@@ -27,21 +27,31 @@ func (_m *AttachmentRepository) EXPECT() *AttachmentRepository_Expecter {
 }
 
 // Delete provides a mock function with given fields: ctx, scope, id
-func (_m *AttachmentRepository) Delete(ctx context.Context, scope domain.Scope, id uuid.UUID) error {
+func (_m *AttachmentRepository) Delete(ctx context.Context, scope domain.Scope, id uuid.UUID) (domain.Message, error) {
 	ret := _m.Called(ctx, scope, id)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Delete")
 	}
 
-	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, uuid.UUID) error); ok {
+	var r0 domain.Message
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, uuid.UUID) (domain.Message, error)); ok {
+		return rf(ctx, scope, id)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, uuid.UUID) domain.Message); ok {
 		r0 = rf(ctx, scope, id)
 	} else {
-		r0 = ret.Error(0)
+		r0 = ret.Get(0).(domain.Message)
 	}
 
-	return r0
+	if rf, ok := ret.Get(1).(func(context.Context, domain.Scope, uuid.UUID) error); ok {
+		r1 = rf(ctx, scope, id)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
 }
 
 // AttachmentRepository_Delete_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Delete'
@@ -64,12 +74,12 @@ func (_c *AttachmentRepository_Delete_Call) Run(run func(ctx context.Context, sc
 	return _c
 }
 
-func (_c *AttachmentRepository_Delete_Call) Return(_a0 error) *AttachmentRepository_Delete_Call {
-	_c.Call.Return(_a0)
+func (_c *AttachmentRepository_Delete_Call) Return(_a0 domain.Message, _a1 error) *AttachmentRepository_Delete_Call {
+	_c.Call.Return(_a0, _a1)
 	return _c
 }
 
-func (_c *AttachmentRepository_Delete_Call) RunAndReturn(run func(context.Context, domain.Scope, uuid.UUID) error) *AttachmentRepository_Delete_Call {
+func (_c *AttachmentRepository_Delete_Call) RunAndReturn(run func(context.Context, domain.Scope, uuid.UUID) (domain.Message, error)) *AttachmentRepository_Delete_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -308,6 +318,73 @@ func (_c *AttachmentRepository_Save_Call) Return(_a0 domain.Attachment, _a1 erro
 }
 
 func (_c *AttachmentRepository_Save_Call) RunAndReturn(run func(context.Context, domain.Scope, domain.Attachment, []byte) (domain.Attachment, error)) *AttachmentRepository_Save_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// SaveWithNewMessage provides a mock function with given fields: ctx, scope, message, attachment, content
+func (_m *AttachmentRepository) SaveWithNewMessage(ctx context.Context, scope domain.Scope, message domain.Message, attachment domain.Attachment, content []byte) (domain.Message, domain.Attachment, error) {
+	ret := _m.Called(ctx, scope, message, attachment, content)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SaveWithNewMessage")
+	}
+
+	var r0 domain.Message
+	var r1 domain.Attachment
+	var r2 error
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, domain.Message, domain.Attachment, []byte) (domain.Message, domain.Attachment, error)); ok {
+		return rf(ctx, scope, message, attachment, content)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, domain.Message, domain.Attachment, []byte) domain.Message); ok {
+		r0 = rf(ctx, scope, message, attachment, content)
+	} else {
+		r0 = ret.Get(0).(domain.Message)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, domain.Scope, domain.Message, domain.Attachment, []byte) domain.Attachment); ok {
+		r1 = rf(ctx, scope, message, attachment, content)
+	} else {
+		r1 = ret.Get(1).(domain.Attachment)
+	}
+
+	if rf, ok := ret.Get(2).(func(context.Context, domain.Scope, domain.Message, domain.Attachment, []byte) error); ok {
+		r2 = rf(ctx, scope, message, attachment, content)
+	} else {
+		r2 = ret.Error(2)
+	}
+
+	return r0, r1, r2
+}
+
+// AttachmentRepository_SaveWithNewMessage_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SaveWithNewMessage'
+type AttachmentRepository_SaveWithNewMessage_Call struct {
+	*mock.Call
+}
+
+// SaveWithNewMessage is a helper method to define mock.On call
+//   - ctx context.Context
+//   - scope domain.Scope
+//   - message domain.Message
+//   - attachment domain.Attachment
+//   - content []byte
+func (_e *AttachmentRepository_Expecter) SaveWithNewMessage(ctx interface{}, scope interface{}, message interface{}, attachment interface{}, content interface{}) *AttachmentRepository_SaveWithNewMessage_Call {
+	return &AttachmentRepository_SaveWithNewMessage_Call{Call: _e.mock.On("SaveWithNewMessage", ctx, scope, message, attachment, content)}
+}
+
+func (_c *AttachmentRepository_SaveWithNewMessage_Call) Run(run func(ctx context.Context, scope domain.Scope, message domain.Message, attachment domain.Attachment, content []byte)) *AttachmentRepository_SaveWithNewMessage_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(domain.Scope), args[2].(domain.Message), args[3].(domain.Attachment), args[4].([]byte))
+	})
+	return _c
+}
+
+func (_c *AttachmentRepository_SaveWithNewMessage_Call) Return(_a0 domain.Message, _a1 domain.Attachment, _a2 error) *AttachmentRepository_SaveWithNewMessage_Call {
+	_c.Call.Return(_a0, _a1, _a2)
+	return _c
+}
+
+func (_c *AttachmentRepository_SaveWithNewMessage_Call) RunAndReturn(run func(context.Context, domain.Scope, domain.Message, domain.Attachment, []byte) (domain.Message, domain.Attachment, error)) *AttachmentRepository_SaveWithNewMessage_Call {
 	_c.Call.Return(run)
 	return _c
 }

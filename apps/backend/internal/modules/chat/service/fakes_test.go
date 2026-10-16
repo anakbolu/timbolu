@@ -32,6 +32,9 @@ type memoryStore struct {
 	// failUpdate makes the message update fail, which is how a test drives the
 	// "could not store the reply" path.
 	failUpdate bool
+	// failAttachmentWrite makes the write that records an upload fail, which is how
+	// a test drives the "the file could not be stored" path.
+	failAttachmentWrite bool
 }
 
 func newMemoryStore() *memoryStore {
@@ -260,6 +263,37 @@ func (s *memoryStore) Save(_ context.Context, _ chatdomain.Scope, attachment cha
 	return attachment, nil
 }
 
+// SaveWithNewMessage stands in for the one transaction that opens the message an upload
+// carries and records the file in it. The fake keeps the same order the statement does —
+// message, then row, then the message's read model — so a test that reads back what was
+// stored sees what the transaction would have committed.
+func (s *memoryStore) SaveWithNewMessage(_ context.Context, _ chatdomain.Scope, message chatdomain.Message, attachment chatdomain.Attachment, content []byte) (chatdomain.Message, chatdomain.Attachment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.failAttachmentWrite {
+		return chatdomain.Message{}, chatdomain.Attachment{}, fmt.Errorf("chat: append message: the database is down")
+	}
+
+	message.ID = uuid.New()
+	message.CreatedAt = time.Now()
+	message.UpdatedAt = message.CreatedAt
+	if message.Status == "" {
+		message.Status = chatdomain.MessageComplete
+	}
+
+	attachment.ID = uuid.New()
+	attachment.MessageID = message.ID
+	attachment.ByteSize = int64(len(content))
+	attachment.CreatedAt = time.Now()
+	s.attachments[attachment.ID] = attachment
+
+	message.Attachments = append(make([]chatdomain.Attachment, 0, 1), attachment)
+	s.messages[message.ID] = message
+
+	return message, attachment, nil
+}
+
 func (s *memoryStore) Open(_ context.Context, scope chatdomain.Scope, id uuid.UUID) (chatdomain.Attachment, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -300,13 +334,36 @@ func (s *memoryStore) ListExpired(_ context.Context, _ chatdomain.Scope, olderTh
 	return expired, nil
 }
 
-func (s *memoryStore) Delete(_ context.Context, _ chatdomain.Scope, id uuid.UUID) error {
+// Delete removes the row and the element it left in its message's read model, and answers
+// that message as it now reads — which is the pair the statement does in one transaction.
+//
+// A row that is already gone is not an error: the zero message comes back with a nil error,
+// which is what tells the caller there is nothing to publish.
+func (s *memoryStore) Delete(_ context.Context, _ chatdomain.Scope, id uuid.UUID) (chatdomain.Message, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	attachment, ok := s.attachments[id]
+	if !ok {
+		return chatdomain.Message{}, nil
+	}
 	delete(s.attachments, id)
 
-	return nil
+	message, ok := s.messages[attachment.MessageID]
+	if !ok {
+		return chatdomain.Message{}, nil
+	}
+
+	remaining := make([]chatdomain.Attachment, 0, len(message.Attachments))
+	for _, candidate := range message.Attachments {
+		if candidate.ID != id {
+			remaining = append(remaining, candidate)
+		}
+	}
+	message.Attachments = remaining
+	s.messages[message.ID] = message
+
+	return message, nil
 }
 
 func (s *memoryStore) AppendEvent(_ context.Context, event chatdomain.Event) (chatdomain.Event, error) {
@@ -631,6 +688,7 @@ func (s *memoryStorage) Driver() string { return "memory" }
 var (
 	_ chatdomain.ConversationRepository = (*memoryStore)(nil)
 	_ chatdomain.MessageRepository      = (*memoryStore)(nil)
+	_ chatdomain.AttachmentRepository   = (*memoryStore)(nil)
 	_ chatdomain.EventStore             = (*memoryStore)(nil)
 	_ chatdomain.EventPublisher         = (*memoryPublisher)(nil)
 	_ chatdomain.Responder              = (*scriptedResponder)(nil)

@@ -348,17 +348,15 @@ func TestAnAgedAttachmentLeavesWithItsRowAndItsObject(t *testing.T) {
 	message := fixture.message(t)
 
 	aged, err := fixture.app.Services.Chat.Attach(ctx, chatScope, chatdomain.AttachRequest{
-		MessageID:   message.ID,
-		Filename:    "nota-lama.pdf",
-		ContentType: "application/pdf",
-	}, []byte("isi nota yang harus hilang"))
+		MessageID: message.ID,
+		Filename:  "nota-lama.pdf",
+	}, pdfOf("isi nota yang harus hilang"))
 	require.NoError(t, err)
 
 	fresh, err := fixture.app.Services.Chat.Attach(ctx, chatScope, chatdomain.AttachRequest{
-		MessageID:   message.ID,
-		Filename:    "nota-baru.pdf",
-		ContentType: "application/pdf",
-	}, []byte("isi nota yang harus tinggal"))
+		MessageID: message.ID,
+		Filename:  "nota-baru.pdf",
+	}, pdfOf("isi nota yang harus tinggal"))
 	require.NoError(t, err)
 
 	fixture.ageAttachment(t, aged.ID, 120*24*time.Hour)
@@ -366,7 +364,7 @@ func TestAnAgedAttachmentLeavesWithItsRowAndItsObject(t *testing.T) {
 	result, err := fixture.app.Retention.Run(ctx)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, result.Attachments, 1)
-	require.GreaterOrEqual(t, result.BytesFreed, int64(len("isi nota yang harus hilang")))
+	require.GreaterOrEqual(t, result.BytesFreed, int64(len(pdfOf("isi nota yang harus hilang"))))
 
 	remaining, err := fixture.app.Repositories.Chat.ListForMessage(ctx, chatScope, message.ID)
 	require.NoError(t, err)
@@ -393,10 +391,9 @@ func TestAnAttachmentInsideTheWindowIsLeftAlone(t *testing.T) {
 	message := fixture.message(t)
 
 	kept, err := fixture.app.Services.Chat.Attach(ctx, chatScope, chatdomain.AttachRequest{
-		MessageID:   message.ID,
-		Filename:    "nota-bulan-ini.pdf",
-		ContentType: "application/pdf",
-	}, []byte("isi yang masih berlaku"))
+		MessageID: message.ID,
+		Filename:  "nota-bulan-ini.pdf",
+	}, pdfOf("isi yang masih berlaku"))
 	require.NoError(t, err)
 
 	// Younger than ninety days, so the sweep has no business with it.
@@ -408,7 +405,7 @@ func TestAnAttachmentInsideTheWindowIsLeftAlone(t *testing.T) {
 	attachment, content, err := fixture.app.Services.Chat.AttachmentContent(ctx, chatScope, kept.ID)
 	require.NoError(t, err)
 	require.Equal(t, kept.ID, attachment.ID)
-	require.Equal(t, []byte("isi yang masih berlaku"), content)
+	require.Equal(t, pdfOf("isi yang masih berlaku"), content)
 }
 
 // message stores one message in the workspace's 1:1 thread with its first Bolu.

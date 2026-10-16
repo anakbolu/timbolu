@@ -106,6 +106,15 @@ type MessageRepository interface {
 type AttachmentRepository interface {
 	// Save stores the bytes and their metadata.
 	Save(ctx context.Context, scope Scope, attachment Attachment, content []byte) (Attachment, error)
+	// SaveWithNewMessage stores the bytes, opens the message that carries them,
+	// and writes the row and the message's read model, all in one transaction.
+	//
+	// It exists so an upload without a message does not need two: a message
+	// opened first would be a carrier that outlives a store that failed, and a
+	// client would see an empty bubble where its file should be. The message is
+	// appended with the attachment already in it, and a failure anywhere rolls
+	// all of it back.
+	SaveWithNewMessage(ctx context.Context, scope Scope, message Message, attachment Attachment, content []byte) (Message, Attachment, error)
 	// Open returns the metadata of one attachment. The bytes are fetched from
 	// object storage by the key it carries, so a large file never passes through
 	// Postgres.
@@ -115,12 +124,18 @@ type AttachmentRepository interface {
 	// ListExpired returns the attachments past a moment, oldest first, with the
 	// storage key their bytes live under.
 	ListExpired(ctx context.Context, scope Scope, olderThan time.Time, limit int) ([]Attachment, error)
-	// Delete removes one attachment's metadata row.
+	// Delete removes one attachment's metadata row and the element it left in its
+	// message's read model, in one transaction, and returns that message as it
+	// now reads.
 	//
 	// The bytes are the storage half and are removed by the service, which is the only
 	// layer that holds both the repository and the object store — and removing half of
 	// an attachment is what it exists to prevent.
-	Delete(ctx context.Context, scope Scope, id uuid.UUID) error
+	//
+	// A row that is already gone is not an error: the zero Message comes back with a nil
+	// error, because a retry after a partial failure has to converge rather than report
+	// a failure that is really "this was already done".
+	Delete(ctx context.Context, scope Scope, id uuid.UUID) (Message, error)
 }
 
 // StoredObject is what a write to object storage produced.

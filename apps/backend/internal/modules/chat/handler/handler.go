@@ -371,20 +371,6 @@ func (h *Handler) Attach(c *fiber.Ctx) error {
 	if err != nil {
 		return badRequest(c, err.Error())
 	}
-	if messageID == uuid.Nil {
-		// Without a message to hang it on, the file belongs to a message the
-		// server opens for it, so an upload can precede the send.
-		stored, err := h.service.Send(c.UserContext(), scope(c), chatdomain.SendRequest{
-			ConversationID: id,
-			Text:           "",
-			Reply:          false,
-			ForAttachment:  true,
-		})
-		if err != nil {
-			return h.fail(c, "open message for attachment", err)
-		}
-		messageID = stored.Message.ID
-	}
 
 	opened, err := file.Open()
 	if err != nil {
@@ -397,10 +383,16 @@ func (h *Handler) Attach(c *fiber.Ctx) error {
 		return response.Error(c, fiber.StatusRequestEntityTooLarge, err.Error(), "file_too_large", nil)
 	}
 
+	// One call for both shapes. Without a message id the service opens the message
+	// the file belongs to inside the same transaction that stores it, so an upload
+	// that fails leaves no empty bubble behind and a client is never told about a
+	// message that then changes. The part's own Content-Type is not passed on: the
+	// file's type is read from its extension and its bytes, and a header a client
+	// chose is neither.
 	attachment, err := h.service.Attach(c.UserContext(), scope(c), chatdomain.AttachRequest{
-		MessageID:   messageID,
-		Filename:    file.Filename,
-		ContentType: file.Header.Get("Content-Type"),
+		MessageID:      messageID,
+		ConversationID: id,
+		Filename:       file.Filename,
 	}, content)
 	if err != nil {
 		return h.fail(c, "store attachment", err)
@@ -638,6 +630,11 @@ func (h *Handler) fail(c *fiber.Ctx, operation string, err error) error {
 		return response.Error(c, fiber.StatusBadRequest, err.Error(), "invalid_block", nil)
 	case errors.Is(err, chatdomain.ErrBlockTooLarge):
 		return response.Error(c, fiber.StatusRequestEntityTooLarge, err.Error(), "block_too_large", nil)
+	case errors.Is(err, chatdomain.ErrFileTypeNotAllowed):
+		// 415 rather than 400: the request is well formed and the file is real, and
+		// what is wrong is its media type — which is what a client checks for to tell
+		// the user to pick another file.
+		return response.Error(c, fiber.StatusUnsupportedMediaType, err.Error(), "file_type_not_allowed", nil)
 	case errors.Is(err, chatdomain.ErrInvalidInput):
 		return response.Error(c, fiber.StatusBadRequest, err.Error(), "invalid_input", nil)
 	case errors.Is(err, chatdomain.ErrStorageUnavailable):

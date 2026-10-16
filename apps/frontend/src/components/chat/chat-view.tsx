@@ -8,18 +8,19 @@
  * final event replaces it with the canonical body.
  */
 
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, History, Paperclip, X } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Bolu } from "@/components/bolu/bolu";
 import { useWorkspace } from "@/components/dashboard/workspace-data";
-import type { Agent, ChatConversation, ChatMessage } from "@/lib/api";
+import { uploadAttachment, type Agent, type ChatConversation, type ChatMessage } from "@/lib/api";
 import { allBot, type CrewMember } from "@/lib/crew";
 import { crewFor, expressionOf, stateOf } from "@/lib/dashboard-view";
 
 import { Block } from "./blocks";
+import { ConversationList } from "./conversation-list";
 import { describeResult, isBusy, useChat } from "./use-chat";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -27,6 +28,20 @@ const STATUS_LABEL: Record<string, string> = {
   live: "tersambung",
   reconnecting: "menyambung ulang…",
   closed: "terputus",
+};
+
+/**
+ * One file waiting for the message it belongs to.
+ *
+ * The backend refuses a file that names no message, so a chosen file is held
+ * here — as the `File` itself, not as a row the server has never seen — until
+ * the message it will hang from exists.
+ */
+type QueuedFile = {
+  id: string;
+  file: File;
+  status: "queued" | "uploading" | "failed";
+  error?: string;
 };
 
 const STATUS_CLASS: Record<string, string> = {
@@ -62,9 +77,13 @@ export function ChatView({
   conversationId?: string;
 }) {
   const chat = useChat();
-  const { agents } = useWorkspace();
+  const { agents, user } = useWorkspace();
   const [draft, setDraft] = useState("");
+  const [queued, setQueued] = useState<QueuedFile[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const opened = useRef<string | null>(null);
+  const picker = useRef<HTMLInputElement | null>(null);
 
   // The newest message is what a person came to read, so the thread is kept at the
   // bottom instead of the browser: on open, as a reply streams in, and when a block
@@ -118,53 +137,147 @@ export function ChatView({
     return agents.find((agent) => agent.id === participant.agent_id) ?? null;
   }, [chat.active, agents]);
 
+  // The circle beside a user message carries the account's initial: the store has
+  // no display name, and the email is what a person recognises as their own.
+  const userInitial = user?.email ? user.email.charAt(0).toUpperCase() : "?";
+
+  const hasFiles = queued.length > 0;
+  // A file the backend will accept has to name the message it hangs from, and
+  // that message is the text. So a queued file does not stand in for the text:
+  // sending an empty one would either drop the file or hang it off somebody
+  // else's message, and the composer says so instead of doing either.
+  const canSend = Boolean(chat.active) && !chat.sending && !uploading && draft.trim() !== "";
+
+  function queueFiles(files: FileList | null) {
+    if (!files || files.length === 0) {
+      return;
+    }
+    // The list is copied here rather than inside the updater: a FileList read off
+    // the picker is live, and clearing the picker below would empty it before the
+    // updater runs.
+    const picked = Array.from(files, (file) => ({
+      // A key has to survive two files of the same name chosen in one go.
+      id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2)}`,
+      file,
+      status: "queued" as const,
+    }));
+    setQueued((previous) => [...previous, ...picked]);
+    // The picker is reset so choosing the same file again is still a change.
+    if (picker.current) {
+      picker.current.value = "";
+    }
+  }
+
+  /**
+   * uploadQueued hangs the waiting files from the message that was just stored.
+   *
+   * Each file is its own request: one failure leaves the others alone, the chip
+   * that failed keeps its place with the reason, and the ones that succeeded are
+   * dropped from the queue because the bubble now shows them.
+   */
+  async function uploadQueued(message: ChatMessage, files: QueuedFile[]) {
+    const workspaceId = chat.workspaceId;
+    if (!workspaceId) {
+      return;
+    }
+
+    setUploading(true);
+    const failed: QueuedFile[] = [];
+
+    for (const item of files) {
+      setQueued((previous) =>
+        previous.map((entry) => (entry.id === item.id ? { ...entry, status: "uploading" } : entry)),
+      );
+
+      const result = await uploadAttachment(workspaceId, message.conversation_id, item.file, message.message_id);
+      if (result.ok) {
+        chat.attachToMessage(message.message_id, [result.data]);
+        continue;
+      }
+      failed.push({ ...item, status: "failed", error: result.message });
+    }
+
+    // Succeeded chips are cleared; failed ones stay with their file still held,
+    // so a retry is the next send rather than picking the file again.
+    setQueued(failed);
+    setUploading(false);
+  }
+
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = draft.trim();
-    if (!text || chat.sending) {
+    if (!canSend) {
       return;
     }
+
+    // The files are read before the draft is cleared: they are sent with the
+    // message that is about to be stored, not with the next one.
+    const files = queued;
     setDraft("");
     // Sending is a person looking for the answer, so the thread returns to its
     // newest message even if they had scrolled up to read something older.
     pin();
-    await chat.send(text);
+
+    const message = await chat.send(text);
+    if (message && files.length > 0) {
+      await uploadQueued(message, files);
+    }
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col">
-      <header className="flex flex-wrap items-center gap-3 border-b border-bolu-border bg-white px-6 py-3">
-        {partner ? (
-          <Bolu
-            member={crewFor(partner)}
-            expression={expressionOf(stateOf(partner))}
-            color={partner.color || undefined}
-            size={44}
-            className="flex-none"
-          />
-        ) : null}
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate font-display text-[22px] font-semibold">{title}</h1>
-          <p className="truncate text-[14px] text-bolu-muted">
-            {partner
-              ? `${partner.role || "Bolu"} · ${partner.display_status === "working" ? "sedang bekerja" : partner.display_status === "waiting" ? "menunggu kamu" : "santai"}`
-              : chat.active
-                ? chat.active.participants
-                    .map((participant) => `${participant.name} · ${participant.role}`)
-                    .join("  ·  ")
-                : "Pilih Bolu di kiri untuk mulai."}
-          </p>
-        </div>
-        <span
-          className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${
-            STATUS_CLASS[chat.status] ?? STATUS_CLASS.closed
-          }`}
-        >
-          {STATUS_LABEL[chat.status] ?? chat.status}
-        </span>
-      </header>
+    <div className="flex h-full min-h-0 flex-1 min-[761px]:flex-row">
+      <ConversationList
+        conversations={chat.conversations}
+        agents={agents}
+        activeId={chat.active?.id}
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        onNavigate={() => setHistoryOpen(false)}
+      />
 
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="flex flex-wrap items-center gap-3 border-b border-bolu-border bg-white px-6 py-3 max-[760px]:px-3">
+          {/* Below 760px the panel is a drawer, so the thread needs its way in. From
+              761px up the list is always there and this button would be noise. */}
+          <button
+            type="button"
+            aria-label="Riwayat obrolan"
+            aria-expanded={historyOpen}
+            onClick={() => setHistoryOpen((open) => !open)}
+            className="hidden size-10 flex-none cursor-pointer items-center justify-center rounded-md border-0 bg-bolu-bg max-[760px]:flex"
+          >
+            <History size={19} strokeWidth={2.2} aria-hidden="true" />
+          </button>
+          {partner ? (
+            <Bolu
+              member={crewFor(partner)}
+              expression={expressionOf(stateOf(partner))}
+              color={partner.color || undefined}
+              size={44}
+              className="flex-none"
+            />
+          ) : null}
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate font-display text-[22px] font-semibold">{title}</h1>
+            <p className="truncate text-[14px] text-bolu-muted">
+              {partner
+                ? `${partner.role || "Bolu"} · ${partner.display_status === "working" ? "sedang bekerja" : partner.display_status === "waiting" ? "menunggu kamu" : "santai"}`
+                : chat.active
+                  ? chat.active.participants
+                      .map((participant) => `${participant.name} · ${participant.role}`)
+                      .join("  ·  ")
+                  : "Pilih Bolu di kiri untuk mulai."}
+            </p>
+          </div>
+          <span
+            className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${
+              STATUS_CLASS[chat.status] ?? STATUS_CLASS.closed
+            }`}
+          >
+            {STATUS_LABEL[chat.status] ?? chat.status}
+          </span>
+        </header>
+
         <section className="flex min-h-0 flex-1 flex-col">
           {chat.error ? (
             <p role="alert" className="mx-4 mt-3 rounded-md border border-bolu-belum/30 bg-bolu-belum/8 px-3 py-2 text-sm text-bolu-belum">
@@ -202,6 +315,7 @@ export function ChatView({
                   message={message}
                   name={nameOf(chat.active, message)}
                   face={authorFace(chat.active, message, agents)}
+                  initial={userInitial}
                 />
               ))}
 
@@ -225,33 +339,100 @@ export function ChatView({
             </div>
           </div>
 
-          <form onSubmit={submit} className="bg-bolu-bg px-4 py-3">
-            <div className="mx-auto flex max-w-[760px] items-center gap-2 rounded-full border border-bolu-border bg-white py-1.5 pl-4 pr-1.5">
-              <input
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    event.currentTarget.form?.requestSubmit();
+          <form onSubmit={submit} className="bg-bolu-bg px-4 py-3 max-[760px]:px-3">
+            <div className="mx-auto flex max-w-[760px] flex-col gap-2">
+              {hasFiles ? (
+                <ul className="flex flex-wrap gap-1.5">
+                  {queued.map((item) => (
+                    <li
+                      key={item.id}
+                      className={`flex items-center gap-1.5 rounded-full border py-1 pl-3 pr-1 text-[13px] ${
+                        item.status === "failed"
+                          ? "border-bolu-belum/40 bg-bolu-belum/8 text-bolu-belum"
+                          : "border-bolu-border bg-white text-bolu-body"
+                      }`}
+                    >
+                      <span className="max-w-[180px] truncate">{item.file.name}</span>
+                      <span className="text-[11px] text-bolu-muted">{formatBytes(item.file.size)}</span>
+                      {item.status === "uploading" ? (
+                        <span className="text-[11px] text-bolu-muted">mengunggah…</span>
+                      ) : null}
+                      {/* The reason is on the chip rather than in one banner: two
+                          files can fail for two different reasons. */}
+                      {item.status === "failed" && item.error ? (
+                        <span className="text-[11px]">{item.error}</span>
+                      ) : null}
+                      <button
+                        type="button"
+                        aria-label={`Buang ${item.file.name}`}
+                        disabled={item.status === "uploading"}
+                        onClick={() =>
+                          setQueued((previous) => previous.filter((entry) => entry.id !== item.id))
+                        }
+                        className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-bolu-muted disabled:opacity-40"
+                      >
+                        <X size={13} strokeWidth={2.5} aria-hidden="true" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+
+              <div className="flex items-center gap-2 rounded-full border border-bolu-border bg-white py-1.5 pl-1.5 pr-1.5">
+                <input
+                  ref={picker}
+                  type="file"
+                  multiple
+                  hidden
+                  onChange={(event) => queueFiles(event.target.files)}
+                />
+                <button
+                  type="button"
+                  aria-label="Lampirkan berkas"
+                  disabled={!chat.active || uploading}
+                  onClick={() => picker.current?.click()}
+                  className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-bolu-muted hover:text-bolu-ink disabled:opacity-40"
+                >
+                  <Paperclip size={18} strokeWidth={2.2} aria-hidden="true" />
+                </button>
+                <input
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      event.currentTarget.form?.requestSubmit();
+                    }
+                  }}
+                  placeholder={
+                    hasFiles && draft.trim() === ""
+                      ? "Tulis pesan untuk lampiran ini"
+                      : chat.active
+                        ? "Suruh atau tanya apa saja…"
+                        : "Pilih obrolan dulu"
                   }
-                }}
-                placeholder={chat.active ? "Suruh atau tanya apa saja…" : "Pilih obrolan dulu"}
-                disabled={!chat.active}
-                className="min-h-9 min-w-0 flex-1 border-0 bg-transparent text-[15px] outline-none disabled:opacity-60"
-              />
-              <button
-                type="submit"
-                aria-label="Kirim"
-                disabled={!chat.active || chat.sending || draft.trim() === ""}
-                className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-bolu-accent text-white disabled:opacity-50"
-              >
-                {chat.sending ? (
-                  "…"
-                ) : (
-                  <ArrowUp size={18} strokeWidth={2.5} aria-hidden="true" />
-                )}
-              </button>
+                  disabled={!chat.active}
+                  className="min-h-9 min-w-0 flex-1 border-0 bg-transparent text-[15px] outline-none disabled:opacity-60"
+                />
+                <button
+                  type="submit"
+                  aria-label="Kirim"
+                  disabled={!canSend}
+                  className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-bolu-accent text-white disabled:opacity-50"
+                >
+                  {chat.sending || uploading ? (
+                    "…"
+                  ) : (
+                    <ArrowUp size={18} strokeWidth={2.5} aria-hidden="true" />
+                  )}
+                </button>
+              </div>
+
+              {/* The send button is disabled while a file waits with no text, and a
+                  disabled control says nothing about why: the hint does. */}
+              {hasFiles && draft.trim() === "" ? (
+                <p className="px-3 text-[12px] text-bolu-muted">Tulis pesan untuk lampiran ini.</p>
+              ) : null}
             </div>
           </form>
         </section>
@@ -397,15 +578,60 @@ function authorFace(
   return allBot("Oren");
 }
 
-/** MessageRow renders one message, from the user or from a Bolu. */
-function MessageRow({ message, name, face }: { message: ChatMessage; name: string; face: CrewMember | null }) {
+/**
+ * MessageRow renders one message, from the user or from a Bolu.
+ *
+ * A reply that is still arriving is marked in two places: the avatar pulses, so
+ * the answer is visibly being written by that Bolu, and a "sedang menulis…" line
+ * closes the bubble, so a long answer that has already filled the screen still
+ * says it is not finished. The dots are what an answer with no text yet shows.
+ */
+function MessageRow({
+  message,
+  name,
+  face,
+  initial,
+}: {
+  message: ChatMessage;
+  name: string;
+  face: CrewMember | null;
+  /** The account's initial, drawn in the circle beside a user's message. */
+  initial: string;
+}) {
   const fromAgent = Boolean(message.agent_id);
   const notice = describeResult(message);
+  const writing = isBusy(message);
+  // The server opens an empty message for an upload that named none, and that
+  // message is published before the file is stored, so its `message.new` carries
+  // nothing yet. There is no bubble to draw until the update that names the file
+  // arrives, and drawing one would be an empty box with padding in it.
+  const empty =
+    message.blocks.length === 0 &&
+    message.attachments.length === 0 &&
+    notice === null &&
+    !writing &&
+    !message.task_id;
+  if (empty) {
+    return null;
+  }
+
+  // What the attachment list hangs from inside the bubble. It is the first thing
+  // in it for a message that is only files, and an `mt-2` there is a gap above
+  // nothing.
+  const stacked = message.blocks.length > 0 || notice !== null || writing;
 
   return (
-    <article className={fromAgent ? "flex items-start gap-2.5" : "flex justify-end"}>
+    <article className={fromAgent ? "flex items-start gap-2.5" : "flex justify-end gap-2.5"}>
       {fromAgent && face ? (
-        <Bolu member={face} expression="senang" size={36} className="mt-0.5 flex-none" />
+        <span className="relative mt-0.5 flex-none">
+          <Bolu member={face} expression="senang" size={36} />
+          {writing ? (
+            <span
+              aria-hidden
+              className="absolute inset-0 rounded-full ring-2 ring-bolu-accent/40 motion-safe:animate-pulse"
+            />
+          ) : null}
+        </span>
       ) : null}
 
       <div className={fromAgent ? "min-w-0 max-w-[560px]" : "max-w-[78%]"}>
@@ -420,7 +646,7 @@ function MessageRow({ message, name, face }: { message: ChatMessage; name: strin
               : "rounded-[20px_20px_6px_20px] bg-bolu-ink px-4 py-2.5 text-[15px] text-white"
           }
         >
-          {message.blocks.length === 0 && isBusy(message) ? (
+          {writing && message.blocks.length === 0 ? (
             <span className="inline-flex gap-1 text-bolu-muted">
               <Dot />
               <Dot delay="150ms" />
@@ -439,7 +665,7 @@ function MessageRow({ message, name, face }: { message: ChatMessage; name: strin
           ) : null}
 
           {message.attachments.length > 0 ? (
-            <ul className="mt-2 space-y-1">
+            <ul className={stacked ? "mt-2 space-y-1" : "space-y-1"}>
               {message.attachments.map((attachment) => (
                 <li key={attachment.id}>
                   <a
@@ -457,6 +683,17 @@ function MessageRow({ message, name, face }: { message: ChatMessage; name: strin
               ))}
             </ul>
           ) : null}
+
+          {writing ? (
+            <p className="mt-1.5 flex items-center gap-2 text-[13px] text-bolu-muted">
+              <span className="dots inline-flex gap-1" aria-hidden>
+                <Dot />
+                <Dot delay="150ms" />
+                <Dot delay="300ms" />
+              </span>
+              <span className="motion-safe:animate-pulse">sedang menulis…</span>
+            </p>
+          ) : null}
         </div>
 
         {/* A message that opened a task says so, and the way in is the task itself: the work behind
@@ -473,6 +710,13 @@ function MessageRow({ message, name, face }: { message: ChatMessage; name: strin
           </p>
         ) : null}
       </div>
+      {/* mt-6 clears the name line above the bubble, so the circle sits beside the
+          message rather than beside the label. */}
+      {!fromAgent ? (
+        <span className="mt-6 flex size-9 flex-none items-center justify-center rounded-full bg-bolu-accent text-[15px] font-bold text-white">
+          {initial}
+        </span>
+      ) : null}
     </article>
   );
 }

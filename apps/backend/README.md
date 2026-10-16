@@ -803,7 +803,11 @@ a zero falls back to the product default. Object storage is `STORAGE_DRIVER`
 (`local` writes to a directory, `s3` speaks the S3 API that MinIO, R2, B2, and
 AWS share) plus
 `STORAGE_LOCAL_ROOT` or `S3_*`, and `CONTENT_ORIGIN` is where sandboxed documents
-are served from — a different origin from the app in every deployment. Memory is
+are served from — a different origin from the app in every deployment.
+`ATTACHMENT_ALLOWED_EXTENSIONS` narrows which file types a chat upload may be, by
+extension; it can only narrow, because an extension the chat module has no content rule
+for is ignored and an executable can never be named, and empty means the module's own
+list of images, documents, and text. Memory is
 bounded by `MEMORY_MAIN_TOKENS` (what travels in every call),
 `MEMORY_RECALL_MEMORIES` and `MEMORY_RECALL_KNOWLEDGE` (what one round retrieves),
 `MEMORY_SIMILARITY` (when a new memory replaces an old one), and

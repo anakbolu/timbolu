@@ -152,6 +152,10 @@ Storage:
   # The application's own origin, which is the only one allowed to frame a
   # document. It must be listed: the content origin is a different host.
   ContentFrameAncestors: []
+  # Which file types a chat upload may be, by extension. It can only narrow the
+  # chat module's default list: an extension the module does not know is ignored
+  # and an executable can never be named. Empty means the default list.
+  AttachmentAllowedExtensions: []
 
 # WhatsApp: the gateway runs as its own process, so the address it is reached at
 # and the address it listens on are both supplied here. The token is a shared

@@ -690,17 +690,16 @@ func TestAttachmentRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 
 	attachment, err := h.service.Attach(context.Background(), h.scope, chatdomain.AttachRequest{
-		MessageID:   sent.Message.ID,
-		Filename:    "daftar harga oktober.pdf",
-		ContentType: "application/pdf",
-	}, []byte("harga"))
+		MessageID: sent.Message.ID,
+		Filename:  "daftar harga oktober.pdf",
+	}, pdfOf("harga"))
 	require.NoError(t, err)
-	require.Equal(t, int64(5), attachment.ByteSize)
+	require.Equal(t, int64(len(pdfOf("harga"))), attachment.ByteSize)
 
 	metadata, content, err := h.service.AttachmentContent(context.Background(), h.scope, attachment.ID)
 	require.NoError(t, err)
 	require.Equal(t, "daftar harga oktober.pdf", metadata.Filename)
-	require.Equal(t, "harga", string(content))
+	require.Equal(t, pdfOf("harga"), content)
 }
 
 // TestAttachmentRejectsAnEmptyFile keeps a zero-byte upload out.
@@ -761,9 +760,8 @@ func TestAttachShowsTheFileInHistoryAndStream(t *testing.T) {
 		require.NoError(t, err)
 
 		_, err = h.service.Attach(context.Background(), h.scope, chatdomain.AttachRequest{
-			MessageID: opened.Message.ID, Filename: "a.png", ContentType: "image/png",
-		}, []byte("png"))
-		require.NoError(t, err)
+			MessageID: opened.Message.ID, Filename: "a.png",
+		}, pngOf("a"))
 
 		page, err := h.service.History(context.Background(), h.scope, conversation.ID, chatdomain.Cursor{})
 		require.NoError(t, err)
@@ -790,8 +788,8 @@ func TestAttachShowsTheFileInHistoryAndStream(t *testing.T) {
 
 		for _, name := range []string{"satu.pdf", "dua.pdf"} {
 			_, err = h.service.Attach(context.Background(), h.scope, chatdomain.AttachRequest{
-				MessageID: sent.Message.ID, Filename: name, ContentType: "application/pdf",
-			}, []byte(name))
+				MessageID: sent.Message.ID, Filename: name,
+			}, pdfOf(name))
 			require.NoError(t, err)
 		}
 

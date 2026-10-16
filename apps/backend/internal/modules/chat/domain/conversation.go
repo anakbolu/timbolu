@@ -71,7 +71,9 @@ var (
 	ErrNoResponder = errors.New("chat: no Bolu can answer this message")
 	// ErrInvalidInput means the request is malformed.
 	ErrInvalidInput = errors.New("chat: invalid input")
-	// ErrAttachmentNotFound means the attachment is not in this workspace.
+	// ErrFileTypeNotAllowed means the upload's extension, or the content behind
+	// it, is not a type this deployment accepts.
+	ErrFileTypeNotAllowed = errors.New("chat: file type not allowed")
 	ErrAttachmentNotFound = errors.New("chat: attachment not found")
 	// ErrStorageUnavailable means no object storage is configured.
 	ErrStorageUnavailable = errors.New("chat: object storage is not configured")
