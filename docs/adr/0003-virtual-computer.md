@@ -249,7 +249,10 @@ PoC-nya sekarang punya jalur dari worker ke sandbox. Yang berubah, dan batasnya:
   `VCOMPUTER_CONTROL_TIMEOUT` (`packages/platform/config`). Alamat kosong berarti tidak
   terkonfigurasi dan setiap activity menjawab `ErrNotConfigured` — bukan worker yang tidak tahu
   ada komputer. Token tidak pernah masuk log; apakah control plane terkonfigurasi dicatat sekali
-  saat start.
+  saat start. `VCOMPUTER_CONTROL_TIMEOUT` yang tidak bisa di-parse **bukan** kesalahan startup
+  (revisi 2026-10-16, isu #219): ia dicatat sebagai warning dan nilai dari berkas konfigurasi yang
+  berlaku, karena fitur opsional tidak boleh mematikan worker yang juga menjalankan tugas, rutin,
+  dan memori.
 - **Yang terdaftar hanya `SmokeWorkflow`** (`internal/modules/vcomputer/workflow/smoke.go`):
   `EnsureSession` → `Navigate` → `Screenshot` → `Click` → `Type` → `Screenshot` → `Exec`, dengan
   jeda di antara langkah-langkahnya, timeout 90 detik untuk `EnsureSession` dan 30 detik untuk

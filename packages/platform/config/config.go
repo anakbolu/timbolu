@@ -32,6 +32,23 @@ type Config struct {
 	VComputer         VComputerConfig
 	Telemetry         TelemetryConfig
 	Logging           LoggingConfig
+
+	// warnings is what the loader could not use from the environment and went on without. It is
+	// unexported and read through Warnings, because nothing configures it: the loader is its only
+	// writer, and the process that owns a logger is the one that says it out loud.
+	warnings []string
+}
+
+// Warnings lists the environment values the loader could not use, in the order it found them,
+// each naming the variable and what stood in its place.
+//
+// It exists because refusing to start is not the only answer to a value that will not parse. A
+// bound on an optional feature is worth a warning and the configured default; a bound the product
+// bills against is worth refusing over, and those still are. The loader has no logger of its own
+// by design, so it hands the lines to the process, which logs them once at startup. A deployment
+// whose environment is coherent has none.
+func (c *Config) Warnings() []string {
+	return c.warnings
 }
 
 // DefaultServiceName names this binary in the traces, unless the deployment named it.

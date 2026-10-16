@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/robzlabz/employeebot/packages/platform/config"
 )
@@ -179,4 +182,37 @@ func TestDatabaseURLFailureIsReported(t *testing.T) {
 	if !strings.Contains(err.Error(), "open database") {
 		t.Fatalf("expected an open database error, got %v", err)
 	}
+}
+
+// TestStartupLogsWhatTheLoaderIgnored: a setting the loader could not use is named once, at
+// startup, by the process that has the logger — and the process starts anyway.
+//
+// That pair is the fix for issue #219: VCOMPUTER_CONTROL_TIMEOUT=banana took the whole agent
+// worker down, and the workflows that never touch a sandbox — tasks, routines, memory — with it.
+// The loader now keeps the value that stands and hands the ignored one to the container, which is
+// the first point in the process with somewhere to say it.
+func TestStartupLogsWhatTheLoaderIgnored(t *testing.T) {
+	t.Setenv("ENVIRONMENT", "local")
+	t.Setenv("VCOMPUTER_CONTROL_TIMEOUT", "banana")
+
+	// The loader reads the config files of the module, so the test runs from where a binary runs:
+	// the same two lines TestSmokeConnectors needs for the same reason.
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir("../.."))
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+
+	cfg, err := config.Load()
+	require.NoError(t, err, "an unparseable optional timeout must not fail the load")
+
+	core, logs := observer.New(zap.WarnLevel)
+	c, err := New(context.Background(), cfg,
+		WithLogger(zap.New(core)), WithDB(nil), WithRedis(nil), WithTemporal(nil), WithoutHTTP())
+	require.NoError(t, err)
+	t.Cleanup(c.Close)
+
+	warnings := logs.FilterMessageSnippet("VCOMPUTER_CONTROL_TIMEOUT").All()
+	require.Len(t, warnings, 1, "the ignored setting is named once, at startup")
+	require.Equal(t, zap.WarnLevel, warnings[0].Level)
+	require.Contains(t, warnings[0].Message, "banana")
 }
