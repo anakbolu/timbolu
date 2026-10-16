@@ -1,0 +1,130 @@
+=== virtual computer PoC — e2e, 2026-10-16 06:31:48 UTC ===
+compose: apps/virtual-computer/docker-compose.poc.yml
+stack:   vchd
+bot:     e2e-bot
+control: http://127.0.0.1:18190
+token: generated for this run (openssl rand -hex 16)
+
+== preconditions
+PASS preconditions
+
+== build: vchd-control:poc and vchd-sandbox:poc
+note: PREBUILT=1, so no build runs here and `up` is called with --no-build
+PASS build
+
+== up: control plane and fixture
+ Network vchd-edge Creating 
+ Network vchd-edge Creating 
+ Network vchd-internal Creating 
+ Network vchd-internal Creating 
+ Network vchd-edge Created 
+ Network vchd-edge Created 
+ Network vchd-internal Created 
+ Network vchd-internal Created 
+ Container vchd-fixture Creating 
+ Container vchd-control Creating 
+ Container vchd-fixture Created 
+ Container vchd-control Created 
+ Container vchd-fixture Starting 
+ Container vchd-control Starting 
+ Container vchd-fixture Started 
+ Container vchd-control Started 
+PASS compose-up
+
+== 1. /health is open and answers 200
+PASS health
+
+== 2. /v1/* without the token is 401
+PASS auth-401
+
+== 3. ensure is idempotent
+PASS ensure-idempotent
+
+== 4. navigate: the fixture answers, a URL with no route does not
+PASS navigate-fixture
+PASS navigate-fixture-body
+PASS navigate-no-egress-502
+PASS navigate-no-egress-error
+
+== 5. the screenshot is a real capture
+PASS screenshot
+PASS screenshot-png
+PASS screenshot-size
+PASS screenshot-not-stub
+
+== 6. click into the fixture's input and type
+PASS click
+PASS type
+PASS screenshot-typed
+PASS typed-screenshot-differs
+
+== 7. exec runs inside the sandbox as bolu
+PASS exec-stdout
+PASS exec-exit-code
+PASS exec-not-stub
+
+== 8. the DevTools endpoint is reachable through the control plane, and only through it
+PASS cdp-version
+
+== 9. the sandbox is isolated
+PASS network-internal
+PASS no-published-ports
+PASS no-egress
+
+== 10. the sandbox address answers nothing without the gate's secret
+PASS sandbox-cdp-port-closed
+PASS sandbox-chromium-port-closed
+PASS sandbox-novnc-port-closed
+PASS gate-401-without-secret
+PASS gate-401-body
+PASS gate-cdp-with-secret
+PASS gate-healthz-open
+PASS gate-novnc-with-secret
+PASS gate-401-before-routing
+PASS gate-unknown-path-404
+
+== 11. noVNC goes through the control plane, with the token and without it
+PASS novnc-with-token
+PASS novnc-without-token
+PASS novnc-websocket-upgrade
+
+== 12. delete ends the container, the volume outlives it
+PASS delete
+PASS delete-twice-404
+PASS ensure-after-delete-running
+PASS volume-reused
+
+== the session is up: open this in a browser
+noVNC: http://127.0.0.1:18190/v1/sessions/e2e-bot/novnc/vnc.html?autoconnect=true\u0026resize=scale\u0026path=v1/sessions/e2e-bot/novnc/websockify&token=228058e92c82ad9ab10306bdd1ef04fa
+
+== 13. purge ends the container and the home volume
+PASS purge
+PASS purge-container-gone
+PASS purge-volume-gone
+
+== 14. the admin route sweeps a stopped sandbox and its volume
+PASS cleanup-stale-ensure
+PASS cleanup-route
+PASS cleanup-removed-container
+PASS cleanup-removed-volume
+PASS cleanup-container-gone
+PASS cleanup-volume-gone
+
+== teardown (TEARDOWN=1)
+teardown: purge 200, admin cleanup 200
+nothing to clean up: no stopped sandbox container and no sandbox volume for stack vchd
+ Container vchd-fixture Stopping 
+ Container vchd-control Stopping 
+ Container vchd-control Stopped 
+ Container vchd-control Removing 
+ Container vchd-control Removed 
+ Container vchd-fixture Stopped 
+ Container vchd-fixture Removing 
+ Container vchd-fixture Removed 
+ Network vchd-edge Removing 
+ Network vchd-internal Removing 
+ Network vchd-edge Removed 
+ Network vchd-internal Removed 
+torn down; the noVNC URL printed above is gone with it
+
+SUMMARY: 51 passed, 0 failed

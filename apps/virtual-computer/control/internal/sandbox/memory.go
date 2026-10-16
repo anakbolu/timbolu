@@ -63,12 +63,16 @@ func (r *InMemoryRuntime) Ensure(_ context.Context, botID string) (Session, erro
 	rec, ok := r.sessions[id]
 	if !ok {
 		rec = &record{session: Session{
-			BotID:     id,
-			State:     StateRunning,
-			Runtime:   "memory",
-			NoVNCURL:  NoVNCPath(id),
-			CDPURL:    sandboxURL(containerName(id), DefaultCDPPort),
-			Volume:    volumeName(id),
+			BotID:    id,
+			State:    StateRunning,
+			Runtime:  "memory",
+			NoVNCURL: NoVNCPath(id),
+			// CDPURL and NoVNCURL are paths on the control plane, which is where a
+			// caller reaches a session's browser and desktop: the stub has no gate
+			// to proxy to, so it answers the paths a real session answers with and
+			// the proxy is what fails, not the shape of the answer.
+			CDPURL:    CDPPath(id),
+			Volume:    volumeName(DefaultNamePrefix, id),
 			CreatedAt: now,
 		}}
 		r.sessions[id] = rec
@@ -174,14 +178,19 @@ func (r *InMemoryRuntime) Type(_ context.Context, botID string, text string) err
 // Navigate records the URL. No browser exists here, so the scheme rule is the
 // whole implementation: it is checked in the same place and with the same rule the
 // docker runtime applies before it hands a URL to Chromium.
-func (r *InMemoryRuntime) Navigate(_ context.Context, botID string, targetURL string) error {
+//
+// The answer says the browser landed on the URL it was given, because the stub
+// cannot redirect, and carries no title, because there is no document: a stub that
+// invented a title would be inventing the one thing this method is supposed to
+// report.
+func (r *InMemoryRuntime) Navigate(_ context.Context, botID string, targetURL string) (Navigation, error) {
 	id, err := cleanBotID(botID)
 	if err != nil {
-		return err
+		return Navigation{}, err
 	}
 	target, err := cleanURL(targetURL)
 	if err != nil {
-		return err
+		return Navigation{}, err
 	}
 
 	r.mu.Lock()
@@ -189,30 +198,66 @@ func (r *InMemoryRuntime) Navigate(_ context.Context, botID string, targetURL st
 
 	rec, ok := r.sessions[id]
 	if !ok {
-		return ErrNoSession
+		return Navigation{}, ErrNoSession
 	}
 	r.touch(rec, Action{Kind: "navigate", Detail: target})
-	return nil
+	return Navigation{FinalURL: target}, nil
 }
 
-// NoVNCTarget is where the control plane's noVNC proxy forwards to. The stub owns
-// no container, so the name it would have had is what it answers with: the proxy
-// then fails to reach it, which is the honest answer for a session that has no
-// desktop behind it.
-func (r *InMemoryRuntime) NoVNCTarget(_ context.Context, botID string) (string, error) {
+// Purge forgets the session. The stub holds nothing else to remove: the docker
+// runtime is where a purge also drops the container and the volume that held the
+// browser profile.
+func (r *InMemoryRuntime) Purge(_ context.Context, botID string) error {
 	id, err := cleanBotID(botID)
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if _, ok := r.sessions[id]; !ok {
-		return "", ErrNoSession
+		return ErrNoSession
 	}
-	return sandboxURL(containerName(id), DefaultNOVNCPort), nil
+	delete(r.sessions, id)
+	return nil
 }
+
+// Cleanup removes nothing, and that is the honest answer rather than a stub: the
+// stub's sessions are all running — it has no other state — and a cleanup never
+// touches a running session. It still answers the real result shape, so a caller
+// built against the stub reads the same fields it will read in production.
+func (r *InMemoryRuntime) Cleanup(_ context.Context, _ bool) (CleanupResult, error) {
+	return CleanupResult{}, nil
+}
+
+// GateTarget is where the control plane's proxies forward to. The stub owns no
+// container, so the name it would have had is what it answers with: the proxy then
+// fails to reach it, which is the honest answer for a session that has no desktop
+// behind it. The secret is the stub's own — it never leaves this process, because
+// nothing is listening at the other end of the address.
+func (r *InMemoryRuntime) GateTarget(_ context.Context, botID string) (SandboxTarget, error) {
+	id, err := cleanBotID(botID)
+	if err != nil {
+		return SandboxTarget{}, err
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.sessions[id]; !ok {
+		return SandboxTarget{}, ErrNoSession
+	}
+	return SandboxTarget{
+		URL:    sandboxURL(containerName(DefaultNamePrefix, id), DefaultGatePort),
+		Secret: stubSecret,
+	}, nil
+}
+
+// stubSecret is the secret the in-memory runtime reports. It is a constant because
+// there is no container to hold a real one: the stub's gate address is a container
+// name that does not exist, so nothing ever compares this value.
+const stubSecret = "stub-secret"
 
 // Exec echoes the command. It never runs it, on the host or anywhere else: the
 // stub exists to show the answer shape, and a PoC that ran arbitrary commands would

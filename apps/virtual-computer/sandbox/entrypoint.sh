@@ -3,20 +3,24 @@
 # Entrypoint for the Bolu sandbox desktop (PoC).
 #
 # This script starts, in this order: Xvfb -> fluxbox -> x11vnc -> noVNC
-# (websockify) -> Chromium -> socat. The order is not cosmetic. The X server has
-# to be listening before anything can draw on it; the window manager has to
-# attach to the display before Chromium asks for a frame, otherwise the browser
-# window is unmanaged; x11vnc has to be up before websockify, because websockify
-# only proxies to a VNC port that already exists. Chromium is next because it is
-# the process whose life defines the session: if it dies, the container dies.
-# socat is last and is what makes Chromium's DevTools endpoint reachable at all:
-# new Chromium binds --remote-debugging-port to 127.0.0.1 and ignores
-# --remote-debugging-address=0.0.0.0, so the control plane's `PUT /json/new`
-# would never arrive. socat listens on $CDP_PORT on the container's own address
-# and forwards to the loopback port.
+# (websockify) -> Chromium -> vcomputer-gate. The order is not cosmetic. The X
+# server has to be listening before anything can draw on it; the window manager
+# has to attach to the display before Chromium asks for a frame, otherwise the
+# browser window is unmanaged; x11vnc has to be up before websockify, because
+# websockify only proxies to a VNC port that already exists. Chromium is next
+# because it is the process whose life defines the session: if it dies, the
+# container dies.
+#
+# The gate is last because it is the front door. It is the only listener on the
+# container's address, and it forwards to Chromium's DevTools endpoint and to
+# websockify, both of which bind loopback and are therefore unreachable from the
+# sandbox network without it. Starting it after everything it fronts means that
+# the moment it answers on $GATE_PORT, the whole desktop is in place.
 #
 # Nothing here reads a secret from the image. The control plane injects what a
-# session needs (VNC_PASSWORD, SCREEN_GEOMETRY, the two ports) at runtime.
+# session needs (VNC_PASSWORD, SCREEN_GEOMETRY, the ports, SANDBOX_SECRET) at
+# runtime, and the gate reads its secret from the environment rather than from a
+# command line, so it never lands in a log line or in `ps`.
 
 set -euo pipefail
 
@@ -30,7 +34,7 @@ DISPLAY="${DISPLAY:-:99}"
 SCREEN_GEOMETRY="${SCREEN_GEOMETRY:-1280x800x24}"
 VNC_PORT="${VNC_PORT:-5900}"
 NOVNC_PORT="${NOVNC_PORT:-6080}"
-CDP_PORT="${CDP_PORT:-9223}"
+GATE_PORT="${GATE_PORT:-8443}"
 CDP_LOCAL_PORT="${CDP_LOCAL_PORT:-9222}"
 
 # Xvfb writes its socket at /tmp/.X11-unix/X<n>, where <n> is the display number
@@ -140,6 +144,11 @@ log "display ${DISPLAY} is ready (socket ${x_socket})"
 # 2. fluxbox - a tiny window manager. Best effort: Chromium renders fine without
 #    it, it only loses decorations and window placement, so this child is
 #    started as "optional" and its death never takes the session down.
+#
+#    No -rc is passed on purpose: fluxbox then reads ~/.fluxbox/init, which the
+#    image ships with its rootCommand and background settings emptied out. Pointing
+#    it at some other rc file would bypass that and bring the fbsetbg error dialog
+#    back onto the desktop (see the fluxbox notes in the Dockerfile).
 start_child "fluxbox" optional fluxbox
 
 # 3. x11vnc - exports the X display as a VNC server. It binds to localhost only:
@@ -170,11 +179,12 @@ fi
 start_child "x11vnc" critical x11vnc "${vnc_args[@]}"
 
 # 4. noVNC - websockify serves the static noVNC client from the distro package
-#    and proxies the websocket traffic to the VNC port above. Nothing publishes
-#    this port: the control plane proxies to it over the sandbox network, so a
-#    human looks at the session through the control plane's own route
-#    (/v1/sessions/<bot>/novnc/, see control/internal/httpapi/handler.go).
-start_child "noVNC/websockify" critical websockify --web=/usr/share/novnc "$NOVNC_PORT" "localhost:${VNC_PORT}"
+#    and proxies the websocket traffic to the VNC port above. It listens on
+#    loopback only, like the DevTools endpoint: the gate is what puts it on the
+#    container's address, and the control plane reaches the session through the
+#    gate (/novnc/*), never by touching this port directly
+#    (control/internal/httpapi/handler.go).
+start_child "noVNC/websockify" critical websockify --web=/usr/share/novnc "127.0.0.1:${NOVNC_PORT}" "localhost:${VNC_PORT}"
 
 # 5. Chromium - the session itself, and the reason the container exists. It runs
 #    in the background like the others, and the supervision loop below treats its
@@ -193,9 +203,11 @@ start_child "noVNC/websockify" critical websockify --web=/usr/share/novnc "$NOVN
 #                                      purpose: current Chromium refuses to bind
 #                                      the endpoint anywhere but loopback, and it
 #                                      rejects any request whose Host header is
-#                                      neither an IP nor localhost. Widening it
-#                                      in this process is therefore not an
-#                                      option; step 6 bridges it instead.
+#                                      neither an IP nor localhost. Widening it in
+#                                      this process is therefore not an option;
+#                                      step 6 puts the gate in front of it, and the
+#                                      gate is now the only thing that can reach
+#                                      this port at all.
 #      --remote-allow-origins=*      : CDP rejects a websocket upgrade from an
 #                                      origin it does not know, and the control
 #                                      plane is not a browser on this machine
@@ -227,22 +239,43 @@ start_child "chromium" critical chromium \
   --remote-allow-origins='*' \
   about:blank
 
-# 6. socat - publishes Chromium's loopback DevTools endpoint on the container's
-#    address, which is the only address the control plane can reach. The bridge
-#    exists because Chromium itself cannot serve that: it binds DevTools to
-#    127.0.0.1 and rejects requests whose Host header is not an IP or localhost,
-#    so binding 0.0.0.0 inside Chromium is not an option and a request arriving
-#    from the sandbox network at the container IP has to be rewritten by a
-#    forwarder that does not care about Host. bind=0.0.0.0 is safe precisely
-#    because this port is never published: it is reachable only from the internal
-#    network (VCOMPUTER_SANDBOX_NETWORK), where the control plane is a member.
-#    It is supervised: if this dies, the control plane can no longer drive the
-#    browser, which makes the session as unusable as a dead Chromium.
-start_child "cdp-socat" critical socat \
-  "TCP-LISTEN:${CDP_PORT},fork,reuseaddr,bind=0.0.0.0" \
-  "TCP:127.0.0.1:${CDP_LOCAL_PORT}"
+# 6. vcomputer-gate - the front door, and the last critical child. It listens on
+#    the container's address at $GATE_PORT and is the only listener there: it
+#    proxies /cdp/* to Chromium's DevTools endpoint and /novnc/* to websockify,
+#    both of which bind loopback and are unreachable from the sandbox network
+#    without it. On the way out it rewrites the Host header to localhost (Chromium
+#    rejects anything that is neither an IP nor localhost with a 500) and it passes
+#    websocket upgrades through, which is what noVNC needs. Every proxied request
+#    is checked against SANDBOX_SECRET; /healthz is the one open route, and only
+#    from inside the container.
+#
+#    SANDBOX_SECRET and GATE_PORT reach the gate through the environment, which the
+#    child inherits — never through argv. The start_child log line below prints the
+#    command it was given, and a secret on a command line would also show up in
+#    `ps` inside the container.
+#
+#    It is supervised, like Chromium: a dead gate means the control plane can
+#    neither drive nor watch the session, which is as unusable as a dead browser.
+start_child "vcomputer-gate" critical vcomputer-gate
 
-log "desktop is up: noVNC on ${NOVNC_PORT}, VNC internal on ${VNC_PORT}, CDP on ${CDP_PORT} (socat -> chromium 127.0.0.1:${CDP_LOCAL_PORT})"
+# Wait for the gate to answer before calling the desktop up. Its /healthz is open
+# (no secret) and does not touch an upstream, so it answers as soon as the listener
+# is up — and since the gate started after everything it fronts, a 200 here means
+# the whole stack is in place. A gate that never answers is a session nobody can
+# reach, so fail loudly instead of leaving a container that looks alive from the
+# outside.
+for _ in {1..40}; do
+  if curl -fsS -o /dev/null "http://127.0.0.1:${GATE_PORT}/healthz"; then
+    break
+  fi
+  sleep 0.25
+done
+if ! curl -fsS -o /dev/null "http://127.0.0.1:${GATE_PORT}/healthz"; then
+  log "ERROR: gate never answered on http://127.0.0.1:${GATE_PORT}/healthz; giving up"
+  exit 1
+fi
+
+log "desktop is up: gate on ${GATE_PORT} (CDP -> chromium 127.0.0.1:${CDP_LOCAL_PORT}, noVNC -> 127.0.0.1:${NOVNC_PORT}), VNC internal on ${VNC_PORT}"
 
 # Supervision: block until the first supervised child exits, then tear the rest
 # down. A dead Chromium means an unusable session, so the container exits and
