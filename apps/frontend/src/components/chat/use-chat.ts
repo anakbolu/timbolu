@@ -18,8 +18,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useWorkspace } from "@/components/dashboard/workspace-data";
 import {
-  ApiResult,
   ActivityEvent,
+  AgentStatePayload,
+  ApiResult,
   Attachment,
   ChatConversation,
   ChatMessage,
@@ -34,6 +35,9 @@ const CHAT_EVENTS: Record<string, true> = {
   "message.new": true,
   "message.updated": true,
   "router.decision": true,
+  // A Bolu says what it is doing through its own state, which is the only
+  // status the stream carries while an answer is still being prepared.
+  "agent.state": true,
 };
 
 export type RouterNotice = {
@@ -53,6 +57,13 @@ export type ChatState = {
   hasMore: boolean;
   status: string;
   error: string | null;
+  /**
+   * What the responding Bolu says it is doing, from its own state events.
+   *
+   * The agent is named because the stream is workspace-wide: another thread's
+   * Bolu finishing must not rewrite this line.
+   */
+  activity: { agentId: string; text: string } | null;
   /** The Bolu that will answer the message being composed, once known. */
   responder: { agentId: string; name: string } | null;
   routerNotice: RouterNotice | null;
@@ -104,6 +115,7 @@ export function useChat(): ChatState {
   const [error, setError] = useState<string | null>(null);
   const [responder, setResponder] = useState<{ agentId: string; name: string } | null>(null);
   const [routerNotice, setRouterNotice] = useState<RouterNotice | null>(null);
+  const [activity, setActivity] = useState<{ agentId: string; text: string } | null>(null);
 
   const cursor = useRef<string | undefined>(undefined);
   // The open conversation is read inside the event handler, which is registered
@@ -124,6 +136,7 @@ export function useChat(): ChatState {
       setMessages([]);
       setRouterNotice(null);
       setResponder(null);
+      setActivity(null);
       cursor.current = undefined;
       setHasMore(false);
 
@@ -256,7 +269,7 @@ export function useChat(): ChatState {
         void reloadConversations();
         return;
       }
-      applyEvent(event, setMessages, setRouterNotice, setResponder);
+      applyEvent(event, setMessages, setRouterNotice, setResponder, setActivity);
     });
 
     return unsubscribe;
@@ -282,6 +295,7 @@ export function useChat(): ChatState {
     status: store.status,
     error: error ?? store.error,
     responder,
+    activity,
     routerNotice,
     open,
     openByAgent,
@@ -301,13 +315,39 @@ export function useChat(): ChatState {
  * a token arriving twice harmless and a client that joined late correct. The
  * files ride along and are replaced the same way: the event is the server's
  * whole message, so a file it no longer holds is gone from the row.
+ *
+ * The two other events are what a client knows before the answer has any text:
+ * which Bolu the router chose, and what that Bolu says it is doing.
  */
 function applyEvent(
   event: ActivityEvent,
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
   setRouterNotice: React.Dispatch<React.SetStateAction<RouterNotice | null>>,
   setResponder: React.Dispatch<React.SetStateAction<{ agentId: string; name: string } | null>>,
+  setActivity: React.Dispatch<React.SetStateAction<{ agentId: string; text: string } | null>>,
 ) {
+  if (event.type === "agent.state") {
+    // The reason is the sentence the Bolu itself wrote for its state, and it is
+    // the most specific thing the stream carries while an answer is prepared.
+    // It is kept per Bolu rather than as one line, because the stream is the
+    // workspace's: a state from another thread's Bolu must not be read as this
+    // one's, and a Bolu going idle must not erase another one's sentence.
+    const raw = (event.payload ?? {}) as Partial<AgentStatePayload>;
+    const agentId = readString(raw.agent_id) ?? event.agent_id;
+    if (!agentId) {
+      return;
+    }
+    const doing =
+      raw.state === "thinking" || raw.state === "working" ? readString(raw.reason) : undefined;
+    setActivity((previous) => {
+      if (doing) {
+        return { agentId, text: doing };
+      }
+      return previous?.agentId === agentId ? null : previous;
+    });
+    return;
+  }
+
   if (event.type === "router.decision") {
     // The payload arrives from the network, so each field it needs is checked
     // rather than asserted: a missing one leaves the notice unset instead of
@@ -374,6 +414,7 @@ function applyEvent(
 
   if (payload.status === "complete" || payload.status === "failed" || payload.status === "partial") {
     setResponder(null);
+    setActivity(null);
   }
 }
 

@@ -1,0 +1,2 @@
+$ git grep -n StopSession origin/main -- apps/backend/internal/modules/vcomputer/workflow/smoke.go
+(tidak ada: SmokeWorkflow tidak pernah memanggil StopSession -> container sandbox tertinggal)
