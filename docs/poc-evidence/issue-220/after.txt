@@ -1,0 +1,13 @@
+$ grep -n StopSession apps/backend/internal/modules/vcomputer/workflow/smoke.go
+124:// also the end-to-end proof the StopSession activity was missing: registered since the
+162:		stopErr := workflow.ExecuteActivity(cleanupCtx, activities.StopSession,
+
+$ go test ./internal/modules/vcomputer/workflow/ -v
+--- PASS: TestSmokeWorkflowDrivesEveryStep (0.03s)
+--- PASS: TestSmokeWorkflowStopsWhenNavigateFails (0.00s)
+--- PASS: TestSmokeWorkflowKeepsTheSessionWhenAsked (0.00s)
+--- PASS: TestSmokeWorkflowFailsWhenTheCleanupFails (0.00s)
+--- PASS: TestSmokeWorkflowReportsBothFailures (0.00s)
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/workflow	0.042s
+
+E2E Temporal dev + control plane (memory): history ... StopSession COMPLETED -> WORKFLOW_EXECUTION_COMPLETED, session_stopped: true; GET /v1/sessions/issue220-e2e -> 404

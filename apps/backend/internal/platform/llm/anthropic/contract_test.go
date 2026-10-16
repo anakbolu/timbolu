@@ -89,6 +89,8 @@ func decodeAnthropicRequest(t *testing.T, body []byte) llmtest.SentRequest {
 			switch block.Type {
 			case "text":
 				decoded.Text += block.Text
+			case "image":
+				decoded.Images++
 			case "tool_use":
 				decoded.ToolCalls = append(decoded.ToolCalls, llmtest.SentToolCall{
 					ID:        block.ID,

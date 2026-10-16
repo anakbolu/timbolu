@@ -239,6 +239,25 @@ read back inside the transaction that creates it.
   cannot omit a `uuid.UUID` — it is an array — so the wire types carry ids as
   strings; a typed field would publish
   `00000000-0000-0000-0000-000000000000` and a client would read it as an author.
+- **A message's files are read, not just named.** Before a model call the attachments of the
+  turns being sent are rendered into the prompt: a text file, a CSV, a JSON document, and a
+  PDF's extracted text arrive as a delimited section (`[Lampiran: name (type, size) #nonce]` …
+  `[/Lampiran #nonce]`, the nonce eight random hex characters per file), a picture whose bytes
+  sniff as an image travels as vision input, and everything else is a line with the filename and
+  MIME type. A file that cannot be read — missing object, oversized, corrupt PDF — is a line
+  saying so rather than a failed reply, and a chain with no vision is retried once without the
+  pictures and told to say it could not see them.
+- **A file is data, and the markers say so.** The filename is stripped of line breaks and
+  brackets, text that spells a marker is rewritten (`[/Lampiran` → `[/ Lampiran`) and every
+  occurrence of the section's nonce is replaced, so content inside a file cannot close the
+  section it is quoted in and pass for something the application said. Both system prompts
+  state the rule to the model: what sits between the markers is untrusted file data, and
+  instructions inside it are never to be followed.
+- **The bytes are read inside the activity, never carried by the workflow.** A turn in workflow
+  state holds only `{id, filename, content type, size}`; the `CallModel` activity resolves them,
+  so a replayed workflow never holds a file and Temporal's history stays small. The budget is
+  spent newest message first, and the extractor lives in `internal/platform/attachtext` because
+  it needs `net/http` sniffing and a PDF parser, neither of which a module layer may import.
 
 #### Chat path (end-to-end)
 
@@ -796,10 +815,20 @@ and a delivery that fails does not fail the sign-up; each attempt is bounded by
 gateway's
 `SECRET_ENCRYPTION_KEY` (32 bytes, base64/hex/raw, seals the provider keys at
 rest), `LLM_DEFAULT_*` (the provider the platform offers a workspace that
-configured none), `LLM_QUOTA_ENABLED`/`LLM_TOKENS_PER_PERIOD`, and
-`LLM_CHAIN_LIMIT`. The task runtime's bounds are `TASK_MAX_STEPS`,
+configured none), `LLM_QUOTA_ENABLED`/`LLM_TOKENS_PER_PERIOD`, `LLM_CHAIN_LIMIT`, and
+`LLM_TEXT_ONLY_MODELS` (comma-separated, matched by
+prefix against the configured model name, case-insensitively; a model the list
+does not name is assumed to see pictures, and a model that is text-only but
+unnamed still answers, because a provider's own refusal is read as a capability
+the route lacks and the request is retried without the pictures). The task
+runtime's bounds are `TASK_MAX_STEPS`,
 `TASK_MAX_TOKENS`, `TASK_MAX_HANDOFF_DEPTH`, and `TASK_MAX_TOOL_RESULT_BYTES`;
-a zero falls back to the product default. Object storage is `STORAGE_DRIVER`
+a zero falls back to the product default. What a message's attachments may contribute is bounded
+by `ATTACHMENT_CONTEXT_MAX_FILE_BYTES` (a larger file is named rather than read, checked before
+the object is fetched), `ATTACHMENT_CONTEXT_MAX_CHARS_PER_FILE` and
+`ATTACHMENT_CONTEXT_MAX_CHARS_TOTAL` (per file and per request, spent newest message first),
+`ATTACHMENT_CONTEXT_MAX_IMAGES`, and `ATTACHMENT_CONTEXT_MAX_IMAGE_BYTES`. The defaults are
+10 MiB, 20000, 60000, 4, and 5 MiB, and a zero takes them. Object storage is `STORAGE_DRIVER`
 (`local` writes to a directory, `s3` speaks the S3 API that MinIO, R2, B2, and
 AWS share) plus
 `STORAGE_LOCAL_ROOT` or `S3_*`, and `CONTENT_ORIGIN` is where sandboxed documents
@@ -838,18 +867,25 @@ virtual computer, and the activities then answer `ErrNotConfigured`),
 `VCOMPUTER_CONTROL_TOKEN` (the shared secret every `/v1` route requires, never
 logged; an address with no token is a startup warning, because that deployment is
 refused on every call), and `VCOMPUTER_CONTROL_TIMEOUT` (bounds one call; a value
-that will not parse fails the startup). A missing control plane and a refused token
-are answered as non-retryable Temporal errors (`VComputerNotConfigured`), so a
-configuration mistake fails a run on the first attempt; an unreachable control plane
-stays retryable. The agent worker registers the module's activities and
-`SmokeWorkflow` on its own queue; `cmd/vcomputer-smoke` runs one of them end to end
-from a checkout. The agent task loop and its tool catalog do not reach the sandbox
-yet. `docker-compose.yml` forwards the three settings to `agent-worker` and to nothing
-else — it is the process that registers them, and the token is a secret the API, the
-gateway, and the integration worker have no use for. The PoC's stack is a project of
-its own whose only published port is bound to the host's loopback, so the optional
-`docker-compose.vcomputer.yml` overlay is what puts that worker on the control plane's
-network and defaults the address to `http://vcomputer-control:8090`.
+that will not parse is warned about and ignored — the timeout the config file carries
+stands — because an optional feature's bad value must not take the worker down). A
+missing control plane and a refused token are answered as non-retryable Temporal
+errors (`VComputerNotConfigured`), so a configuration mistake fails a run on the
+first attempt; an unreachable control plane stays retryable. The agent worker
+registers the module's activities and `SmokeWorkflow` on its own queue;
+`cmd/vcomputer-smoke` runs one of them end to end from a checkout, and the run stops
+the sandbox it started rather than leaving it running for an operator to delete
+(`-keep-session` asks for the opposite). That stop is not a purge: the in-memory
+runtime forgets the session, so `GET /v1/sessions/<bot>` is 404 afterwards, while the
+Docker runtime answers 200 with `state: "stopped"` and leaves the Exited container and
+its `vcomputer-<bot>-home` volume for an explicit teardown. The agent task loop and
+its tool catalog do not reach the sandbox yet. `docker-compose.yml` forwards the three
+settings to `agent-worker` and to nothing else — it is the process that registers them,
+and the token is a secret the API, the gateway, and the integration worker have no use
+for. The PoC's stack is a project of its own whose only published port is bound to the
+host's loopback, so the optional `docker-compose.vcomputer.yml` overlay is what puts
+that worker on the control plane's network and defaults the address to
+`http://vcomputer-control:8090`.
 
 The external network's name comes from `VCOMPUTER_EDGE_NETWORK` (default `vcomputer-edge`, the
 name the PoC gives it); the key in the overlay stays fixed, so only the name compose resolves
@@ -918,3 +954,4 @@ The environment a connector reads, alongside the ones in Configuration:
 | `JWT_SECRET` | Signs access tokens and the OAuth state. |
 | `DATABASE_URL`, `REDIS_URL` | Postgres, and the Redis that carries the realtime channels. |
 | `LLM_DEFAULT_ADAPTER`, `LLM_DEFAULT_BASE_URL`, `LLM_DEFAULT_MODEL`, `LLM_DEFAULT_API_KEY` | The provider the platform offers a workspace that configured none; an empty adapter disables it. |
+| `LLM_TEXT_ONLY_MODELS` | The models that cannot read a picture, comma-separated and matched by prefix; everything else is assumed to see. |

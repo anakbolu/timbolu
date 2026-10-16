@@ -249,7 +249,10 @@ PoC-nya sekarang punya jalur dari worker ke sandbox. Yang berubah, dan batasnya:
   `VCOMPUTER_CONTROL_TIMEOUT` (`packages/platform/config`). Alamat kosong berarti tidak
   terkonfigurasi dan setiap activity menjawab `ErrNotConfigured` — bukan worker yang tidak tahu
   ada komputer. Token tidak pernah masuk log; apakah control plane terkonfigurasi dicatat sekali
-  saat start.
+  saat start. `VCOMPUTER_CONTROL_TIMEOUT` yang tidak bisa di-parse **bukan** kesalahan startup
+  (revisi 2026-10-16, isu #219): ia dicatat sebagai warning dan nilai dari berkas konfigurasi yang
+  berlaku, karena fitur opsional tidak boleh mematikan worker yang juga menjalankan tugas, rutin,
+  dan memori.
 - **Yang terdaftar hanya `SmokeWorkflow`** (`internal/modules/vcomputer/workflow/smoke.go`):
   `EnsureSession` → `Navigate` → `Screenshot` → `Click` → `Type` → `Screenshot` → `Exec`, dengan
   jeda di antara langkah-langkahnya, timeout 90 detik untuk `EnsureSession` dan 30 detik untuk
@@ -261,6 +264,9 @@ PoC-nya sekarang punya jalur dari worker ke sandbox. Yang berubah, dan batasnya:
   tool `click`/`type`/`exec` yang bisa dipanggil model, jadi tidak ada gerbang persetujuan untuk
   aksi sandbox, tidak ada pemetaan `bot_id` ↔ workspace, dan tidak ada *reaper* idle. PoC ini
   membuktikan sambungannya, bukan bahwa tugas pelanggan memakainya.
+
+Catatan supersesi: urutan langkah di atas tidak lagi berakhir di `Exec` — revisi setelah QA PR
+#211 menambahkan `StopSession` sebagai langkah terakhir. Sisa butirnya masih berlaku.
 
 Batas §1 dan §4 tentang jalur produksi karena itu berlaku dengan satu pengecualian: yang
 terdaftar adalah activity dan satu workflow smoke, bukan loop tugas agennya.
@@ -290,6 +296,39 @@ configured" (isu #217). Penyebabnya bukan loader melainkan compose.
   menggagalkan uji, bukan hanya diam-diam mengembalikan worker ke `ErrNotConfigured`.
   Nama jaringan itu punya uji sendiri: default `vcomputer-edge`, dan nilai `VCOMPUTER_EDGE_NETWORK`
   yang menimpanya.
+
+## Revisi 2026-10-16 setelah QA PR #211 (isu #220): smoke run mematikan sesinya sendiri
+
+`SmokeWorkflow` menjalankan `EnsureSession` → … → `Exec` tanpa pernah memanggil `StopSession`,
+jadi setiap smoke run meninggalkan container `vcomputer-<bot>` beserta volumenya dalam keadaan
+running; QA sempat menyisakan tujuh container yang harus dihapus manual. Activity `StopSession`
+sudah terdaftar tapi tidak punya bukti end-to-end lewat Temporal karena tidak ada yang
+menjadwalkannya.
+
+- **Cleanup-nya bagian dari workflow, bukan langkah opsional di pemanggil.** `StopSession`
+  dijadwalkan lewat `defer` di atas `workflow.NewDisconnectedContext`, jadi ia jalan di setiap
+  jalur — termasuk saat sebuah langkah gagal, yang justru kasus yang meninggalkan container.
+  Context terpisah itu yang membuatnya tetap jalan ketika workflow-nya sendiri sudah gagal atau
+  dibatalkan; `defer` biasa akan menjadwalkan stop ke context yang sudah selesai.
+- **Run yang gagal men-stop adalah run yang gagal.** Kegagalan `StopSession` dikembalikan sebagai
+  error workflow, bukan dilaporkan sebagai catatan: sandbox yang tidak mau mati adalah container
+  yang tertinggal, dan hasil sukses yang menyisakannya justru keadaan yang tidak akan dilihat
+  lagi.
+- **`keep_session` membalik perilaku itu**, untuk kasus desktop-nya memang mau dilihat setelah
+  run; `session_stopped` di hasil menyatakan mana yang terjadi. `cmd/vcomputer-smoke` meneruskan
+  ini sebagai `-keep-session`, dan tangkapan `-out` butuh flag itu — capture-nya diminta setelah
+  workflow selesai, ke sandbox yang tanpa `-keep-session` sudah mati, jadi `-out` tanpa flag itu
+  ditolak sebelum worker-nya jalan.
+- **Ini yang membedakan smoke run dari tugas.** `StopSession` sengaja **tidak** dipanggil di
+  akhir tugas, karena sesi yang berakhir bersama tugasnya kehilangan profil browser yang justru
+  disimpan volume itu; smoke run tidak punya penerus yang memakai profil itu, dan pemilik sandbox
+  yang baru dibuatnya adalah run itu sendiri.
+- **`StopSession` bukan purge, dan hasilnya berbeda per runtime.** Di runtime `memory`,
+  `Stop` melupakan record sesi, jadi `GET /v1/sessions/<bot>` sesudahnya `404`. Di runtime
+  `docker` yang nyata, `Stop` hanya `docker stop` dan menjawab `200` (`{"stopped":true}`;
+  `GET` sesudahnya `200` dengan `state:"stopped"`): container `vcomputer-<bot>` tertinggal
+  dalam keadaan Exited bersama volume `vcomputer-<bot>-home`, dan keduanya hanya hilang lewat
+  teardown eksplisit — bukan `404`.
 
 ## Keputusan yang tetap terbuka
 

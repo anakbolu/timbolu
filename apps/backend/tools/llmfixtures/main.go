@@ -226,6 +226,14 @@ func scenarios() []scenario {
 			name:      llmtest.ScenarioInvalidRequest,
 			synthetic: []byte(`{"error":{"message":"Invalid value for 'model'","type":"invalid_request_error","param":"model"}}`),
 		},
+		{
+			name: llmtest.ScenarioImageUnsupported,
+			// A text-only model behind an adapter that speaks for a
+			// vision-capable one refuses the picture in the provider's own
+			// words. The anthropic fixture is the same refusal in that format's
+			// envelope, which this body is not.
+			synthetic: []byte(`{"error":{"message":"This model does not support image input","type":"invalid_request_error"}}`),
+		},
 	}
 }
 
