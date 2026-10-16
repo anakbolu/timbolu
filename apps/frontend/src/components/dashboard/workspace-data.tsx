@@ -259,12 +259,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     if (!id) {
       // `ensureActiveWorkspace` refreshes first, so returning nothing means either
       // that the refresh failed or that the account has no workspace yet — and the
-      // two want opposite answers. Only the first is sent to the door: bouncing the
-      // second would put an account with no workspace on a loop between /login and
-      // /dashboard, since signing in again lands it right back here.
-      //
-      // The token says which happened. A failed refresh stores nothing, while a
-      // refresh that succeeded but found no workspace leaves a live token.
+      // two want opposite answers, so the token says which happened: a failed
+      // refresh stores nothing, while a refresh that succeeded but found no
+      // workspace leaves a live token.
       if (getAccessToken() === null) {
         // There is no session to load a screen against, so the door is where the
         // person belongs — and the door is the screen that can say why: it reads
@@ -272,10 +269,14 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         router.replace("/login?sesi=berakhir");
         return;
       }
-      // The session is alive, so the account simply has no workspace yet. That is
-      // a state of this shell, not a reason to sign in again.
-      setReady(true);
-      setError("Pilih workspace dulu.");
+      // The session is alive, so the account simply has no workspace yet. Nothing
+      // on this screen can make one, and every screen behind this shell is built
+      // around a workspace it does not have: saying so and staying put left the
+      // person with a sentence and no way to act on it. Onboarding is the screen
+      // that asks for the workspace, and it is not the loop the door would be —
+      // it sends an account that already owns one on to /dashboard, so the two
+      // cannot pass the same account back and forth.
+      router.replace("/onboarding");
       return;
     }
     setWorkspaceID(id);

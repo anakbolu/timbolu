@@ -16,6 +16,7 @@ import {
   acceptInvitation,
   createAgent,
   currentUser,
+  listWorkspaces,
   onboard,
   refreshSession,
   setActiveWorkspaceId,
@@ -74,6 +75,13 @@ export function OnboardingForm() {
   // A page reload loses the in-memory access token, so it is restored from the
   // refresh cookie before the form is used. An account that already has a
   // workspace has nothing left to do here and is sent on.
+  //
+  // What "already has one" means is the account's workspace list, not its
+  // `onboarded` flag: the flag is the account's own claim, while the list is the
+  // answer every other screen acts on. Trusting the flag alone would leave an
+  // account that carries it with no workspace — the state the dashboard shell now
+  // sends here — bouncing between /dashboard and this form, each screen sure the
+  // other one is where the work is.
   useEffect(() => {
     void (async () => {
       const session = await refreshSession();
@@ -81,7 +89,8 @@ export function OnboardingForm() {
         router.replace("/login");
         return;
       }
-      if (session.data.user.onboarded) {
+      const workspaces = await listWorkspaces();
+      if (workspaces.ok && workspaces.data.length > 0) {
         router.replace("/dashboard");
         return;
       }
