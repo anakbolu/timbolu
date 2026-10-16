@@ -236,18 +236,11 @@ export function useChat(): ChatState {
 
   const attachToMessage = useCallback((messageId: string, attachments: Attachment[]) => {
     setMessages((previous) =>
-      previous.map((message) => {
-        if (message.message_id !== messageId) {
-          return message;
-        }
-        // Merged by id: the same upload answered twice must not be listed twice
-        // under one bubble.
-        const known = new Set(message.attachments.map((item) => item.id));
-        return {
-          ...message,
-          attachments: [...message.attachments, ...attachments.filter((item) => !known.has(item.id))],
-        };
-      }),
+      previous.map((message) =>
+        message.message_id === messageId
+          ? { ...message, attachments: mergeAttachments(message.attachments, attachments) }
+          : message,
+      ),
     );
   }, []);
 
@@ -345,7 +338,9 @@ function applyEvent(
       agent_id: payload.agent_id,
       user_id: payload.user_id,
       blocks: payload.blocks ?? [],
-      attachments: [],
+      // A payload from before this field existed carries none, and that is a
+      // message with no files rather than a reason to drop the event.
+      attachments: Array.isArray(payload.attachments) ? payload.attachments : [],
       status: payload.status,
       finish_reason: payload.finish_reason,
       created_at: event.created_at,
@@ -359,7 +354,14 @@ function applyEvent(
     // The stored message is the whole message, so an update replaces it rather
     // than merging: a merge would keep a block the server removed.
     const next = [...previous];
-    next[index] = { ...previous[index], ...incoming, attachments: previous[index].attachments };
+    next[index] = {
+      ...previous[index],
+      ...incoming,
+      // The message carries its files, so the same upload is seen twice: once
+      // from the request that stored it, and once from the event that followed.
+      // Merging by id is what keeps those one row instead of two.
+      attachments: mergeAttachments(previous[index].attachments, incoming.attachments),
+    };
     return next;
   });
 
@@ -371,6 +373,35 @@ function applyEvent(
 /** readString narrows one field of a streamed payload. */
 function readString(value: unknown): string | undefined {
   return typeof value === "string" && value !== "" ? value : undefined;
+}
+
+/**
+ * mergeAttachments folds files into the ones already shown.
+ *
+ * Keyed by id, because the same file is seen twice: once from the request that
+ * stored it and once from the message event that followed, and the two must be
+ * one row. The order already on screen is kept so a file does not move while it
+ * is being read, and the server's copy of a row replaces the local one.
+ */
+function mergeAttachments(known: Attachment[], incoming: Attachment[]): Attachment[] {
+  if (incoming.length === 0) {
+    return known;
+  }
+
+  const merged = [...known];
+  const at = new Map(merged.map((item, index) => [item.id, index]));
+
+  for (const item of incoming) {
+    const index = at.get(item.id);
+    if (index === undefined) {
+      at.set(item.id, merged.length);
+      merged.push(item);
+      continue;
+    }
+    merged[index] = item;
+  }
+
+  return merged;
 }
 
 /** append adds a message once, by id, so a stream echo cannot duplicate it. */

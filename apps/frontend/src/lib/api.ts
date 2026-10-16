@@ -1048,6 +1048,12 @@ export type MessageEventPayload = {
   user_id?: string;
   status: MessageStatus;
   blocks: MessageBlock[];
+  /**
+   * The files on the message. The stream carries them, so a file uploaded in
+   * another tab — or by the server itself — reaches this one without a reload.
+   * Optional because an event written before the field existed has none.
+   */
+  attachments?: Attachment[];
   finish_reason?: string;
 };
 

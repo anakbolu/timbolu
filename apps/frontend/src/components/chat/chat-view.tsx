@@ -601,6 +601,24 @@ function MessageRow({
   const fromAgent = Boolean(message.agent_id);
   const notice = describeResult(message);
   const writing = isBusy(message);
+  // The server opens an empty message for an upload that named none, and that
+  // message is published before the file is stored, so its `message.new` carries
+  // nothing yet. There is no bubble to draw until the update that names the file
+  // arrives, and drawing one would be an empty box with padding in it.
+  const empty =
+    message.blocks.length === 0 &&
+    message.attachments.length === 0 &&
+    notice === null &&
+    !writing &&
+    !message.task_id;
+  if (empty) {
+    return null;
+  }
+
+  // What the attachment list hangs from inside the bubble. It is the first thing
+  // in it for a message that is only files, and an `mt-2` there is a gap above
+  // nothing.
+  const stacked = message.blocks.length > 0 || notice !== null || writing;
 
   return (
     <article className={fromAgent ? "flex items-start gap-2.5" : "flex justify-end gap-2.5"}>
@@ -647,7 +665,7 @@ function MessageRow({
           ) : null}
 
           {message.attachments.length > 0 ? (
-            <ul className="mt-2 space-y-1">
+            <ul className={stacked ? "mt-2 space-y-1" : "space-y-1"}>
               {message.attachments.map((attachment) => (
                 <li key={attachment.id}>
                   <a
