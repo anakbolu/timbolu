@@ -27,6 +27,7 @@ import (
 	routineactivity "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/activity"
 	routinedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
 	taskactivity "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/activity"
+	vcomputertemporal "github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/temporal"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/authn"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/mail"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/oauth/google"
@@ -82,6 +83,11 @@ type Container struct {
 	Routine routinedomain.Service
 	// RoutineTasks is the routine activity set, registered by the agent worker.
 	RoutineTasks *routineactivity.Activities
+	// VComputerTasks is the virtual computer's activity set, registered by the agent worker
+	// alongside the task one. It is built in every process, even when no control plane is
+	// configured: the activities then answer domain.ErrNotConfigured, which is a deployment
+	// without a virtual computer rather than a worker that has never heard of one.
+	VComputerTasks *vcomputertemporal.Activities
 	// WhatsApp is the module: the numbers a workspace linked and who answers them.
 	// It is kept on the container because the gateway process hands it its own
 	// runtime, and because the integration adapter reaches it.
@@ -385,6 +391,13 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Container, e
 		c.Close()
 		return nil, err
 	}
+
+	// The virtual computer is assembled here because it depends on nothing above it: it is
+	// an HTTP client to a control plane, so it needs no database, no Redis and no Temporal
+	// client, and it is built even in a process that has none of them. It comes after the
+	// routines only so that the order the assembly reads in matches the order the modules are
+	// described in — the wiring itself is independent.
+	c.openVComputer(cfg)
 
 	// WhatsApp comes after the integrations, the task runtime, and the routines:
 	// a linked number is a connection the hub shows, an inbound message opens a

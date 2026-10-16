@@ -238,6 +238,12 @@ func loadFromEnv(cfg *Config) error {
 		"WA_GATEWAY_TOKEN": &cfg.WhatsApp.GatewayToken,
 		"WA_ADDRESS":       &cfg.WhatsApp.Address,
 		"WA_OWNER":         &cfg.WhatsApp.Owner,
+		// Virtual computer: the control plane is reached over the internal network with a
+		// shared secret, so both values come from the environment and the address stays out
+		// of the YAML file that ships with the image. An empty address is a deployment
+		// without a virtual computer, which is what every deployment runs until it has one.
+		"VCOMPUTER_CONTROL_URL":   &cfg.VComputer.ControlURL,
+		"VCOMPUTER_CONTROL_TOKEN": &cfg.VComputer.Token,
 	}
 	for key, target := range overrides {
 		if v := os.Getenv(key); v != "" {
@@ -466,6 +472,14 @@ func loadFromEnv(cfg *Config) error {
 			return fmt.Errorf("parse WA_LOG_WHATSMEOW: %w", err)
 		}
 		cfg.WhatsApp.LogWhatsmeow = log
+	}
+
+	if v := os.Getenv("VCOMPUTER_CONTROL_TIMEOUT"); v != "" {
+		timeout, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("parse VCOMPUTER_CONTROL_TIMEOUT: %w", err)
+		}
+		cfg.VComputer.Timeout = timeout
 	}
 
 	if v := os.Getenv("PLAN_DAILY_COST_MICROS"); v != "" {

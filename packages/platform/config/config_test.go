@@ -29,6 +29,7 @@ func clearOverrides(t *testing.T) {
 		"BILLING_GRACE_DAYS", "BILLING_SYNC_INTERVAL", "BILLING_SWEEP_INTERVAL",
 		"AUTH_REQUIRE_EMAIL_VERIFICATION",
 		"MAIL_DRIVER", "MAIL_TIMEOUT_SECONDS",
+		"VCOMPUTER_CONTROL_URL", "VCOMPUTER_CONTROL_TOKEN", "VCOMPUTER_CONTROL_TIMEOUT",
 	} {
 		t.Setenv(key, "")
 	}
@@ -504,4 +505,47 @@ func TestLoadRejectsAMalformedBillingSetting(t *testing.T) {
 			require.Contains(t, err.Error(), key)
 		})
 	}
+}
+
+// TestLoadReadsTheVComputerSettings is the virtual computer's configuration gate: the control
+// plane's address and its shared secret come from the environment, and the timeout that bounds
+// one call is parsed rather than passed through.
+//
+// The empty default is the interesting half. A deployment without a control plane must be a
+// valid deployment — the activities then answer ErrNotConfigured rather than calling an address
+// nobody meant — so the YAML ships with the address empty and this test keeps it that way.
+func TestLoadReadsTheVComputerSettings(t *testing.T) {
+	clearOverrides(t)
+	t.Setenv("ENVIRONMENT", "local")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	require.Empty(t, cfg.VComputer.ControlURL, "no control plane is committed to the repository")
+	require.Empty(t, cfg.VComputer.Token)
+	require.Equal(t, 30*time.Second, cfg.VComputer.Timeout)
+
+	t.Setenv("VCOMPUTER_CONTROL_URL", "http://vcomputer-control:8090")
+	t.Setenv("VCOMPUTER_CONTROL_TOKEN", "shared-secret")
+	t.Setenv("VCOMPUTER_CONTROL_TIMEOUT", "90s")
+
+	cfg, err = Load()
+	require.NoError(t, err)
+
+	require.Equal(t, "http://vcomputer-control:8090", cfg.VComputer.ControlURL)
+	require.Equal(t, "shared-secret", cfg.VComputer.Token)
+	require.Equal(t, 90*time.Second, cfg.VComputer.Timeout)
+}
+
+// TestLoadRejectsAMalformedVComputerSetting: a timeout that will not parse is an error rather
+// than a silent fall back to the default, for the same reason a mistyped quota is — a bound that
+// quietly becomes something else is only discovered when a call behaves unlike its configuration.
+func TestLoadRejectsAMalformedVComputerSetting(t *testing.T) {
+	clearOverrides(t)
+	t.Setenv("ENVIRONMENT", "local")
+	t.Setenv("VCOMPUTER_CONTROL_TIMEOUT", "sebentar")
+
+	_, err := Load()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "VCOMPUTER_CONTROL_TIMEOUT")
 }

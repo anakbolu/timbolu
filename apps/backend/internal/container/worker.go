@@ -40,6 +40,13 @@ func RegisterAgentTasks(w sdkworker.Worker, c *Container) {
 	w.RegisterWorkflow(temporal.WorkerPingWorkflow)
 	w.RegisterActivity(temporal.WorkerPingActivity)
 
+	// The virtual computer is registered before the check below, because it is not part of
+	// the task runtime: its activities reach a control plane over HTTP and need none of the
+	// runtime's dependencies, so a worker whose database is being migrated can still drive a
+	// sandbox and still answer a smoke run. Registering it after the check would tie a bot's
+	// computer to a deployment's Postgres.
+	RegisterVComputerTasks(w, c)
+
 	if c == nil || c.Tasks == nil {
 		// A worker without the runtime still starts, so a deployment whose
 		// database is being migrated is reachable rather than crash-looping. It

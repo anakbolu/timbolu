@@ -15,6 +15,7 @@ cmd/
   api/                  # HTTP + WebSocket (Fiber)
   agent-worker/         # Temporal worker: the agent loop, tools, approvals
   integration-worker/   # Temporal worker: OAuth, provider APIs, webhooks
+  vcomputer-smoke/      # dev tool: one virtual-computer smoke run against a control plane
 internal/
   container/            # the only place that calls constructors
   modules/<name>/       # domain · repository · service · handler
@@ -826,6 +827,16 @@ The WhatsApp seam is `WA_GATEWAY_URL` (how the API reaches the gateway),
 `INTERNAL_ADDRESS` (where the API serves the gateway's own calls; empty means no
 internal listener, which is what a deployment without a gateway wants). The
 gateway's own process is configured by [`apps/whatsapp-gw`](../whatsapp-gw/README.md).
+
+The virtual computer (PoC, `docs/adr/0003-virtual-computer.md`) is
+`VCOMPUTER_CONTROL_URL` (the control plane's **internal** address; empty means no
+virtual computer, and the activities then answer `ErrNotConfigured`),
+`VCOMPUTER_CONTROL_TOKEN` (the shared secret every `/v1` route requires, never
+logged), and `VCOMPUTER_CONTROL_TIMEOUT` (bounds one call; a value that will not
+parse fails the startup). The agent worker registers the module's activities and
+`SmokeWorkflow` on its own queue; `cmd/vcomputer-smoke` runs one of them end to end
+from a checkout. The agent task loop and its tool catalog do not reach the sandbox
+yet.
 
 Deployment and region decisions: `docs/adr/0001-temporal-dan-region.md`.
 Test strategy and gates: `docs/testing.md`.

@@ -7,13 +7,17 @@
 // without a Temporal server. An activity is where those two meet, and it does
 // nothing but translate one request into one call.
 //
-// Nothing registers these yet, and that is the point of the PoC
-// (docs/adr/0003-virtual-computer.md §3.2): the package compiles, is importable, and
-// is unused. Wiring it is a two-line change in
-// internal/container/worker.go — `vcomputertemporal.New(...)` plus
-// `w.RegisterActivity(...)` — and it is deliberately not made here, because a worker
-// that registers an activity whose control plane is missing would fail tasks that
-// used to work.
+// The activity set is registered by the agent worker:
+// internal/container/vcomputer.go builds it and RegisterVComputerTasks installs it, together
+// with the smoke workflow in internal/modules/vcomputer/workflow. It is registered even when
+// no control plane is configured — every activity then answers ErrNotConfigured, which is
+// what a deployment without a virtual computer looks like rather than a worker that has never
+// heard of one.
+//
+// Nothing else calls these yet: the agent task loop and its tool catalog do not reach the
+// sandbox (docs/adr/0003-virtual-computer.md), so no tool a model can call becomes a click or
+// a command until that is wired, and neither does the approval gate that would have to stand
+// in front of exec.
 //
 // The activities are named after the control plane's routes rather than after the
 // tools a model sees. Tools carry labels and grants (docs/riset-microvm.md §5.1);

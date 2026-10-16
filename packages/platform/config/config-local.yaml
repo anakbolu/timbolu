@@ -214,6 +214,20 @@ Retention:
   Batch: 0
   SweepLimit: 0
 
+# Virtual computer: the control plane that drives one sandbox per bot. Left empty, because
+# nothing is running locally until somebody starts it — `VCOMPUTER_CONTROL_URL` and
+# `VCOMPUTER_CONTROL_TOKEN` point this at a control plane, and until then every activity
+# answers ErrNotConfigured rather than calling an address nobody meant.
+#
+# The address is the internal one (`http://localhost:8090` when the control plane runs on the
+# host, or `http://vcomputer-control:8090` from inside the compose network). The token must be
+# the same VCOMPUTER_CONTROL_TOKEN the control plane was started with.
+VComputer:
+  ControlURL: ""
+  Token: ""
+  # A screenshot of a cold sandbox includes the container starting, so this is generous.
+  Timeout: "30s"
+
 Logging:
   Level: "debug"
   Format: "console"

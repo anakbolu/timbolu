@@ -224,6 +224,19 @@ Retention:
   Batch: 0
   SweepLimit: 0
 
+# Virtual computer: the control plane that drives one sandbox per bot
+# (docs/adr/0003-virtual-computer.md). The address is on the internal network and is never
+# published, so it is supplied through the environment like every other endpoint, and it is
+# empty by default: a deployment without a control plane answers ErrNotConfigured rather than
+# calling an address nobody meant. The token must match the control plane's own
+# VCOMPUTER_CONTROL_TOKEN.
+VComputer:
+  ControlURL: ""
+  Token: ""
+  # One call to the control plane. A screenshot of a cold sandbox includes the container
+  # starting, which is why this is generous rather than tight.
+  Timeout: "30s"
+
 Logging:
   Level: "info"
   Format: "json"

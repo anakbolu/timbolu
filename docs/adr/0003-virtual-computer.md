@@ -41,7 +41,8 @@ control plane, dan pembagian tugas antara worker dan sandbox tetap sama.
 jadi ini **bukan** sandbox untuk kode yang benar-benar tak tepercaya — riset §4.1), tidak menyelesaikan
 biaya (satu sandbox per bot berarti RAM per bot, bukan per workspace), dan tidak mengubah satu pun
 jalur produksi: paket backend yang ditambahkan **belum di-wire** ke `container` maupun ke
-`agent-worker`.
+`agent-worker` — sejak Revisi 2026-10-16 di bawah, activity-nya terdaftar di agent worker, tetapi
+`AgentTaskWorkflow` dan katalog tool tetap tidak menyentuh sandbox.
 
 ## 2. Opsi
 
@@ -151,8 +152,10 @@ penyambungan ke gerbang approval adalah pekerjaan berikutnya, bukan sesuatu yang
   ia ada di PoC karena isu #4 meminta "komputer" yang bisa dilihat, dan karena tangkapan layar
   adalah bukti visual termurah untuk PR.
 - **Tidak ada perubahan pada jalur produksi.** Paket `internal/modules/vcomputer` dan control plane
-  belum didaftarkan di `container`/`agent-worker`, jadi `api` dan worker berperilaku persis seperti
-  sebelum ADR ini.
+  belum didaftarkan di `container`/`agent-worker` saat keputusan ini diambil, jadi `api` dan worker
+  berperilaku persis seperti sebelumnya. Revisi 2026-10-16 mengubah bagian ini: activity-nya
+  sekarang terdaftar di agent worker lewat `container.RegisterVComputerTasks`, sementara loop
+  tugas agennya tetap tidak berubah.
 - **Urutan yang tetap berlaku.** Gerbang 1 (E14.6, #118) tetap penentu apakah ini dilanjutkan:
   tanpa bukti tugas pelanggan yang gagal tanpa browser/terminal, Fase 2 tidak dimulai.
 
@@ -165,7 +168,7 @@ penyambungan ke gerbang approval adalah pekerjaan berikutnya, bukan sesuatu yang
 - `apps/virtual-computer/fixture/index.html` — halaman uji yang bisa dibuka browser sandbox tanpa internet.
 - `apps/virtual-computer/scripts/e2e.sh` — checklist end-to-end: build, naikkan stack, periksa, tulis bukti, cetak PASS/FAIL.
 - `apps/virtual-computer/demo/index.html` — halaman statis yang menyematkan noVNC asli lewat proxy control plane; tanpa mock desktop.
-- `apps/backend/internal/modules/vcomputer/{domain,service,temporal}` — port `ComputerUseClient` (termasuk `Navigate`), klien HTTP dengan bearer token, dan activity-nya. **Belum di-wire.**
+- `apps/backend/internal/modules/vcomputer/{domain,service,temporal,workflow}` — port `ComputerUseClient` (termasuk `Navigate`), klien HTTP dengan bearer token, activity-nya, dan `SmokeWorkflow`. **Terdaftar di agent worker** sejak Revisi 2026-10-16 (`internal/container/vcomputer.go`, `cmd/vcomputer-smoke`).
 - `go.work` — memuat modul control supaya `go test` di dalamnya jalan dari checkout; modul produk tidak berubah.
 
 ## Revisi 2026-10-16 setelah QA PR #178
@@ -209,6 +212,35 @@ Catatan supersesi: tabel di §3.2 masih menyebut CDP "disiapkan, belum dipakai" 
 port `6080`; baris "Jaringan" di Ringkasan dan §3.6 menyebut control plane hanya di jaringan
 internal dan tidak pernah dipublikasikan. Revisi ini yang berlaku untuk CDP, port per sandbox,
 dan pembagian dua jaringan — control plane tetap hanya di `127.0.0.1` pada host.
+
+## Revisi 2026-10-16: activity terdaftar di agent worker
+
+PoC-nya sekarang punya jalur dari worker ke sandbox. Yang berubah, dan batasnya:
+
+- **Activity-nya terdaftar.** `internal/container/vcomputer.go` membangun set activity
+  (`NewVComputerTasks`) dan `RegisterVComputerTasks` mendaftarkannya di `RegisterAgentTasks`,
+  **sebelum** cabang `c.Tasks == nil`: komputer bot tidak butuh database, jadi worker yang
+  runtime tugasnya mati tetap bisa menjalankan sandbox. Queue-nya queue agent worker yang sama,
+  tanpa proses kedua.
+- **Konfigurasinya opsional.** `VCOMPUTER_CONTROL_URL`, `VCOMPUTER_CONTROL_TOKEN`,
+  `VCOMPUTER_CONTROL_TIMEOUT` (`packages/platform/config`). Alamat kosong berarti tidak
+  terkonfigurasi dan setiap activity menjawab `ErrNotConfigured` — bukan worker yang tidak tahu
+  ada komputer. Token tidak pernah masuk log; apakah control plane terkonfigurasi dicatat sekali
+  saat start.
+- **Yang terdaftar hanya `SmokeWorkflow`** (`internal/modules/vcomputer/workflow/smoke.go`):
+  `EnsureSession` → `Navigate` → `Screenshot` → `Click` → `Type` → `Screenshot` → `Exec`, dengan
+  jeda di antara langkah-langkahnya, timeout 90 detik untuk `EnsureSession` dan 30 detik untuk
+  sisanya, `MaximumAttempts: 3`, dan hasil tanpa byte PNG.
+- **`cmd/vcomputer-smoke`** menjalankan satu smoke run dari checkout: worker sendiri di queue
+  `vcomputer-smoke`, registrasi lewat `container.RegisterVComputerTasks`, hasil sebagai JSON, dan
+  opsional satu tangkapan terakhir ke `after-temporal-final.png`.
+- **Yang tetap belum**: `AgentTaskWorkflow` dan katalog tool tidak menyentuh sandbox. Tidak ada
+  tool `click`/`type`/`exec` yang bisa dipanggil model, jadi tidak ada gerbang persetujuan untuk
+  aksi sandbox, tidak ada pemetaan `bot_id` ↔ workspace, dan tidak ada *reaper* idle. PoC ini
+  membuktikan sambungannya, bukan bahwa tugas pelanggan memakainya.
+
+Batas §1 dan §4 tentang jalur produksi karena itu berlaku dengan satu pengecualian: yang
+terdaftar adalah activity dan satu workflow smoke, bukan loop tugas agennya.
 
 ## Keputusan yang tetap terbuka
 

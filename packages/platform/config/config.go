@@ -27,6 +27,7 @@ type Config struct {
 	WhatsApp     WhatsAppConfig
 	Billing      BillingConfig
 	Retention    RetentionConfig
+	VComputer    VComputerConfig
 	Telemetry    TelemetryConfig
 	Logging      LoggingConfig
 }
@@ -95,6 +96,28 @@ type RetentionConfig struct {
 	Batch int `mapstructure:"Batch" validate:"optional"`
 	// SweepLimit bounds how many workspaces one pass looks at.
 	SweepLimit int `mapstructure:"SweepLimit" validate:"optional"`
+}
+
+// VComputerConfig is where the backend reaches a bot's virtual computer: the control plane's
+// internal address, the shared secret it authenticates with, and how long one call may take.
+//
+// Empty ControlURL is a deployment without a virtual computer, and it is the default: every
+// activity then answers ErrNotConfigured instead of calling an address nobody meant
+// (docs/adr/0003-virtual-computer.md §3.6). The address is internal and never published — a caller
+// that reached the control plane could drive any bot's desktop — which is also why the token is a
+// shared secret between two of our own processes rather than a user's credential.
+type VComputerConfig struct {
+	// ControlURL is the control plane's base address on the internal network, e.g.
+	// http://vcomputer-control:8090. Empty leaves the activities unconfigured, which is a
+	// deployment without a virtual computer rather than an error.
+	ControlURL string `mapstructure:"ControlURL" validate:"optional"`
+	// Token is the control plane's shared secret, sent as a bearer on every request. It must
+	// match the VCOMPUTER_CONTROL_TOKEN the control plane was started with; a mismatch comes
+	// back as a 401 and is reported as a configuration mistake rather than retried.
+	Token string `mapstructure:"Token" validate:"optional"`
+	// Timeout bounds one call to the control plane. Zero takes the client's own default, which
+	// is generous on purpose: a screenshot of a cold sandbox includes the container starting.
+	Timeout time.Duration `mapstructure:"Timeout" validate:"optional"`
 }
 
 // BillingConfig holds what taking money online needs.
