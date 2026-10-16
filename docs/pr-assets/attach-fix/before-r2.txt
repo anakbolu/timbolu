@@ -1,0 +1,20 @@
+$ git rev-parse --short HEAD   # PR #182 head
+c50f13c
+$ go test ./test/integration/ -run 'TestAttachWith' -count=1 -v   (Postgres asli via testcontainers)
+=== RUN   TestAttachWithoutMessageShowsTheFile
+    chat_attach_test.go:107: 
+        	Error Trace:	/workspace/clients/timbolu-wt/attach-fix/apps/backend/test/integration/chat_attach_test.go:107
+        	Error:      	"[]" should have 1 item(s), but has 0
+        	Test:       	TestAttachWithoutMessageShowsTheFile
+        	Messages:   	history: the opened message must carry the upload
+--- FAIL: TestAttachWithoutMessageShowsTheFile (2.91s)
+=== RUN   TestAttachWithMessageShowsTheFile
+    chat_attach_test.go:137: 
+        	Error Trace:	/workspace/clients/timbolu-wt/attach-fix/apps/backend/test/integration/chat_attach_test.go:137
+        	Error:      	"[]" should have 2 item(s), but has 0
+        	Test:       	TestAttachWithMessageShowsTheFile
+        	Messages:   	messages.attachments must list both files
+--- FAIL: TestAttachWithMessageShowsTheFile (0.30s)
+FAIL
+FAIL	github.com/robzlabz/employeebot/apps/backend/test/integration	3.539s
+FAIL
