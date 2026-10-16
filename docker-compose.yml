@@ -59,6 +59,20 @@ x-backend-env: &backend-env
   GMAIL_API_BASE: ${GMAIL_API_BASE:-}
   GMAIL_AUTH_ENDPOINT: ${GMAIL_AUTH_ENDPOINT:-}
   GMAIL_TOKEN_ENDPOINT: ${GMAIL_TOKEN_ENDPOINT:-}
+  # Slack and GitHub are the other connectors, under the same rules: empty
+  # credentials disable the adapter rather than offering it and failing at the
+  # consent screen, and the endpoint overrides let a staging deployment or a
+  # smoke test run the whole path without a real account.
+  SLACK_CLIENT_ID: ${SLACK_CLIENT_ID:-}
+  SLACK_CLIENT_SECRET: ${SLACK_CLIENT_SECRET:-}
+  SLACK_API_BASE: ${SLACK_API_BASE:-}
+  SLACK_AUTH_ENDPOINT: ${SLACK_AUTH_ENDPOINT:-}
+  SLACK_TOKEN_ENDPOINT: ${SLACK_TOKEN_ENDPOINT:-}
+  GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+  GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+  GITHUB_API_BASE: ${GITHUB_API_BASE:-}
+  GITHUB_AUTH_ENDPOINT: ${GITHUB_AUTH_ENDPOINT:-}
+  GITHUB_TOKEN_ENDPOINT: ${GITHUB_TOKEN_ENDPOINT:-}
   # WhatsApp: the API reaches the gateway process over the compose network, and
   # the gateway authenticates with a shared secret. Both empty leaves numbers
   # readable and unlinkable, which is what a deployment with no gateway is.
