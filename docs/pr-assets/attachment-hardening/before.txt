@@ -1,0 +1,29 @@
+$ git rev-parse --short HEAD   # origin/main (sudah memuat #182)
+6e8f107
+$ go test ./test/integration/ -run TestHardening -count=1 -v   (Postgres asli via testcontainers)
+=== RUN   TestHardeningFailedUploadLeavesNoMessage
+    chat_attach_hardening_test.go:110: 
+        	Error Trace:	/workspace/clients/timbolu-wt/attachment-hardening/apps/backend/test/integration/chat_attach_hardening_test.go:110
+        	Error:      	Not equal: 
+        	            	expected: 0
+        	            	actual  : 1
+        	Test:       	TestHardeningFailedUploadLeavesNoMessage
+        	Messages:   	no empty carrier message may remain
+--- FAIL: TestHardeningFailedUploadLeavesNoMessage (2.07s)
+=== RUN   TestHardeningFileTypeAllowlist
+    chat_attach_hardening_test.go:125: 
+        	Error Trace:	/workspace/clients/timbolu-wt/attachment-hardening/apps/backend/test/integration/chat_attach_hardening_test.go:125
+        	Error:      	Should be true
+        	Test:       	TestHardeningFileTypeAllowlist
+        	Messages:   	exe: 201 {"success":true,"message":"file stored","data":{"id":"a72e3f21-dbcf-440f-b789-752522352867","filename":"x.exe","content_type":"application/x-msdownload","byte_size":72,"url":"/api/attachments/a72e3f21-dbcf-440f-b789-752522352867"}}
+--- FAIL: TestHardeningFileTypeAllowlist (0.32s)
+=== RUN   TestHardeningPruneCleansTheMessage
+    chat_attach_hardening_test.go:156: 
+        	Error Trace:	/workspace/clients/timbolu-wt/attachment-hardening/apps/backend/test/integration/chat_attach_hardening_test.go:156
+        	Error:      	Should be empty, but was [{35d5b847-9284-4dad-9ef3-3f299f56a900 538093bf-6877-4b8e-9b73-41ec9fe60de8 7fa8bf9b-70fd-476c-a762-544f58245125 attachments/workspaces/538093bf-6877-4b8e-9b73-41ec9fe60de8/objects/d88ec79a-0633-42a8-aceb-6effaed9079e/catatan.txt catatan.txt text/plain 4 sum 2026-10-16 11:31:32.151657 +0700 WIB}]
+        	Test:       	TestHardeningPruneCleansTheMessage
+        	Messages:   	messages.attachments must drop a pruned file
+--- FAIL: TestHardeningPruneCleansTheMessage (0.32s)
+FAIL
+FAIL	github.com/robzlabz/employeebot/apps/backend/test/integration	3.008s
+FAIL

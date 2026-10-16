@@ -238,14 +238,11 @@ func TestUploadWithoutAMessageOpensOne(t *testing.T) {
 	service := mocks.NewService(t)
 	id := identity{userID: uuid.New(), workspaceID: uuid.New()}
 	conversationID := uuid.New()
-	opened := messageFixture(conversationID)
+	attachment := chatdomain.Attachment{ID: uuid.New(), MessageID: uuid.New(), Filename: "a.txt"}
 
-	service.EXPECT().Send(mock.Anything, mock.Anything, mock.MatchedBy(func(req chatdomain.SendRequest) bool {
-		return req.ConversationID == conversationID && !req.Reply
-	})).Return(chatdomain.SendResult{Message: opened}, nil).Once()
 	service.EXPECT().Attach(mock.Anything, mock.Anything, mock.MatchedBy(func(req chatdomain.AttachRequest) bool {
-		return req.MessageID == opened.ID
-	}), mock.Anything).Return(chatdomain.Attachment{ID: uuid.New(), MessageID: opened.ID}, nil).Once()
+		return req.ConversationID == conversationID && req.MessageID == uuid.Nil
+	}), mock.Anything).Return(attachment, nil).Once()
 
 	app := newTestApp(t, service, id)
 

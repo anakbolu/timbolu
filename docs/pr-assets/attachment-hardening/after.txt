@@ -1,0 +1,52 @@
+$ (fix/attachment-hardening, perubahan belum di-commit saat dijalankan)
+$ go build ./...
+build OK
+$ go test ./test/integration/ -run 'TestHardening|TestAttach|TestDeletingOneFile|TestTheTypeAClient|TestRetention|TestErasing' -count=1 -v   (Postgres asli via testcontainers)
+=== RUN   TestHardeningFailedUploadLeavesNoMessage
+--- PASS: TestHardeningFailedUploadLeavesNoMessage (1.98s)
+=== RUN   TestHardeningFileTypeAllowlist
+--- PASS: TestHardeningFileTypeAllowlist (0.30s)
+=== RUN   TestHardeningPruneCleansTheMessage
+--- PASS: TestHardeningPruneCleansTheMessage (0.31s)
+=== RUN   TestAttachWithoutMessageShowsTheFile
+--- PASS: TestAttachWithoutMessageShowsTheFile (0.30s)
+=== RUN   TestAttachWithMessageShowsTheFile
+--- PASS: TestAttachWithMessageShowsTheFile (0.33s)
+=== RUN   TestDeletingOneFileKeepsTheOthers
+--- PASS: TestDeletingOneFileKeepsTheOthers (0.33s)
+=== RUN   TestTheTypeAClientClaimsIsNotTheTypeStored
+--- PASS: TestTheTypeAClientClaimsIsNotTheTypeStored (0.38s)
+=== RUN   TestAttachmentMetadataAndIsolation
+--- PASS: TestAttachmentMetadataAndIsolation (0.37s)
+=== RUN   TestAttachmentStorageKeysAreUnique
+--- PASS: TestAttachmentStorageKeysAreUnique (0.34s)
+=== RUN   TestErasingAWorkspaceLeavesNothingBehind
+--- PASS: TestErasingAWorkspaceLeavesNothingBehind (0.35s)
+PASS
+ok  	github.com/robzlabz/employeebot/apps/backend/test/integration	5.522s
+$ go test -count=1 ./internal/modules/chat/... ./internal/modules/retention/... ./internal/container/...
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain	0.025s
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/handler	0.021s
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/service	0.068s
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/retention/handler	0.004s
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/retention/service	0.004s
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/container	1.813s
+$ (packages/platform/config) go test -count=1 .
+ok  	github.com/robzlabz/employeebot/packages/platform/config	0.027s
+$ go test ./test/integration/ -run 'TestAnAged|TestASecondPass|TestAWorkspaceThatIsNotDue|TestTheNextPass|TestAnAttachmentInside|TestANewWorkspaceIsQueued' -count=1 -v   (retensi, Postgres asli)
+=== RUN   TestAnAgedStepLosesItsContentAndKeepsItsShape
+--- PASS: TestAnAgedStepLosesItsContentAndKeepsItsShape (1.77s)
+=== RUN   TestASecondPassOverTheSameWindowRemovesNothing
+--- PASS: TestASecondPassOverTheSameWindowRemovesNothing (0.29s)
+=== RUN   TestAWorkspaceThatIsNotDueIsNotTouched
+--- PASS: TestAWorkspaceThatIsNotDueIsNotTouched (0.27s)
+=== RUN   TestTheNextPassIsScheduledAndTheRunIsRecorded
+--- PASS: TestTheNextPassIsScheduledAndTheRunIsRecorded (0.34s)
+=== RUN   TestAnAgedAttachmentLeavesWithItsRowAndItsObject
+--- PASS: TestAnAgedAttachmentLeavesWithItsRowAndItsObject (0.33s)
+=== RUN   TestAnAttachmentInsideTheWindowIsLeftAlone
+--- PASS: TestAnAttachmentInsideTheWindowIsLeftAlone (0.35s)
+=== RUN   TestANewWorkspaceIsQueuedByTheDatabase
+--- PASS: TestANewWorkspaceIsQueuedByTheDatabase (0.28s)
+PASS
+ok  	github.com/robzlabz/employeebot/apps/backend/test/integration	4.073s

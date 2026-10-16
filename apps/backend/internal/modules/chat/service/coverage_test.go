@@ -124,7 +124,7 @@ func TestAttachmentMetadataIsReadable(t *testing.T) {
 	require.NoError(t, err)
 
 	attachment, err := h.service.Attach(context.Background(), h.scope, chatdomain.AttachRequest{
-		MessageID: sent.Message.ID, Filename: "a.txt", ContentType: "text/plain",
+		MessageID: sent.Message.ID, Filename: "a.txt",
 	}, []byte("a"))
 	require.NoError(t, err)
 

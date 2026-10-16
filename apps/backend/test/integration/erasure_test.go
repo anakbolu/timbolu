@@ -89,10 +89,9 @@ func (f *erasureFixture) fill(t *testing.T) []string {
 	require.NoError(t, err)
 
 	attachment, err := f.app.Services.Chat.Attach(ctx, chatScope, chatdomain.AttachRequest{
-		MessageID:   message.ID,
-		Filename:    "nota.pdf",
-		ContentType: "application/pdf",
-	}, []byte("isi nota pelanggan"))
+		MessageID: message.ID,
+		Filename:  "nota.pdf",
+	}, pdfOf("isi nota pelanggan"))
 	require.NoError(t, err)
 
 	// A task with recorded steps, which is the module's own data.

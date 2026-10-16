@@ -62,6 +62,11 @@ func (c *Container) openChat(_ context.Context, cfg *config.Config) error {
 		// only a write does, and that is the memory module's own problem.
 		Memory: c.memoryForChat(),
 		Logger: c.Logger,
+		// The allowlist is policy, so it comes from configuration; the service
+		// decides what the list may contain.
+		Config: chatservice.Config{
+			AttachmentAllowedExtensions: cfg.Storage.AttachmentAllowedExtensions,
+		},
 	}
 
 	if gateway != nil {

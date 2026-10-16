@@ -521,22 +521,139 @@ func (r *Repository) ListExpired(ctx context.Context, scope domain.Scope, olderT
 	return attachments, nil
 }
 
-// Delete removes one attachment's metadata row.
+// SaveWithNewMessage opens the message an upload carries and stores the file in it,
+// all in one transaction.
+//
+// The order inside the transaction is the order the keys demand: the message row
+// first, because the attachment row needs its id, then the row that records the
+// bytes, then the element that makes the message render it. Nothing is visible
+// between the steps — a client sees the message once, complete, with its file
+// already in it — which is what removes the empty bubble an upload used to open
+// before its bytes were known to be storable.
+func (r *Repository) SaveWithNewMessage(ctx context.Context, scope domain.Scope, message domain.Message, attachment domain.Attachment, content []byte) (domain.Message, domain.Attachment, error) {
+	blocks, err := domain.MarshalBlocks(message.Blocks)
+	if err != nil {
+		return domain.Message{}, domain.Attachment{}, err
+	}
+
+	var storedMessage domain.Message
+	var stored domain.Attachment
+
+	err = r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
+		row, err := queries.AppendMessage(ctx, sqlcgen.AppendMessageParams{
+			WorkspaceID:    scope.WorkspaceID,
+			ConversationID: message.ConversationID,
+			AuthorAgentID:  optionalUUID(message.AuthorAgentID),
+			AuthorUserID:   optionalUUID(message.AuthorUserID),
+			Blocks:         blocks,
+			// The column starts empty and the element is appended below, once the
+			// attachment row has the id the element carries.
+			Attachments:  []byte("[]"),
+			TaskID:       optionalUUID(message.TaskID),
+			Status:       statusOr(message.Status, domain.MessageComplete),
+			FinishReason: message.FinishReason,
+		})
+		if err != nil {
+			return translateWriteError(err, "append message")
+		}
+		if storedMessage, err = toMessage(row); err != nil {
+			return err
+		}
+
+		attachmentRow, err := queries.CreateAttachment(ctx, sqlcgen.CreateAttachmentParams{
+			WorkspaceID:    scope.WorkspaceID,
+			MessageID:      storedMessage.ID,
+			StorageKey:     attachment.StorageKey,
+			Filename:       attachment.Filename,
+			ContentType:    attachment.ContentType,
+			ByteSize:       int64(len(content)),
+			ChecksumSha256: attachment.ChecksumSHA256,
+		})
+		if err != nil {
+			return translateWriteError(err, "create attachment")
+		}
+
+		stored = toAttachment(attachmentRow)
+
+		element, err := marshalAttachment(stored)
+		if err != nil {
+			return err
+		}
+
+		filled, err := queries.AppendMessageAttachment(ctx, sqlcgen.AppendMessageAttachmentParams{
+			ID:          storedMessage.ID,
+			WorkspaceID: scope.WorkspaceID,
+			Attachment:  element,
+		})
+		if err != nil {
+			return fmt.Errorf("chat: append message attachment: %w", err)
+		}
+		if storedMessage, err = toMessage(filled); err != nil {
+			return err
+		}
+
+		if _, err := queries.TouchConversation(ctx, sqlcgen.TouchConversationParams{
+			ID: message.ConversationID, WorkspaceID: scope.WorkspaceID,
+		}); err != nil {
+			return fmt.Errorf("chat: touch conversation: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return domain.Message{}, domain.Attachment{}, err
+	}
+
+	return storedMessage, stored, nil
+}
+
+// Delete removes one attachment's row and the element it left in its message's read
+// model, in one transaction, and answers that message as it now reads.
+//
+// Both halves go together because they are two views of one fact: the row is the storage
+// record and the column is what a client renders, so a row removed alone leaves a file on
+// screen whose download is gone.
 //
 // A row that is already gone is not an error, for the same reason removing an object that is
 // absent is not: a retry after a partial failure has to converge rather than report a failure
-// that is really "this was already done".
-func (r *Repository) Delete(ctx context.Context, scope domain.Scope, id uuid.UUID) error {
-	return r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
-		if _, err := queries.DeleteAttachment(ctx, sqlcgen.DeleteAttachmentParams{
+// that is really "this was already done". The zero message comes back then, and the caller
+// publishes nothing.
+func (r *Repository) Delete(ctx context.Context, scope domain.Scope, id uuid.UUID) (domain.Message, error) {
+	var message domain.Message
+
+	err := r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
+		messageID, err := queries.DeleteAttachment(ctx, sqlcgen.DeleteAttachmentParams{
 			ID:          id,
 			WorkspaceID: scope.WorkspaceID,
-		}); err != nil {
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil
+			}
 			return fmt.Errorf("chat: delete attachment: %w", err)
 		}
 
-		return nil
+		row, err := queries.RemoveMessageAttachment(ctx, sqlcgen.RemoveMessageAttachmentParams{
+			ID:           messageID,
+			WorkspaceID:  scope.WorkspaceID,
+			AttachmentID: id.String(),
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				// The message went with the file, so there is no read model left to
+				// fix and nothing to publish.
+				return nil
+			}
+			return fmt.Errorf("chat: remove message attachment: %w", err)
+		}
+
+		message, err = toMessage(row)
+		return err
 	})
+	if err != nil {
+		return domain.Message{}, err
+	}
+
+	return message, nil
 }
 
 // AppendEvent writes one activity event and returns it with its assigned ID.

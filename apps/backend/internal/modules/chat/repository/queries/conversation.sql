@@ -187,9 +187,28 @@ WHERE workspace_id = $1 AND created_at < $2
 ORDER BY created_at
 LIMIT $3;
 
--- name: DeleteAttachment :execrows
+-- name: DeleteAttachment :one
+-- The row is the storage record, and it answers the message it belonged to so
+-- the read model can be fixed in the same transaction. A row that is not there
+-- is not an error: a retry after a partial failure has to converge.
 DELETE FROM message_attachments
-WHERE id = $1 AND workspace_id = $2;
+WHERE id = $1 AND workspace_id = $2
+RETURNING message_id;
+
+-- name: RemoveMessageAttachment :one
+-- Drops one element from a message's read model.
+--
+-- The element is matched by the id it carries, which is the key the encoder
+-- writes, rather than by position: the column is what a client renders, and a
+-- position that shifted since the read would remove the wrong file.
+UPDATE messages
+SET attachments = COALESCE((
+        SELECT jsonb_agg(element ORDER BY ordinality)
+        FROM jsonb_array_elements(COALESCE(attachments, '[]'::jsonb)) WITH ORDINALITY AS element_at(element, ordinality)
+        WHERE element_at.element->>'ID' <> sqlc.arg('attachment_id')::text
+    ), '[]'::jsonb)
+WHERE id = $1 AND workspace_id = $2
+RETURNING *;
 
 -- ------------------------------------------------------------ activity feed
 
