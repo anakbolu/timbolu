@@ -110,12 +110,18 @@ Delapan hal yang dibaca dari diagram itu:
 | `ANY` | `/v1/sessions/:bot_id/novnc/...` | — | `httputil.ReverseProxy` ke `http://<ip-sandbox>:<port-novnc>/` dengan prefix `/v1/sessions/:bot_id/novnc` dibuang; upgrade websocket didukung |
 
 **Setiap rute `/v1/*` butuh token.** `Authorization: Bearer <VCOMPUTER_CONTROL_TOKEN>`,
-dibandingkan constant-time; tanpa itu jawabannya `401 {"error":"unauthorized"}`. Control
-plane menolak start bila `VCOMPUTER_CONTROL_TOKEN` kosong, dan `/health` satu-satunya yang
-terbuka. Browser tidak bisa memasang header pada page load atau handshake websocket, jadi
-URL noVNC boleh membawa `?token=<t>` satu kali: token itu menukar dirinya dengan cookie
-`vc_token` (`HttpOnly`, `SameSite=Strict`, `Path=/v1/sessions/`), dan cookie itu diterima
-seperti bearer biasa setelahnya.
+dibandingkan constant-time; tanpa itu jawabannya `401`. Control plane menolak start bila
+`VCOMPUTER_CONTROL_TOKEN` kosong, dan `/health` satu-satunya yang terbuka. Browser tidak bisa
+memasang header pada page load atau handshake websocket, jadi URL noVNC boleh membawa
+`?token=<t>` satu kali: token itu menukar dirinya dengan cookie `vc_token` (`HttpOnly`,
+`SameSite=Strict`, `Path=/v1/sessions/`), dan cookie itu diterima seperti bearer biasa
+setelahnya.
+
+Dua `401` itu kalimat yang berbeda, karena keduanya kesalahan yang berbeda:
+`{"error":"a bearer token is required"}` bila tidak ada kredensial sama sekali, dan
+`{"error":"the token is not valid"}` bila kredensialnya ada tapi tidak cocok. Worker
+melaporkan kalimat itu apa adanya ke operator — token yang salah dilaporkan sebagai "token
+kosong" mengirim orang mencari variabel yang justru sudah diisi (isu #218).
 
 Status yang membawa arti: `400` input ditolak, `401` token tidak ada atau salah, `404`
 sesi tidak ada, `500`/`502` runtime gagal. Setiap rute di atas dilayani kedua runtime.
@@ -255,7 +261,14 @@ menyambungkannya:
 - `NewVComputerTasks(cfg, log)` membangun set activity. Alamat kosong berarti **tanpa klien**:
   setiap activity menjawab `domain.ErrNotConfigured`, bukan memanggil alamat yang tidak
   dimaksud. Satu baris `Info` dicatat saat start dan menyebut apakah control plane
-  terkonfigurasi — token tidak pernah masuk log.
+  terkonfigurasi — token tidak pernah masuk log. Alamat terisi **tanpa** token dicatat sebagai
+  `Warn` yang menyebut `VCOMPUTER_CONTROL_TOKEN` kosong dan bahwa setiap panggilan akan
+  dijawab `401`: kliennya tetap dibangun, jadi yang dilaporkan adalah penolakan control plane,
+  bukan "tidak terkonfigurasi" yang menyembunyikan variabel mana yang kurang.
+- Kesalahan konfigurasi (alamat kosong maupun token ditolak) dijawab activity sebagai
+  `temporal.NewNonRetryableApplicationError` bertipe `VComputerNotConfigured`, jadi run gagal
+  pada attempt pertama alih-alih mengirim header yang sama tiga kali. `ErrUnavailable`,
+  `ErrInvalidInput`, dan `ErrNoSession` tetap retryable.
 - `Container.openVComputer` memanggilnya saat assembly, dan tidak butuh database, Redis, atau
   klien Temporal: komputer bot tidak bergantung pada apa yang diingat deployment.
 - `RegisterVComputerTasks(w, c)` dipanggil dari `RegisterAgentTasks` **sebelum** cabang
