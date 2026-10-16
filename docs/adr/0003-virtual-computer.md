@@ -157,15 +157,58 @@ penyambungan ke gerbang approval adalah pekerjaan berikutnya, bukan sesuatu yang
   tanpa bukti tugas pelanggan yang gagal tanpa browser/terminal, Fase 2 tidak dimulai.
 
 ## 5. Dampak ke repositori
-
 - `docs/adr/0003-virtual-computer.md` — dokumen ini.
-- `apps/virtual-computer/README.md` — diagram arsitektur, daftar permukaan API, cara menjalankan PoC, dan daftar hal yang masih di-stub.
-- `apps/virtual-computer/sandbox/{Dockerfile,entrypoint.sh}` — image: Xvfb → fluxbox → x11vnc → noVNC → Chromium.
-- `apps/virtual-computer/control/` — control plane (modul Go terpisah, hanya stdlib) plus `Dockerfile`-nya: `Runtime` dengan `InMemoryRuntime` (stub, dipakai uji) dan `DockerRuntime` (kerangka, TODO).
-- `apps/virtual-computer/docker-compose.poc.yml` — dua service PoC: `vcomputer-control` + `vcomputer-sandbox-example`, volume `bot-session-demo`.
-- `apps/virtual-computer/demo/index.html` — halaman status statis untuk bukti visual.
-- `apps/backend/internal/modules/vcomputer/{domain,service,temporal}` — port `ComputerUseClient`, klien HTTP, activity stub. **Belum di-wire.**
-- `go.work` — menambahkan modul control supaya `go test` di dalamnya jalan; modul backend tidak berubah.
+- `apps/virtual-computer/README.md` — diagram arsitektur, daftar permukaan API + aturan token, tabel environment, cara menjalankan (uji modul dan `scripts/e2e.sh`), trade-off `docker.sock`, dan daftar hal yang masih di-stub.
+- `apps/virtual-computer/sandbox/{Dockerfile,entrypoint.sh}` — image: Xvfb → fluxbox → x11vnc → noVNC → Chromium, plus `socat` yang mempublikasikan CDP loopback Chromium ke alamat container.
+- `apps/virtual-computer/control/` — control plane (modul Go terpisah, hanya stdlib) plus `Dockerfile`-nya (`docker:27-cli`, berjalan sebagai root dengan socket host ter-mount): `Runtime` dengan `InMemoryRuntime` (tanpa Docker, dipakai uji) dan `DockerRuntime` (nyata, lewat CLI docker).
+- `apps/virtual-computer/docker-compose.poc.yml` — service `control` (dua jaringan, port hanya di loopback) dan `fixture` (`busybox httpd` di jaringan internal), plus service `vcomputer-sandbox` sebagai target build di profil `build`. Sandbox per bot tidak ada di file ini: runtime yang membuatnya, dengan volume per bot.
+- `apps/virtual-computer/fixture/index.html` — halaman uji yang bisa dibuka browser sandbox tanpa internet.
+- `apps/virtual-computer/scripts/e2e.sh` — checklist end-to-end: build, naikkan stack, periksa, tulis bukti, cetak PASS/FAIL.
+- `apps/virtual-computer/demo/index.html` — halaman statis yang menyematkan noVNC asli lewat proxy control plane; tanpa mock desktop.
+- `apps/backend/internal/modules/vcomputer/{domain,service,temporal}` — port `ComputerUseClient` (termasuk `Navigate`), klien HTTP dengan bearer token, dan activity-nya. **Belum di-wire.**
+- `go.work` — memuat modul control supaya `go test` di dalamnya jalan dari checkout; modul produk tidak berubah.
+
+## Revisi 2026-10-16 setelah QA PR #178
+
+QA menolak PR #178 karena PoC-nya belum end-to-end: permukaan API-nya ada, mesinnya belum.
+Revisi ini mencatat apa yang berubah; keputusan di atas tetap berlaku kecuali di bagian yang
+disebut di sini.
+
+- **`DockerRuntime` benar-benar diimplementasikan** lewat CLI docker (`volume create`,
+  `run`, `exec`, `inspect`, `stop`), argv tanpa shell, binary dari `VCOMPUTER_DOCKER_BIN`.
+  Tidak ada lagi jawaban "belum diimplementasikan": setiap rute dilayani setiap runtime.
+- **Aksinya nyata**: `screenshot` menangkap Xvfb dengan `scrot` di dalam container,
+  `click`/`type` lewat `xdotool`, `exec` menjalankan perintahnya dan mengembalikan
+  stdout/stderr/exit code (`stub=false`), dan `navigate` memanggil `PUT /json/new` ke CDP.
+- **CDP bisa dijangkau**: Chromium baru mengikat `--remote-debugging-port` ke `127.0.0.1`
+  dan mengabaikan `--remote-debugging-address=0.0.0.0`, jadi entrypoint menjalankan
+  `socat TCP-LISTEN:${CDP_PORT},fork,reuseaddr,bind=0.0.0.0` menuju `127.0.0.1:9222`, dan
+  control plane menyapa IP container (Chromium menolak Host header non-IP). `cdp_url`
+  karenanya `http://<ip>:<port>`, bukan `localhost`.
+- **Jaringan internal**: `vcomputer-internal` (`internal: true`) hanya memuat sandbox dan
+  satu service fixture — tanpa egress, tanpa rute dari host. Control plane satu-satunya
+  anggota kedua jaringan (`vcomputer-internal` + `vcomputer-edge`).
+- **noVNC lewat proxy**: `/v1/sessions/{bot}/novnc/...` diteruskan `httputil.ReverseProxy`
+  ke `http://<ip>:<port-novnc>/` berikut upgrade websocket, sehingga browser hanya perlu
+  menjangkau control plane.
+- **Token wajib**: `VCOMPUTER_CONTROL_TOKEN` tidak punya default dan control plane menolak
+  start tanpa itu; setiap rute `/v1/*` butuh bearer (perbandingan constant-time), dan URL
+  noVNC boleh menukar `?token=` dengan cookie `vc_token` (`HttpOnly`, `SameSite=Strict`,
+  `Path=/v1/sessions/`). `/health` tetap terbuka.
+- **Port per sandbox, bukan `6080` hardcoded**: `VCOMPUTER_SANDBOX_NOVNC_PORT` /
+  `VCOMPUTER_SANDBOX_CDP_PORT` dikirim ke setiap container. Sandbox tidak pernah di-`-p`,
+  dan hanya control plane yang dipublikasikan, itupun di loopback.
+- **Trade-off `/var/run/docker.sock` diterima untuk PoC**: container control me-mount socket
+  host dan berjalan sebagai root, yang setara akses root di host; itu lubang terbesar di
+  PoC ini dan dinyatakan terbuka di README. Jalur produksinya tetap klien Docker API di node
+  sandbox — tidak pernah socket di dalam container (riset §4.2).
+- **`go.work` memuat modul control**, jadi ujinya jalan dari checkout; modul produk
+  tidak berubah.
+
+Catatan supersesi: tabel di §3.2 masih menyebut CDP "disiapkan, belum dipakai" dan noVNC di
+port `6080`; baris "Jaringan" di Ringkasan dan §3.6 menyebut control plane hanya di jaringan
+internal dan tidak pernah dipublikasikan. Revisi ini yang berlaku untuk CDP, port per sandbox,
+dan pembagian dua jaringan — control plane tetap hanya di `127.0.0.1` pada host.
 
 ## Keputusan yang tetap terbuka
 

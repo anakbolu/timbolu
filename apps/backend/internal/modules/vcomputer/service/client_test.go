@@ -16,9 +16,14 @@ import (
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/domain"
 )
 
+// fakeToken is the shared secret the fake accepts, standing in for the value of
+// VCOMPUTER_CONTROL_TOKEN on the control plane's side.
+const fakeToken = "test-token"
+
 // fakeControl is the control plane as this client sees it: a few routes that record
 // what arrived and answer what the real one answers. It is a fake of the *contract*,
-// not of the implementation, so a change in the client's paths or bodies fails here.
+// not of the implementation, so a change in the client's paths or bodies fails here —
+// and like the real one it refuses every /v1 route that arrives without the bearer.
 type fakeControl struct {
 	*httptest.Server
 	requests []recorded
@@ -28,6 +33,9 @@ type recorded struct {
 	method string
 	path   string
 	body   map[string]any
+	// authorization is the header as it arrived. It is recorded rather than only
+	// checked so a test can show which secret the client sent.
+	authorization string
 }
 
 func newFakeControl(t *testing.T) *fakeControl {
@@ -66,15 +74,20 @@ func newFakeControl(t *testing.T) *fakeControl {
 		fake.record(t, r)
 		writeJSON(w, http.StatusOK, map[string]any{"typed": true})
 	})
+	mux.HandleFunc("POST /v1/sessions/{bot_id}/navigate", func(w http.ResponseWriter, r *http.Request) {
+		body := fake.record(t, r)
+		target, _ := body["url"].(string)
+		if target == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a url is required"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"url": target})
+	})
 	mux.HandleFunc("POST /v1/sessions/{bot_id}/exec", func(w http.ResponseWriter, r *http.Request) {
 		body := fake.record(t, r)
 		command, _ := body["command"].(string)
 		if command == "" {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a command is required"})
-			return
-		}
-		if command == "boom" {
-			writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "the docker runtime is a skeleton"})
 			return
 		}
 		if command == "gone" {
@@ -84,7 +97,18 @@ func newFakeControl(t *testing.T) *fakeControl {
 		writeJSON(w, http.StatusOK, domain.ExecResult{Command: command, Stdout: "stub runtime: not executed", Stub: true})
 	})
 
-	fake.Server = httptest.NewServer(mux)
+	// Every /v1 route needs the shared secret, exactly as the control plane does. The
+	// check sits in front of the mux rather than in each handler so that a client which
+	// forgot the header fails every test here, not only the one that looks for it.
+	authorized := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+fakeToken {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
+
+	fake.Server = httptest.NewServer(authorized)
 	t.Cleanup(fake.Close)
 	return fake
 }
@@ -101,7 +125,12 @@ func (f *fakeControl) record(t *testing.T, r *http.Request) map[string]any {
 			body = map[string]any{}
 		}
 	}
-	f.requests = append(f.requests, recorded{method: r.Method, path: r.URL.Path, body: body})
+	f.requests = append(f.requests, recorded{
+		method:        r.Method,
+		path:          r.URL.Path,
+		body:          body,
+		authorization: r.Header.Get("Authorization"),
+	})
 	return body
 }
 
@@ -133,7 +162,7 @@ func pngBytes(t *testing.T) []byte {
 // before every task, including the body the control plane expects.
 func TestEnsureSessionSendsTheBotIDAndReadsTheSession(t *testing.T) {
 	fake := newFakeControl(t)
-	client := New(fake.URL, time.Second)
+	client := New(fake.URL, fakeToken, time.Second)
 
 	session, err := client.EnsureSession(context.Background(), "bot-a")
 	if err != nil {
@@ -162,7 +191,7 @@ func TestEnsureSessionSendsTheBotIDAndReadsTheSession(t *testing.T) {
 // client: the answer is an image, and it must survive the trip byte for byte.
 func TestScreenshotPassesBytesThrough(t *testing.T) {
 	fake := newFakeControl(t)
-	client := New(fake.URL, time.Second)
+	client := New(fake.URL, fakeToken, time.Second)
 
 	captured, err := client.Screenshot(context.Background(), "bot-a")
 	if err != nil {
@@ -186,7 +215,7 @@ func TestScreenshotPassesBytesThrough(t *testing.T) {
 // whose answer is a struct rather than an acknowledgement.
 func TestClickTypeAndExecCarryTheirBodies(t *testing.T) {
 	fake := newFakeControl(t)
-	client := New(fake.URL, time.Second)
+	client := New(fake.URL, fakeToken, time.Second)
 	ctx := context.Background()
 
 	if err := client.Click(ctx, "bot-a", 640, 400); err != nil {
@@ -224,10 +253,65 @@ func TestClickTypeAndExecCarryTheirBodies(t *testing.T) {
 	}
 }
 
+// TestNavigateCarriesTheURL covers the one call that points the browser somewhere: the
+// URL is the whole payload, and whether its scheme is allowed is the control plane's
+// decision rather than this client's.
+func TestNavigateCarriesTheURL(t *testing.T) {
+	fake := newFakeControl(t)
+	client := New(fake.URL, fakeToken, time.Second)
+
+	if err := client.Navigate(context.Background(), "bot-a", "http://vcomputer-fixture:8080/"); err != nil {
+		t.Fatalf("navigate: %v", err)
+	}
+
+	if len(fake.requests) != 1 {
+		t.Fatalf("requests = %+v, want one", fake.requests)
+	}
+	sent := fake.requests[0]
+	if sent.method != http.MethodPost || sent.path != "/v1/sessions/bot-a/navigate" {
+		t.Fatalf("request = %+v, want POST /v1/sessions/bot-a/navigate", sent)
+	}
+	if sent.body["url"] != "http://vcomputer-fixture:8080/" {
+		t.Fatalf("body = %+v, want the url that was asked for", sent.body)
+	}
+}
+
+// TestEveryRequestCarriesTheBearerToken is the seam the control plane closes: it
+// refuses every /v1 route without the shared secret, so a client that forgot the
+// header would fail every call at once. The screenshot is in the list on purpose —
+// it builds its own request instead of going through do.
+func TestEveryRequestCarriesTheBearerToken(t *testing.T) {
+	fake := newFakeControl(t)
+	client := New(fake.URL, fakeToken, time.Second)
+	ctx := context.Background()
+
+	if _, err := client.EnsureSession(ctx, "bot-a"); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	if _, err := client.Screenshot(ctx, "bot-a"); err != nil {
+		t.Fatalf("screenshot: %v", err)
+	}
+	if err := client.Navigate(ctx, "bot-a", "http://vcomputer-fixture:8080/"); err != nil {
+		t.Fatalf("navigate: %v", err)
+	}
+	if err := client.StopSession(ctx, "bot-a"); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+
+	if len(fake.requests) != 4 {
+		t.Fatalf("requests = %+v, want four", fake.requests)
+	}
+	for _, sent := range fake.requests {
+		if sent.authorization != "Bearer "+fakeToken {
+			t.Fatalf("%s %s: Authorization = %q, want the bearer token", sent.method, sent.path, sent.authorization)
+		}
+	}
+}
+
 // TestStopSessionUsesDelete covers the half of the lifecycle that ends a session.
 func TestStopSessionUsesDelete(t *testing.T) {
 	fake := newFakeControl(t)
-	client := New(fake.URL, time.Second)
+	client := New(fake.URL, fakeToken, time.Second)
 
 	if err := client.StopSession(context.Background(), "bot-a"); err != nil {
 		t.Fatalf("stop: %v", err)
@@ -238,12 +322,12 @@ func TestStopSessionUsesDelete(t *testing.T) {
 }
 
 // TestStatusCodesBecomeSentinels is the mapping the caller branches on: a missing
-// session is created, a skeleton runtime is a configuration mistake, and an
-// unreachable control plane is worth retrying. Flattening them into one error is how
-// a task retries something that will never succeed.
+// session is created, a refused token is a configuration mistake, and a request the
+// control plane would not take is the caller's own fault. Flattening them into one
+// error is how a task retries something that will never succeed.
 func TestStatusCodesBecomeSentinels(t *testing.T) {
 	fake := newFakeControl(t)
-	client := New(fake.URL, time.Second)
+	client := New(fake.URL, fakeToken, time.Second)
 	ctx := context.Background()
 
 	if _, err := client.Exec(ctx, "bot-a", ""); !errors.Is(err, domain.ErrInvalidInput) {
@@ -252,13 +336,19 @@ func TestStatusCodesBecomeSentinels(t *testing.T) {
 	if _, err := client.Exec(ctx, "bot-a", "gone"); !errors.Is(err, domain.ErrNoSession) {
 		t.Fatalf("missing session: err = %v, want ErrNoSession", err)
 	}
-	if _, err := client.Exec(ctx, "bot-a", "boom"); !errors.Is(err, domain.ErrNotImplemented) {
-		t.Fatalf("skeleton runtime: err = %v, want ErrNotImplemented", err)
+
+	// A wrong token is a deployment mistake, not a transient failure: the control plane
+	// refuses it exactly as it refuses a missing one, and retrying would send the same
+	// rejected header again.
+	misconfigured := New(fake.URL, "not-the-token", time.Second)
+	_, err := misconfigured.EnsureSession(ctx, "bot-a")
+	if !errors.Is(err, domain.ErrNotConfigured) {
+		t.Fatalf("refused token: err = %v, want ErrNotConfigured", err)
 	}
 
 	// A refusal the control plane wrote is carried through, not replaced: the caller
 	// needs the sentence to show a person.
-	if _, err := client.Exec(ctx, "bot-a", "boom"); !bytes.Contains([]byte(err.Error()), []byte("skeleton")) {
+	if !bytes.Contains([]byte(err.Error()), []byte("unauthorized")) {
 		t.Fatalf("err = %v, want the control plane's message", err)
 	}
 }
@@ -270,7 +360,7 @@ func TestUnreachableControlPlaneIsRetryable(t *testing.T) {
 	url := fake.URL
 	fake.Close()
 
-	client := New(url, time.Second)
+	client := New(url, fakeToken, time.Second)
 	if _, err := client.EnsureSession(context.Background(), "bot-a"); !errors.Is(err, domain.ErrUnavailable) {
 		t.Fatalf("err = %v, want ErrUnavailable", err)
 	}
@@ -280,7 +370,7 @@ func TestUnreachableControlPlaneIsRetryable(t *testing.T) {
 // must be told so, and it must not be told by a panic or a request to a URL nobody
 // meant.
 func TestUnconfiguredClientRefuses(t *testing.T) {
-	client := New("", time.Second)
+	client := New("", fakeToken, time.Second)
 
 	if _, err := client.EnsureSession(context.Background(), "bot-a"); !errors.Is(err, domain.ErrNotConfigured) {
 		t.Fatalf("ensure: err = %v, want ErrNotConfigured", err)
@@ -290,5 +380,8 @@ func TestUnconfiguredClientRefuses(t *testing.T) {
 	}
 	if err := client.Click(context.Background(), "bot-a", 1, 2); !errors.Is(err, domain.ErrNotConfigured) {
 		t.Fatalf("click: err = %v, want ErrNotConfigured", err)
+	}
+	if err := client.Navigate(context.Background(), "bot-a", "http://example.com/"); !errors.Is(err, domain.ErrNotConfigured) {
+		t.Fatalf("navigate: err = %v, want ErrNotConfigured", err)
 	}
 }

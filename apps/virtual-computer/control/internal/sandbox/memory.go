@@ -12,15 +12,15 @@ import (
 	"time"
 )
 
-// InMemoryRuntime is the runtime the PoC actually runs: it holds the session
-// record, answers a generated screenshot, and writes down every action instead of
-// performing it.
+// InMemoryRuntime is the runtime the PoC runs with no Docker at all: it holds the
+// session record, answers a generated screenshot, and writes down every action
+// instead of performing it.
 //
 // It is not a mock for the sake of tests. It is the shape a caller can be built
-// against before a container exists: the API surface, the session lifecycle, and
-// the Temporal activities are all real, and the only thing missing is the machine.
-// It is also what makes the PoC runnable on a laptop with no Docker, which is how
-// the HTTP surface gets verified at all.
+// against without a container: the API surface, the session lifecycle, and the
+// Temporal activities are all real, and the only thing missing is the machine. It
+// is also what makes the HTTP surface testable in `go test` on any machine, which
+// is how the surface is verified without Docker.
 type InMemoryRuntime struct {
 	mu       sync.Mutex
 	sessions map[string]*record
@@ -66,8 +66,8 @@ func (r *InMemoryRuntime) Ensure(_ context.Context, botID string) (Session, erro
 			BotID:     id,
 			State:     StateRunning,
 			Runtime:   "memory",
-			NoVNCURL:  novncURL(id),
-			CDPURL:    cdpURL(id),
+			NoVNCURL:  NoVNCPath(id),
+			CDPURL:    sandboxURL(containerName(id), DefaultCDPPort),
 			Volume:    volumeName(id),
 			CreatedAt: now,
 		}}
@@ -171,9 +171,53 @@ func (r *InMemoryRuntime) Type(_ context.Context, botID string, text string) err
 	return nil
 }
 
+// Navigate records the URL. No browser exists here, so the scheme rule is the
+// whole implementation: it is checked in the same place and with the same rule the
+// docker runtime applies before it hands a URL to Chromium.
+func (r *InMemoryRuntime) Navigate(_ context.Context, botID string, targetURL string) error {
+	id, err := cleanBotID(botID)
+	if err != nil {
+		return err
+	}
+	target, err := cleanURL(targetURL)
+	if err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	rec, ok := r.sessions[id]
+	if !ok {
+		return ErrNoSession
+	}
+	r.touch(rec, Action{Kind: "navigate", Detail: target})
+	return nil
+}
+
+// NoVNCTarget is where the control plane's noVNC proxy forwards to. The stub owns
+// no container, so the name it would have had is what it answers with: the proxy
+// then fails to reach it, which is the honest answer for a session that has no
+// desktop behind it.
+func (r *InMemoryRuntime) NoVNCTarget(_ context.Context, botID string) (string, error) {
+	id, err := cleanBotID(botID)
+	if err != nil {
+		return "", err
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.sessions[id]; !ok {
+		return "", ErrNoSession
+	}
+	return sandboxURL(containerName(id), DefaultNOVNCPort), nil
+}
+
 // Exec echoes the command. It never runs it, on the host or anywhere else: the
 // stub exists to show the answer shape, and a PoC that ran arbitrary commands would
 // be the exact thing riset §5.1 says must not exist without a gate in front of it.
+// The docker runtime is the one that really runs it, and it reports Stub=false.
 func (r *InMemoryRuntime) Exec(_ context.Context, botID string, command string) (ExecResult, error) {
 	id, err := cleanBotID(botID)
 	if err != nil {
@@ -200,9 +244,8 @@ func (r *InMemoryRuntime) Exec(_ context.Context, botID string, command string) 
 	}, nil
 }
 
-// Actions returns what was done to a session, which is how a test and the demo page
-// see that a call arrived. It is not part of Runtime: the Docker runtime will not
-// have it.
+// Actions returns what was done to a session, which is how a test sees that a call
+// arrived. It is not part of Runtime: the docker runtime has no such record.
 func (r *InMemoryRuntime) Actions(botID string) []Action {
 	// The id is trimmed the same way Ensure trims it: a caller that asked for
 	// " demo-bot " got a session for "demo-bot", and looking it up untrimmed would
@@ -227,26 +270,6 @@ func (r *InMemoryRuntime) touch(rec *record, action Action) {
 	rec.actions = append(rec.actions, action)
 	rec.session.LastUsedAt = action.At
 }
-
-// The three names a sandbox is reachable by. They are written here rather than in
-// DockerRuntime because they are part of what a caller is told, not of how the
-// container is made: the Docker runtime must answer the same strings.
-
-// novncURL is where a person watches the desktop.
-func novncURL(botID string) string {
-	return fmt.Sprintf("http://%s:6080/vnc.html?autoconnect=1&resize=scale", containerName(botID))
-}
-
-// cdpURL is Chromium's DevTools endpoint inside the sandbox network.
-func cdpURL(botID string) string {
-	return fmt.Sprintf("http://%s:9222", containerName(botID))
-}
-
-// containerName and volumeName derive both names from the bot id. That is why the
-// id is validated before it gets here: these strings end up in a `docker create`
-// command line.
-func containerName(botID string) string { return "vcomputer-" + botID }
-func volumeName(botID string) string    { return "vcomputer-" + botID + "-home" }
 
 // The stub desktop: a dark screen, a window with a title bar and three dots, a few
 // content bars, a taskbar, and a cursor cross. Drawn in code so the repository

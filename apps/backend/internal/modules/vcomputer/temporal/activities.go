@@ -17,8 +17,9 @@
 //
 // The activities are named after the control plane's routes rather than after the
 // tools a model sees. Tools carry labels and grants (docs/riset-microvm.md §5.1);
-// these are the mechanics underneath them, and one tool call may become more than
-// one activity.
+// these are the mechanics underneath them — Navigate is the one that points the
+// browser somewhere, Click and Type are the input a page receives, Exec is the one
+// that is not a browser at all — and one tool call may become more than one activity.
 package temporal
 
 import (
@@ -70,6 +71,14 @@ type ClickRequest struct {
 type TypeRequest struct {
 	BotID string `json:"bot_id"`
 	Text  string `json:"text"`
+}
+
+// NavigateRequest is one URL. The URL is the only payload in this package that a
+// model writes in full, which is why the control plane — not this layer — is what
+// decides whether its scheme is one the browser may be pointed at.
+type NavigateRequest struct {
+	BotID string `json:"bot_id"`
+	URL   string `json:"url"`
 }
 
 // ExecRequest is one command. It is the request that must never reach this activity
@@ -141,12 +150,24 @@ func (a *Activities) Type(ctx context.Context, request TypeRequest) error {
 	return a.client().Type(ctx, request.BotID, request.Text)
 }
 
+// Navigate points the browser at a page.
+//
+// It is the activity a model reaches for first, and the one whose URL decides whether
+// the task is reading a page or writing to a third party's
+// (docs/riset-microvm.md §5.1): the control plane refuses a scheme it does not accept,
+// and the approval gate is what decided the call was allowed at all.
+func (a *Activities) Navigate(ctx context.Context, request NavigateRequest) error {
+	return a.client().Navigate(ctx, request.BotID, request.URL)
+}
+
 // Exec runs one command inside the sandbox and answers what it printed.
 //
-// The PoC's control plane echoes the command with `stub: true` instead of running
-// it. A caller must read that field rather than the exit code: a stub that returned
-// exit 0 with no output would look like a command that succeeded and printed
-// nothing.
+// Whether it really ran is in the answer's `stub` field, and a caller has to read that
+// field rather than the exit code: the docker runtime executes for real (`stub: false`),
+// while the memory runtime the control plane runs in tests echoes the command
+// (`stub: true`) and answers exit 0 with no output. The exit code alone cannot tell
+// those apart, and a stub that looked like a successful command would reach a task
+// summary as "nothing to report" instead of as a bug.
 func (a *Activities) Exec(ctx context.Context, request ExecRequest) (domain.ExecResult, error) {
 	return a.client().Exec(ctx, request.BotID, request.Command)
 }
@@ -178,6 +199,8 @@ func (unconfigured) Screenshot(context.Context, string) ([]byte, error) {
 func (unconfigured) Click(context.Context, string, int, int) error { return domain.ErrNotConfigured }
 
 func (unconfigured) Type(context.Context, string, string) error { return domain.ErrNotConfigured }
+
+func (unconfigured) Navigate(context.Context, string, string) error { return domain.ErrNotConfigured }
 
 func (unconfigured) Exec(context.Context, string, string) (domain.ExecResult, error) {
 	return domain.ExecResult{}, domain.ErrNotConfigured

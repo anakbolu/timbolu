@@ -2,17 +2,23 @@
 // computer.
 //
 // It is one small HTTP process with one job: hold the session lifecycle and the
-// four desktop actions a model can ask for — screenshot, click, type, exec — and
-// answer them over an internal address the Temporal worker reaches. It is a
+// desktop actions a model can ask for — screenshot, click, type, navigate, exec —
+// and answer them over an address the Temporal worker and a browser reach. It is a
 // separate module from apps/backend on purpose: the backend's build must not
 // change because a PoC exists (docs/adr/0003-virtual-computer.md §3.2), and this
 // process has no Temporal, no Postgres, and no product code in it.
 //
-// The PoC runs the in-memory runtime by default, so the process starts on a laptop
-// with no Docker and answers real HTTP. `-runtime docker` selects the skeleton that
-// documents the commands it will run and refuses to pretend otherwise.
+// Two runtimes, one surface. `-runtime memory` answers without Docker and records
+// what it was asked to do, which is how the surface is tested and how the process
+// starts on a laptop. `-runtime docker` runs the real sandbox containers through the
+// docker CLI, which is the configuration the compose file ships.
 //
-// Run: go run . -addr :8090
+// The control plane can start a sandbox and run a command inside it, so it is not
+// open: VCOMPUTER_CONTROL_TOKEN is required, and the process refuses to start
+// without it rather than coming up as an unauthenticated way to reach every bot's
+// desktop. Only /health is answered without it.
+//
+// Run: VCOMPUTER_CONTROL_TOKEN=... go run . -runtime docker
 package main
 
 import (
@@ -42,9 +48,14 @@ func main() {
 
 func run() error {
 	addr := flag.String("addr", defaultAddr(), "listen address; keep it on the internal network")
-	runtimeName := flag.String("runtime", defaultRuntime(), "sandbox runtime: memory (PoC stub) or docker (skeleton)")
+	runtimeName := flag.String("runtime", defaultRuntime(), "sandbox runtime: docker (real containers) or memory (records actions, needs no Docker)")
 	shutdownGrace := flag.Duration("shutdown-grace", 5*time.Second, "how long to let in-flight requests finish on SIGTERM")
 	flag.Parse()
+
+	token := strings.TrimSpace(os.Getenv("VCOMPUTER_CONTROL_TOKEN"))
+	if !httpapi.ValidToken(token) {
+		return errors.New("VCOMPUTER_CONTROL_TOKEN is required: it is the only thing between the network and every bot's desktop")
+	}
 
 	runtime, err := newRuntime(*runtimeName)
 	if err != nil {
@@ -54,7 +65,7 @@ func run() error {
 	logger := log.New(os.Stderr, "vcomputer-control ", log.LstdFlags|log.Lmsgprefix)
 	server := &http.Server{
 		Addr:              *addr,
-		Handler:           httpapi.New(runtime, logger),
+		Handler:           httpapi.New(runtime, logger, httpapi.WithToken(token)),
 		ReadHeaderTimeout: 10 * time.Second,
 		// No write timeout: a screenshot of a real desktop can take longer than any
 		// fixed deadline that would be safe for the other routes, and the PoC would
@@ -96,8 +107,12 @@ func run() error {
 	return <-errs
 }
 
-// newRuntime picks the implementation. The default is the stub: a PoC that needs a
-// Docker socket to start is a PoC nobody runs.
+// newRuntime picks the implementation. Both are real: the memory runtime answers the
+// same surface without a container, which is what makes the surface testable on any
+// machine, and the docker runtime runs the sandbox the compose file builds.
+//
+// The docker runtime reads its own configuration (image, network, ports, docker
+// binary, exec timeout) from the environment, so there is nothing to pass here.
 func newRuntime(name string) (sandbox.Runtime, error) {
 	switch strings.TrimSpace(strings.ToLower(name)) {
 	case "", "memory", "inmemory", "in-memory":

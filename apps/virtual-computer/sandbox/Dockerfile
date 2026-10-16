@@ -1,13 +1,16 @@
-# Sandbox desktop for the Bolu virtual computer (PoC skeleton).
+# Sandbox desktop for the Bolu virtual computer (PoC).
 #
-# One long-lived container per workspace holds an X server, a window manager, a
-# VNC bridge and a Chromium browser. The control plane is a separate Go service:
-# it starts this container, mounts the session volume and forwards the noVNC
-# port. No secret is ever baked into the image; the control plane injects what
-# the session needs at runtime.
+# One container per bot holds an X server, a window manager, a VNC bridge, a
+# Chromium browser, and the tools that drive them: `scrot` for the screenshot,
+# `xdotool` for the click and the typing. The control plane is a separate Go
+# service: it creates this container, mounts the session volume, runs those
+# tools through `docker exec`, and proxies noVNC. No secret is ever baked into
+# the image; the control plane injects what the session needs at runtime.
 #
 # The image only ships the pieces; the startup order lives in entrypoint.sh and
-# is fixed: Xvfb -> fluxbox -> x11vnc -> noVNC (websockify) -> Chromium.
+# is fixed: Xvfb -> fluxbox -> x11vnc -> noVNC (websockify) -> Chromium ->
+# socat (which exposes Chromium's loopback DevTools port on the container's
+# address).
 #
 # Isolation rules from docs/riset-microvm.md apply here too: no --privileged,
 # no /dev/kvm, no Docker socket, and the browser runs as a non-root user. The
@@ -29,7 +32,12 @@ FROM debian:bookworm-slim
 #                           entrypoint.sh serves) and /usr/bin/websockify comes
 #                           from the python3-websockify dependency that the
 #                           websockify package pulls in.
-# - chromium              : the browser Bolu actually drives (CDP on 9222)
+# - chromium              : the browser Bolu actually drives (CDP on 127.0.0.1)
+# - scrot, xdotool        : capture the display, and move/click/type on it
+# - socat                 : exposes Chromium's loopback CDP port on the
+#                           container's own address, which is the only way the
+#                           control plane can reach it (new Chromium ignores
+#                           --remote-debugging-address=0.0.0.0)
 # - fluxbox               : tiny window manager, so Chromium gets a real frame
 # - fonts-dejavu-core, fonts-liberation : without fonts, pages render as boxes
 # - procps, curl          : process tools and the healthcheck probe
@@ -48,6 +56,9 @@ RUN apt-get update \
       fonts-liberation \
       procps \
       curl \
+      scrot \
+      xdotool \
+      socat \
       ca-certificates \
       tini \
  && rm -rf /var/lib/apt/lists/*
@@ -58,21 +69,29 @@ RUN groupadd --gid 1000 bolu \
  && useradd --uid 1000 --gid 1000 --create-home --home-dir /home/bolu --shell /bin/bash bolu
 
 # The desktop contract the control plane relies on: one display, one geometry,
-# three ports. entrypoint.sh reads these instead of hardcoding values.
+# four ports. entrypoint.sh reads these instead of hardcoding values, and the
+# control plane passes NOVNC_PORT, CDP_PORT and SCREEN_GEOMETRY per container
+# (docker-compose.poc.yml, VCOMPUTER_SANDBOX_*).
+#
+# CDP_PORT is the port socat listens on, on the container's address: it is what
+# the control plane builds Session.CDPURL from. CDP_LOCAL_PORT is where Chromium
+# itself listens, on loopback only.
 ENV DISPLAY=:99 \
     SCREEN_GEOMETRY=1280x800x24 \
     VNC_PORT=5900 \
     NOVNC_PORT=6080 \
-    CDP_PORT=9222 \
+    CDP_PORT=9223 \
+    CDP_LOCAL_PORT=9222 \
     HOME=/home/bolu
 
-# 6080 is the only port the control plane should publish: it serves noVNC over
-# HTTP, and noVNC reaches the X display through websockify. 5900 is the raw VNC
-# port and stays internal to the Docker network, so it is never exposed to the
-# outside. 9222 is a stub for the Chromium DevTools protocol (CDP) endpoint the
-# control plane will use later to drive the browser without screenshots; it is
-# documented here but not meant to be published either.
-EXPOSE 6080 5900 9222
+# Documentation only: a sandbox container is never published, and the control
+# plane reaches noVNC and CDP over the internal network instead — the host has no
+# route to either (docs/adr/0003-virtual-computer.md §3.6). Both numbers are the
+# defaults of the NOVNC_PORT/CDP_PORT contract above, which the runtime overrides
+# per session (VCOMPUTER_SANDBOX_NOVNC_PORT / VCOMPUTER_SANDBOX_CDP_PORT) and
+# which the control plane turns into Session.NoVNCURL and Session.CDPURL. 5900 is
+# raw VNC and stays inside the container network too.
+EXPOSE 6080 9223
 
 # Persistent session state: the Chromium profile lives in /home/bolu/profile,
 # so a named volume mounted here survives container restarts and keeps Bolu
@@ -81,8 +100,10 @@ VOLUME /home/bolu
 
 # The noVNC page is the cheapest honest liveness probe: it goes through
 # websockify, which is only listening if Xvfb, x11vnc and websockify all came
-# up. Chromium is deliberately not part of this check (see entrypoint.sh: if it
-# dies, the container is expected to exit and be restarted).
+# up. The probe reads ${NOVNC_PORT} rather than a literal, so a deployment that
+# moves the port moves the check with it — the same reason the control plane
+# passes the port in as -e. Chromium is deliberately not part of this check (see
+# entrypoint.sh: if it dies, the container is expected to exit and be restarted).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD curl -fsS -o /dev/null "http://127.0.0.1:${NOVNC_PORT}/vnc.html" || exit 1
 

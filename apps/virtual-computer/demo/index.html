@@ -3,551 +3,155 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Virtual Computer PoC — desktop bot</title>
 <!--
-  Static, self-contained PoC page. It is opened straight from disk, so it has no build step,
-  no CDN, no external asset and no fetched font: every visual below is drawn with CSS, and the
-  only network traffic is the optional calls to the API base URL the user types in, plus the
-  stub screenshot image.
+  One page, one job: show a bot's real desktop.
+
+  It is opened straight from disk (file://), so it has no build step, no CDN, no fetched
+  font and no external asset. The only network traffic is the iframe at the bottom: it
+  loads noVNC from the control plane and then upgrades to a websocket. Nothing here is a
+  mock — there is no CSS-drawn desktop, no screenshot stub and no fake VNC chrome. A blank
+  frame means the control plane, the token or the session is the problem.
+
+  Why the token appears twice in one URL. This page is loaded from file://, so the iframe
+  is a third-party context: a browser that blocks third-party cookies will not send the
+  `vc_token` cookie that the page load just set. The `token` query parameter authorizes the
+  page load (and sets that cookie); the token inside `path` authorizes the websocket, which
+  is the request that would otherwise arrive unauthenticated. Dropping either one breaks a
+  real browser, so both stay, and both come from the same field.
+
+  The page makes no API call of its own: it does not create sessions, does not fetch a
+  screenshot and does not talk to /v1/* with fetch(). The session must already exist
+  (POST /v1/sessions); the iframe is the whole client.
 -->
-<title>Virtual Computer PoC</title>
 <style>
-  :root {
-    --bg: #0b0d12;
-    --panel: #141821;
-    --panel-2: #1b202b;
-    --line: #2a3140;
-    --ink: #e6e9ef;
-    --muted: #9aa3b5;
-    --accent: #4f8cff;
-    --ok: #3fb27f;
-    --bad: #e2685f;
-    --warn: #d9a13b;
-  }
-
-  * { box-sizing: border-box; }
-
+  :root { color-scheme: light dark; }
   body {
+    font: 15px/1.5 ui-sans-serif, system-ui, sans-serif;
     margin: 0;
-    padding: 24px 16px 48px;
-    background: var(--bg);
-    color: var(--ink);
-    /* System font stack only, so nothing is fetched over the network. */
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    font-size: 14px;
-    line-height: 1.55;
+    padding: 2rem 1.5rem 3rem;
   }
-
-  .wrap { max-width: 980px; margin: 0 auto; }
-
-  h1 { font-size: 22px; margin: 0 0 4px; }
-  h2 { font-size: 14px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
-  p { margin: 0 0 10px; }
-
-  .lead { color: var(--muted); margin: 0; }
-
-  code, pre, .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-    font-size: 12.5px;
+  main { max-width: 72rem; margin: 0 auto; }
+  h1 { font-size: 1.35rem; margin: 0 0 .35rem; }
+  p { margin: .75rem 0; }
+  p.lead { margin: 0 0 1.5rem; opacity: .8; }
+  form { display: flex; flex-wrap: wrap; gap: .9rem; align-items: flex-end; }
+  label {
+    display: flex; flex-direction: column; gap: .3rem;
+    font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; opacity: .8;
   }
-
-  section {
-    margin: 22px 0;
-    padding: 16px;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 10px;
+  input {
+    font: inherit; padding: .45rem .55rem;
+    border: 1px solid currentColor; border-radius: 3px;
+    background: transparent; color: inherit; min-width: 16rem;
   }
-
-  /* ---- control row -------------------------------------------------------------------- */
-
-  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-
-  label.field { flex: 1 1 280px; display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 12px; }
-
-  input[type="text"] {
-    width: 100%;
-    padding: 8px 10px;
-    color: var(--ink);
-    background: var(--panel-2);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 13px;
+  #port { min-width: 6rem; }
+  button { font: inherit; padding: .5rem 1.1rem; cursor: pointer; }
+  code, #url {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .8rem;
   }
-
-  button {
-    padding: 9px 14px;
-    color: var(--ink);
-    background: var(--panel-2);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    font: inherit;
-    cursor: pointer;
+  #url { opacity: .75; word-break: break-all; }
+  #frame {
+    display: block; width: 100%; aspect-ratio: 16 / 10;
+    margin-top: 1rem; border: 1px solid currentColor; background: #000;
   }
-
-  button:hover { border-color: var(--accent); }
-  button.primary { background: #1d3a6b; border-color: #2c539b; }
-
-  pre.out {
-    margin: 12px 0 0;
-    padding: 10px;
-    min-height: 44px;
-    white-space: pre-wrap;
-    word-break: break-word;
-    color: var(--ink);
-    background: var(--panel-2);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-  }
-
-  .hint { color: var(--muted); font-size: 12.5px; margin: 10px 0 0; }
-
-  /* ---- screenshot --------------------------------------------------------------------- */
-
-  figure.shot { margin: 0; }
-
-  figure.shot img {
-    display: block;
-    width: 100%;
-    max-width: 640px;
-    background: var(--panel-2);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-  }
-
-  .shot-fallback {
-    max-width: 640px;
-    padding: 18px 14px;
-    color: var(--muted);
-    background: var(--panel-2);
-    border: 1px dashed var(--line);
-    border-radius: 8px;
-  }
-
-  figcaption { margin-top: 8px; color: var(--muted); font-size: 12.5px; max-width: 720px; }
-
-  /* ---- CSS-only mock desktop ---------------------------------------------------------- */
-
-  .viewer {
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    overflow: hidden;
-    background: #0e1016;
-  }
-
-  /* Toolbar of the fake VNC viewer. The port chips document what the real container exposes. */
-  .viewer__bar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-    padding: 8px 10px;
-    background: #191d27;
-    border-bottom: 1px solid var(--line);
-    font-size: 12px;
-    color: var(--muted);
-  }
-
-  .viewer__bar strong { color: var(--ink); font-weight: 600; }
-
-  .chip {
-    padding: 2px 7px;
-    background: var(--panel-2);
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 11.5px;
-  }
-
-  /* The desktop itself: a wallpaper drawn with gradients, no image file. */
-  .desktop {
-    position: relative;
-    height: 420px;
-    background:
-      radial-gradient(1200px 420px at 15% -10%, #24304a 0%, rgba(36, 48, 74, 0) 60%),
-      radial-gradient(900px 380px at 95% 10%, #2a2440 0%, rgba(42, 36, 64, 0) 55%),
-      linear-gradient(160deg, #12161f 0%, #0d1017 100%);
-  }
-
-  .window {
-    position: absolute;
-    inset: 34px 44px 58px 44px;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    background: #f4f5f7;
-    border: 1px solid #0a0c11;
-    border-radius: 8px;
-    box-shadow: 0 18px 40px rgba(0, 0, 0, .45);
-  }
-
-  .window__title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    background: #dfe2e7;
-    border-bottom: 1px solid #c7cbd3;
-  }
-
-  .lights { display: flex; gap: 6px; }
-
-  .light { width: 11px; height: 11px; border-radius: 50%; }
-  .light--red { background: #ff5f57; }
-  .light--yellow { background: #febc2e; }
-  .light--green { background: #28c840; }
-
-  .window__title span {
-    font-size: 12px;
-    color: #4b5162;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  }
-
-  /* Fake browser chrome: three circles, a URL bar, and a couple of icons. */
-  .browser__toolbar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    background: #e9ebef;
-    border-bottom: 1px solid #d3d7de;
-  }
-
-  .navdot { width: 16px; height: 16px; border-radius: 50%; background: #c2c7d1; }
-
-  .urlbar {
-    flex: 1;
-    padding: 5px 10px;
-    color: #4b5162;
-    background: #ffffff;
-    border: 1px solid #d3d7de;
-    border-radius: 999px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 12px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  /* Grey bars stand in for the page content the real browser would paint. */
-  .page { flex: 1; padding: 16px; overflow: hidden; }
-
-  .bar {
-    height: 12px;
-    margin-bottom: 10px;
-    background: #d7dbe2;
-    border-radius: 6px;
-  }
-
-  .bar--title { height: 20px; background: #c8cdd7; width: 46%; margin-bottom: 16px; }
-  .bar--w90 { width: 90%; }
-  .bar--w80 { width: 80%; }
-  .bar--w70 { width: 70%; }
-  .bar--w55 { width: 55%; }
-
-  .cards { display: flex; gap: 12px; margin-top: 18px; }
-
-  .card {
-    flex: 1;
-    height: 74px;
-    background: #e4e7ec;
-
-    border-radius: 8px;
-  }
-
-  /* Taskbar pinned to the bottom of the desktop, with a static clock. */
-  .taskbar {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 0 12px;
-    background: rgba(12, 15, 22, .92);
-    border-top: 1px solid #232936;
-    color: var(--muted);
-    font-size: 12px;
-  }
-
-  .taskbar__start { width: 18px; height: 18px; border-radius: 5px; background: #3c4658; }
-  .taskbar__clock { margin-left: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--ink); }
-
-  /* ---- endpoint table ----------------------------------------------------------------- */
-
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-
-  th, td {
-    padding: 8px 10px;
-    text-align: left;
-    vertical-align: top;
-    border-bottom: 1px solid var(--line);
-  }
-
-  th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
-
-  td.method { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--accent); white-space: nowrap; }
-  td.path { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: nowrap; }
-
-  footer { margin-top: 26px; color: var(--muted); font-size: 12.5px; }
+  footer { margin-top: 1.25rem; opacity: .7; font-size: .85rem; }
 </style>
 </head>
 <body>
-<div class="wrap">
+<main>
 
-  <header>
-    <h1>Virtual Computer PoC</h1>
-    <p class="lead">Kerangka PoC — bukan produksi. Halaman statis: buka langsung dari berkas, tanpa build dan tanpa server.</p>
-  </header>
+  <h1>Virtual Computer PoC</h1>
+  <p class="lead">Desktop asli satu bot, disematkan dari control plane lewat proxy noVNC.
+    Isi token dan bot id, lalu tekan <strong>Buka desktop</strong>.</p>
 
-  <!-- Control row: the only interactive part. Both buttons hit the API base the user types in. -->
-  <section>
-    <h2>Kontrol</h2>
-    <div class="controls">
-      <label class="field" for="api-base">
-        Base URL kontrol API
-        <input type="text" id="api-base" value="http://localhost:8090" spellcheck="false" autocomplete="off">
-      </label>
-      <button type="button" id="check-api">Cek API</button>
-      <button type="button" id="create-session" class="primary">Buat sesi demo</button>
-    </div>
+  <form id="form">
+    <label for="token">Token
+      <input id="token" type="password" autocomplete="off" spellcheck="false"
+             placeholder="VCOMPUTER_CONTROL_TOKEN" required>
+    </label>
+    <label for="bot">Bot id
+      <input id="bot" type="text" autocomplete="off" spellcheck="false"
+             placeholder="demo-bot" required>
+    </label>
+    <label for="port">Port control plane
+      <input id="port" type="text" inputmode="numeric" autocomplete="off" value="8090" required>
+    </label>
+    <button type="submit">Buka desktop</button>
+  </form>
 
-    <pre class="out" id="api-status">Belum dipanggil. Cek API akan memanggil GET &lt;base&gt;/health.</pre>
-    <pre class="out" id="api-session">Belum dipanggil. Buat sesi demo akan POST {"bot_id":"demo-bot"} ke &lt;base&gt;/v1/sessions.</pre>
+  <p id="url">Belum ada desktop yang dibuka.</p>
 
-    <p class="hint">Kedua tombol memakai <code>fetch</code> biasa dan menulis jawabannya lewat <code>textContent</code>; bila
-      kontrol API belum jalan, pesan gagalnya muncul di kotak di atas, bukan di konsol.</p>
-  </section>
+  <iframe id="frame" title="Desktop bot (noVNC lewat proxy control plane)"></iframe>
 
-  <!-- Real image request to the control API's stub screenshot endpoint. -->
-  <section>
-    <h2>Tangkapan layar stub</h2>
-    <figure class="shot">
-      <img id="shot" src="http://localhost:8090/v1/sessions/demo-bot/screenshot"
-           alt="Tangkapan layar stub dari kontrol API"
-           onerror="this.hidden = true; document.getElementById('shot-fallback').hidden = false;">
-      <p class="shot-fallback" id="shot-fallback" hidden>
-        Gambar belum tersedia: kontrol API belum jalan di <code>http://localhost:8090</code>, atau sesi
-        <code>demo-bot</code> belum dibuat. Klik <em>Buat sesi demo</em> di atas (atau nyalakan kontrol API lalu
-        muat ulang halaman ini) untuk melihat PNG stub-nya.
-      </p>
-      <figcaption>PNG stub yang dilayani kontrol API selama ia jalan, dan hanya ada setelah sesi
-        <code>demo-bot</code> dibuat. Rute ini menjawab GET dan POST dengan byte yang sama: POST adalah jalur
-        resminya (lihat tabel), GET ada supaya sebuah <code>&lt;img&gt;</code> bisa menempelkannya langsung.
-        Kalau gambarnya gagal, berkas ini menampilkan teks pengganti — bukan ikon gambar rusak.</figcaption>
-    </figure>
-  </section>
+  <footer>
+    Sesi tidak dibuat dari halaman ini: pastikan <code>POST /v1/sessions</code> dengan
+    <code>bot_id</code> yang sama sudah dijalankan, dan control plane mendengarkan di
+    <code>127.0.0.1:&lt;port&gt;</code>. Token hanya dipakai untuk menyusun URL di atas dan
+    tidak disimpan di mana pun.
+  </footer>
 
-  <!-- The desktop is drawn with CSS only: no screenshot, no image file, no font download. -->
-  <section>
-    <h2>Mock desktop (CSS)</h2>
-    <div class="viewer">
-      <div class="viewer__bar">
-        <strong>VNC viewer</strong>
-        <span class="chip">noVNC :6080</span>
-        <span class="chip">VNC :5900</span>
-        <span class="chip">CDP :9222</span>
-        <span class="chip">display :99</span>
-        <span class="chip">1280x800x24</span>
-      </div>
-
-      <div class="desktop" role="img" aria-label="Mock desktop yang digambar dengan CSS">
-        <div class="window">
-          <div class="window__title">
-            <div class="lights">
-              <span class="light light--red"></span>
-              <span class="light light--yellow"></span>
-              <span class="light light--green"></span>
-            </div>
-            <span>Chromium — demo-bot</span>
-          </div>
-
-          <div class="browser__toolbar">
-            <span class="navdot"></span>
-            <span class="navdot"></span>
-            <span class="navdot"></span>
-            <span class="urlbar">http://localhost:6080/vnc.html</span>
-          </div>
-
-          <div class="page">
-            <div class="bar bar--title"></div>
-            <div class="bar bar--w90"></div>
-            <div class="bar bar--w80"></div>
-            <div class="bar bar--w70"></div>
-            <div class="bar bar--w55"></div>
-            <div class="cards">
-              <div class="card"></div>
-              <div class="card"></div>
-              <div class="card"></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="taskbar">
-          <span class="taskbar__start"></span>
-          <span>Mock desktop (CSS)</span>
-          <span class="taskbar__clock">09:52</span>
-        </div>
-      </div>
-    </div>
-    <p class="hint">Semua kotak di atas digambar dengan CSS: tidak ada tangkapan layar, berkas gambar, atau font
-      eksternal. Desktop ini hanya ilustrasi tata letak, bukan sandbox yang benar-benar berjalan. State sesi asli
-      nanti tinggal di volume <code>/home/bolu</code> (profil browser di <code>/home/bolu/profile</code>), bukan di sini.</p>
-  </section>
-
-  <!-- Endpoint list the control plane must serve. Kept in one table so it can be checked by eye. -->
-  <section>
-    <h2>Endpoint kontrol API</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Method</th>
-          <th>Path</th>
-          <th>Body</th>
-          <th>Response</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td class="method">GET</td>
-          <td class="path">/health</td>
-          <td class="mono">—</td>
-          <td>Liveness kontrol API; dipakai tombol <em>Cek API</em>.</td>
-        </tr>
-        <tr>
-          <td class="method">POST</td>
-          <td class="path">/v1/sessions</td>
-          <td class="mono">{"bot_id":"..."}</td>
-          <td>Pastikan/buat sesi sandbox untuk bot itu; balasannya JSON status sesi.</td>
-        </tr>
-        <tr>
-          <td class="method">GET</td>
-          <td class="path">/v1/sessions/:bot_id</td>
-          <td class="mono">—</td>
-          <td>Status sesi.</td>
-        </tr>
-        <tr>
-          <td class="method">DELETE</td>
-          <td class="path">/v1/sessions/:bot_id</td>
-          <td class="mono">—</td>
-          <td>Hentikan sesi.</td>
-        </tr>
-        <tr>
-          <td class="method">POST</td>
-          <td class="path">/v1/sessions/:bot_id/screenshot</td>
-          <td class="mono">—</td>
-          <td><code>image/png</code> — tangkapan layar stub. GET pada path yang sama juga dilayani, supaya
-            sebuah <code>&lt;img&gt;</code> bisa menempelkannya; POST tetap jalur resminya.</td>
-        </tr>
-        <tr>
-          <td class="method">POST</td>
-          <td class="path">/v1/sessions/:bot_id/click</td>
-          <td class="mono">{"x":0,"y":0}</td>
-          <td>Klik pada koordinat di dalam layar sandbox.</td>
-        </tr>
-        <tr>
-          <td class="method">POST</td>
-          <td class="path">/v1/sessions/:bot_id/type</td>
-          <td class="mono">{"text":"..."}</td>
-          <td>Ketik teks ke jendela yang sedang fokus.</td>
-        </tr>
-        <tr>
-          <td class="method">POST</td>
-          <td class="path">/v1/sessions/:bot_id/exec</td>
-          <td class="mono">{"command":"..."}</td>
-          <td>Stub: perintah hanya digemakan, tidak pernah dijalankan di host.</td>
-        </tr>
-      </tbody>
-    </table>
-    <p class="hint">PoC ini tidak mengirim token atau kredensial apa pun: seluruh permintaan hanya ke base URL yang
-      diketik di atas, dan host secrets disuntikkan oleh control plane saat runtime.</p>
-  </section>
-
-  <footer>Virtual Computer PoC — skeleton. Endpoint dan mock di halaman ini menggambarkan kontrak, bukan
-    implementasi sandbox yang sudah jadi.</footer>
-
-</div>
+</main>
 
 <script>
-  // Plain DOM wiring. Everything the API returns is written with textContent, never innerHTML, so a
-  // hostile or malformed answer stays text.
-  (function () {
-    var baseInput = document.getElementById('api-base');
-    var statusOut = document.getElementById('api-status');
-    var sessionOut = document.getElementById('api-session');
-    var shot = document.getElementById('shot');
-    var shotFallback = document.getElementById('shot-fallback');
+(function () {
+  "use strict";
 
-    // A trailing slash would produce "//health", which some servers treat as a different path.
-    function apiBase() {
-      return baseInput.value.trim().replace(/\/+$/, '');
+  var form = document.getElementById("form");
+  var tokenField = document.getElementById("token");
+  var botField = document.getElementById("bot");
+  var portField = document.getElementById("port");
+  var frame = document.getElementById("frame");
+  var output = document.getElementById("url");
+
+  // buildURL is the contract with the control plane, in one place so it can be read
+  // against the README's API table. Everything interpolated goes through
+  // encodeURIComponent: a bot id or token with a slash, a question mark or a space must
+  // not be able to change the shape of the URL.
+  //
+  // The `path` value is the websocket's own path, without a leading slash, exactly as the
+  // session's novnc_url documents it: v1/sessions/<bot>/novnc/websockify?token=<t>.
+  // noVNC appends it to the page's host, and the control plane's proxy strips the
+  // /v1/sessions/<bot>/novnc prefix before forwarding to the sandbox.
+  function buildURL(token, bot, port) {
+    var prefix = "/v1/sessions/" + encodeURIComponent(bot) + "/novnc/";
+    var socketPath = "v1/sessions/" + encodeURIComponent(bot) +
+      "/novnc/websockify?token=" + encodeURIComponent(token);
+
+    return "http://127.0.0.1:" + encodeURIComponent(port) + prefix +
+      "vnc.html?autoconnect=1&resize=scale" +
+      "&path=" + encodeURIComponent(socketPath) +
+      "&token=" + encodeURIComponent(token);
+  }
+
+  function looksLikePort(value) {
+    return /^[0-9]{1,5}$/.test(value) && Number(value) >= 1 && Number(value) <= 65535;
+  }
+
+  form.addEventListener("submit", function (event) {
+    event.preventDefault();
+
+    var token = tokenField.value.trim();
+    var bot = botField.value.trim();
+    var port = portField.value.trim() || "8090";
+
+    if (!token || !bot) {
+      output.textContent = "Token dan bot id harus diisi.";
+      return;
+    }
+    if (!looksLikePort(port)) {
+      output.textContent = "Port control plane harus angka 1-65535.";
+      return;
     }
 
-    function write(el, text) {
-      el.textContent = text;
-    }
-
-    // Pretty-print when the body is JSON, otherwise show it as it arrived.
-    function describe(response, body) {
-      var line = 'HTTP ' + response.status + (response.statusText ? ' ' + response.statusText : '');
-      try {
-        return line + '\n' + JSON.stringify(JSON.parse(body), null, 2);
-      } catch (ignored) {
-        return line + (body ? '\n' + body : '');
-      }
-    }
-
-    function failure(err, url) {
-      return 'Gagal: ' + err.message + '\nURL: ' + url;
-    }
-
-    // The stub PNG only exists once the session does, and the browser would happily keep showing the
-    // previous (or a broken) frame. Reload it from the current base URL with a cache-buster, and put
-    // the image back in place of the text fallback before the new request starts.
-    function refreshShot(base) {
-      shotFallback.hidden = true;
-      shot.hidden = false;
-      shot.src = base + '/v1/sessions/demo-bot/screenshot?t=' + Date.now();
-    }
-
-    document.getElementById('check-api').addEventListener('click', function () {
-      var url = apiBase() + '/health';
-      write(statusOut, 'Memanggil ' + url + ' ...');
-      fetch(url).then(function (response) {
-        return response.text().then(function (body) {
-          write(statusOut, describe(response, body));
-          if (response.ok) {
-            // The base URL may have just changed, so point the screenshot at it too.
-            refreshShot(apiBase());
-          }
-        });
-      }).catch(function (err) {
-        write(statusOut, failure(err, url));
-      });
-    });
-
-    document.getElementById('create-session').addEventListener('click', function () {
-      var url = apiBase() + '/v1/sessions';
-      write(sessionOut, 'POST ' + url + ' ...');
-      fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bot_id: 'demo-bot' })
-      }).then(function (response) {
-        return response.text().then(function (body) {
-          write(sessionOut, describe(response, body));
-          if (response.status === 200) {
-            // A session now exists, so the stub screenshot has something to show.
-            refreshShot(apiBase());
-          }
-        });
-      }).catch(function (err) {
-        write(sessionOut, failure(err, url));
-      });
-    });
-  })();
+    var url = buildURL(token, bot, port);
+    // textContent for the readout and the src attribute for the frame: the URL is never
+    // assembled as HTML, so a token or a bot id cannot inject markup.
+    output.textContent = url;
+    frame.src = url;
+  });
+})();
 </script>
 </body>
 </html>

@@ -10,9 +10,10 @@
 //
 // The port is narrow on purpose. A single "run anything on the computer" method
 // would erase the granularity the approval gates depend on
-// (docs/riset-microvm.md §5.1): browsing is `read`, clicking and typing are
-// `write_external`, and exec is the most dangerous of the four. Each stays its own
-// method here so a caller can label them separately when they are wired.
+// (docs/riset-microvm.md §5.1): browsing is `read` — Navigate is the call that
+// points the browser at a page — clicking and typing are `write_external`, and exec
+// is the most dangerous of the four. Each stays its own method here so a caller can
+// label them separately when they are wired.
 package domain
 
 import (
@@ -29,25 +30,24 @@ const (
 )
 
 // Errors this module returns. They are sentinels rather than strings because a
-// caller has to decide what to do with each: a missing session is created, an
-// unimplemented runtime is a configuration mistake, and a refused command is a
-// policy decision.
+// caller has to decide what to do with each: a missing session is created, a refused
+// token is a configuration mistake, and a request the control plane will not take is
+// a policy decision.
 var (
-	// ErrNotConfigured is a call with no control plane address. A deployment that
-	// has not set one has no virtual computer, and it should learn that from the
-	// first call rather than from a nil dereference.
-	ErrNotConfigured = errors.New("vcomputer: the control plane address is not configured")
+	// ErrNotConfigured is a call this deployment cannot make: either no control plane
+	// address was configured, or the control plane refused the bearer token with a
+	// 401 because VCOMPUTER_CONTROL_TOKEN is missing or does not match the one the
+	// control plane was started with. Both are deployment mistakes, and neither
+	// becomes true by asking again.
+	ErrNotConfigured = errors.New("vcomputer: the control plane is not configured")
 	// ErrNoSession is an action on a bot whose session does not exist.
 	ErrNoSession = errors.New("vcomputer: no session for that bot")
 	// ErrInvalidInput is a request the control plane refused: no bot id, an id that
-	// cannot name a container, or an empty command.
+	// cannot name a container, a URL whose scheme is not one of the four it accepts,
+	// or an empty command.
 	ErrInvalidInput = errors.New("vcomputer: the control plane refused the request")
-	// ErrNotImplemented is the control plane answering with its skeleton runtime.
-	// It is distinct from a failure because it is the expected answer while the PoC
-	// runs with `-runtime docker`.
-	ErrNotImplemented = errors.New("vcomputer: the sandbox runtime is a skeleton")
 	// ErrUnavailable is the control plane being unreachable or failing. It is worth
-	// retrying, unlike the four above.
+	// retrying, unlike the three above.
 	ErrUnavailable = errors.New("vcomputer: the control plane is unavailable")
 )
 
@@ -62,12 +62,15 @@ type Session struct {
 	Runtime string `json:"runtime"`
 	// ContainerID is what an operator or a reaper needs to find the container.
 	ContainerID string `json:"container_id,omitempty"`
-	// NoVNCURL is where a person watches the desktop. It is an internal address and
-	// must never be handed to a browser outside the sandbox network.
+	// NoVNCURL is where a person watches the desktop. It is a path on the control
+	// plane (`/v1/sessions/<bot>/novnc/...`), not a sandbox address: the control
+	// plane reverse-proxies it to the sandbox's noVNC port, which is never published
+	// and never reachable from outside the sandbox network.
 	NoVNCURL string `json:"novnc_url,omitempty"`
-	// CDPURL is Chromium's DevTools endpoint inside the sandbox. It is prepared in
-	// the image and unused by the PoC; it is the better route for typing into a page
-	// than synthesized keystrokes.
+	// CDPURL is Chromium's DevTools endpoint, `http://<sandbox-ip>:<cdp-port>`. The
+	// sandbox publishes that port through socat because Chromium only listens on
+	// localhost, and the control plane uses this address to carry out Navigate. Like
+	// the noVNC port it is reachable only from the sandbox network.
 	CDPURL string `json:"cdp_url,omitempty"`
 	// Volume is the named volume holding the browser profile and the bot's home. The
 	// container may die; the session does not, which is what makes "log in once,
@@ -79,9 +82,11 @@ type Session struct {
 	LastUsedAt time.Time `json:"last_used_at"`
 }
 
-// ExecResult is the answer to one command. Stub is true while the control plane's
-// runtime refuses to run anything, which is the PoC's default: it echoes the
-// command so a caller can see what would have run.
+// ExecResult is the answer to one command. Stub says whether the runtime actually
+// ran it: false with the docker runtime, true with the memory runtime, which echoes
+// the command instead of executing it. A caller has to read that field rather than
+// the exit code, because a stub that answered 0 with no output is indistinguishable
+// from a command that ran and printed nothing.
 type ExecResult struct {
 	Command  string `json:"command"`
 	Stdout   string `json:"stdout"`
@@ -109,6 +114,11 @@ type ComputerUseClient interface {
 	Click(ctx context.Context, botID string, x, y int) error
 	// Type sends text to the focused window. Also write_external, for the same reason.
 	Type(ctx context.Context, botID string, text string) error
+	// Navigate points the browser at a page, and is the one call that decides what
+	// the desktop is looking at: a `read` action while the page is the caller's own
+	// and write_external as soon as it is a third party's, which is why the control
+	// plane — not this layer — is what validates the scheme.
+	Navigate(ctx context.Context, botID string, url string) error
 	// Exec runs a command inside the sandbox. It is the most dangerous call in the
 	// module: a shell can do anything, and no per-command label exists, so riset §5.1
 	// treats every command as write_external until an allowlist is designed.

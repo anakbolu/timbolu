@@ -54,17 +54,46 @@ func TestSessionNamesFollowTheContainerContract(t *testing.T) {
 		t.Fatalf("ensure: %v", err)
 	}
 
-	// These three strings are the contract the sandbox image and the compose file
-	// were written against (README, "Arsitektur"): the noVNC port, the CDP port, and
-	// the volume mount point. The Docker runtime must answer the same ones.
-	if session.NoVNCURL != "http://vcomputer-bot-a:6080/vnc.html?autoconnect=1&resize=scale" {
-		t.Fatalf("novnc url = %q", session.NoVNCURL)
+	// NoVNCURL is a path on the control plane, not an address on the sandbox network:
+	// the control plane proxies it, which is what keeps the sandbox network
+	// unreachable from outside (docs/adr/0003-virtual-computer.md §3.6). The `path`
+	// parameter is relative on purpose, so noVNC resolves the websocket against the
+	// page it was loaded from rather than against the sandbox.
+	wantNoVNC := "/v1/sessions/bot-a/novnc/vnc.html?autoconnect=1&resize=scale&path=v1/sessions/bot-a/novnc/websockify"
+	if session.NoVNCURL != wantNoVNC {
+		t.Fatalf("novnc url = %q, want %q", session.NoVNCURL, wantNoVNC)
 	}
-	if session.CDPURL != "http://vcomputer-bot-a:9222" {
+	// CDPURL is an address, not a name: Chromium refuses a request whose Host header
+	// is neither an IP nor localhost, and the docker runtime answers a container IP
+	// here for the same reason.
+	if session.CDPURL != "http://vcomputer-bot-a:"+DefaultCDPPort {
 		t.Fatalf("cdp url = %q", session.CDPURL)
 	}
 	if session.Runtime != "memory" || session.State != StateRunning {
 		t.Fatalf("session = %+v", session)
+	}
+}
+
+// TestNoVNCTargetIsTheAddressTheProxyForwardsTo covers the one call the control
+// plane makes before it proxies a desktop: the stub has no container, so it answers
+// the address the container would have had on the sandbox network.
+func TestNoVNCTargetIsTheAddressTheProxyForwardsTo(t *testing.T) {
+	runtime := NewInMemory()
+	ctx := context.Background()
+
+	if _, err := runtime.NoVNCTarget(ctx, "bot-a"); !errors.Is(err, ErrNoSession) {
+		t.Fatalf("target before ensure: err = %v, want ErrNoSession", err)
+	}
+	if _, err := runtime.Ensure(ctx, "bot-a"); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+
+	target, err := runtime.NoVNCTarget(ctx, "bot-a")
+	if err != nil {
+		t.Fatalf("target: %v", err)
+	}
+	if target != "http://vcomputer-bot-a:"+DefaultNOVNCPort {
+		t.Fatalf("target = %q", target)
 	}
 }
 
@@ -111,6 +140,9 @@ func TestActionsWithoutASessionAreRefused(t *testing.T) {
 	}
 	if _, err := runtime.Exec(ctx, "bot-a", "ls"); !errors.Is(err, ErrNoSession) {
 		t.Fatalf("exec: err = %v, want ErrNoSession", err)
+	}
+	if err := runtime.Navigate(ctx, "bot-a", "https://example.com"); !errors.Is(err, ErrNoSession) {
+		t.Fatalf("navigate: err = %v, want ErrNoSession", err)
 	}
 }
 
@@ -172,6 +204,53 @@ func TestExecEchoesAndNeverRuns(t *testing.T) {
 	}
 }
 
+// TestNavigateRecordsTheURLAndRefusesWhatABrowserShouldNotOpen covers the scheme
+// rule. The stub cannot navigate anywhere, so the rule is the whole implementation
+// here — and it is the same rule the docker runtime applies before it hands a URL to
+// Chromium, which is why it is worth pinning in the package that owns it.
+func TestNavigateRecordsTheURLAndRefusesWhatABrowserShouldNotOpen(t *testing.T) {
+	runtime := NewInMemory()
+	ctx := context.Background()
+
+	if _, err := runtime.Ensure(ctx, "bot-a"); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+
+	if err := runtime.Navigate(ctx, "bot-a", "  https://example.com/riset  "); err != nil {
+		t.Fatalf("navigate: %v", err)
+	}
+	actions := runtime.Actions("bot-a")
+	if len(actions) != 1 || actions[0].Kind != "navigate" || actions[0].Detail != "https://example.com/riset" {
+		t.Fatalf("actions = %+v, want one navigate action with the trimmed url", actions)
+	}
+
+	// file, javascript, and chrome all reach past the page the model was given: the
+	// first reads the container's own files, the other two execute in a context the
+	// caller did not ask for.
+	for _, target := range []string{
+		"",
+		"   ",
+		"file:///home/bolu/.config/chromium/Default/Cookies",
+		"javascript:fetch('http://example.com')",
+		"chrome://settings",
+		"view-source:https://example.com",
+	} {
+		err := runtime.Navigate(ctx, "bot-a", target)
+		want := ErrInvalidURL
+		if strings.TrimSpace(target) == "" {
+			want = ErrNoURL
+		}
+		if !errors.Is(err, want) {
+			t.Fatalf("navigate(%q): err = %v, want %v", target, err, want)
+		}
+	}
+
+	// A refusal must not be recorded as a navigation that happened.
+	if actions := runtime.Actions("bot-a"); len(actions) != 1 {
+		t.Fatalf("actions = %+v, want the refused navigations left unrecorded", actions)
+	}
+}
+
 func TestActionsAreRecordedInOrder(t *testing.T) {
 	runtime := NewInMemory()
 	ctx := context.Background()
@@ -188,6 +267,9 @@ func TestActionsAreRecordedInOrder(t *testing.T) {
 	if err := runtime.Type(ctx, "bot-a", "halo"); err != nil {
 		t.Fatalf("type: %v", err)
 	}
+	if err := runtime.Navigate(ctx, "bot-a", "https://example.com"); err != nil {
+		t.Fatalf("navigate: %v", err)
+	}
 	if _, err := runtime.Exec(ctx, "bot-a", "ls -la"); err != nil {
 		t.Fatalf("exec: %v", err)
 	}
@@ -197,6 +279,7 @@ func TestActionsAreRecordedInOrder(t *testing.T) {
 		{"screenshot", "placeholder"},
 		{"click", "640,400"},
 		{"type", "halo"},
+		{"navigate", "https://example.com"},
 		{"exec", "ls -la"},
 	}
 	if len(actions) != len(want) {

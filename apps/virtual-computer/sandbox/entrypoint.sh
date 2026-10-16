@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
 #
-# Entrypoint for the Bolu sandbox desktop (PoC skeleton).
+# Entrypoint for the Bolu sandbox desktop (PoC).
 #
 # This script starts, in this order: Xvfb -> fluxbox -> x11vnc -> noVNC
-# (websockify) -> Chromium. The order is not cosmetic. The X server has to be
-# listening before anything can draw on it; the window manager has to attach to
-# the display before Chromium asks for a frame, otherwise the browser window is
-# unmanaged; x11vnc has to be up before websockify, because websockify only
-# proxies to a VNC port that already exists. Chromium is last because it is the
-# process whose life defines the session: if it dies, the container dies.
+# (websockify) -> Chromium -> socat. The order is not cosmetic. The X server has
+# to be listening before anything can draw on it; the window manager has to
+# attach to the display before Chromium asks for a frame, otherwise the browser
+# window is unmanaged; x11vnc has to be up before websockify, because websockify
+# only proxies to a VNC port that already exists. Chromium is next because it is
+# the process whose life defines the session: if it dies, the container dies.
+# socat is last and is what makes Chromium's DevTools endpoint reachable at all:
+# new Chromium binds --remote-debugging-port to 127.0.0.1 and ignores
+# --remote-debugging-address=0.0.0.0, so the control plane's `PUT /json/new`
+# would never arrive. socat listens on $CDP_PORT on the container's own address
+# and forwards to the loopback port.
 #
 # Nothing here reads a secret from the image. The control plane injects what a
-# session needs (currently only VNC_PASSWORD, which is optional) at runtime.
+# session needs (VNC_PASSWORD, SCREEN_GEOMETRY, the two ports) at runtime.
 
 set -euo pipefail
 
@@ -25,8 +30,8 @@ DISPLAY="${DISPLAY:-:99}"
 SCREEN_GEOMETRY="${SCREEN_GEOMETRY:-1280x800x24}"
 VNC_PORT="${VNC_PORT:-5900}"
 NOVNC_PORT="${NOVNC_PORT:-6080}"
-CDP_PORT="${CDP_PORT:-9222}"
-HOME="${HOME:-/home/bolu}"
+CDP_PORT="${CDP_PORT:-9223}"
+CDP_LOCAL_PORT="${CDP_LOCAL_PORT:-9222}"
 
 # Xvfb writes its socket at /tmp/.X11-unix/X<n>, where <n> is the display number
 # taken from $DISPLAY (":99" -> "X99"). We poll this path to know the server is
@@ -165,43 +170,79 @@ fi
 start_child "x11vnc" critical x11vnc "${vnc_args[@]}"
 
 # 4. noVNC - websockify serves the static noVNC client from the distro package
-#    and proxies the websocket traffic to the VNC port above. This is the only
-#    port the control plane publishes (6080) and the only way a human looks at
-#    the session.
+#    and proxies the websocket traffic to the VNC port above. Nothing publishes
+#    this port: the control plane proxies to it over the sandbox network, so a
+#    human looks at the session through the control plane's own route
+#    (/v1/sessions/<bot>/novnc/, see control/internal/httpapi/handler.go).
 start_child "noVNC/websockify" critical websockify --web=/usr/share/novnc "$NOVNC_PORT" "localhost:${VNC_PORT}"
 
 # 5. Chromium - the session itself, and the reason the container exists. It runs
-#    in the background like the others, but the supervision loop below treats
-#    its exit as fatal. The flags are deliberate:
+#    in the background like the others, and the supervision loop below treats its
+#    exit as fatal. The flags are deliberate:
 #      --user-data-dir=$HOME/profile : profile on the persistent volume, so
 #                                      logins survive a restart
-#      --window-size=1280,800        : matches SCREEN_GEOMETRY, so noVNC shows
-#                                      the full window without scrolling
+#      --window-size=$geometry       : matches SCREEN_GEOMETRY, so the capture
+#                                      and the noVNC view show the same window
 #      --no-first-run, --no-default-browser-check : no onboarding dialogs in a
 #                                      session nobody is sitting in front of
 #      --disable-dev-shm-usage       : containers get a small /dev/shm by
 #                                      default, and Chromium crashes without it
-#      --remote-debugging-address=0.0.0.0 --remote-debugging-port=$CDP_PORT
-#                                    : CDP stub, so the control plane can later
-#                                      drive the browser instead of clicking
-#                                      through screenshots
+#      --remote-debugging-port=$CDP_LOCAL_PORT : the DevTools endpoint the
+#                                      control plane drives. There is no
+#                                      --remote-debugging-address here on
+#                                      purpose: current Chromium refuses to bind
+#                                      the endpoint anywhere but loopback, and it
+#                                      rejects any request whose Host header is
+#                                      neither an IP nor localhost. Widening it
+#                                      in this process is therefore not an
+#                                      option; step 6 bridges it instead.
+#      --remote-allow-origins=*      : CDP rejects a websocket upgrade from an
+#                                      origin it does not know, and the control
+#                                      plane is not a browser on this machine
 # TODO: --no-sandbox is required because the container runs without user
 #       namespaces (no /dev/kvm, no privileged mode, so Chromium's own sandbox
 #       cannot set itself up here). This is a PoC compromise: it weakens the
 #       browser's own isolation and MUST NOT be enabled in production. The
 #       production path in docs/riset-microvm.md is gVisor on Kubernetes, where
 #       the runtime provides the real sandbox and this flag goes away.
+#
+#    The start URL is about:blank on purpose: a session exists to be navigated by
+#    the control plane (POST /v1/sessions/<bot>/navigate), and a blank tab makes
+#    that target explicit instead of leaving the browser parked on a vendor
+#    default page that may try to reach the network — this sandbox has no egress.
+#
+#    The window size comes from SCREEN_GEOMETRY ("1280x800x24" -> "1280,800"), so
+#    a deployment that changes the display does not have to change a second value.
+chromium_width="${SCREEN_GEOMETRY%%x*}"
+chromium_height="${SCREEN_GEOMETRY#*x}"
+chromium_height="${chromium_height%%x*}"
 start_child "chromium" critical chromium \
   --user-data-dir="${HOME}/profile" \
-  --window-size=1280,800 \
+  --window-size="${chromium_width},${chromium_height}" \
   --no-first-run \
   --no-default-browser-check \
   --disable-dev-shm-usage \
   --no-sandbox \
-  --remote-debugging-address=0.0.0.0 \
-  --remote-debugging-port="$CDP_PORT"
+  --remote-debugging-port="$CDP_LOCAL_PORT" \
+  --remote-allow-origins='*' \
+  about:blank
 
-log "desktop is up: noVNC on ${NOVNC_PORT}, VNC internal on ${VNC_PORT}, CDP stub on ${CDP_PORT}"
+# 6. socat - publishes Chromium's loopback DevTools endpoint on the container's
+#    address, which is the only address the control plane can reach. The bridge
+#    exists because Chromium itself cannot serve that: it binds DevTools to
+#    127.0.0.1 and rejects requests whose Host header is not an IP or localhost,
+#    so binding 0.0.0.0 inside Chromium is not an option and a request arriving
+#    from the sandbox network at the container IP has to be rewritten by a
+#    forwarder that does not care about Host. bind=0.0.0.0 is safe precisely
+#    because this port is never published: it is reachable only from the internal
+#    network (VCOMPUTER_SANDBOX_NETWORK), where the control plane is a member.
+#    It is supervised: if this dies, the control plane can no longer drive the
+#    browser, which makes the session as unusable as a dead Chromium.
+start_child "cdp-socat" critical socat \
+  "TCP-LISTEN:${CDP_PORT},fork,reuseaddr,bind=0.0.0.0" \
+  "TCP:127.0.0.1:${CDP_LOCAL_PORT}"
+
+log "desktop is up: noVNC on ${NOVNC_PORT}, VNC internal on ${VNC_PORT}, CDP on ${CDP_PORT} (socat -> chromium 127.0.0.1:${CDP_LOCAL_PORT})"
 
 # Supervision: block until the first supervised child exits, then tear the rest
 # down. A dead Chromium means an unusable session, so the container exits and

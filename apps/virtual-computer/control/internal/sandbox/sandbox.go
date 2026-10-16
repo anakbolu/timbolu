@@ -3,20 +3,22 @@
 //
 // The PoC ships two implementations of one interface: InMemoryRuntime, which
 // records what it was asked to do and answers a generated PNG, and DockerRuntime,
-// which is a skeleton with the exact commands written down where the code will go.
-// The interface is the point of this package: it is what lets the control plane,
-// the HTTP surface, and the tests exist before a single container is created, and
-// it is what a future gVisor/Kubernetes runtime (docs/riset-microvm.md §4.6, Opsi C)
-// will implement without the API above it changing.
+// which runs the real container through the docker CLI. The interface is the point
+// of this package: it is what lets the control plane, the HTTP surface, and the
+// tests exist independently of how a sandbox is hosted, and it is what a future
+// gVisor/Kubernetes runtime (docs/riset-microvm.md §4.6, Opsi C) will implement
+// without the API above it changing.
 //
-// Nothing here talks to Docker yet, and nothing here executes a command. That is
-// deliberate: the PoC's job is to show the shape of the session lifecycle, not to
-// run untrusted input.
+// Every method validates its own input before it reaches a container. The bot id
+// becomes a container and a volume name, the URL becomes an argument to Chromium,
+// and the typed text becomes an argv entry of `xdotool`: none of them is trusted,
+// and none of them ever reaches a shell.
 package sandbox
 
 import (
 	"context"
 	"errors"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -46,9 +48,12 @@ var (
 	// to ensure the session first, which is what makes "ensure" idempotent and
 	// "stop" honest.
 	ErrNoSession = errors.New("vcomputer: no session for that bot")
-	// ErrNotImplemented is the DockerRuntime answering. It exists so the skeleton is
-	// honest at runtime instead of pretending a container was created.
-	ErrNotImplemented = errors.New("vcomputer: the docker runtime is a skeleton; the command it will run is written in the comment")
+	// ErrNoURL is a navigate with nothing to open.
+	ErrNoURL = errors.New("vcomputer: a url is required")
+	// ErrInvalidURL is a navigate whose scheme a browser should not be handed.
+	// Only http, https, data, and about are accepted: file, javascript, and chrome
+	// reach past the page the model was given.
+	ErrInvalidURL = errors.New("vcomputer: a url must use the http, https, data, or about scheme")
 )
 
 // Session is what a caller gets back: enough to reach the desktop and to decide
@@ -59,14 +64,17 @@ type Session struct {
 	State string `json:"state"`
 	// Runtime names the implementation that owns the session: "memory" or "docker".
 	Runtime string `json:"runtime"`
-	// ContainerID is empty for the in-memory runtime and for a session that is only
-	// recorded. It is what a reaper and an operator need to find the container.
+	// ContainerID is empty for the in-memory runtime and holds the real container
+	// id for a running docker session. It is what a reaper and an operator need to
+	// find the container.
 	ContainerID string `json:"container_id,omitempty"`
-	// NoVNCURL is where a person watches the desktop. It is an internal address: the
-	// control API is never published (docs/adr/0003-virtual-computer.md §3.6).
+	// NoVNCURL is where a person watches the desktop: a path on the control plane
+	// that it proxies to the sandbox, so the sandbox network itself stays
+	// unreachable (docs/adr/0003-virtual-computer.md §3.6).
 	NoVNCURL string `json:"novnc_url,omitempty"`
-	// CDPURL is Chromium's DevTools endpoint. It is prepared in the image and unused
-	// by the PoC.
+	// CDPURL is Chromium's DevTools endpoint on the sandbox network, built from the
+	// container's address: Chromium refuses a request whose Host header is neither
+	// an IP nor localhost, so the address is what the URL carries.
 	CDPURL string `json:"cdp_url,omitempty"`
 	// Volume is the named volume that holds the persistent half of the session: the
 	// browser profile and the bot's home. The container may die; this does not.
@@ -77,14 +85,14 @@ type Session struct {
 	LastUsedAt time.Time `json:"last_used_at"`
 }
 
-// Action is one thing that was done to a desktop. The PoC records them instead of
-// performing them, and the record is what makes the stub observable: a test and the
-// demo page can both see that a click arrived.
+// Action is one thing that was done to a desktop. The in-memory runtime records
+// them instead of performing them, and the record is what makes the stub
+// observable: a test can see that a click arrived.
 type Action struct {
-	// Kind is "screenshot", "click", "type", or "exec".
+	// Kind is "screenshot", "click", "type", "navigate", or "exec".
 	Kind string `json:"kind"`
-	// Detail is the coordinate pair, the typed text, or the command. It is a single
-	// field because the PoC only needs it for evidence, not for replay.
+	// Detail is the coordinate pair, the typed text, the URL, or the command. It is
+	// a single field because the PoC only needs it for evidence, not for replay.
 	Detail string    `json:"detail"`
 	At     time.Time `json:"at"`
 }
@@ -105,7 +113,7 @@ type ExecResult struct {
 //
 // It is deliberately narrow. A single "run anything" method would erase the
 // granularity the approval gates depend on (docs/riset-microvm.md §5), so the
-// actions stay separate here even while the PoC stubs all of them.
+// actions stay separate here.
 type Runtime interface {
 	// Ensure creates the session if it does not exist and returns it either way. It
 	// is idempotent: calling it twice must not start two containers.
@@ -120,9 +128,18 @@ type Runtime interface {
 	Click(ctx context.Context, botID string, x, y int) error
 	// Type sends text to the focused window.
 	Type(ctx context.Context, botID string, text string) error
-	// Exec runs a command inside the sandbox. It is the most dangerous of the four,
-	// which is why riset §5.1 labels it write_external and why the PoC does not
-	// implement it.
+	// Navigate points the session's browser at a URL. Only http, https, data, and
+	// about are accepted, and the runtime refuses the rest rather than asking the
+	// browser to interpret them.
+	Navigate(ctx context.Context, botID string, targetURL string) error
+	// NoVNCTarget is the address inside the sandbox network that serves the
+	// session's noVNC client, e.g. "http://172.20.0.4:6080". The control plane
+	// proxies /v1/sessions/<bot>/novnc/ to it, which is why a browser only ever
+	// needs to reach the control plane and never the sandbox network itself.
+	NoVNCTarget(ctx context.Context, botID string) (string, error)
+	// Exec runs a command inside the sandbox. It is the most dangerous of the
+	// actions, which is why riset §5.1 labels it write_external and why nothing
+	// above this package is wired to it yet.
 	Exec(ctx context.Context, botID string, command string) (ExecResult, error)
 }
 
@@ -155,4 +172,69 @@ func cleanBotID(botID string) (string, error) {
 		return "", ErrInvalidBotID
 	}
 	return id, nil
+}
+
+// DefaultNOVNCPort and DefaultCDPPort are the ports a sandbox listens on when the
+// deployment does not say otherwise. They are defaults for configuration
+// (VCOMPUTER_SANDBOX_NOVNC_PORT, VCOMPUTER_SANDBOX_CDP_PORT), not values baked into
+// a command line: the control plane passes the configured ports to every sandbox it
+// starts, and the sandbox entrypoint reads them from its environment.
+const (
+	DefaultNOVNCPort = "6080"
+	DefaultCDPPort   = "9223"
+)
+
+// NoVNCPath is where a person watches a session's desktop. It is a path on the
+// control plane rather than an address on the sandbox network: the control plane
+// proxies it, so a browser only ever reaches the control plane and the sandbox
+// network stays internal. `path` is relative on purpose — noVNC resolves the
+// websocket URL against the page it was loaded from.
+func NoVNCPath(botID string) string {
+	return "/v1/sessions/" + botID + "/novnc/vnc.html?autoconnect=1&resize=scale&path=v1/sessions/" + botID + "/novnc/websockify"
+}
+
+// sandboxURL is an address on the sandbox network. Both the CDP endpoint and the
+// noVNC target are built from the container's address rather than from its name,
+// because Chromium refuses a request whose Host header is neither an IP nor
+// localhost.
+func sandboxURL(host, port string) string {
+	return "http://" + host + ":" + port
+}
+
+// containerName and volumeName derive both names from the bot id. That is why the
+// id is validated before it gets here: these strings end up in a `docker` command
+// line.
+func containerName(botID string) string { return "vcomputer-" + botID }
+func volumeName(botID string) string    { return "vcomputer-" + botID + "-home" }
+
+// ValidURL reports whether raw may be handed to the session's browser.
+//
+// The four accepted schemes are the ones that cannot reach past the page: http and
+// https go out to the network the sandbox is allowed to reach, while data and about
+// stay inside the browser. Everything else a browser understands — file,
+// javascript, chrome, view-source — is refused, because a desktop that can open
+// file:// is a desktop that can read the container's own files.
+func ValidURL(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https", "data", "about":
+		return true
+	default:
+		return false
+	}
+}
+
+// cleanURL trims and validates a target, and is the single place the rule lives.
+func cleanURL(raw string) (string, error) {
+	target := strings.TrimSpace(raw)
+	if target == "" {
+		return "", ErrNoURL
+	}
+	if !ValidURL(target) {
+		return "", ErrInvalidURL
+	}
+	return target, nil
 }

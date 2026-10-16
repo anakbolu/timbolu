@@ -8,10 +8,12 @@
 // configuration value, and an empty one refuses every call instead of reaching a
 // URL nobody meant.
 //
-// The PoC does not authenticate. That is a gap and it is written down here rather
-// than hidden: the control plane is reachable only from the sandbox network today,
-// and the first thing wiring it into production does is put it behind the same
-// shared-secret seam the WhatsApp gateway uses.
+// The control plane is not unauthenticated. Every /v1 route requires
+// `Authorization: Bearer <token>`, the shared secret from VCOMPUTER_CONTROL_TOKEN,
+// and this client puts it on every request it makes; a missing or wrong token comes
+// back as a 401. That bearer is the same shared-secret seam the WhatsApp gateway uses
+// between the API and the worker, and it is why a refused token is reported as a
+// configuration mistake rather than as a failure worth retrying.
 package service
 
 import (
@@ -35,6 +37,7 @@ const maxResponse = 8 << 20
 // Client calls the control plane.
 type Client struct {
 	baseURL string
+	token   string
 	client  *http.Client
 }
 
@@ -44,15 +47,20 @@ var _ domain.ComputerUseClient = (*Client)(nil)
 // New builds the client. An empty address leaves it unconfigured: every call then
 // reports that, which is what a deployment without a virtual computer looks like.
 //
+// The token is the control plane's shared secret and is sent on every request. An
+// empty one is not refused here, because the control plane is the one that knows
+// whether it is wrong: it answers 401, which classify turns into ErrNotConfigured.
+//
 // The default timeout is generous because a screenshot of a cold sandbox includes
 // the container starting: the PoC would rather wait than report a failure that
 // would have resolved itself.
-func New(baseURL string, timeout time.Duration) *Client {
+func New(baseURL, token string, timeout time.Duration) *Client {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
 	return &Client{
 		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		token:   strings.TrimSpace(token),
 		client:  &http.Client{Timeout: timeout},
 	}
 }
@@ -83,6 +91,10 @@ func (c *Client) Screenshot(ctx context.Context, botID string) ([]byte, error) {
 		return nil, fmt.Errorf("vcomputer: build request: %w", err)
 	}
 
+	// A screenshot is a /v1 route like any other, so it needs the bearer too: the
+	// one call that skipped it would be the one call that can only ever answer 401.
+	c.authorize(request)
+
 	response, err := c.client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", domain.ErrUnavailable, err)
@@ -112,12 +124,25 @@ func (c *Client) Type(ctx context.Context, botID string, text string) error {
 	return c.do(ctx, http.MethodPost, sessionPath(botID)+"/type", map[string]any{"text": text}, nil)
 }
 
+// Navigate points the browser at a page.
+//
+// It is the one action that changes what the desktop is showing, so the control
+// plane is what validates the URL — it accepts the http, https, data and about
+// schemes and refuses anything else with a 400 — and nothing here second-guesses
+// that. Whether the navigation is allowed at all is the approval gate's answer, not
+// this layer's: a page that is not the caller's own is write_external
+// (docs/riset-microvm.md §5.1).
+func (c *Client) Navigate(ctx context.Context, botID string, url string) error {
+	return c.do(ctx, http.MethodPost, sessionPath(botID)+"/navigate", map[string]any{"url": url}, nil)
+}
+
 // Exec runs a command inside the sandbox.
 //
 // Nothing here decides whether the command is allowed: by the time it reaches this
-// client, the approval gate has already answered (docs/riset-microvm.md §5.1). The
-// PoC's control plane echoes the command rather than running it, and the answer says
-// so in its `stub` field.
+// client, the approval gate has already answered (docs/riset-microvm.md §5.1).
+// Whether the runtime really ran it is in the answer's `stub` field: the docker
+// runtime does (`stub: false`), the memory runtime echoes the command instead
+// (`stub: true`), so a caller has to read that field rather than the exit code.
 func (c *Client) Exec(ctx context.Context, botID string, command string) (domain.ExecResult, error) {
 	var result domain.ExecResult
 	err := c.do(ctx, http.MethodPost, sessionPath(botID)+"/exec", map[string]any{"command": command}, &result)
@@ -144,6 +169,7 @@ func (c *Client) do(ctx context.Context, method, path string, body, into any) er
 		return fmt.Errorf("vcomputer: build request: %w", err)
 	}
 	request.Header.Set("Content-Type", "application/json")
+	c.authorize(request)
 
 	response, err := c.client.Do(request)
 	if err != nil {
@@ -178,6 +204,13 @@ func (c *Client) configured() error {
 	return nil
 }
 
+// authorize puts the shared secret on a request. Every /v1 route requires it, so a
+// request built here without the header is a request that can only ever come back
+// 401 — which is why the header is set in one place instead of at each call site.
+func (c *Client) authorize(request *http.Request) {
+	request.Header.Set("Authorization", "Bearer "+c.token)
+}
+
 // sessionPath is the resource path for one bot. The id is not escaped because the
 // control plane refuses an id that would need escaping: a bot id is an identifier,
 // not free text, and letting a caller build a path out of it is how a control plane
@@ -189,10 +222,11 @@ func sessionPath(botID string) string {
 // classify maps a status code back onto the sentinel the control plane put it in.
 //
 // The mapping is the whole reason the classification survives the seam: a 404 means
-// "no session, create one", a 501 means "the runtime behind this is a skeleton", and
-// flattening either into a string is how a caller ends up retrying something that
-// will never succeed. The sentence the control plane wrote is carried through rather
-// than replaced.
+// "no session, create one", a 401 means the token is missing or wrong, and a 400
+// means the request itself was refused. Flattening them into a string is how a caller
+// ends up retrying something that will never succeed: the same rejected header is
+// rejected again. The sentence the control plane wrote is carried through rather than
+// replaced.
 func classify(status int, payload []byte) error {
 	var failure struct {
 		Error string `json:"error"`
@@ -207,10 +241,12 @@ func classify(status int, payload []byte) error {
 	switch status {
 	case http.StatusBadRequest:
 		return fmt.Errorf("%w: %s", domain.ErrInvalidInput, message)
+	case http.StatusUnauthorized:
+		// A refused token is a deployment misconfiguration rather than a transient
+		// failure: retrying sends the same header the control plane just rejected.
+		return fmt.Errorf("%w: %s", domain.ErrNotConfigured, message)
 	case http.StatusNotFound:
 		return fmt.Errorf("%w: %s", domain.ErrNoSession, message)
-	case http.StatusNotImplemented:
-		return fmt.Errorf("%w: %s", domain.ErrNotImplemented, message)
 	default:
 		return fmt.Errorf("%w: %s", domain.ErrUnavailable, message)
 	}
