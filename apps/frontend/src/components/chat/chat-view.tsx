@@ -296,6 +296,8 @@ export function ChatView({
   async function upload(id: string, file: File) {
     const workspaceId = chat.workspaceId;
     const conversationId = chat.active?.id;
+    // A retry answers the line the last send left behind: it was about this file.
+    setSendError(null);
     setQueued((previous) =>
       previous.map((entry) =>
         entry.id === id ? { ...entry, status: "uploading", progress: 0, error: undefined } : entry,

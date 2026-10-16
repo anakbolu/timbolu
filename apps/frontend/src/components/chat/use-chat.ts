@@ -262,7 +262,9 @@ export function useChat(): ChatState {
       setSending(false);
 
       if (!result.ok) {
-        setError(result.message);
+        // The reason is not put in the thread's banner: a refused send is about
+        // the draft and the files beside it, and the composer says so where they
+        // are, in the words the code calls for.
         return result;
       }
 
