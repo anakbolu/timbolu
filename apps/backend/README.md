@@ -839,8 +839,9 @@ virtual computer, and the activities then answer `ErrNotConfigured`),
 logged), and `VCOMPUTER_CONTROL_TIMEOUT` (bounds one call; a value that will not
 parse fails the startup). The agent worker registers the module's activities and
 `SmokeWorkflow` on its own queue; `cmd/vcomputer-smoke` runs one of them end to end
-from a checkout. The agent task loop and its tool catalog do not reach the sandbox
-yet.
+from a checkout, and the run ends the sandbox it started rather than leaving a
+container behind for an operator to delete (`-keep-session` asks for the opposite).
+The agent task loop and its tool catalog do not reach the sandbox yet.
 
 Deployment and region decisions: `docs/adr/0001-temporal-dan-region.md`.
 Test strategy and gates: `docs/testing.md`.
