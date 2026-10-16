@@ -227,10 +227,27 @@ Konfigurasinya lewat environment, semuanya opsional:
 Yang terdaftar adalah **`SmokeWorkflow`** (`internal/modules/vcomputer/workflow/smoke.go`), dan
 hanya itu: `AgentTaskWorkflow` dan katalog tool belum menyentuh sandbox (ADR 0003). Satu run
 menjalankan urutan yang akan dipakai tugas sungguhan — `EnsureSession` → `Navigate` → jeda 3
-detik → `Screenshot` → `Click` → `Type` → jeda 1 detik → `Screenshot` → `Exec` — dengan
-`StartToCloseTimeout` 90 detik untuk `EnsureSession` dan 30 detik untuk sisanya, serta
+detik → `Screenshot` → `Click` → `Type` → jeda 1 detik → `Screenshot` → `Exec` → `StopSession` —
+dengan `StartToCloseTimeout` 90 detik untuk `EnsureSession` dan 30 detik untuk sisanya, serta
 `MaximumAttempts: 3`. Hasilnya ukuran dua tangkapan (bukan byte PNG-nya), `cdp_url`, stdout
-`exec`, dan flag stub.
+`exec`, flag stub, dan `session_stopped`.
+
+`StopSession` adalah langkah terakhir yang membedakan smoke run dari tugas sungguhan: tugas
+sengaja **tidak** mematikan sesinya supaya profil browser dipakai ulang, sedangkan smoke run
+adalah satu-satunya pemilik sandbox yang baru dibuatnya, jadi ia yang mengakhirinya. Cleanup-nya
+`defer` di atas *disconnected context*, jadi tetap jalan ketika sebuah langkah gagal di
+tengah — bukan hanya di jalur sukses, yang justru bukan kasus yang meninggalkan container.
+Kalau `StopSession` sendiri gagal, run-nya gagal: sandbox yang tidak mau mati adalah container
+yang tertinggal, dan run yang melaporkan sukses sambil menyisakannya justru keadaan yang tidak
+akan dilihat lagi. `keep_session: true` pada input membalik perilaku itu untuk kasus melihat
+desktop setelah run; hasilnya jujur soal itu lewat `session_stopped`.
+
+`StopSession` bukan purge, dan kedua runtime menjawabnya berbeda. Di runtime `memory`,
+`Stop` melupakan record sesinya, jadi `GET /v1/sessions/<bot>` sesudahnya `404`. Di runtime
+`docker`, `Stop` hanya menjalankan `docker stop`: `GET` sesudahnya tetap `200` dengan
+`state:"stopped"`, dan container `vcomputer-<bot>` dalam keadaan Exited beserta volume
+`vcomputer-<bot>-home` tetap ada sampai dihapus eksplisit (`docker rm -f vcomputer-<bot>`,
+`docker volume rm vcomputer-<bot>-home`) — bukan `404`.
 
 Menjalankannya, dari checkout, dengan control plane yang hidup (lihat **Menjalankan**):
 
@@ -238,16 +255,20 @@ Menjalankannya, dari checkout, dengan control plane yang hidup (lihat **Menjalan
 cd apps/backend
 VCOMPUTER_CONTROL_URL=http://127.0.0.1:8090 \
 VCOMPUTER_CONTROL_TOKEN=$VCOMPUTER_CONTROL_TOKEN \
-  go run ./cmd/vcomputer-smoke -bot bot-1 -url https://example.com -out /tmp/vcomputer-smoke
+  go run ./cmd/vcomputer-smoke -bot bot-1 -url https://example.com
 ```
 
 `cmd/vcomputer-smoke` adalah alat development, bukan proses yang di-deploy: ia menaikkan
 worker-nya sendiri di queue `vcomputer-smoke` (bukan queue agent), mendaftarkan set activity
 lewat `container.RegisterVComputerTasks`, menjalankan satu workflow, mencetak hasilnya sebagai
-JSON, lalu — bila `-out` diisi — meminta satu tangkapan terakhir lewat klien HTTP dan menulis
-`after-temporal-final.png`. Flag lain: `-temporal` (`$TEMPORAL_HOST_PORT`, default
-`127.0.0.1:7233`), `-namespace` (default `default`), `-queue`, `-click-x`, `-click-y`, `-text`.
-Keluar non-nol pada kegagalan pertama.
+JSON, dan sandbox-nya sudah mati saat perintahnya keluar. `-keep-session` membalik itu dan
+menyalakan jalur kedua: bila `-out` diisi, perintah meminta satu tangkapan terakhir lewat klien
+HTTP dan menulis `after-temporal-final.png` — permintaan yang hanya bisa dijawab sandbox yang
+masih hidup, jadi `-out` butuh `-keep-session` — kombinasi tanpa flag itu ditolak sebelum
+worker-nya jalan, bukan ditemukan sebagai 404 di akhir run. Flag lain: `-temporal`
+(`$TEMPORAL_HOST_PORT`, default `127.0.0.1:7233`),
+`-namespace` (default `default`), `-queue`, `-click-x`, `-click-y`, `-text`. Keluar non-nol pada
+kegagalan pertama.
 
 Satu catatan yang belum diselesaikan: hasil `Screenshot` membawa byte PNG lewat
 workflow, dan batas payload Temporal secara bawaan 2 MiB. Versi yang disambungkan
@@ -274,9 +295,10 @@ seharusnya menulis PNG ke object storage Jakarta dan mengembalikan kuncinya — 
 - `go test ./internal/modules/vcomputer/...` di backend menutup kontrak klien terhadap
   control plane (body yang dikirim, bearer token, PNG yang lewat utuh, sentinel error).
 - `go test ./internal/modules/vcomputer/... ./internal/container/` menutup workflow smoke
-  dengan activity yang di-mock (urutan langkah, koordinat dan teks yang sampai, tiga kali
-  percobaan lalu gagal) dan registrasinya di worker (nama workflow dan activity yang
-  terdaftar tercetak oleh `TestAgentWorkerRegistrationInventory`).
+  dengan activity yang di-mock (urutan langkah termasuk `StopSession` di akhir, cleanup yang
+  tetap jalan saat sebuah langkah gagal, `keep_session` yang melewatinya, koordinat dan teks
+  yang sampai, tiga kali percobaan lalu gagal) dan registrasinya di worker (nama workflow dan
+  activity yang terdaftar tercetak oleh `TestAgentWorkerRegistrationInventory`).
 - `scripts/e2e.sh` menjalankan jalur yang sebenarnya di Docker dan menulis buktinya ke
   `docs/poc-evidence/virtual-computer/`.
 
