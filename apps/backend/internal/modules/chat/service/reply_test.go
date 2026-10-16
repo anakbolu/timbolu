@@ -326,11 +326,45 @@ func TestSendValidatesItsInput(t *testing.T) {
 	})
 	require.ErrorIs(t, err, chatdomain.ErrInvalidInput)
 
+	// An empty message is refused unless it was opened for an attachment, so
+	// the plain case keeps its error exactly as before.
+	_, err = h.service.Send(context.Background(), h.scope, chatdomain.SendRequest{
+		ConversationID: conversation.ID, Text: "", Reply: false,
+	})
+	require.ErrorIs(t, err, chatdomain.ErrInvalidInput)
+
 	_, err = h.service.Send(context.Background(), h.scope, chatdomain.SendRequest{
 		ConversationID: conversation.ID, Text: strings.Repeat("a", TextMaxRunes+1), Reply: true,
 	})
 	require.ErrorIs(t, err, chatdomain.ErrInvalidInput)
 	require.Contains(t, err.Error(), "longer than")
+}
+
+// TestSendOpensAnEmptyMessageForAnAttachment: an upload may precede the words,
+// so a message opened for an attachment is stored with no text and no reply.
+func TestSendOpensAnEmptyMessageForAnAttachment(t *testing.T) {
+	h := newHarness(t)
+	conversation := h.directConversation(t)
+
+	result, err := h.service.Send(context.Background(), h.scope, chatdomain.SendRequest{
+		ConversationID: conversation.ID,
+		Text:           "",
+		Reply:          true,
+		ForAttachment:  true,
+	})
+	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil, result.Message.ID)
+	require.Empty(t, result.Message.Blocks, "the message carries no text")
+
+	// Nothing answers an attachment container: no placeholder, no responder,
+	// even though the caller asked for a reply.
+	require.Equal(t, uuid.Nil, result.ReplyMessageID)
+	require.Nil(t, result.Responder)
+
+	page, err := h.service.History(context.Background(), h.scope, conversation.ID, chatdomain.Cursor{})
+	require.NoError(t, err)
+	require.Len(t, page.Messages, 1, "no placeholder was written")
+	require.Equal(t, result.Message.ID, page.Messages[0].ID)
 }
 
 // TestHistoryPagesByCursor is the E5.1 gate: a page boundary is stable while new
@@ -700,6 +734,84 @@ func TestAttachmentNeedsStorage(t *testing.T) {
 		MessageID: sent.Message.ID, Filename: "a.txt",
 	}, []byte("a"))
 	require.ErrorIs(t, err, chatdomain.ErrStorageUnavailable)
+}
+
+// decodeMessagePayload reads an event the way a client of the stream does.
+func decodeMessagePayload(t *testing.T, event chatdomain.Event) chatdomain.MessagePayload {
+	t.Helper()
+
+	var payload chatdomain.MessagePayload
+	require.NoError(t, json.Unmarshal(event.Payload, &payload))
+	return payload
+}
+
+// TestAttachShowsTheFileInHistoryAndStream is the QA gate of PR #182: an
+// uploaded file must appear on the message it belongs to in history and in the
+// event the stream sends, not only in the attachment rows.
+func TestAttachShowsTheFileInHistoryAndStream(t *testing.T) {
+	t.Run("the message opened for an upload", func(t *testing.T) {
+		h := newHarness(t)
+		conversation := h.directConversation(t)
+
+		// What the handler does when no message_id was sent: it opens an empty
+		// message for the file to land on.
+		opened, err := h.service.Send(context.Background(), h.scope, chatdomain.SendRequest{
+			ConversationID: conversation.ID, Text: "", ForAttachment: true,
+		})
+		require.NoError(t, err)
+
+		_, err = h.service.Attach(context.Background(), h.scope, chatdomain.AttachRequest{
+			MessageID: opened.Message.ID, Filename: "a.png", ContentType: "image/png",
+		}, []byte("png"))
+		require.NoError(t, err)
+
+		page, err := h.service.History(context.Background(), h.scope, conversation.ID, chatdomain.Cursor{})
+		require.NoError(t, err)
+		require.Len(t, page.Messages, 1, "the opened message is the one the upload was for")
+		require.Len(t, page.Messages[0].Attachments, 1, "history must show the file")
+		require.Equal(t, "a.png", page.Messages[0].Attachments[0].Filename)
+
+		event := h.waitForEvent(t, chatdomain.EventMessageUpdated, func(event chatdomain.Event) bool {
+			return decodeMessagePayload(t, event).MessageID == opened.Message.ID.String()
+		})
+		payload := decodeMessagePayload(t, event)
+		require.Len(t, payload.Attachments, 1, "the stream must carry the file")
+		require.Equal(t, "a.png", payload.Attachments[0].Filename)
+	})
+
+	t.Run("a message that already has text", func(t *testing.T) {
+		h := newHarness(t)
+		conversation := h.directConversation(t)
+
+		sent, err := h.service.Send(context.Background(), h.scope, chatdomain.SendRequest{
+			ConversationID: conversation.ID, Text: "lampiran berikut",
+		})
+		require.NoError(t, err)
+
+		for _, name := range []string{"satu.pdf", "dua.pdf"} {
+			_, err = h.service.Attach(context.Background(), h.scope, chatdomain.AttachRequest{
+				MessageID: sent.Message.ID, Filename: name, ContentType: "application/pdf",
+			}, []byte(name))
+			require.NoError(t, err)
+		}
+
+		message, err := h.store.GetMessage(context.Background(), h.scope, sent.Message.ID)
+		require.NoError(t, err)
+		require.Len(t, message.Attachments, 2, "both files belong to the message")
+
+		h.waitForEvent(t, chatdomain.EventMessageUpdated, func(event chatdomain.Event) bool {
+			payload := decodeMessagePayload(t, event)
+			return payload.MessageID == sent.Message.ID.String() && len(payload.Attachments) == 2
+		})
+
+		updates := h.store.eventsOfType(chatdomain.EventMessageUpdated)
+		require.NotEmpty(t, updates)
+		last := decodeMessagePayload(t, updates[len(updates)-1])
+		require.Equal(t, sent.Message.ID.String(), last.MessageID)
+		require.Len(t, last.Attachments, 2, "the last update carries both files")
+		require.Equal(t, "satu.pdf", last.Attachments[0].Filename)
+		require.Equal(t, "dua.pdf", last.Attachments[1].Filename)
+	})
 }
 
 // TestContentIsServedByItsReference is the E5.6 read path: the reference names a

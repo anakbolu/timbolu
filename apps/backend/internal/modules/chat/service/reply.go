@@ -27,7 +27,9 @@ func (s *Service) Send(ctx context.Context, scope chatdomain.Scope, req chatdoma
 	}
 
 	text := strings.TrimSpace(req.Text)
-	if text == "" && len(req.AttachmentIDs) == 0 {
+	// A message opened for an upload is allowed to carry no text: the file is
+	// the message, and the client sends it before the words.
+	if text == "" && len(req.AttachmentIDs) == 0 && !req.ForAttachment {
 		return chatdomain.SendResult{}, fmt.Errorf("%w: write something first", chatdomain.ErrInvalidInput)
 	}
 	if len([]rune(text)) > TextMaxRunes {
@@ -77,7 +79,9 @@ func (s *Service) Send(ctx context.Context, scope chatdomain.Scope, req chatdoma
 		s.scheduleExtraction(ctx, scope, conversation, req.AgentID)
 	}
 
-	if !req.Reply {
+	// A message opened for an attachment is a container, not a question: it
+	// never starts a reply, whatever the caller asked for.
+	if !req.Reply || req.ForAttachment {
 		return result, nil
 	}
 

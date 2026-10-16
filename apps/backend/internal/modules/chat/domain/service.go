@@ -78,6 +78,8 @@ type SendRequest struct {
 	// Reply asks for an answer. A client that only wants to post (a note, or a
 	// forwarded message) leaves it false.
 	Reply bool
+	// ForAttachment opens a message that will carry an upload; it may have no text.
+	ForAttachment bool
 	// AgentID pins the responder. In a group it overrides the router, which is
 	// what an explicit "@Bolu" does.
 	AgentID uuid.UUID
