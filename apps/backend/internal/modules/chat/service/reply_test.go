@@ -326,11 +326,45 @@ func TestSendValidatesItsInput(t *testing.T) {
 	})
 	require.ErrorIs(t, err, chatdomain.ErrInvalidInput)
 
+	// An empty message is refused unless it was opened for an attachment, so
+	// the plain case keeps its error exactly as before.
+	_, err = h.service.Send(context.Background(), h.scope, chatdomain.SendRequest{
+		ConversationID: conversation.ID, Text: "", Reply: false,
+	})
+	require.ErrorIs(t, err, chatdomain.ErrInvalidInput)
+
 	_, err = h.service.Send(context.Background(), h.scope, chatdomain.SendRequest{
 		ConversationID: conversation.ID, Text: strings.Repeat("a", TextMaxRunes+1), Reply: true,
 	})
 	require.ErrorIs(t, err, chatdomain.ErrInvalidInput)
 	require.Contains(t, err.Error(), "longer than")
+}
+
+// TestSendOpensAnEmptyMessageForAnAttachment: an upload may precede the words,
+// so a message opened for an attachment is stored with no text and no reply.
+func TestSendOpensAnEmptyMessageForAnAttachment(t *testing.T) {
+	h := newHarness(t)
+	conversation := h.directConversation(t)
+
+	result, err := h.service.Send(context.Background(), h.scope, chatdomain.SendRequest{
+		ConversationID: conversation.ID,
+		Text:           "",
+		Reply:          true,
+		ForAttachment:  true,
+	})
+	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil, result.Message.ID)
+	require.Empty(t, result.Message.Blocks, "the message carries no text")
+
+	// Nothing answers an attachment container: no placeholder, no responder,
+	// even though the caller asked for a reply.
+	require.Equal(t, uuid.Nil, result.ReplyMessageID)
+	require.Nil(t, result.Responder)
+
+	page, err := h.service.History(context.Background(), h.scope, conversation.ID, chatdomain.Cursor{})
+	require.NoError(t, err)
+	require.Len(t, page.Messages, 1, "no placeholder was written")
+	require.Equal(t, result.Message.ID, page.Messages[0].ID)
 }
 
 // TestHistoryPagesByCursor is the E5.1 gate: a page boundary is stable while new

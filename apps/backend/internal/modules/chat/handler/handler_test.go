@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"mime/multipart"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -201,6 +203,47 @@ func TestSendCanSkipTheReply(t *testing.T) {
 
 	require.Equal(t, fiber.StatusCreated, resp.Code)
 	require.NotContains(t, resp.Body.String(), "reply_message_id")
+}
+
+// TestAttachWithoutMessageOpensOne: an upload may arrive before the words, so
+// the handler opens a message for it — with no text and no reply.
+func TestAttachWithoutMessageOpensOne(t *testing.T) {
+	service := mocks.NewService(t)
+	id := identity{userID: uuid.New(), workspaceID: uuid.New()}
+	conversationID := uuid.New()
+	opened := messageFixture(conversationID)
+	attachment := chatdomain.Attachment{ID: uuid.New(), MessageID: opened.ID, Filename: "a.txt"}
+
+	service.EXPECT().Send(mock.Anything, mock.Anything, mock.MatchedBy(func(req chatdomain.SendRequest) bool {
+		return req.ConversationID == conversationID && req.ForAttachment && req.Text == "" && !req.Reply
+	})).Return(chatdomain.SendResult{Message: opened}, nil).Once()
+	service.EXPECT().Attach(mock.Anything, mock.Anything, mock.MatchedBy(func(req chatdomain.AttachRequest) bool {
+		return req.MessageID == opened.ID
+	}), []byte("a")).Return(attachment, nil).Once()
+
+	app := newTestApp(t, service, id)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "a.txt")
+	require.NoError(t, err)
+	_, err = part.Write([]byte("a"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	req := httptest.NewRequest(fiber.MethodPost,
+		"/api/conversations/"+conversationID.String()+"/attachments", &body)
+	req.Header.Set(fiber.HeaderContentType, writer.FormDataContentType())
+
+	resp, err := app.Test(req, -1)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+
+	require.Equal(t, fiber.StatusCreated, resp.StatusCode)
+
+	content, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Contains(t, string(content), `"filename":"a.txt"`)
 }
 
 // TestHistoryCarriesAnOpaqueCursor keeps a client from building one by hand.
