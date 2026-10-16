@@ -26,6 +26,7 @@ import (
 	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/task/workflow"
+	"github.com/robzlabz/employeebot/apps/backend/internal/platform/attachtext"
 )
 
 // historyLimit is how much of a conversation a task is given. A task answers the
@@ -48,6 +49,13 @@ type Deps struct {
 	Budget   domain.Budget
 	Events   domain.EventSink
 	Reply    domain.ReplyWriter
+	// Attachments reads the content of a message's files. Optional: without it
+	// every file is named rather than read, which is what a deployment that
+	// stores no attachments gets.
+	Attachments domain.AttachmentReader
+	// AttachmentLimits bounds what a round's attachments contribute to the
+	// prompt. The zero value is the product default.
+	AttachmentLimits attachtext.Limits
 	// Memory is what a Bolu remembers and what a search finds for the task at
 	// hand. Optional: without it a task answers from the conversation alone,
 	// which is what a deployment with no embedding provider gets.
@@ -211,10 +219,25 @@ func (a *Activities) CallModel(ctx context.Context, request workflow.ModelReques
 		}
 	}
 
-	response, err := a.deps.Gateway.Chat(ctx, llmdomain.Scope{
-		WorkspaceID: scope.WorkspaceID,
-		AgentID:     task.AgentID,
-	}, a.chatRequest(request, task))
+	// The files of the round are read here rather than carried in the request:
+	// the workflow holds references, and the bytes enter the prompt inside the
+	// activity that is about to send them.
+	attachments := a.attachmentTurns(ctx, scope, task, request.Messages)
+
+	// A chain without vision refuses a request that carries a picture. Answering
+	// without them is the difference between a reply that names the photo and no
+	// reply at all, so it is tried once, with the pictures said to be unreadable
+	// rather than announced as sent.
+	vision := true
+	response, err := a.modelCall(ctx, scope, task, request, attachments, vision)
+	if err != nil && vision && carriedImages(attachments) && errors.Is(err, llmdomain.ErrUnsupported) {
+		a.taskLogger(ctx, task).Warn("the model chain cannot read images; answering without them",
+			zap.Error(err),
+		)
+
+		vision = false
+		response, err = a.modelCall(ctx, scope, task, request, attachments, vision)
+	}
 	if err != nil {
 		return workflow.ModelReply{}, err
 	}
@@ -758,8 +781,20 @@ func (a *Activities) load(ctx context.Context, input workflow.TaskInput) (domain
 	return a.deps.Tasks.Get(ctx, domain.Scope{WorkspaceID: workspaceID}, taskID)
 }
 
+// modelCall makes one attempt at the round's model call, with or without the
+// pictures the round carries.
+func (a *Activities) modelCall(ctx context.Context, scope domain.Scope, task domain.Task, request workflow.ModelRequest, attachments []*attachtext.Turn, vision bool) (llmdomain.ChatResponse, error) {
+	return a.deps.Gateway.Chat(ctx, llmdomain.Scope{
+		WorkspaceID: scope.WorkspaceID,
+		AgentID:     task.AgentID,
+	}, a.chatRequest(request, task, attachments, vision))
+}
+
 // chatRequest renders one model call.
-func (a *Activities) chatRequest(request workflow.ModelRequest, task domain.Task) llmdomain.ChatRequest {
+//
+// attachments is aligned with request.Messages: it is what each message's files
+// contribute, already read, so the rendering here is pure.
+func (a *Activities) chatRequest(request workflow.ModelRequest, task domain.Task, attachments []*attachtext.Turn, vision bool) llmdomain.ChatRequest {
 	tools := make([]llmdomain.Tool, 0, len(request.Tools))
 	for _, tool := range request.Tools {
 		tools = append(tools, tool.AsLLMTool())
@@ -768,14 +803,26 @@ func (a *Activities) chatRequest(request workflow.ModelRequest, task domain.Task
 	// The turns map one to one: the workflow keeps the conversation in the shape
 	// the model reads, so a tool call and its result reach the provider as the
 	// pair they are rather than as loose prose.
+	//
+	// A turn that says nothing is left out rather than sent as a blank message.
+	// The only one that can appear is a message whose whole content was a file
+	// already read on a newer message, and an empty user turn is noise the model
+	// has to account for.
 	messages := make([]llmdomain.Message, 0, len(request.Messages))
-	for _, turn := range request.Messages {
-		messages = append(messages, llmdomain.Message{
+	for i, turn := range request.Messages {
+		message := llmdomain.Message{
 			Role:        turn.Role,
 			Text:        turn.Text,
 			ToolCalls:   turn.ToolCalls,
 			ToolResults: turn.ToolResults,
-		})
+		}
+		if i < len(attachments) && attachments[i] != nil {
+			message = attachMessage(message, attachments[i], vision)
+		}
+		if saysNothing(message) {
+			continue
+		}
+		messages = append(messages, message)
 	}
 
 	return llmdomain.ChatRequest{

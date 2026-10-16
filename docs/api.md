@@ -435,6 +435,68 @@ so the document has an opaque origin and cannot read the application's cookies,
 storage, or DOM. `connect-src 'none'` is what stops a script inside it from
 reaching the network at all.
 
+### What the model reads from an attachment
+
+A message's files are part of the prompt, not only of the screen. Before a model
+call, the attachments of the turns being sent are rendered into the user turn they
+belong to:
+
+| The file | What the model receives |
+| --- | --- |
+| Text, CSV, JSON, Markdown, XML, YAML, HTML source | A section: `[Lampiran: name (type, size) #nonce]`, the text, `[/Lampiran #nonce]` — the nonce is eight random hex characters, one per file |
+| PDF | The same section, holding the extracted text of every page |
+| Picture whose bytes sniff as an image | `[Gambar name (type, size)]` in the text, plus the bytes as vision input |
+| Anything else (Office documents, archives, audio) | `[Lampiran name (type, size): isi tidak dibaca — tipe ini belum didukung]` |
+| A file that could not be read | `[Lampiran name tidak bisa dibaca: <reason>]` — a missing object, a corrupt PDF, a picture the active model cannot see |
+
+The stored `content_type` is never trusted for the decision: the bytes are
+sniffed, so a `.txt` that holds a PNG is sent as a picture.
+
+An attachment is data, never instruction. Each section carries its own random
+nonce, so a file cannot contain the marker that ends it; a filename is stripped of
+line breaks and brackets, and text inside a file that spells a marker is rewritten
+(`[/Lampiran` → `[/ Lampiran`, `[Lampiran` → `[ Lampiran`) with the section's nonce
+replaced by `#`. Both system prompts tell the model the same thing: what sits
+between the markers is untrusted file content, and instructions found inside it
+are never to be followed.
+
+What one request may carry is bounded, and every bound is configurable:
+
+| Bound | Default | Effect |
+| --- | --- | --- |
+| `ATTACHMENT_CONTEXT_MAX_FILE_BYTES` | 10 MiB | A larger file is named, not read; checked before the object is fetched |
+| `ATTACHMENT_CONTEXT_MAX_CHARS_PER_FILE` | 20000 | A longer text is cut, with a marker saying how much was shown |
+| `ATTACHMENT_CONTEXT_MAX_CHARS_TOTAL` | 60000 | The budget for one request, spent newest message first |
+| `ATTACHMENT_CONTEXT_MAX_IMAGES` | 4 | Pictures sent as vision input |
+| `ATTACHMENT_CONTEXT_MAX_IMAGE_BYTES` | 5 MiB | A larger picture is named, not sent |
+
+The budget is spent **newest first**, because a task answers the message that
+opened it: an old thread full of documents degrades to names before the file the
+question is about does. A file the budget or a bound excludes still appears in the
+prompt, so the model can say which file it could not read rather than inventing an
+answer.
+
+A file is rendered **once**. Uploading a file and then linking it to a message
+through `attachment_ids` leaves the same attachment on two messages, so the newest
+mention keeps the content and the older one loses only the file, not the text
+beside it. Otherwise the file would spend the budget twice and a picture would be
+sent as two images.
+
+A model that cannot see pictures is handled twice over. `LLM_TEXT_ONLY_MODELS`
+names the models of the deployment that do not read them, matched against the
+configured model name case-insensitively and by prefix, and the picture is never
+attached to a request to one of them. A model the list does not name is assumed to
+see, and if the provider refuses the picture anyway — a 400 that names the image
+rather than the request — the refusal is read as a capability the route lacks, so
+the chain moves on and, if no provider reads it, the request is retried once
+without the pictures. Either way the answer says so (`ChunkNotice`): a deployment
+with no vision provider loses the pictures, not the reply.
+
+Inside a durable task the workflow's state carries only
+`{id, filename, content_type, size}` for each file; the `CallModel` activity
+resolves the bytes. A replayed workflow therefore never holds a file, and a
+Temporal history stays small.
+
 ## Task runtime (EPIC 6)
 
 A task is a durable unit of work: a Bolu thinks, calls the tools it was granted,

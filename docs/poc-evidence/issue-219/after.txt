@@ -1,0 +1,13 @@
+$ VCOMPUTER_CONTROL_TIMEOUT=banana go run ./cmd/agent-worker -env local
+2026-10-16T14:01:40.599+0700	WARN	container/container.go:278	VCOMPUTER_CONTROL_TIMEOUT="banana" is not a duration, so it is ignored and the configured timeout of 30s stands: time: invalid duration "banana"
+agent-worker: open database: ping database: failed to connect to `user=employeebot database=employeebot`:
+(config load sukses; error berikutnya hanya DB lokal tidak jalan)
+$ go test ./internal/container/ -run TestStartupLogsWhatTheLoaderIgnored -v
+=== RUN   TestStartupLogsWhatTheLoaderIgnored
+--- PASS: TestStartupLogsWhatTheLoaderIgnored (0.00s)
+PASS
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/container	0.022s
+=== RUN   TestLoadWarnsAboutAMalformedVComputerTimeout
+--- PASS: TestLoadWarnsAboutAMalformedVComputerTimeout (0.00s)
+PASS
+ok  	github.com/robzlabz/employeebot/packages/platform/config	0.018s

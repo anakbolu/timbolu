@@ -134,6 +134,9 @@ require (
 	gopkg.in/ini.v1 v1.67.3 // indirect
 )
 
-require github.com/robzlabz/employeebot/packages v0.0.0
+require (
+	github.com/ledongthuc/pdf v0.0.0-20260907135840-6c8c28e0e8a0
+	github.com/robzlabz/employeebot/packages v0.0.0
+)
 
 replace github.com/robzlabz/employeebot/packages => ../../packages

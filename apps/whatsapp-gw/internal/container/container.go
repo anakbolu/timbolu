@@ -117,6 +117,13 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Container, e
 		return nil, err
 	}
 
+	// Whatever the loader could not use from the environment is said here, which is the first
+	// point in this process with a logger: the gateway shares the loader with the backend, so a
+	// setting it ignores has to be named here too rather than only where the setting is used.
+	for _, warning := range cfg.Warnings() {
+		log.Warn(warning)
+	}
+
 	c := &Container{Config: cfg, Logger: log}
 
 	// Telemetry and metrics come first: everything assembled after them may start

@@ -22,7 +22,7 @@ func clearOverrides(t *testing.T) {
 		"SECRET_ENCRYPTION_KEY", "LLM_DEFAULT_ADAPTER", "LLM_DEFAULT_BASE_URL",
 		"LLM_DEFAULT_MODEL", "LLM_DEFAULT_API_KEY", "LLM_DEFAULT_MAX_TOKENS",
 		"LLM_DEFAULT_CONTEXT_TOKENS", "LLM_QUOTA_ENABLED", "LLM_TOKENS_PER_PERIOD",
-		"LLM_CHAIN_LIMIT",
+		"LLM_CHAIN_LIMIT", "LLM_TEXT_ONLY_MODELS",
 		"BILLING_PROVIDER", "DUITKU_MERCHANT_CODE", "DUITKU_API_KEY", "DUITKU_SANDBOX",
 		"DUITKU_PAYMENT_METHOD", "DUITKU_EXPIRY_MINUTES", "DUITKU_CALLBACK_URL",
 		"DUITKU_RETURN_URL", "DUITKU_BASE_URL",
@@ -114,6 +114,26 @@ func TestLoadReadsTheModelGatewaySettings(t *testing.T) {
 	require.Equal(t, 2, cfg.Llm.ChainLimit)
 }
 
+
+// TestTextOnlyModelsComeFromTheEnvironment: which models cannot see a picture is a
+// deployment fact, because a workspace points the gateway at whatever its provider
+// serves. The list can only take vision away — a model it does not name is assumed
+// to see — so an unset value keeps the wire format's own default.
+func TestTextOnlyModelsComeFromTheEnvironment(t *testing.T) {
+	clearOverrides(t)
+	t.Setenv("ENVIRONMENT", "local")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Empty(t, cfg.Llm.TextOnlyModels, "empty means every model is assumed to see")
+
+	t.Setenv("LLM_TEXT_ONLY_MODELS", " DeepSeek-Chat ,llama3.1, ,")
+	cfg, err = Load()
+	require.NoError(t, err)
+	require.Equal(t, []string{"deepseek-chat", "llama3.1"}, cfg.Llm.TextOnlyModels,
+		"the case is lowered and the blanks are dropped")
+}
+
 // TestLoadRejectsAMalformedQuota: a mistyped allowance must fail the startup
 // rather than silently becoming "unlimited".
 func TestLoadRejectsAMalformedQuota(t *testing.T) {
@@ -185,6 +205,50 @@ func TestLoadRejectsAMalformedMemorySetting(t *testing.T) {
 	_, err = Load()
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "MEMORY_SIMILARITY")
+}
+
+// TestLoadReadsTheAttachmentContextSettings covers the bounds on what a
+// message's files contribute to a model call, and the defaults a deployment that
+// names none gets.
+func TestLoadReadsTheAttachmentContextSettings(t *testing.T) {
+	clearOverrides(t)
+	t.Setenv("ENVIRONMENT", "local")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	require.Equal(t, int64(10485760), cfg.AttachmentContext.MaxFileBytes)
+	require.Equal(t, 20000, cfg.AttachmentContext.MaxCharsPerFile)
+	require.Equal(t, 60000, cfg.AttachmentContext.MaxCharsTotal)
+	require.Equal(t, 4, cfg.AttachmentContext.MaxImages)
+	require.Equal(t, int64(5242880), cfg.AttachmentContext.MaxImageBytes)
+
+	t.Setenv("ATTACHMENT_CONTEXT_MAX_FILE_BYTES", "1024")
+	t.Setenv("ATTACHMENT_CONTEXT_MAX_CHARS_PER_FILE", "100")
+	t.Setenv("ATTACHMENT_CONTEXT_MAX_CHARS_TOTAL", "250")
+	t.Setenv("ATTACHMENT_CONTEXT_MAX_IMAGES", "1")
+	t.Setenv("ATTACHMENT_CONTEXT_MAX_IMAGE_BYTES", "2048")
+
+	cfg, err = Load()
+	require.NoError(t, err)
+
+	require.Equal(t, int64(1024), cfg.AttachmentContext.MaxFileBytes)
+	require.Equal(t, 100, cfg.AttachmentContext.MaxCharsPerFile)
+	require.Equal(t, 250, cfg.AttachmentContext.MaxCharsTotal)
+	require.Equal(t, 1, cfg.AttachmentContext.MaxImages)
+	require.Equal(t, int64(2048), cfg.AttachmentContext.MaxImageBytes)
+}
+
+// TestLoadRejectsAMalformedAttachmentContextSetting: a bound that will not parse
+// is an error rather than a silently unlimited one.
+func TestLoadRejectsAMalformedAttachmentContextSetting(t *testing.T) {
+	clearOverrides(t)
+	t.Setenv("ENVIRONMENT", "local")
+	t.Setenv("ATTACHMENT_CONTEXT_MAX_CHARS_TOTAL", "banyak")
+
+	_, err := Load()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "ATTACHMENT_CONTEXT_MAX_CHARS_TOTAL")
 }
 
 // TestLocalDefaultsSealProviderSecrets: the development key exists so a
@@ -557,15 +621,34 @@ func TestLoadReadsTheVComputerSettings(t *testing.T) {
 	require.Equal(t, 90*time.Second, cfg.VComputer.Timeout)
 }
 
-// TestLoadRejectsAMalformedVComputerSetting: a timeout that will not parse is an error rather
-// than a silent fall back to the default, for the same reason a mistyped quota is — a bound that
-// quietly becomes something else is only discovered when a call behaves unlike its configuration.
-func TestLoadRejectsAMalformedVComputerSetting(t *testing.T) {
+// TestLoadWarnsAboutAMalformedVComputerTimeout: a timeout that will not parse is not a reason to
+// refuse to start.
+//
+// This is the one setting whose bad value is warned about and ignored rather than fatal, and the
+// reason is what it bounds: the virtual computer is an optional PoC (docs/adr/0003-virtual-computer.md),
+// so a typo in its timeout must not take down the agent worker and the task, routine and memory
+// workflows that have nothing to do with a sandbox (issue #219). What stands is the timeout the
+// config file carries, so a deployment that raised it deliberately keeps what it raised it to.
+func TestLoadWarnsAboutAMalformedVComputerTimeout(t *testing.T) {
 	clearOverrides(t)
 	t.Setenv("ENVIRONMENT", "local")
-	t.Setenv("VCOMPUTER_CONTROL_TIMEOUT", "sebentar")
+	t.Setenv("VCOMPUTER_CONTROL_TIMEOUT", "banana")
 
-	_, err := Load()
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "VCOMPUTER_CONTROL_TIMEOUT")
+	cfg, err := Load()
+	require.NoError(t, err, "an unparseable optional timeout must not fail the startup")
+	require.Equal(t, 30*time.Second, cfg.VComputer.Timeout, "the configured default stands")
+
+	warnings := cfg.Warnings()
+	require.Len(t, warnings, 1)
+	require.Contains(t, warnings[0], "VCOMPUTER_CONTROL_TIMEOUT")
+	require.Contains(t, warnings[0], "banana")
+	require.Contains(t, warnings[0], "30s", "the warning says what is in effect instead")
+
+	// A value that parses still overrides, and the ignored one is not carried into the warnings of
+	// the next load: a config is told what its own environment was, not what the last one said.
+	t.Setenv("VCOMPUTER_CONTROL_TIMEOUT", "90s")
+	cfg, err = Load()
+	require.NoError(t, err)
+	require.Equal(t, 90*time.Second, cfg.VComputer.Timeout)
+	require.Empty(t, cfg.Warnings())
 }

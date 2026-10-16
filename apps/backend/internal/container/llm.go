@@ -11,6 +11,7 @@ import (
 	llmservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/service"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/pricing"
+	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/vision"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/quota"
 	"github.com/robzlabz/employeebot/packages/platform/config"
 	"github.com/robzlabz/employeebot/packages/platform/crypto"
@@ -51,11 +52,14 @@ func (c *Container) openLLM(_ context.Context, cfg *config.Config) error {
 	deps := llmservice.Deps{
 		// The tracer is the process's provider, so a model call made inside a workflow is a
 		// child of that workflow's span rather than a new trace per call.
-		Tracer:   c.telemetryTracer(),
-		Metrics:  c.metricsFor(),
-		Store:    c.Repositories.LLM,
-		Agents:   c.Repositories.LLMAgents,
-		Factory:  llm.Factory{},
+		Tracer:  c.telemetryTracer(),
+		Metrics: c.metricsFor(),
+		Store:   c.Repositories.LLM,
+		Agents:  c.Repositories.LLMAgents,
+		// Which models of this deployment see is configuration, not a property of
+		// the wire format: the list is what keeps a picture away from a text-only
+		// model instead of discovering it with a refused request.
+		Factory:  llm.Factory{Vision: vision.New(cfg.Llm.TextOnlyModels)},
 		Box:      secretBox(box),
 		Recorder: c.Repositories.LLM,
 		Reader:   c.Repositories.LLM,
