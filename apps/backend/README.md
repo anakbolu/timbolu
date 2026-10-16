@@ -815,8 +815,13 @@ and a delivery that fails does not fail the sign-up; each attempt is bounded by
 gateway's
 `SECRET_ENCRYPTION_KEY` (32 bytes, base64/hex/raw, seals the provider keys at
 rest), `LLM_DEFAULT_*` (the provider the platform offers a workspace that
-configured none), `LLM_QUOTA_ENABLED`/`LLM_TOKENS_PER_PERIOD`, and
-`LLM_CHAIN_LIMIT`. The task runtime's bounds are `TASK_MAX_STEPS`,
+configured none), `LLM_QUOTA_ENABLED`/`LLM_TOKENS_PER_PERIOD`, `LLM_CHAIN_LIMIT`, and
+`LLM_TEXT_ONLY_MODELS` (comma-separated, matched by
+prefix against the configured model name, case-insensitively; a model the list
+does not name is assumed to see pictures, and a model that is text-only but
+unnamed still answers, because a provider's own refusal is read as a capability
+the route lacks and the request is retried without the pictures). The task
+runtime's bounds are `TASK_MAX_STEPS`,
 `TASK_MAX_TOKENS`, `TASK_MAX_HANDOFF_DEPTH`, and `TASK_MAX_TOOL_RESULT_BYTES`;
 a zero falls back to the product default. What a message's attachments may contribute is bounded
 by `ATTACHMENT_CONTEXT_MAX_FILE_BYTES` (a larger file is named rather than read, checked before
@@ -929,3 +934,4 @@ The environment a connector reads, alongside the ones in Configuration:
 | `JWT_SECRET` | Signs access tokens and the OAuth state. |
 | `DATABASE_URL`, `REDIS_URL` | Postgres, and the Redis that carries the realtime channels. |
 | `LLM_DEFAULT_ADAPTER`, `LLM_DEFAULT_BASE_URL`, `LLM_DEFAULT_MODEL`, `LLM_DEFAULT_API_KEY` | The provider the platform offers a workspace that configured none; an empty adapter disables it. |
+| `LLM_TEXT_ONLY_MODELS` | The models that cannot read a picture, comma-separated and matched by prefix; everything else is assumed to see. |

@@ -90,6 +90,10 @@ Llm:
   QuotaEnabled: false
   TokensPerPeriod: 0
   ChainLimit: 3
+  # A model here that cannot read a picture, so a developer pointing the platform
+  # at a local text-only server sees the same answer a deployment would. Empty
+  # assumes every model sees.
+  TextOnlyModels: []
 
 Plan:
   # The cost ceiling of one day per workspace, in micro-rupiah (1 IDR = 1e6).

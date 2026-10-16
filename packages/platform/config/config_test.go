@@ -22,7 +22,7 @@ func clearOverrides(t *testing.T) {
 		"SECRET_ENCRYPTION_KEY", "LLM_DEFAULT_ADAPTER", "LLM_DEFAULT_BASE_URL",
 		"LLM_DEFAULT_MODEL", "LLM_DEFAULT_API_KEY", "LLM_DEFAULT_MAX_TOKENS",
 		"LLM_DEFAULT_CONTEXT_TOKENS", "LLM_QUOTA_ENABLED", "LLM_TOKENS_PER_PERIOD",
-		"LLM_CHAIN_LIMIT",
+		"LLM_CHAIN_LIMIT", "LLM_TEXT_ONLY_MODELS",
 		"BILLING_PROVIDER", "DUITKU_MERCHANT_CODE", "DUITKU_API_KEY", "DUITKU_SANDBOX",
 		"DUITKU_PAYMENT_METHOD", "DUITKU_EXPIRY_MINUTES", "DUITKU_CALLBACK_URL",
 		"DUITKU_RETURN_URL", "DUITKU_BASE_URL",
@@ -112,6 +112,26 @@ func TestLoadReadsTheModelGatewaySettings(t *testing.T) {
 	require.True(t, cfg.Llm.QuotaEnabled)
 	require.Equal(t, int64(1500000), cfg.Llm.TokensPerPeriod)
 	require.Equal(t, 2, cfg.Llm.ChainLimit)
+}
+
+
+// TestTextOnlyModelsComeFromTheEnvironment: which models cannot see a picture is a
+// deployment fact, because a workspace points the gateway at whatever its provider
+// serves. The list can only take vision away — a model it does not name is assumed
+// to see — so an unset value keeps the wire format's own default.
+func TestTextOnlyModelsComeFromTheEnvironment(t *testing.T) {
+	clearOverrides(t)
+	t.Setenv("ENVIRONMENT", "local")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Empty(t, cfg.Llm.TextOnlyModels, "empty means every model is assumed to see")
+
+	t.Setenv("LLM_TEXT_ONLY_MODELS", " DeepSeek-Chat ,llama3.1, ,")
+	cfg, err = Load()
+	require.NoError(t, err)
+	require.Equal(t, []string{"deepseek-chat", "llama3.1"}, cfg.Llm.TextOnlyModels,
+		"the case is lowered and the blanks are dropped")
 }
 
 // TestLoadRejectsAMalformedQuota: a mistyped allowance must fail the startup

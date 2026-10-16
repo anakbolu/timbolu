@@ -307,6 +307,20 @@ func loadFromEnv(cfg *Config) error {
 		cfg.Llm.ChainLimit = limit
 	}
 
+	if v := os.Getenv("LLM_TEXT_ONLY_MODELS"); v != "" {
+		models := make([]string, 0, 4)
+		for _, model := range strings.Split(v, ",") {
+			// A model name is matched case-insensitively, and a provider spells it
+			// its own way, so the list is normalized here: what the gateway reads is
+			// one spelling, and a trailing comma is a typo rather than a model.
+			trimmed := strings.ToLower(strings.TrimSpace(model))
+			if trimmed != "" {
+				models = append(models, trimmed)
+			}
+		}
+		cfg.Llm.TextOnlyModels = models
+	}
+
 	if v := os.Getenv("LLM_DEFAULT_MAX_TOKENS"); v != "" {
 		tokens, err := strconv.Atoi(v)
 		if err != nil {

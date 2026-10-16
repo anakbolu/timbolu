@@ -532,6 +532,11 @@ type LlmConfig struct {
 	TokensPerPeriod int64 `mapstructure:"TokensPerPeriod"`
 	// ChainLimit is how many providers one request tries before giving up.
 	ChainLimit int `mapstructure:"ChainLimit"`
+	// TextOnlyModels names the models of this deployment that cannot read a
+	// picture, matched against the configured model name case-insensitively and by
+	// prefix. Everything not named is assumed to see: the list only takes vision
+	// away, so a deployment that lists nothing keeps the wire format's default.
+	TextOnlyModels []string `mapstructure:"TextOnlyModels" validate:"optional"`
 }
 
 // DefaultProviderConfig is the platform-level provider. Every field is optional:

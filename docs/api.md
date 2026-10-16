@@ -476,9 +476,15 @@ question is about does. A file the budget or a bound excludes still appears in t
 prompt, so the model can say which file it could not read rather than inventing an
 answer.
 
-A chain whose model cannot see pictures is retried once without them, and the
-answer says so (`ChunkNotice`): a deployment with no vision provider loses the
-pictures, not the reply.
+A model that cannot see pictures is handled twice over. `LLM_TEXT_ONLY_MODELS`
+names the models of the deployment that do not read them, matched against the
+configured model name case-insensitively and by prefix, and the picture is never
+attached to a request to one of them. A model the list does not name is assumed to
+see, and if the provider refuses the picture anyway — a 400 that names the image
+rather than the request — the refusal is read as a capability the route lacks, so
+the chain moves on and, if no provider reads it, the request is retried once
+without the pictures. Either way the answer says so (`ChunkNotice`): a deployment
+with no vision provider loses the pictures, not the reply.
 
 Inside a durable task the workflow's state carries only
 `{id, filename, content_type, size}` for each file; the `CallModel` activity
