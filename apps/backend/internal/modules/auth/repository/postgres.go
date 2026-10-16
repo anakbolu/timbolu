@@ -369,6 +369,7 @@ func toUser(user sqlcgen.User) domain.User {
 		HasGoogle:     user.GoogleSubject != nil && *user.GoogleSubject != "",
 		HasPassword:   user.PasswordHash != "",
 		Onboarded:     user.OnboardedAt != nil,
+		Role:          user.Role,
 		CreatedAt:     user.CreatedAt,
 	}
 }

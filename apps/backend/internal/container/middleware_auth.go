@@ -149,6 +149,47 @@ func (c *Container) requireStreamAuth(notConfiguredCode string) fiber.Handler {
 	}
 }
 
+// requirePlatformAdmin rejects the request unless the authenticated account may
+// reach the operator surface.
+//
+// It is not requireRole, and the difference is the whole reason the platform
+// role exists: requireRole reads a role inside the active workspace, which
+// somebody else's workspace owner granted. This one reads `users.role`, which is
+// a property of the deployment, and it needs no workspace at all — an account
+// that belongs to no workspace is still administrable.
+//
+// The role is read from the account on every request rather than carried in the
+// access token, so a demotion takes effect on the next call instead of on the
+// next sign-in: a token that still says "admin" would otherwise keep working for
+// as long as it is valid.
+func (c *Container) requirePlatformAdmin() fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		if c.Services.Auth == nil {
+			return response.Unavailable(ctx, "authentication is not configured", "auth_not_configured")
+		}
+
+		userID := middleware.CurrentUserID(ctx)
+		if userID == uuid.Nil {
+			return response.Error(ctx, fiber.StatusUnauthorized, "access token is required", "unauthenticated", nil)
+		}
+
+		user, err := c.Services.Auth.CurrentUser(ctx.UserContext(), userID)
+		if err != nil {
+			if errors.Is(err, authdomain.ErrUserNotFound) {
+				return response.Error(ctx, fiber.StatusUnauthorized, "access token is invalid or expired", "unauthenticated", nil)
+			}
+			c.Logger.Error("resolve platform role failed", zap.Error(err))
+			return response.Error(ctx, fiber.StatusInternalServerError, "internal server error", "internal_error", nil)
+		}
+
+		if !authdomain.IsAdmin(user.Role) {
+			return response.Error(ctx, fiber.StatusForbidden, "hanya admin platform yang boleh membuka halaman ini", "forbidden", nil)
+		}
+
+		return ctx.Next()
+	}
+}
+
 // requireRole rejects the request unless the caller's role in the active
 // workspace is one of roles.
 func requireRole(roles ...string) fiber.Handler {

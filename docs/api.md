@@ -29,10 +29,16 @@ Base URL: `{API_URL}/api`. Every response uses the envelope
   "user": {
     "id": "…", "email": "owner@example.com",
     "email_verified": true, "onboarded": true,
-    "has_password": true, "has_google": false
+    "has_password": true, "has_google": false,
+    "role": "user"
   }
 }
 ```
+
+`user.role` is the **platform** role, not the workspace one: `admin` reaches
+`/admin`, `user` is everybody else. The screen uses it to decide whether to offer
+the link, and the API checks it again on every admin request. See
+[Platform role and the operator surface](#platform-role-and-the-operator-surface).
 
 The refresh token is **not** in the body: it is set as an `httpOnly` cookie named
 `bolu_refresh`, scoped to `/api/auth`, `SameSite=Lax`, `Secure` outside local
@@ -92,6 +98,66 @@ otherwise hold every outbound action forever.
 | Change workspace settings | ❌ | ❌ | ✅ |
 | Remove the last owner | ❌ | ❌ | ❌ |
 | Remove yourself | ❌ | ❌ | ❌ |
+
+## Platform role and the operator surface
+
+Two different things are called a role, and confusing them is the mistake this
+section exists to prevent.
+
+`members.role` is the **workspace** role — `owner`, `admin`, `member` — granted by
+whoever owns that workspace, and it answers *what may this person do inside this
+workspace*. The matrix above is that one.
+
+`users.role` is the **platform** role — `user`, `admin` — and it answers *may this
+person see the deployment*. It is a property of the account rather than of a
+membership, so an account that belongs to no workspace at all still has one.
+
+| Endpoint | Auth | Notes |
+| --- | --- | --- |
+| `GET /admin/overview` | bearer + platform admin | Counts of accounts: total, admins, users, verified, onboarded, Google, new in 7 days |
+| `GET /admin/users` | bearer + platform admin | `?q=&role=&limit=&offset=`; meta carries `total`, `limit`, `offset` |
+| `POST /admin/users/:userID/role` | bearer + platform admin | `{role}` where role is `user` or `admin` |
+
+**Every account is a plain user.** The column defaults to `user`, so every account
+that existed when the migration ran, and every account a registration or an
+invitation creates afterwards, is one. Nothing in the product grants the platform
+role: the first admin is made by one statement on the database —
+
+```sql
+UPDATE users SET role = 'admin' WHERE lower(email) = 'someone@example.com';
+```
+
+— and every admin after that is promoted from `/admin/users` by an admin.
+
+**The role is read from the account, not from the token.** The guard behind these
+routes asks the auth service for the account on every request, so a demotion takes
+effect on the next call rather than when the access token expires. A promotion is
+visible on `/auth/me` immediately, which is what lets the workspace sidebar offer
+the link without a second endpoint.
+
+**The surface asks for no workspace.** It is registered on a path prefix rather
+than through a group, so no tenant middleware and no subscription guard reaches
+it: an account with no workspace is still administrable. Three refusals are the
+whole reason the module has a service:
+
+| Refusal | Status | Code |
+| --- | --- | --- |
+| The caller is not a platform admin | `403` | `forbidden` |
+| No such account | `404` | `user_not_found` |
+| The account is the last admin | `409` | `last_admin` |
+| The caller is demoting their own account | `409` | `self_demotion` |
+
+The last-admin rule is enforced by the `UPDATE` statement itself — it demotes only
+when a second admin exists — rather than by reading a count and then writing.
+Two admins demoting each other at the same moment would each read a count of two
+and each write, leaving the deployment with nobody able to reach the surface; a
+single statement cannot be split that way.
+
+**The boundary is `users`.** Every read in the module is a read of the account
+table, and the only tenant table it touches is `members`, which it counts and does
+not read. Bolus, tasks, conversations and money all stay behind the workspace
+policies, so a platform admin administers the deployment without becoming a reader
+of every customer's data.
 
 ## Agent registry (EPIC 3)
 

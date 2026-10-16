@@ -11,6 +11,10 @@ packages:
       Repository:
       Checker:
       Service:
+  github.com/robzlabz/employeebot/apps/backend/internal/modules/admin/domain:
+    interfaces:
+      Repository:
+      Service:
   github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain:
     interfaces:
       Repository:

@@ -88,7 +88,7 @@ func (q *Queries) CreateEmailVerificationToken(ctx context.Context, arg CreateEm
 const createGoogleUser = `-- name: CreateGoogleUser :one
 INSERT INTO users (email, google_subject, email_verified_at)
 VALUES ($1, $2, now())
-RETURNING id, email, password_hash, email_verified_at, google_subject, created_at, updated_at, onboarded_at
+RETURNING id, email, password_hash, email_verified_at, google_subject, created_at, updated_at, onboarded_at, role
 `
 
 type CreateGoogleUserParams struct {
@@ -110,6 +110,7 @@ func (q *Queries) CreateGoogleUser(ctx context.Context, arg CreateGoogleUserPara
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OnboardedAt,
+		&i.Role,
 	)
 	return i, err
 }
@@ -182,7 +183,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, password_hash)
 VALUES ($1, $2)
-RETURNING id, email, password_hash, email_verified_at, google_subject, created_at, updated_at, onboarded_at
+RETURNING id, email, password_hash, email_verified_at, google_subject, created_at, updated_at, onboarded_at, role
 `
 
 type CreateUserParams struct {
@@ -203,6 +204,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OnboardedAt,
+		&i.Role,
 	)
 	return i, err
 }
@@ -264,7 +266,7 @@ func (q *Queries) GetSessionByTokenHash(ctx context.Context, refreshTokenHash st
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, email_verified_at, google_subject, created_at, updated_at, onboarded_at FROM users WHERE lower(email) = lower($1)
+SELECT id, email, password_hash, email_verified_at, google_subject, created_at, updated_at, onboarded_at, role FROM users WHERE lower(email) = lower($1)
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (User, error) {
@@ -279,12 +281,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (User, error
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OnboardedAt,
+		&i.Role,
 	)
 	return i, err
 }
 
 const getUserByGoogleSubject = `-- name: GetUserByGoogleSubject :one
-SELECT id, email, password_hash, email_verified_at, google_subject, created_at, updated_at, onboarded_at FROM users WHERE google_subject = $1
+SELECT id, email, password_hash, email_verified_at, google_subject, created_at, updated_at, onboarded_at, role FROM users WHERE google_subject = $1
 `
 
 func (q *Queries) GetUserByGoogleSubject(ctx context.Context, googleSubject *string) (User, error) {
@@ -299,12 +302,13 @@ func (q *Queries) GetUserByGoogleSubject(ctx context.Context, googleSubject *str
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OnboardedAt,
+		&i.Role,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, email_verified_at, google_subject, created_at, updated_at, onboarded_at FROM users WHERE id = $1
+SELECT id, email, password_hash, email_verified_at, google_subject, created_at, updated_at, onboarded_at, role FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
@@ -319,6 +323,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OnboardedAt,
+		&i.Role,
 	)
 	return i, err
 }
@@ -357,7 +362,7 @@ SET google_subject = $2,
     email_verified_at = COALESCE(email_verified_at, now()),
     updated_at = now()
 WHERE id = $1
-RETURNING id, email, password_hash, email_verified_at, google_subject, created_at, updated_at, onboarded_at
+RETURNING id, email, password_hash, email_verified_at, google_subject, created_at, updated_at, onboarded_at, role
 `
 
 type LinkGoogleSubjectParams struct {
@@ -379,6 +384,7 @@ func (q *Queries) LinkGoogleSubject(ctx context.Context, arg LinkGoogleSubjectPa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OnboardedAt,
+		&i.Role,
 	)
 	return i, err
 }
@@ -388,7 +394,7 @@ UPDATE users
 SET email_verified_at = COALESCE(email_verified_at, now()),
     updated_at = now()
 WHERE id = $1
-RETURNING id, email, password_hash, email_verified_at, google_subject, created_at, updated_at, onboarded_at
+RETURNING id, email, password_hash, email_verified_at, google_subject, created_at, updated_at, onboarded_at, role
 `
 
 func (q *Queries) MarkEmailVerified(ctx context.Context, id uuid.UUID) (User, error) {
@@ -403,6 +409,7 @@ func (q *Queries) MarkEmailVerified(ctx context.Context, id uuid.UUID) (User, er
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OnboardedAt,
+		&i.Role,
 	)
 	return i, err
 }
@@ -411,7 +418,7 @@ const markOnboarded = `-- name: MarkOnboarded :one
 UPDATE users
 SET onboarded_at = COALESCE(onboarded_at, now()), updated_at = now()
 WHERE id = $1
-RETURNING id, email, password_hash, email_verified_at, google_subject, created_at, updated_at, onboarded_at
+RETURNING id, email, password_hash, email_verified_at, google_subject, created_at, updated_at, onboarded_at, role
 `
 
 func (q *Queries) MarkOnboarded(ctx context.Context, id uuid.UUID) (User, error) {
@@ -426,6 +433,7 @@ func (q *Queries) MarkOnboarded(ctx context.Context, id uuid.UUID) (User, error)
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OnboardedAt,
+		&i.Role,
 	)
 	return i, err
 }
@@ -477,7 +485,7 @@ const updatePasswordHash = `-- name: UpdatePasswordHash :one
 UPDATE users
 SET password_hash = $2, updated_at = now()
 WHERE id = $1
-RETURNING id, email, password_hash, email_verified_at, google_subject, created_at, updated_at, onboarded_at
+RETURNING id, email, password_hash, email_verified_at, google_subject, created_at, updated_at, onboarded_at, role
 `
 
 type UpdatePasswordHashParams struct {
@@ -497,6 +505,7 @@ func (q *Queries) UpdatePasswordHash(ctx context.Context, arg UpdatePasswordHash
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OnboardedAt,
+		&i.Role,
 	)
 	return i, err
 }

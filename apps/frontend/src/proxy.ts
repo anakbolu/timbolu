@@ -38,6 +38,11 @@ export default function proxy(request: NextRequest) {
  * The routes that *are* a workspace rather than a page about one. The landing
  * page, pricing, and the auth screens are deliberately absent: they are what
  * somebody without a session is here to read.
+ *
+ * `/admin` is here for the same reason the workspace routes are — it needs a
+ * session before it can answer anything — and not for the platform role: a role
+ * is a fact only the API knows, so the admin layout asks for it and redirects a
+ * plain account. This gate only decides whether the shell is worth loading.
  */
 export const config = {
   matcher: [
@@ -48,5 +53,6 @@ export const config = {
     "/groups/:path*",
     "/settings/:path*",
     "/tasks/:path*",
+    "/admin/:path*",
   ],
 };

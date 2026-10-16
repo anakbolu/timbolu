@@ -32,6 +32,27 @@ var (
 	ErrGoogleEmailUnverified = errors.New("auth: google did not verify the email address")
 )
 
+// The platform role of an account, matching the check constraint on
+// `users.role`.
+//
+// It is not the same thing as a workspace role, which is stored on `members`
+// and answers "what may this person do inside this workspace". This one answers
+// "may this person see the deployment", and only the operator surface at /admin
+// reads it.
+const (
+	// RoleUser is every account: the default on the column, and what a
+	// registration and an invitation both produce.
+	RoleUser = "user"
+	// RoleAdmin reaches the operator surface. It is granted by hand — see the
+	// 000024 migration — and by another admin afterwards.
+	RoleAdmin = "admin"
+)
+
+// IsAdmin reports whether a platform role may reach the operator surface. An
+// unrecognised or empty role is not one, so a value that never went through the
+// column's check constraint still fails closed.
+func IsAdmin(role string) bool { return role == RoleAdmin }
+
 // User is an account. The password hash never leaves the backend.
 type User struct {
 	ID            uuid.UUID
@@ -40,7 +61,11 @@ type User struct {
 	HasGoogle     bool
 	HasPassword   bool
 	Onboarded     bool
-	CreatedAt     time.Time
+	// Role is the platform role. It travels with the account rather than with a
+	// session, so a promotion takes effect on the next request instead of on the
+	// next sign-in.
+	Role      string
+	CreatedAt time.Time
 }
 
 // Session is what a successful sign-in returns: an access token for API calls
