@@ -56,8 +56,10 @@ Generated packages (`sqlcgen`, `mocks`) are excluded.
 - A module importing `internal/container`.
 - `cmd/*` importing a module directly: binaries go through the container.
 - A layer using a platform package outside its allow-list (`repository` →
-  `database`, `redis`; `service` → `logger`, `config`; `handler` → `logger`,
-  `middleware`, `response`).
+  `database`, `redis`; `service` → `logger`, `config`, `attachtext`;
+  `activity` → `attachtext`; `handler` → `logger`, `middleware`, `response`).
+  `attachtext` is shared by the chat service and the task activity so a message's
+  attachments are read the same way on both paths.
 
 Generated packages (`sqlcgen`, `mocks`), `tools/`, and `migrations/` are exempt.
 

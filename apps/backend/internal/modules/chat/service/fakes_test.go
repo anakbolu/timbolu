@@ -523,12 +523,30 @@ type scriptedGateway struct {
 	mu     sync.Mutex
 	rounds [][]llmdomain.StreamEvent
 	calls  []llmdomain.ChatRequest
+	// served counts the calls that were answered, which is what a round is
+	// indexed by: a call refused before it started is not a round.
+	served int
+	// refuseImages makes the gateway answer "unsupported" to any request that
+	// carries a picture, which is what a chain without vision looks like from
+	// the responder's side.
+	refuseImages bool
 	// chatAnswer is what a non-streaming call answers, which the group router
 	// makes. Empty means the call is refused.
 	chatAnswer string
 	// embedFn answers an embedding call. Unset means the provider has none, which
 	// is what a deployment without one looks like from the responder's side.
 	embedFn func(llmdomain.EmbedRequest) (llmdomain.EmbedResponse, error)
+}
+
+// requestHasImages reports whether a request would carry a picture.
+func requestHasImages(req llmdomain.ChatRequest) bool {
+	for _, message := range req.Messages {
+		if len(message.Images) > 0 {
+			return true
+		}
+	}
+
+	return false
 }
 
 // Embed implements the embedding half of the gateway. A test that does not
@@ -549,13 +567,15 @@ func (g *scriptedGateway) Stream(_ context.Context, _ llmdomain.Scope, req llmdo
 
 	g.calls = append(g.calls, req)
 
-	round := 0
-	if len(g.calls) > 0 {
-		round = len(g.calls) - 1
+	if g.refuseImages && requestHasImages(req) {
+		return nil, fmt.Errorf("llm: the provider cannot read images: %w", llmdomain.ErrUnsupported)
 	}
+
+	round := g.served
 	if round >= len(g.rounds) {
 		return nil, fmt.Errorf("%w: no scripted round %d", llmdomain.ErrInvalidRequest, round)
 	}
+	g.served++
 
 	events := make(chan llmdomain.StreamEvent, len(g.rounds[round])+1)
 	for _, event := range g.rounds[round] {

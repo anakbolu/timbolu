@@ -413,6 +413,35 @@ type Message struct {
 	AgentID        uuid.UUID
 	UserID         uuid.UUID
 	Blocks         []Block
+	// Attachments are the files the message carried, as references. The bytes
+	// are read by the activity that needs them: a workflow's state is replayed
+	// from its history, and a file's content has no business being in it.
+	Attachments []AttachmentRef
+}
+
+// AttachmentRef names one file of a message without carrying it.
+type AttachmentRef struct {
+	ID          uuid.UUID
+	Filename    string
+	ContentType string
+	ByteSize    int64
+}
+
+// AttachmentContent is a file as the reader returned it.
+type AttachmentContent struct {
+	Filename    string
+	ContentType string
+	Content     []byte
+}
+
+// AttachmentReader reads the content of a message's attachment.
+//
+// It is a port because the task module does not own attachments: the chat module
+// stores them, and the container adapts its service to this interface. A runtime
+// without one still answers — every file is then named rather than read, which is
+// the fallback a deployment with no object storage already gets.
+type AttachmentReader interface {
+	ReadAttachment(ctx context.Context, scope Scope, attachmentID uuid.UUID) (AttachmentContent, error)
 }
 
 // Block is one content block of a message.
@@ -434,6 +463,10 @@ type Turn struct {
 	ToolCalls []llmdomain.ToolCall
 	// ToolResults is what those calls answered, on a tool turn.
 	ToolResults []llmdomain.ToolResult
+	// Attachments are the files of the message this turn came from, on a user
+	// turn. They travel as references: the activity reads the bytes, and the
+	// workflow's state stays small enough to replay.
+	Attachments []AttachmentRef
 }
 
 // FromAgent reports whether a Bolu wrote the message.

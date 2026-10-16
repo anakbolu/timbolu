@@ -132,6 +132,20 @@ func TestTaskMessageAdapterKeepsTheBlockBodies(t *testing.T) {
 	back := toChatBlocks(converted.Blocks)
 	require.Len(t, back, 1)
 	require.JSONEq(t, string(body), string(back[0].Body))
+
+	// A file's reference travels with the message, so the activity can read the
+	// bytes; the bytes themselves never do, because a workflow's state is
+	// replayed and replayed state stays small.
+	attachmentID := uuid.New()
+	message.Attachments = []chatdomain.Attachment{{
+		ID: attachmentID, StorageKey: "attachments/stok.txt",
+		Filename: "stok.txt", ContentType: "text/plain", ByteSize: 22,
+	}}
+
+	withFile := toTaskMessage(message)
+	require.Equal(t, []taskdomain.AttachmentRef{{
+		ID: attachmentID, Filename: "stok.txt", ContentType: "text/plain", ByteSize: 22,
+	}}, withFile.Attachments)
 }
 
 // TestChatTaskStarterForwardsTheTrigger covers the seam: what the chat module

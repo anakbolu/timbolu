@@ -144,6 +144,32 @@ func TestCheck(t *testing.T) {
 			wantRule: "no-container-import",
 		},
 		{
+			name: "service may read attachments",
+			packages: []Package{
+				pkg("internal/modules/chat/service", internal("internal/platform/attachtext"), internal("internal/platform/logger")),
+			},
+		},
+		{
+			name: "task activity may read attachments",
+			packages: []Package{
+				pkg("internal/modules/task/activity", internal("internal/platform/attachtext")),
+			},
+		},
+		{
+			name: "attachment reading is the only platform package an activity gets",
+			packages: []Package{
+				pkg("internal/modules/task/activity", internal("internal/platform/database")),
+			},
+			wantRule: "layer-platform-access",
+		},
+		{
+			name: "a handler may not read attachments",
+			packages: []Package{
+				pkg("internal/modules/chat/handler", internal("internal/platform/attachtext")),
+			},
+			wantRule: "layer-platform-access",
+		},
+		{
 			name: "cmd reaches modules through the container",
 			packages: []Package{
 				pkg("cmd/api", internal("internal/modules/agent/handler")),

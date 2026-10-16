@@ -12,6 +12,7 @@ package llmtest
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -31,16 +32,17 @@ import (
 
 // Scenario names. Each adapter keeps a fixture per scenario.
 const (
-	ScenarioChatBasic      = "chat_basic"
-	ScenarioChatTools      = "chat_tools"
-	ScenarioStreamText     = "stream_text"
-	ScenarioStreamTools    = "stream_tools"
-	ScenarioManyTools      = "many_tools"
-	ScenarioEmptyAnswer    = "empty_answer"
-	ScenarioRateLimited    = "rate_limited"
-	ScenarioProviderDown   = "provider_down"
-	ScenarioInvalidRequest = "invalid_request"
-	ScenarioUsage          = "usage_reporting"
+	ScenarioChatBasic        = "chat_basic"
+	ScenarioChatTools        = "chat_tools"
+	ScenarioStreamText       = "stream_text"
+	ScenarioStreamTools      = "stream_tools"
+	ScenarioManyTools        = "many_tools"
+	ScenarioEmptyAnswer      = "empty_answer"
+	ScenarioRateLimited      = "rate_limited"
+	ScenarioProviderDown     = "provider_down"
+	ScenarioInvalidRequest   = "invalid_request"
+	ScenarioImageUnsupported = "image_unsupported"
+	ScenarioUsage            = "usage_reporting"
 )
 
 // FixtureDir is where the recorded responses live, relative to this package.
@@ -73,6 +75,9 @@ type SentRequest struct {
 type SentMessage struct {
 	Role string
 	Text string
+	// Images is how many pictures the message carried. A refusal of those
+	// pictures is what the suite tells apart from a refusal of the text.
+	Images int
 	// ToolCalls the assistant asked for.
 	ToolCalls []SentToolCall
 	// ToolResults the caller answered with.
@@ -124,6 +129,7 @@ func RunContract(t *testing.T, adapter Adapter) {
 		t.Run("rate limited", func(t *testing.T) { testRateLimited(t, adapter) })
 		t.Run("provider unavailable", func(t *testing.T) { testProviderDown(t, adapter) })
 		t.Run("invalid request", func(t *testing.T) { testInvalidRequest(t, adapter) })
+		t.Run("image input refused", func(t *testing.T) { testImageUnsupported(t, adapter) })
 	})
 
 	t.Run("stream", func(t *testing.T) {
@@ -393,6 +399,36 @@ func testInvalidRequest(t *testing.T, adapter Adapter) {
 	require.ErrorIs(t, err, domain.ErrInvalidRequest)
 	require.False(t, domain.Retryable(err),
 		"a malformed request fails everywhere, so falling back would only waste a call")
+}
+
+// testImageUnsupported is the text-only model behind an adapter that speaks for
+// a vision-capable one: the provider answers 400 to a request that carries a
+// picture. That is "this route cannot", which the chain answers by asking again
+// without the pictures, not "this request is malformed", which fails on every
+// provider and is what the 400 means otherwise.
+func testImageUnsupported(t *testing.T, adapter Adapter) {
+	t.Helper()
+
+	stubServer := newStub(t, adapter, adapter.Fixture(t, ScenarioImageUnsupported), http.StatusBadRequest, map[string]string{"Content-Type": "application/json"})
+	provider := stubServer.provider(t, adapter)
+
+	request := baseRequest()
+	request.Messages = append(request.Messages, domain.Message{
+		Role:   domain.RoleUser,
+		Text:   "Stok di foto ini tinggal berapa?",
+		Images: []domain.Image{{MediaType: "image/png", Data: base64.StdEncoding.EncodeToString([]byte("\x89PNG\r\n\x1a\nlampiran"))}},
+	})
+
+	_, err := provider.Chat(context.Background(), request)
+	require.Error(t, err)
+	require.ErrorIs(t, err, domain.ErrUnsupported,
+		"a refused picture is a capability the route lacks, which the chain may answer without")
+	require.False(t, domain.Retryable(err),
+		"the same picture fails everywhere; what helps is the request without it")
+
+	sent := stubServer.last(t)
+	require.Equal(t, 1, sent.Messages[len(sent.Messages)-1].Images,
+		"the picture must have reached the provider, which is what it refused")
 }
 
 // testStreamText is the streaming contract: text arrives in pieces, the usage
