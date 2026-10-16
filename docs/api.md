@@ -410,6 +410,12 @@ missed, in order: over HTTP with `?after_id=`, or on the stream with the
 `?last_event_id=`. An event id that appears twice is dropped by the client's
 cursor, so a reconnect cannot duplicate a message.
 
+The SSE response opens with a `: connected` comment line that is flushed before
+anything else, so the head reaches the client whether or not there is a backlog:
+a stream with nothing to replay — the ordinary reconnect — must not look
+connected only once its first heartbeat is due, 25s later. The comment is not an
+event, so a client that listens for named types sees nothing extra.
+
 `agent.state` carries `{agent_id, state, reason?, task_id?, draft_id?}` where
 `state` is `working`, `thinking`, `waiting`, `idle`, or `resting`. **No
 coordinate is stored anywhere**: a client that draws the crew derives a position

@@ -456,6 +456,20 @@ func (h *Handler) SSE(c *fiber.Ctx) error {
 	c.Set("X-Accel-Buffering", "no")
 
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		// The head goes out on its own, before there is an event to carry it:
+		// fasthttp sends the status line and the headers only when the first
+		// bytes are flushed, so a client that resumes with nothing to replay
+		// (the ordinary reconnect, whose cursor is already the newest event)
+		// would otherwise wait for the first heartbeat before its EventSource
+		// reported itself open. A comment is not an event, so a client ignores
+		// the line and a listener that only knows named events is unaffected.
+		if _, err := w.WriteString(": connected\n\n"); err != nil {
+			return
+		}
+		if err := w.Flush(); err != nil {
+			return
+		}
+
 		heartbeat := time.NewTicker(chatdomain.Heartbeat)
 		defer heartbeat.Stop()
 
