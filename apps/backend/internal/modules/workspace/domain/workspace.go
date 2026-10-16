@@ -57,8 +57,7 @@ type Workspace struct {
 	CreatedAt time.Time
 }
 
-// Team groups the Bolu of one workspace. A new workspace always gets Tim Bolu
-// and Tim Hore.
+// Team groups the Bolu of one workspace. A new workspace always gets Tim Bolu.
 type Team struct {
 	ID   uuid.UUID
 	Name string
@@ -123,8 +122,8 @@ type UpdateRequest struct {
 // repository methods on purpose: they must run in one transaction, and the
 // service layer is not allowed to depend on a driver.
 type Repository interface {
-	// Onboard creates the workspace, the owner membership and the two default
-	// teams in one transaction. It returns the existing workspace instead of
+	// Onboard creates the workspace, the owner membership and the default team
+	// in one transaction. It returns the existing workspace instead of
 	// creating a second one when the user already owns one.
 	Onboard(ctx context.Context, userID uuid.UUID, req OnboardRequest) (OnboardResult, error)
 	// Workspaces lists the workspaces the user belongs to, with their role.

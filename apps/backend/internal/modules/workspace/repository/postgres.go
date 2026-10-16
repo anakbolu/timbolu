@@ -22,11 +22,8 @@ import (
 
 const uniqueViolation = "23505"
 
-// Default teams created with every workspace.
-const (
-	teamBolu = "Tim Bolu"
-	teamHore = "Tim Hore"
-)
+// The team every workspace starts with.
+const teamBolu = "Tim Bolu"
 
 // PolicyProvisioner gives a new workspace the conservative approval policies it
 // starts with, inside the onboarding transaction.
@@ -116,9 +113,9 @@ func New(pool *database.Pool) *Repository {
 	return &Repository{pool: pool}
 }
 
-// Onboard creates the workspace, its owner membership and the two default teams
-// in one transaction. It is idempotent: a caller who already owns a workspace
-// gets that workspace back instead of a second one.
+// Onboard creates the workspace, its owner membership and the default team in
+// one transaction. It is idempotent: a caller who already owns a workspace gets
+// that workspace back instead of a second one.
 func (r *Repository) Onboard(ctx context.Context, userID uuid.UUID, req domain.OnboardRequest) (domain.OnboardResult, error) {
 	if r == nil || r.pool == nil {
 		return domain.OnboardResult{}, fmt.Errorf("workspace: database is not configured")
@@ -183,30 +180,26 @@ func (r *Repository) Onboard(ctx context.Context, userID uuid.UUID, req domain.O
 			return fmt.Errorf("workspace: create owner membership: %w", err)
 		}
 
-		// The two teams are created, because a Bolu has to belong to one and a
-		// person should not have to invent a team before inventing a colleague.
+		// One team is created, because a Bolu has to belong to one and a person
+		// should not have to invent a team before inventing a colleague. One and
+		// not two: a second team nobody asked for is a section of the sidebar the
+		// person has to learn to ignore, and it is empty on every workspace that
+		// ever existed. A workspace that wants another one gets it the day teams
+		// can be made on the screen.
+		//
 		// What is deliberately not created is a Bolu: the workspace starts empty,
 		// and the first one is made by a person on the screen that says so. A team
 		// full of strangers somebody did not ask for is harder to understand than
 		// an empty one.
-		teams := make([]sqlcgen.Team, 0, 2)
-		for _, team := range []struct {
-			name string
-			kind string
-		}{
-			{teamBolu, "bolu"},
-			{teamHore, "hore"},
-		} {
-			createdTeam, err := queries.CreateTeam(ctx, sqlcgen.CreateTeamParams{
-				WorkspaceID: created.ID,
-				Name:        team.name,
-				Kind:        team.kind,
-			})
-			if err != nil {
-				return fmt.Errorf("workspace: create team %s: %w", team.name, err)
-			}
-			teams = append(teams, createdTeam)
+		createdTeam, err := queries.CreateTeam(ctx, sqlcgen.CreateTeamParams{
+			WorkspaceID: created.ID,
+			Name:        teamBolu,
+			Kind:        "bolu",
+		})
+		if err != nil {
+			return fmt.Errorf("workspace: create team %s: %w", teamBolu, err)
 		}
+		teams := []sqlcgen.Team{createdTeam}
 
 		// And the conservative approval policies, so no action kind reaches the
 		// outside world without a row the workspace can see and change.

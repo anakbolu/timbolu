@@ -86,10 +86,10 @@ func TestTemplatesAreSeeded(t *testing.T) {
 	}
 }
 
-// TestANewWorkspaceStartsEmpty is the MVP's shape: onboarding creates the two
-// teams and no Bolu. A team full of strangers somebody did not ask for is harder
-// to understand than an empty one, and the screen that says it is empty is where
-// the first one is made.
+// TestANewWorkspaceStartsEmpty is the MVP's shape: onboarding creates one team
+// and no Bolu. A team full of strangers somebody did not ask for is harder to
+// understand than an empty one, and the screen that says it is empty is where the
+// first one is made.
 func TestANewWorkspaceStartsEmpty(t *testing.T) {
 	fixture := newAgentFixture(t, appDatabase(t))
 	ctx := t.Context()
@@ -98,18 +98,15 @@ func TestANewWorkspaceStartsEmpty(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, agents, "a new workspace starts with no Bolu")
 
-	// The teams exist, because a Bolu has to belong to one and a person should
-	// not have to invent a team before inventing a colleague.
+	// The team exists, because a Bolu has to belong to one and a person should
+	// not have to invent a team before inventing a colleague. One team, not two:
+	// a second one nobody asked for is a section of the sidebar every workspace
+	// has to learn to ignore.
 	teams, err := fixture.service.Teams(ctx, fixture.scope)
 	require.NoError(t, err)
-	require.Len(t, teams, 2)
-
-	kinds := map[string]string{}
-	for _, team := range teams {
-		kinds[team.Kind] = team.Name
-	}
-	require.Equal(t, "Tim Bolu", kinds["bolu"])
-	require.Equal(t, "Tim Hore", kinds["hore"])
+	require.Len(t, teams, 1, "onboarding creates one team")
+	require.Equal(t, "Tim Bolu", teams[0].Name)
+	require.Equal(t, "bolu", teams[0].Kind)
 
 	// And a Bolu can be created immediately, which is what the empty screen
 	// offers.
@@ -242,33 +239,25 @@ func TestCreateAndDeleteBolu(t *testing.T) {
 	ctx := t.Context()
 	seedTemplateAgents(t, fixture.pool, fixture.workspace.ID)
 
-	teams, err := fixture.service.Teams(ctx, fixture.scope)
-	require.NoError(t, err)
-	require.Len(t, teams, 2)
+	// A second team the fixture writes, so a Bolu can be shown reporting the team
+	// it sits in rather than the one every workspace starts with.
+	second := seedTeam(t, fixture.pool, fixture.workspace.ID, "Tim Dapur")
 
-	var horeTeam uuid.UUID
-	for _, team := range teams {
-		if team.Kind == "hore" {
-			horeTeam = team.ID
-		}
-	}
-	require.NotEqual(t, uuid.Nil, horeTeam)
-
-	// A new Bolu in Tim Hore, created from scratch.
+	// A new Bolu in that team, created from scratch.
 	created, err := fixture.service.Create(ctx, fixture.scope, agentdomain.CreateRequest{
-		TeamID:  horeTeam,
+		TeamID:  second,
 		Name:    "Kak Helper",
 		Role:    "Serba bisa",
 		Persona: "Membantu pekerjaan kantor harian.",
 	})
 	require.NoError(t, err)
 	require.Equal(t, "Kak Helper", created.Name)
-	require.Equal(t, "Tim Hore", created.TeamName)
+	require.Equal(t, "Tim Dapur", created.TeamName)
 	require.Equal(t, agentdomain.DisplayIdle, created.Display)
 
 	// And one copied from an existing Bolu.
 	copied, err := fixture.service.Create(ctx, fixture.scope, agentdomain.CreateRequest{
-		TeamID:   horeTeam,
+		TeamID:   second,
 		CopyFrom: created.ID,
 	})
 	require.NoError(t, err)
@@ -498,18 +487,26 @@ func TestArrangeMovesABoluUpAndAcrossTeams(t *testing.T) {
 	ctx := t.Context()
 
 	created := seedAgents(t, fixture.pool, fixture.workspace.ID, "Oren", "Biru", "Lila")
+
+	// A second team for the move to land in. The product makes only the one team
+	// onboarding creates, so the fixture writes this row.
+	second := seedTeam(t, fixture.pool, fixture.workspace.ID, "Tim Dapur")
+
 	teams, err := fixture.service.Teams(ctx, fixture.scope)
 	require.NoError(t, err)
+	require.Len(t, teams, 2)
 
-	bolu, hore := teams[0], teams[1]
+	bolu, dapur := teams[0], teams[1]
+	require.Equal(t, "Tim Bolu", bolu.Name)
+	require.Equal(t, second, dapur.ID)
 	require.Len(t, bolu.Agents, 3, "the seeded Bolu land in the first team")
 	require.Equal(t, []string{"Oren", "Biru", "Lila"}, names(bolu.Agents), "a new Bolu lands at the end")
 
-	// Lila moves to the top of Tim Bolu and Oren moves into Tim Hore, which is one
-	// layout: the list as it should read.
+	// Lila moves to the top of Tim Bolu and Oren moves into the second team, which
+	// is one layout: the list as it should read.
 	_, err = fixture.service.Arrange(ctx, fixture.scope, agentdomain.Arrangement{Teams: []agentdomain.TeamArrangement{
 		{TeamID: bolu.ID, Agents: []uuid.UUID{created[2].ID, created[1].ID}},
-		{TeamID: hore.ID, Agents: []uuid.UUID{created[0].ID}},
+		{TeamID: dapur.ID, Agents: []uuid.UUID{created[0].ID}},
 	}})
 	require.NoError(t, err)
 
@@ -523,8 +520,8 @@ func TestArrangeMovesABoluUpAndAcrossTeams(t *testing.T) {
 	// in: the arrangement is a move, not a note beside it.
 	moved, err := fixture.service.Get(ctx, fixture.scope, created[0].ID)
 	require.NoError(t, err)
-	require.Equal(t, hore.ID, moved.TeamID)
-	require.Equal(t, "Tim Hore", moved.TeamName)
+	require.Equal(t, dapur.ID, moved.TeamID)
+	require.Equal(t, "Tim Dapur", moved.TeamName)
 	require.Equal(t, int32(0), moved.Position)
 
 	// A Bolu made afterwards lands at the end of its team, not in the gap the move
@@ -547,12 +544,15 @@ func TestArrangeRefusesAnIncompleteLayoutAgainstTheDatabase(t *testing.T) {
 	ctx := t.Context()
 
 	created := seedAgents(t, fixture.pool, fixture.workspace.ID, "Oren", "Biru")
+	second := seedTeam(t, fixture.pool, fixture.workspace.ID, "Tim Dapur")
+
 	teams, err := fixture.service.Teams(ctx, fixture.scope)
 	require.NoError(t, err)
+	require.Len(t, teams, 2)
 
 	_, err = fixture.service.Arrange(ctx, fixture.scope, agentdomain.Arrangement{Teams: []agentdomain.TeamArrangement{
 		{TeamID: teams[0].ID, Agents: []uuid.UUID{created[0].ID}},
-		{TeamID: teams[1].ID, Agents: []uuid.UUID{}},
+		{TeamID: second, Agents: []uuid.UUID{}},
 	}})
 	require.ErrorIs(t, err, agentdomain.ErrOrderIncomplete)
 

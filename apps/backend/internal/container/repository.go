@@ -98,8 +98,8 @@ func newRepositories(pool *database.Pool) *Repositories {
 		// wrapper rather than the raw connection.
 		repositories.Agent = agentrepo.New(pool)
 
-		// A new workspace is created empty: its two teams, and no Bolu. The first
-		// one is made by a person on the screen that says the team is empty.
+		// A new workspace is created empty: its team, and no Bolu. The first one is
+		// made by a person on the screen that says the team is empty.
 		repositories.Workspace = workspacerepo.New(pool)
 
 		// And the auth repository as its onboarding marker, for the same reason:

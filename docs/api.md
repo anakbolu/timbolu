@@ -74,11 +74,11 @@ otherwise hold every outbound action forever.
 | Endpoint | Auth | Role | Notes |
 | --- | --- | --- | --- |
 | `GET /workspaces` | bearer | any | Every workspace the account belongs to, with its role |
-| `POST /workspaces/onboard` | bearer + verified | any | Creates workspace + owner + Tim Bolu + Tim Hore; **idempotent** |
+| `POST /workspaces/onboard` | bearer + verified | any | Creates workspace + owner + Tim Bolu; **idempotent** |
 | `POST /invitations/accept` | bearer + verified | any | Joins the invited workspace; the signed-in email must match |
 | `GET /workspaces/current` | bearer + tenant | any | The active workspace |
 | `PATCH /workspaces/current` | bearer + tenant | owner | Name, business field, timezone, language, working hours and days |
-| `GET /workspaces/current/teams` | bearer + tenant | any | Tim Bolu and Tim Hore |
+| `GET /workspaces/current/teams` | bearer + tenant | any | The workspace's teams, which start as Tim Bolu alone |
 | `GET /workspaces/current/members` | bearer + tenant | any | Members with roles |
 | `PATCH /workspaces/current/members/:userID` | bearer + tenant | owner, admin | Change a role |
 | `DELETE /workspaces/current/members/:userID` | bearer + tenant | owner, admin | Remove a member |
@@ -161,15 +161,17 @@ of every customer's data.
 
 ## Agent registry (EPIC 3)
 
-Every workspace starts with **no Bolu**: onboarding creates Tim Bolu and Tim Hore
+Every workspace starts with **no Bolu and one team**: onboarding creates Tim Bolu
 and nothing else. The first Bolu is made by a person on the screen that says the
 team is empty, which is also where the six seeded profiles are offered as starting
 points. A team full of strangers somebody did not ask for is harder to understand
-than an empty one.
+than an empty one, and so is a second team: there is no endpoint that creates a
+team, so one seeded empty team would be the only one every workspace has to learn
+to ignore.
 
 | Endpoint | Auth | Role | Notes |
 | --- | --- | --- | --- |
-| `GET /teams` | bearer + tenant | any | Tim Bolu and Tim Hore with their Bolu |
+| `GET /teams` | bearer + tenant | any | The workspace's teams, starting with Tim Bolu, with their Bolu |
 | `GET /agents` | bearer + tenant | any | Flat registry list |
 | `GET /agents/templates` | bearer | any | The six seeded profiles |
 | `GET /agents/tool-catalog` | bearer | any | Every known tool with its label |

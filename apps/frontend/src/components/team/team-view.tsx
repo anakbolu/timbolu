@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The team screen: Tim Bolu and Tim Hore, each with its Bolu.
+ * The team screen: the workspace's teams, each with its Bolu.
  *
  * A Bolu can be renamed, re-persona'd, put to rest, given tool access, or
  * created from a template or by copying one — none of which needs a deploy,

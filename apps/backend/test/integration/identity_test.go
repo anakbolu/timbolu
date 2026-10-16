@@ -204,7 +204,7 @@ func withWorkspace(token, workspaceID string) map[string]string {
 }
 
 // TestSignupFlowThroughTheAPI is the first acceptance gate: register → verify →
-// onboard → the account owns a workspace with the two default teams.
+// onboard → the account owns a workspace with its default team.
 func TestSignupFlowThroughTheAPI(t *testing.T) {
 	api := newIdentityAPI(t, migratedDatabase(t))
 
@@ -242,15 +242,11 @@ func TestSignupFlowThroughTheAPI(t *testing.T) {
 	require.Equal(t, "owner", workspace["role"])
 
 	teams := onboarded["teams"].([]any)
-	require.Len(t, teams, 2, "a new workspace always gets Tim Bolu and Tim Hore")
+	require.Len(t, teams, 1, "a new workspace gets one team, not a second empty one")
 
-	kinds := map[string]string{}
-	for _, entry := range teams {
-		team := entry.(map[string]any)
-		kinds[team["kind"].(string)] = team["name"].(string)
-	}
-	require.Equal(t, "Tim Bolu", kinds["bolu"])
-	require.Equal(t, "Tim Hore", kinds["hore"])
+	team := teams[0].(map[string]any)
+	require.Equal(t, "Tim Bolu", team["name"])
+	require.Equal(t, "bolu", team["kind"])
 
 	workspaceID := workspace["id"].(string)
 

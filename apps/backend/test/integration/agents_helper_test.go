@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	agentdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
@@ -53,6 +54,26 @@ func seedAgent(t *testing.T, pool *database.Pool, workspaceID uuid.UUID) uuid.UU
 	t.Helper()
 
 	return seedAgents(t, pool, workspaceID, "Oren")[0].ID
+}
+
+// seedTeam creates a second team and returns its id.
+//
+// The product cannot do this: onboarding creates one team and there is no
+// endpoint that makes another. A test that needs two writes the row itself,
+// because what it is testing — a Bolu reporting the team it sits in, and a
+// layout that moves one across teams — has to be provable before the screen
+// that makes a team exists.
+func seedTeam(t *testing.T, pool *database.Pool, workspaceID uuid.UUID, name string) uuid.UUID {
+	t.Helper()
+
+	id := uuid.New()
+	err := pool.InScope(t.Context(), database.Scope{WorkspaceID: workspaceID}, func(tx pgx.Tx) error {
+		_, err := tx.Exec(t.Context(),
+			"INSERT INTO teams (id, workspace_id, name, kind) VALUES ($1, $2, $3, 'bolu')", id, workspaceID, name)
+		return err
+	})
+	require.NoError(t, err)
+	return id
 }
 
 // seedTemplateAgents creates one Bolu per template key, the way a person picks a
