@@ -36,39 +36,102 @@
 #                             contain spaces (`sudo docker`).
 #   DOCKER_HOST               read by the docker CLI, not by the control plane: it is how
 #                             the CLI reaches the daemon. This file points it at
-#                             vcomputer-socket-proxy, and it must stay pointed there — the
-#                             control container has no socket to fall back on.
+#                             VCOMPUTER_SOCKET_PROXY_CONTAINER below, and it must stay
+#                             pointed there — the control container has no socket to fall
+#                             back on.
 #   VCOMPUTER_SANDBOX_IMAGE   image the runtime starts per bot. Default
 #                             vcomputer-sandbox:poc.
-#   VCOMPUTER_SANDBOX_NETWORK docker network sandboxes join. Default vcomputer-internal.
-#   VCOMPUTER_SANDBOX_NOVNC_PORT / VCOMPUTER_SANDBOX_CDP_PORT
-#                             per-sandbox noVNC and DevTools ports, passed to each
-#                             container as `-e NOVNC_PORT=` / `-e CDP_PORT=`.
-#                             Default 6080 / 9223.
+#   VCOMPUTER_SANDBOX_IMAGE_ALLOWLIST
+#                             comma-separated images the runtime may start. Default: the
+#                             image above, and nothing else. It exists because the create
+#                             request the control plane renders is validated before it is
+#                             rendered (control/internal/sandbox/spec.go): an image outside
+#                             this list is refused there, so a bug that pointed a session at
+#                             some other image cannot become a container.
+#   VCOMPUTER_SANDBOX_NETWORK docker network sandboxes join. Follows
+#                             VCOMPUTER_INTERNAL_NETWORK below, because they have to
+#                             be the same network — the control plane is the only
+#                             member of both and therefore the only door in — and can
+#                             still be set on its own for a deployment that names the
+#                             network elsewhere.
+#   VCOMPUTER_SANDBOX_NOVNC_PORT / VCOMPUTER_SANDBOX_GATE_PORT
+#                             per-sandbox noVNC and gate ports, passed to each
+#                             container as `-e NOVNC_PORT=` / `-e GATE_PORT=`.
+#                             Default 6080 / 8443. websockify listens on loopback
+#                             inside the sandbox, so the gate is the only listener on
+#                             the sandbox's network address, and it is what the control
+#                             plane dials for both CDP and noVNC.
+#   VCOMPUTER_SANDBOX_NAME_PREFIX
+#                             what the runtime names a bot's container and volume
+#                             after: <prefix>-<bot id> and <prefix>-<bot id>-home. It
+#                             is also the scope a cleanup works in, so two stacks can
+#                             share one host. Default vcomputer; this file sets it from
+#                             VCOMPUTER_STACK so a stack's names stay together.
+#   VCOMPUTER_NAVIGATE_TIMEOUT
+#                             bound on one `navigate`, including the check that the
+#                             page finished loading, e.g. 15s. A URL with no route has
+#                             to fail inside a bound the caller can wait for instead of
+#                             hanging until the browser gives up.
 #   VCOMPUTER_EXEC_TIMEOUT    bound on one `exec`, e.g. 30s.
 #   SCREEN_GEOMETRY           the sandbox display, passed as `-e`. Default 1280x800x24.
 #   VNC_PASSWORD              optional, and deliberately not set here: a human watching
 #                             through the noVNC proxy is already behind the control
 #                             plane's token, so the PoC ships no second secret.
 #
+# Compose-side variables — these are read by this file, not by the control plane. Their
+# defaults are the names this stack has always used, so
+# `docker compose -f apps/virtual-computer/docker-compose.poc.yml up -d` with no
+# environment at all is unchanged. scripts/e2e.sh sets them from its own STACK, which is
+# how one stack can run next to another without the two sharing a name:
+#   VCOMPUTER_STACK           the compose project name. Default vcomputer.
+#   VCOMPUTER_CONTROL_IMAGE   control plane image. Default vcomputer-control:poc.
+#   VCOMPUTER_CONTROL_CONTAINER
+#                             control plane container name. Default vcomputer-control.
+#   VCOMPUTER_FIXTURE_CONTAINER
+#                             fixture container name. Default vcomputer-fixture; the e2e
+#                             script navigates to http://<this>:8080/.
+#   VCOMPUTER_SOCKET_PROXY_CONTAINER
+#                             the proxy container name, and the name the control plane's
+#                             DOCKER_HOST resolves. Default vcomputer-socket-proxy.
+#   VCOMPUTER_SANDBOX_IMAGE   the build target's tag as well as the runtime's image (the
+#                             entry above), so both sides agree by construction.
+#   VCOMPUTER_INTERNAL_NETWORK / VCOMPUTER_EDGE_NETWORK / VCOMPUTER_DOCKERAPI_NETWORK
+#                             the three networks' names. Defaults vcomputer-internal,
+#                             vcomputer-edge and vcomputer-dockerapi.
+# The service keys below (`vcomputer-control`, `vcomputer-fixture`,
+# `vcomputer-socket-proxy`, `vcomputer-sandbox`) are not variables: compose interpolates
+# values, not keys, and a key is a name inside this file rather than a name on the host.
+# Nothing outside the file dials them — the e2e script starts whatever is not behind a
+# profile and then talks to the container names, which are the variables above.
+#
 # Three properties of this file are not free, so they are stated rather than assumed:
 #
-#   1. Sandbox ports are never published. The control plane reaches a sandbox's noVNC
-#      and CDP over `vcomputer-internal` — Session.NoVNCURL is a path on the control
-#      plane and Session.CDPURL is a container IP — so the host has no route to either.
-#      Sandboxes are created by the runtime, not by compose, and nothing here publishes
-#      their ports.
-#   2. Sandboxes join `vcomputer-internal` only, and that network is `internal: true`:
-#      no egress and no host route. A browser inside a sandbox can reach the fixture and
-#      the control plane, and nothing else — not the internet, not Postgres, not Redis.
-#      The control plane is the only member of this network that is not a sandbox or the
-#      fixture, and the only member of `vcomputer-dockerapi` besides the proxy, which
-#      makes it the only door in.
+#   1. Sandbox ports are never published, and `internal: true` is not what keeps the host
+#      out of a sandbox: docker puts the host on every bridge it creates, so the host can
+#      dial a container's address directly. What protects CDP and noVNC is the gate inside
+#      the sandbox — the only listener on that address (Chromium's DevTools, raw VNC, and
+#      websockify all bind loopback behind it) and the one process that refuses a request
+#      without the per-sandbox X-Sandbox-Secret. The control plane is the only party
+#      holding that secret, which is what makes it the only door in:
+#      Session.NoVNCURL is a path on the control plane and Session.CDPURL is the gate's
+#      address. Sandboxes are created by the runtime, not by compose, and nothing here
+#      publishes their ports.
+#   2. Sandboxes join the internal network only (VCOMPUTER_INTERNAL_NETWORK, which is
+#      `vcomputer-internal` by default), and that network is `internal: true`: no
+#      egress — no gateway out, no NAT — so a browser inside a sandbox can reach the
+#      fixture and the control plane, and nothing else: not the internet, not Postgres,
+#      not Redis. That is what `internal` means, and it is all it means: what leaves the
+#      network is blocked, traffic from the host to a container address is not, which is
+#      why property 1 leans on the secret rather than on unreachability. The control plane
+#      is the only member of the daemon-API network besides the proxy, and the only member
+#      of the sandbox network that is not a sandbox or the fixture, which makes it the only
+#      door in.
 #   3. The control container never mounts the docker socket; a filtering proxy does. The
-#      runtime drives the daemon with the CLI and the CLI is pointed at
-#      `vcomputer-socket-proxy` with DOCKER_HOST, so the socket is held by one container
-#      that sits on its own internal network, publishes no port, and answers 403 to every
-#      Engine API section the runtime does not use (the allowlist on that service).
+#      runtime drives the daemon with the CLI and the CLI is pointed at the proxy with
+#      DOCKER_HOST, so the socket is held by one container that sits on its own internal
+#      network, publishes no port, and answers 403 to every Engine API section the runtime
+#      does not use (the allowlist on that service). The three networks this container is on
+#      are the edge one, the daemon-API one, and the sandbox one the sandboxes live on.
 #
 #      What that buys, measured against the real image and not assumed: images, info,
 #      version, networks, events, swarm, secrets, plugins, build, system and auth are
@@ -85,10 +148,23 @@
 #      host root bind-mounted) and reach host root through the API it is allowed to use.
 #      What remains genuinely closed: no route to the proxy from a sandbox, no socket in
 #      the control container, and no daemon-wide operation. The loopback-only port and the
-#      mandatory token are still the locks on the HTTP surface
+#      mandatory token are still the locks on the HTTP surface.
+#
+#      The control plane does validate the create request it renders into `docker run`
+#      before it renders it (control/internal/sandbox/spec.go: privileged, cap-add, bind
+#      mounts, a foreign network, host pid/ipc/userns, devices, and an image outside
+#      VCOMPUTER_SANDBOX_IMAGE_ALLOWLIST are all refused). That is defence in depth against
+#      a bug or a misuse in the control plane's own code path, not against a control
+#      container that is already compromised: the proxy cannot see a body, so the daemon is
+#      the one that decides whether a create the control plane sent is what the control
+#      plane meant.
 #      (docs/adr/0003-virtual-computer.md §3.3, §3.7).
 
-name: vcomputer-poc
+# The compose project name. It only prefixes the resources compose creates by itself, and
+# this file creates none without an explicit name, so this is a label for
+# `docker compose ls` rather than an address anything dials. scripts/e2e.sh passes
+# `-p "$STACK"`, which wins over this line.
+name: ${VCOMPUTER_STACK:-vcomputer}
 
 services:
 
@@ -103,7 +179,10 @@ services:
   # current release and ships haproxy 3.4.2, so hijacking works.
   vcomputer-socket-proxy:
     image: tecnativa/docker-socket-proxy:v0.5.0
-    container_name: vcomputer-socket-proxy
+    # A variable for the same reason the control plane's container name is one: two stacks
+    # on one host must not collide, and the control plane's DOCKER_HOST resolves this name
+    # on the daemon-API network they share.
+    container_name: ${VCOMPUTER_SOCKET_PROXY_CONTAINER:-vcomputer-socket-proxy}
     restart: unless-stopped
     environment:
       # --- allowed: exactly what control/internal/sandbox/docker.go asks the CLI to do ---
@@ -193,8 +272,8 @@ services:
       retries: 3
     networks:
       # Its own network, and no published port: the control plane is the only other member,
-      # so the only way in is the control plane. Sandboxes are on vcomputer-internal, which
-      # this service is deliberately not on.
+      # so the only way in is the control plane. Sandboxes are on the sandbox network, which
+      # this service is deliberately not on. Key, not variable: see the header.
       - vcomputer-dockerapi
 
   # The control plane: session lifecycle, navigate / screenshot / click / type / exec,
@@ -204,9 +283,16 @@ services:
       # This module depends on nothing but the standard library, so its context is its
       # own directory and no repository-root copy is needed (control/Dockerfile).
       context: ./control
-    image: vcomputer-control:poc
-    container_name: vcomputer-control
+    image: ${VCOMPUTER_CONTROL_IMAGE:-vcomputer-control:poc}
+    container_name: ${VCOMPUTER_CONTROL_CONTAINER:-vcomputer-control}
     restart: unless-stopped
+    # How long docker waits between SIGTERM and SIGKILL. It has to outlast the control
+    # plane's own reap: on the way out the process removes the sandboxes it created —
+    # running ones included, with their volumes — because they are not part of this
+    # stack and `down` cannot see them (docs/adr/0003-virtual-computer.md §3.9). The
+    # default ten seconds is shorter than that work, and a SIGKILL in the middle of it
+    # is exactly the leftover this file is trying to avoid.
+    stop_grace_period: 90s
     environment:
       VCOMPUTER_CONTROL_ADDR: ":8090"
       # No default, on purpose: an empty token is a control plane that would start a
@@ -216,15 +302,28 @@ services:
       VCOMPUTER_CONTROL_TOKEN: "${VCOMPUTER_CONTROL_TOKEN:?set a token: generate one with openssl rand -hex 16}"
       # The CLI's address for the daemon, and never a socket file: this container has no
       # docker.sock to fall back on, so dropping this line fails every call loudly instead
-      # of quietly going back to root-on-the-host.
-      DOCKER_HOST: tcp://vcomputer-socket-proxy:2375
+      # of quietly going back to root-on-the-host. The name is the proxy's container name,
+      # which is why both sides read the same variable.
+      DOCKER_HOST: tcp://${VCOMPUTER_SOCKET_PROXY_CONTAINER:-vcomputer-socket-proxy}:2375
       VCOMPUTER_RUNTIME: ${VCOMPUTER_RUNTIME:-docker}
       VCOMPUTER_DOCKER_BIN: ${VCOMPUTER_DOCKER_BIN:-docker}
       VCOMPUTER_SANDBOX_IMAGE: ${VCOMPUTER_SANDBOX_IMAGE:-vcomputer-sandbox:poc}
-      VCOMPUTER_SANDBOX_NETWORK: ${VCOMPUTER_SANDBOX_NETWORK:-vcomputer-internal}
+      # What the runtime is allowed to start, and the reason it is a separate variable from
+      # the image above: the default is that image and nothing else, so widening it is a
+      # deliberate act rather than a side effect of retagging the build.
+      VCOMPUTER_SANDBOX_IMAGE_ALLOWLIST: ${VCOMPUTER_SANDBOX_IMAGE_ALLOWLIST:-${VCOMPUTER_SANDBOX_IMAGE:-vcomputer-sandbox:poc}}
+      # The network the sandboxes join has to be the network this file creates and this
+      # container joins, so it follows that variable and only falls back to its own name
+      # for a deployment that points the runtime somewhere this file does not reach.
+      VCOMPUTER_SANDBOX_NETWORK: ${VCOMPUTER_SANDBOX_NETWORK:-${VCOMPUTER_INTERNAL_NETWORK:-vcomputer-internal}}
       VCOMPUTER_SANDBOX_NOVNC_PORT: ${VCOMPUTER_SANDBOX_NOVNC_PORT:-6080}
-      VCOMPUTER_SANDBOX_CDP_PORT: ${VCOMPUTER_SANDBOX_CDP_PORT:-9223}
+      VCOMPUTER_SANDBOX_GATE_PORT: ${VCOMPUTER_SANDBOX_GATE_PORT:-8443}
+      # The runtime names a bot's container and volume after this, so the prefix is the
+      # stack: it is what keeps two stacks' sandboxes apart on one host, both for a human
+      # reading `docker ps` and for the cleanup routes, which work in that scope.
+      VCOMPUTER_SANDBOX_NAME_PREFIX: ${VCOMPUTER_STACK:-vcomputer}
       VCOMPUTER_EXEC_TIMEOUT: ${VCOMPUTER_EXEC_TIMEOUT:-30s}
+      VCOMPUTER_NAVIGATE_TIMEOUT: ${VCOMPUTER_NAVIGATE_TIMEOUT:-15s}
       SCREEN_GEOMETRY: ${SCREEN_GEOMETRY:-1280x800x24}
     ports:
       # Bound to the host's loopback on purpose. This is the surface that can start
@@ -249,9 +348,12 @@ services:
     networks:
       # Three networks, and the split is the point: the edge network is how the host
       # reaches the control plane, the internal network is the only place sandboxes live,
-      # and the dockerapi network is where the daemon's proxy listens. This container is
-      # the only member of the last one, which is what keeps the Engine API out of a
-      # sandbox's reach.
+      # and the daemon-API network is where the proxy listens. This container is the only
+      # member of the last one, which is what keeps the Engine API out of a sandbox's
+      # reach — and the only member of the edge network, which is what keeps the host's
+      # published port on this one container. Keys, not variables: compose interpolates
+      # values, not keys, and the variables above only rename the networks (the top-level
+      # `name:` below).
       - vcomputer-edge
       - vcomputer-internal
       - vcomputer-dockerapi
@@ -259,46 +361,52 @@ services:
   # A page for the browser to navigate to. The sandbox network has no route out
   # (`internal: true`), so a demonstration needs something to open that is not the
   # internet: this serves one static file over the internal network. The e2e script
-  # navigates to http://vcomputer-fixture:8080/.
+  # navigates to http://<fixture container name>:8080/, which is
+  # http://vcomputer-fixture:8080/ with the defaults.
   vcomputer-fixture:
     image: busybox:1.36
-    container_name: vcomputer-fixture
+    container_name: ${VCOMPUTER_FIXTURE_CONTAINER:-vcomputer-fixture}
     restart: unless-stopped
     command: ["httpd", "-f", "-p", "8080", "-h", "/www"]
     volumes:
       # Read-only: the fixture is a page, not a filesystem a sandbox may write to.
       - ./fixture:/www:ro
     networks:
-      # Internal only. The host cannot reach it and neither can the internet, which is
-      # exactly the reachability a sandbox has.
+      # Internal only: nothing here publishes a port, and the fixture has no name outside
+      # docker, so a browser reaches it from inside this network — the same reachability a
+      # sandbox has, and like a sandbox it has no egress. Key, not variable: see above.
       - vcomputer-internal
 
-  # Build target, never started: `--profile build build` produces vcomputer-sandbox:poc,
-  # which is the image the runtime starts per bot. A service rather than a bare
-  # `docker build` because it keeps the image tag in one file.
+  # Build target, never started: `--profile build build` produces the sandbox image,
+  # `${VCOMPUTER_SANDBOX_IMAGE:-vcomputer-sandbox:poc}`, which is the image the runtime
+  # starts per bot. A service rather than a bare `docker build` because it keeps the image
+  # tag in one file — the same variable both sides read.
   vcomputer-sandbox:
     profiles: ["build"]
     build:
       context: ./sandbox
-    image: vcomputer-sandbox:poc
+    image: ${VCOMPUTER_SANDBOX_IMAGE:-vcomputer-sandbox:poc}
 
 networks:
-  # The sandbox network: no egress, no host route. A sandbox on it can reach the
-  # fixture and the control plane, and nothing else — not Postgres, not Redis, not the
-  # internet (docs/adr/0003-virtual-computer.md §3.3). The explicit `name` matters: the
-  # runtime looks the network up by that name (VCOMPUTER_SANDBOX_NETWORK), so compose
-  # must not prefix it with the project name.
+  # The sandbox network: no egress. A sandbox on it can reach the fixture and the control
+  # plane, and nothing else — not Postgres, not Redis, not the internet
+  # (docs/adr/0003-virtual-computer.md §3.3). The explicit `name` matters: the runtime
+  # looks the network up by name (VCOMPUTER_SANDBOX_NETWORK, which follows this variable),
+  # so compose must not prefix it with the project name.
   vcomputer-internal:
-    name: vcomputer-internal
+    name: ${VCOMPUTER_INTERNAL_NETWORK:-vcomputer-internal}
     internal: true
   # The edge network: an ordinary bridge, and the only one the host publishes a port
   # on. The control plane is its only member.
   vcomputer-edge:
-    name: vcomputer-edge
+    name: ${VCOMPUTER_EDGE_NETWORK:-vcomputer-edge}
 
   # The daemon-API network: the proxy and the control plane, nobody else. `internal: true`
   # so nothing on it has egress — the proxy needs none (it reaches the daemon over the
-  # socket it mounts) and the control plane keeps vcomputer-edge for everything else.
+  # socket it mounts) and the control plane keeps vcomputer-edge for everything else. Its
+  # name is a variable for the same reason the other two are: scripts/e2e.sh derives it
+  # from STACK, so two stacks on one host share neither the network nor the teardown
+  # check that looks for `${STACK}-*`.
   vcomputer-dockerapi:
-    name: vcomputer-dockerapi
+    name: ${VCOMPUTER_DOCKERAPI_NETWORK:-vcomputer-dockerapi}
     internal: true

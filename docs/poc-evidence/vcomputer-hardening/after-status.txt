@@ -1,0 +1,265 @@
+=== virtual computer PoC — e2e, 2026-10-16 07:53:23 UTC ===
+compose: apps/virtual-computer/docker-compose.poc.yml
+stack:   vchd
+bot:     e2e-bot
+control: http://127.0.0.1:18190
+token: generated for this run (openssl rand -hex 16)
+
+== preconditions
+PASS preconditions
+
+== build: vchd-control:poc and vchd-sandbox:poc
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 2.54kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/docker:27-cli
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/golang:1.26-bookworm
+#3 DONE 0.3s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 2B done
+#4 DONE 0.0s
+
+#5 [stage-1 1/2] FROM docker.io/library/docker:27-cli@sha256:851f91d241214e7c6db86513b270d58776379aacc5eb9c4a87e5b47115e3065c
+#5 resolve docker.io/library/docker:27-cli@sha256:851f91d241214e7c6db86513b270d58776379aacc5eb9c4a87e5b47115e3065c done
+#5 DONE 0.0s
+
+#6 [build 1/6] FROM docker.io/library/golang:1.26-bookworm@sha256:d9c68c2c51161e12fd77e4c6320687c9cd86e1af1e3ad6e6cd63ff970641453c
+#6 resolve docker.io/library/golang:1.26-bookworm@sha256:d9c68c2c51161e12fd77e4c6320687c9cd86e1af1e3ad6e6cd63ff970641453c done
+#6 DONE 0.0s
+
+#7 [internal] load build context
+#7 transferring context: 274.02kB done
+#7 DONE 0.0s
+
+#8 [build 2/6] WORKDIR /src
+#8 CACHED
+
+#9 [build 3/6] COPY go.mod ./
+#9 CACHED
+
+#10 [build 4/6] RUN go mod download
+#10 CACHED
+
+#11 [build 5/6] COPY . .
+#11 DONE 0.0s
+
+#12 [build 6/6] RUN CGO_ENABLED=0 go build -trimpath -o /out/vcomputer-control .
+#12 DONE 5.6s
+
+#5 [stage-1 1/2] FROM docker.io/library/docker:27-cli@sha256:851f91d241214e7c6db86513b270d58776379aacc5eb9c4a87e5b47115e3065c
+#5 CACHED
+
+#13 [stage-1 2/2] COPY --from=build /out/vcomputer-control /usr/local/bin/vcomputer-control
+#13 DONE 0.0s
+
+#14 exporting to image
+#14 exporting layers
+#14 exporting layers 0.4s done
+#14 exporting manifest sha256:84b9dfad9aea754fb6bd0f74e670a23d34ea784cf652cd2923766d61e8c732d1 done
+#14 exporting config sha256:bf60d5fc0693787944373cefe1249342c5ad4ab2d2b20e18c19e79c3ef8a5df8 done
+#14 exporting attestation manifest sha256:9dab1b15bd3625b0e3519eee42e05fa94e900b928017f75532bf5c477f856f30 done
+#14 exporting manifest list sha256:fc71669f19430656831f252072e670e875f07584ee46472dac468121ecda6767 done
+#14 naming to docker.io/library/vchd-control:poc done
+#14 unpacking to docker.io/library/vchd-control:poc 0.0s done
+#14 DONE 0.4s
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 9.38kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/debian:bookworm-slim
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/golang:1.26-bookworm
+#3 DONE 0.1s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 2B done
+#4 DONE 0.0s
+
+#5 [stage-1 1/8] FROM docker.io/library/debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
+#5 resolve docker.io/library/debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 done
+#5 DONE 0.0s
+
+#6 [gate 1/4] FROM docker.io/library/golang:1.26-bookworm@sha256:d9c68c2c51161e12fd77e4c6320687c9cd86e1af1e3ad6e6cd63ff970641453c
+#6 resolve docker.io/library/golang:1.26-bookworm@sha256:d9c68c2c51161e12fd77e4c6320687c9cd86e1af1e3ad6e6cd63ff970641453c done
+#6 DONE 0.0s
+
+#7 [internal] load build context
+#7 transferring context: 9.29MB 0.0s done
+#7 DONE 0.0s
+
+#8 [stage-1 2/8] RUN apt-get update  && apt-get install -y --no-install-recommends       xvfb       x11-utils       x11vnc       novnc       websockify       chromium       fluxbox       fonts-dejavu-core       fonts-liberation       procps       curl       scrot       xdotool       ca-certificates       tini  && rm -rf /var/lib/apt/lists/*
+#8 CACHED
+
+#9 [stage-1 6/8] COPY --from=gate /out/vcomputer-gate /usr/local/bin/vcomputer-gate
+#9 CACHED
+
+#10 [gate 3/4] COPY gate/ /src/
+#10 CACHED
+
+#11 [stage-1 4/8] RUN install -d -o bolu -g bolu -m 0755 /home/bolu/.fluxbox  && printf '%s\n'       'session.screen0.rootCommand:'       'session.screen0.background: none'       > /home/bolu/.fluxbox/init  && chown bolu:bolu /home/bolu/.fluxbox/init
+#11 CACHED
+
+#12 [gate 4/4] RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/vcomputer-gate .
+#12 CACHED
+
+#13 [stage-1 7/8] COPY --chown=root:root entrypoint.sh /usr/local/bin/entrypoint.sh
+#13 CACHED
+
+#14 [stage-1 3/8] RUN groupadd --gid 1000 bolu  && useradd --uid 1000 --gid 1000 --create-home --home-dir /home/bolu --shell /bin/bash bolu
+#14 CACHED
+
+#15 [stage-1 5/8] RUN printf '%s\n' '#!/bin/sh' 'exit 0' > /usr/local/bin/fbsetbg  && chmod 0755 /usr/local/bin/fbsetbg
+#15 CACHED
+
+#16 [gate 2/4] WORKDIR /src
+#16 CACHED
+
+#17 [stage-1 8/8] RUN chmod 0755 /usr/local/bin/entrypoint.sh
+#17 CACHED
+
+#18 exporting to image
+#18 exporting layers done
+#18 exporting manifest sha256:00a1bc4737d94952ed08561e2501ce3cab81753e9559683edf8eee6afb7042a3 done
+#18 exporting config sha256:a2263be44b89c983a2153b2e5d1ef43045c4d73716e2fd62004dfe1ad490c2a1 done
+#18 exporting attestation manifest sha256:f8e8273aeb6435055c24410c85e7c81c1326353eed9caefc0e324d1e9cb69a17 done
+#18 exporting manifest list sha256:f0814e4c2c01fa9ab2ccadc1e4f7bab9e0b4c15c50f2af467fbc91e0135d7467 done
+#18 naming to docker.io/library/vchd-sandbox:poc done
+#18 unpacking to docker.io/library/vchd-sandbox:poc done
+#18 DONE 0.0s
+PASS build
+
+== up: control plane and fixture
+ Network vchd-edge Creating 
+ Network vchd-edge Creating 
+ Network vchd-internal Creating 
+ Network vchd-internal Creating 
+ Network vchd-edge Created 
+ Network vchd-edge Created 
+ Network vchd-internal Created 
+ Network vchd-internal Created 
+ Container vchd-fixture Creating 
+ Container vchd-control Creating 
+ Container vchd-fixture Created 
+ Container vchd-control Created 
+ Container vchd-fixture Starting 
+ Container vchd-control Starting 
+ Container vchd-fixture Started 
+ Container vchd-control Started 
+PASS compose-up
+PASS health-ready
+PASS stack-identity
+PASS stack-identity-label
+
+== 1. /health is open and answers 200
+PASS health
+
+== 2. /v1/* without the token is 401
+PASS auth-401
+
+== 3. ensure is idempotent
+PASS ensure-idempotent
+
+== 4. navigate: the fixture answers, a URL with no route does not
+PASS navigate-fixture
+PASS navigate-fixture-body
+PASS navigate-fixture-http-status
+PASS navigate-404-502
+PASS navigate-404-body
+PASS navigate-fixture-restored
+PASS navigate-no-egress-502
+PASS navigate-no-egress-error
+
+== 5. the screenshot is a real capture
+PASS screenshot
+PASS screenshot-png
+PASS screenshot-size
+PASS screenshot-not-stub
+
+== 6. click into the fixture's input and type
+PASS click
+PASS type
+PASS screenshot-typed
+PASS typed-screenshot-differs
+
+== 7. exec runs inside the sandbox as bolu
+PASS exec-stdout
+PASS exec-exit-code
+PASS exec-not-stub
+
+== 8. the DevTools endpoint is reachable through the control plane, and only through it
+PASS cdp-version
+
+== 9. the sandbox is isolated
+PASS network-internal
+PASS no-published-ports
+PASS no-egress
+
+== 10. the sandbox address answers nothing without the gate's secret
+PASS sandbox-cdp-port-closed
+PASS sandbox-chromium-port-closed
+PASS sandbox-novnc-port-closed
+PASS gate-401-without-secret
+PASS gate-401-body
+PASS gate-cdp-with-secret
+PASS gate-healthz-open
+PASS gate-novnc-with-secret
+PASS gate-401-before-routing
+PASS gate-unknown-path-404
+
+== 11. noVNC goes through the control plane, with the token and without it
+PASS novnc-with-token
+PASS novnc-without-token
+PASS novnc-websocket-upgrade
+
+== 12. delete ends the container, the volume outlives it
+PASS delete
+PASS delete-twice-404
+PASS ensure-after-delete-running
+PASS volume-reused
+
+== the session is up: open this in a browser
+noVNC: http://127.0.0.1:18190/v1/sessions/e2e-bot/novnc/vnc.html?autoconnect=true\u0026resize=scale\u0026path=v1/sessions/e2e-bot/novnc/websockify&token=87c35093dc815b43b65a064ef36692da
+
+== 13. purge ends the container and the home volume
+PASS purge
+PASS purge-container-gone
+PASS purge-volume-gone
+
+== 14. the admin route sweeps a stopped sandbox and its volume
+PASS cleanup-stale-ensure
+PASS cleanup-route
+PASS cleanup-removed-container
+PASS cleanup-removed-volume
+PASS cleanup-container-gone
+PASS cleanup-volume-gone
+
+== teardown (TEARDOWN=1)
+teardown: purge 200, admin cleanup 200
+nothing to clean up: no sandbox container and no sandbox volume for stack vchd
+ Container vchd-control Stopping 
+ Container vchd-fixture Stopping 
+ Container vchd-control Stopped 
+ Container vchd-control Removing 
+ Container vchd-control Removed 
+ Container vchd-fixture Stopped 
+ Container vchd-fixture Removing 
+ Container vchd-fixture Removed 
+ Network vchd-internal Removing 
+ Network vchd-edge Removing 
+ Network vchd-internal Removed 
+ Network vchd-edge Removed 
+PASS teardown-containers
+PASS teardown-volumes
+PASS teardown-networks
+torn down; the noVNC URL printed above is gone with it
+
+SUMMARY: 61 passed, 0 failed

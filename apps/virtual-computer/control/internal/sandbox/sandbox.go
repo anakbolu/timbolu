@@ -18,6 +18,7 @@ package sandbox
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"time"
@@ -72,9 +73,11 @@ type Session struct {
 	// that it proxies to the sandbox, so the sandbox network itself stays
 	// unreachable (docs/adr/0003-virtual-computer.md §3.6).
 	NoVNCURL string `json:"novnc_url,omitempty"`
-	// CDPURL is Chromium's DevTools endpoint on the sandbox network, built from the
-	// container's address: Chromium refuses a request whose Host header is neither
-	// an IP nor localhost, so the address is what the URL carries.
+	// CDPURL is where a caller drives the session's browser: a path on the control
+	// plane, not an address on the sandbox network. The control plane proxies it to
+	// the sandbox's gate, which is the only thing inside a sandbox that listens on
+	// the network address and the only thing that asks for the sandbox secret, so a
+	// worker needs the control token and nothing else.
 	CDPURL string `json:"cdp_url,omitempty"`
 	// Volume is the named volume that holds the persistent half of the session: the
 	// browser profile and the bot's home. The container may die; this does not.
@@ -108,6 +111,85 @@ type ExecResult struct {
 	Stub     bool   `json:"stub"`
 }
 
+// Navigation is what the browser ended up showing after a Navigate. It is a result
+// rather than a bare error because "the page loaded" is not the whole answer: a
+// caller that asked for a URL and got a redirect, or a page with no title, needs to
+// see that.
+type Navigation struct {
+	// FinalURL is where the browser landed, which differs from the URL the caller
+	// asked for after a redirect. A navigation that ends on chrome-error://, or on a
+	// document the server answered 4xx/5xx for, never reaches the caller as a
+	// Navigation: it is a NavigationError.
+	FinalURL string `json:"final_url"`
+	// Title is the loaded document's title, empty when the page has none.
+	Title string `json:"title"`
+	// HTTPStatus is the status of the response the document was loaded from — after
+	// any redirect, which is the response a caller means by "the page". It is 0 when
+	// the browser reported none: an about: or data: document has no response, and the
+	// memory runtime has no browser at all. A caller that branches on it has to read 0
+	// as "not known" rather than as a status, which is why the successful ones are the
+	// only statuses that ever appear here.
+	HTTPStatus int `json:"http_status"`
+}
+
+// NavigationError is a navigation that reached the browser but not the page: the
+// browser refused to open the URL, the document never finished loading inside the
+// timeout, it finished on chrome-error:// — which is what Chromium shows when there
+// was nothing at the address, and what a sandbox with no egress produces for every
+// address outside its own network — or it finished on a response the server answered
+// 4xx/5xx for, which is a page the caller must not be told loaded.
+//
+// It carries both URLs, the status when there was one, and a reason, so the caller
+// can tell "the page is broken" from "the sandbox could not reach it", and the
+// control plane answers 502 with them rather than the 200 a plain error would
+// produce.
+type NavigationError struct {
+	// URL is what the caller asked for.
+	URL string
+	// FinalURL is where the browser stopped, empty when it never reported one.
+	FinalURL string
+	// HTTPStatus is the status the document's response carried, 0 when there was
+	// none: a navigation that ended on chrome-error:// never got a response, and one
+	// that never finished loading may not have reported one yet.
+	HTTPStatus int
+	// Reason is the short human-readable cause.
+	Reason string
+}
+
+func (e *NavigationError) Error() string {
+	return fmt.Sprintf("vcomputer: navigation to %s failed: %s (final url %q)", e.URL, e.Reason, e.FinalURL)
+}
+
+// SandboxTarget is how the control plane reaches a session's sandbox: the address
+// of the gate on the sandbox network, and the secret that gate requires.
+//
+// The two travel together because they are only ever useful together, and because
+// the alternative — a second interface method that inspects the container again —
+// would double the docker calls on the noVNC path, where one page load becomes
+// dozens of proxied requests.
+//
+// The secret is a credential: it belongs in a request header and nowhere else, so
+// it has no JSON tag and must never be logged.
+type SandboxTarget struct {
+	// URL is the gate's base address, e.g. "http://172.20.0.4:8443". Both the CDP
+	// route and the noVNC route are paths under it.
+	URL string
+	// Secret is the value the gate wants in X-Sandbox-Secret.
+	Secret string
+}
+
+// CleanupResult is what a Cleanup removed, and what it could not.
+type CleanupResult struct {
+	// RemovedContainers and RemovedVolumes are the counts that actually happened,
+	// not the counts that were attempted.
+	RemovedContainers int `json:"removed_containers"`
+	RemovedVolumes    int `json:"removed_volumes"`
+	// Failed holds one line per object that was selected and could not be removed,
+	// e.g. a volume still mounted by a running container. It is empty — and left
+	// out of the JSON — when everything that was selected is gone.
+	Failed []string `json:"failed,omitempty"`
+}
+
 // Runtime is the whole surface the control plane has on a sandbox: the lifecycle,
 // the desktop actions a model can ask for, and nothing else.
 //
@@ -122,21 +204,48 @@ type Runtime interface {
 	Status(ctx context.Context, botID string) (Session, error)
 	// Stop ends the session and keeps the volume. The next Ensure reuses it.
 	Stop(ctx context.Context, botID string) error
+	// Purge removes the session entirely: the container whatever state it is in,
+	// and the volume that holds the browser profile. It is what makes a bot
+	// forgettable, and it is the difference between Stop ("the machine is off")
+	// and Purge ("the machine is gone").
+	Purge(ctx context.Context, botID string) error
+	// Cleanup removes every sandbox this runtime owns that is not running, which is
+	// what a crashed control plane leaves behind. With volumes it also removes
+	// their home volumes, and it never touches a running container: a running
+	// sandbox belongs to a session somebody is using.
+	Cleanup(ctx context.Context, volumes bool) (CleanupResult, error)
+	// Reap removes everything this runtime owns — running sandboxes included, and
+	// always their volumes — and it is what the control plane calls on its way out.
+	//
+	// It is the opposite of Cleanup on purpose, and it is not reachable over HTTP:
+	// a sandbox is created by the control plane rather than by the compose file, so
+	// nothing else can remove it, and a stack that is going down would otherwise
+	// leave running containers holding the network and the volumes that were
+	// supposed to go with it. A caller must have decided that the sessions are
+	// over: this is the one operation in the interface that destroys state a person
+	// may still want.
+	Reap(ctx context.Context) (CleanupResult, error)
 	// Screenshot is the current desktop as PNG bytes.
 	Screenshot(ctx context.Context, botID string) ([]byte, error)
 	// Click presses a point on the desktop.
 	Click(ctx context.Context, botID string, x, y int) error
 	// Type sends text to the focused window.
 	Type(ctx context.Context, botID string, text string) error
-	// Navigate points the session's browser at a URL. Only http, https, data, and
-	// about are accepted, and the runtime refuses the rest rather than asking the
-	// browser to interpret them.
-	Navigate(ctx context.Context, botID string, targetURL string) error
-	// NoVNCTarget is the address inside the sandbox network that serves the
-	// session's noVNC client, e.g. "http://172.20.0.4:6080". The control plane
-	// proxies /v1/sessions/<bot>/novnc/ to it, which is why a browser only ever
-	// needs to reach the control plane and never the sandbox network itself.
-	NoVNCTarget(ctx context.Context, botID string) (string, error)
+	// Navigate points the session's browser at a URL and answers what the browser
+	// ended up showing. Only http, https, data, and about are accepted, and the
+	// runtime refuses the rest rather than asking the browser to interpret them.
+	// A page that does not load is a *NavigationError, not a success: the caller
+	// asked for a page, and answering "navigated" would be a lie. That covers the
+	// browser's own error page, a document that never finished loading inside the
+	// timeout, and a document the server answered 4xx/5xx for — the last one is a
+	// response, but not the page that was asked for.
+	Navigate(ctx context.Context, botID string, targetURL string) (Navigation, error)
+	// GateTarget is where the session's sandbox gate listens, and the secret it
+	// wants. The control plane proxies /v1/sessions/<bot>/novnc/ and
+	// /v1/sessions/<bot>/cdp/ to it, which is why a caller only ever needs to
+	// reach the control plane: the gate is the one thing inside a sandbox that
+	// listens on the sandbox network, and it is what asks for the secret.
+	GateTarget(ctx context.Context, botID string) (SandboxTarget, error)
 	// Exec runs a command inside the sandbox. It is the most dangerous of the
 	// actions, which is why riset §5.1 labels it write_external and why nothing
 	// above this package is wired to it yet.
@@ -174,15 +283,40 @@ func cleanBotID(botID string) (string, error) {
 	return id, nil
 }
 
-// DefaultNOVNCPort and DefaultCDPPort are the ports a sandbox listens on when the
-// deployment does not say otherwise. They are defaults for configuration
-// (VCOMPUTER_SANDBOX_NOVNC_PORT, VCOMPUTER_SANDBOX_CDP_PORT), not values baked into
-// a command line: the control plane passes the configured ports to every sandbox it
-// starts, and the sandbox entrypoint reads them from its environment.
+// The ports and names a sandbox gets when the deployment configures nothing. They
+// are defaults for configuration (VCOMPUTER_SANDBOX_NOVNC_PORT,
+// VCOMPUTER_SANDBOX_GATE_PORT, VCOMPUTER_SANDBOX_NAME_PREFIX), not values baked
+// into a command line: the control plane passes them to every sandbox it starts,
+// and the sandbox entrypoint reads its own from the environment.
 const (
+	// DefaultNOVNCPort is the port noVNC's websockify listens on inside a sandbox.
+	// It is loopback only: the gate is what publishes noVNC to the sandbox network,
+	// so the control plane never dials this port itself.
 	DefaultNOVNCPort = "6080"
-	DefaultCDPPort   = "9223"
+	// DefaultGatePort is the port the sandbox's gate listens on. It is the only
+	// listener on a sandbox's network address, and it is what the control plane
+	// dials for both CDP and noVNC.
+	DefaultGatePort = "8443"
+	// DefaultNamePrefix is what a sandbox's container and volume are named after:
+	// the container is <prefix>-<bot id> and the volume <prefix>-<bot id>-home. It
+	// is also the scope a cleanup works in, so two stacks can share one host
+	// without removing each other's sandboxes.
+	DefaultNamePrefix = "vcomputer"
+	// botLabel is the label every sandbox container and volume carries. A label
+	// rather than a name pattern is what lets the control plane find the sandboxes
+	// it owns: a name is a convention, a label is a record.
+	botLabel = "vcomputer.bot"
 )
+
+// SecretHeader is the header a sandbox's gate wants the sandbox secret in.
+//
+// It is exported because the control plane's HTTP surface has to attach it: a
+// caller holds the control token, the gate wants the sandbox secret, and the
+// control plane is the only thing that holds both. The secret is per sandbox and
+// generated when its container is created, so it is a credential and never a
+// configuration value: it travels in this header and in the container's
+// environment, and nowhere else.
+const SecretHeader = "X-Sandbox-Secret"
 
 // NoVNCPath is where a person watches a session's desktop. It is a path on the
 // control plane rather than an address on the sandbox network: the control plane
@@ -197,19 +331,27 @@ func NoVNCPath(botID string) string {
 	return "/v1/sessions/" + botID + "/novnc/vnc.html?autoconnect=true&resize=scale&path=v1/sessions/" + botID + "/novnc/websockify"
 }
 
-// sandboxURL is an address on the sandbox network. Both the CDP endpoint and the
-// noVNC target are built from the container's address rather than from its name,
-// because Chromium refuses a request whose Host header is neither an IP nor
-// localhost.
+// CDPPath is where a caller drives the session's browser, and it is a path on the
+// control plane for the same reason NoVNCPath is: the control plane proxies it to
+// the sandbox's gate with the sandbox secret attached, so a worker holding only
+// the control token can use the DevTools HTTP API — and its websocket, which is
+// what /json/list answers a webSocketDebuggerUrl for.
+func CDPPath(botID string) string {
+	return "/v1/sessions/" + botID + "/cdp"
+}
+
+// sandboxURL is an address on the sandbox network, built from the container's
+// address rather than from its name: a container name resolves over the network,
+// but the address the control plane inspected is the one it wants to dial.
 func sandboxURL(host, port string) string {
 	return "http://" + host + ":" + port
 }
 
-// containerName and volumeName derive both names from the bot id. That is why the
-// id is validated before it gets here: these strings end up in a `docker` command
-// line.
-func containerName(botID string) string { return "vcomputer-" + botID }
-func volumeName(botID string) string    { return "vcomputer-" + botID + "-home" }
+// containerName and volumeName derive both names from the prefix and the bot id.
+// That is why the id is validated before it gets here: these strings end up in a
+// `docker` command line.
+func containerName(prefix, botID string) string { return prefix + "-" + botID }
+func volumeName(prefix, botID string) string    { return prefix + "-" + botID + "-home" }
 
 // ValidURL reports whether raw may be handed to the session's browser.
 //
