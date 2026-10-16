@@ -215,15 +215,16 @@ type Runtime interface {
 	// sandbox belongs to a session somebody is using.
 	Cleanup(ctx context.Context, volumes bool) (CleanupResult, error)
 	// Reap removes everything this runtime owns — running sandboxes included, and
-	// always their volumes — and it is what the control plane calls on its way out.
+	// always their volumes. The control plane calls it on its way out only when
+	// VCOMPUTER_REAP_ON_SHUTDOWN=1 asked for it (#263): a plain SIGTERM is what a
+	// restart looks like, and the volume this removes is the session.
 	//
 	// It is the opposite of Cleanup on purpose, and it is not reachable over HTTP:
 	// a sandbox is created by the control plane rather than by the compose file, so
-	// nothing else can remove it, and a stack that is going down would otherwise
-	// leave running containers holding the network and the volumes that were
-	// supposed to go with it. A caller must have decided that the sessions are
-	// over: this is the one operation in the interface that destroys state a person
-	// may still want.
+	// nothing else can remove it, and a teardown would otherwise leave running
+	// containers holding the network and the volumes that were supposed to go with
+	// it. A caller must have decided that the sessions are over: this is the one
+	// operation in the interface that destroys state a person may still want.
 	Reap(ctx context.Context) (CleanupResult, error)
 	// Screenshot is the current desktop as PNG bytes.
 	Screenshot(ctx context.Context, botID string) ([]byte, error)
@@ -299,13 +300,21 @@ const (
 	DefaultGatePort = "8443"
 	// DefaultNamePrefix is what a sandbox's container and volume are named after:
 	// the container is <prefix>-<bot id> and the volume <prefix>-<bot id>-home. It
-	// is also the scope a cleanup works in, so two stacks can share one host
-	// without removing each other's sandboxes.
+	// is only a name: what a cleanup and a reap are scoped to is stackLabel, which
+	// carries this same value, so two stacks can share one host without removing
+	// each other's sandboxes even when one stack's name starts with the other's.
 	DefaultNamePrefix = "vcomputer"
 	// botLabel is the label every sandbox container and volume carries. A label
 	// rather than a name pattern is what lets the control plane find the sandboxes
 	// it owns: a name is a convention, a label is a record.
 	botLabel = "vcomputer.bot"
+	// stackLabel is the label that says which stack owns a sandbox, and it carries the
+	// name prefix. It is what scopes a removal to one stack exactly (#263): a name
+	// prefix is a prefix — the default `vcomputer` also matches a container of a stack
+	// called `vcomputer-qa`, and a cleanup that went by name alone would take that
+	// stack's sandboxes and their home volumes with it. The label is a record of who
+	// created the object, so it cannot match a stranger.
+	stackLabel = "vcomputer.stack"
 )
 
 // SecretHeader is the header a sandbox's gate wants the sandbox secret in.

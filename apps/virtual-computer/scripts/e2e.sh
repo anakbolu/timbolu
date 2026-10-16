@@ -47,7 +47,12 @@
 #   delete / delete-twice-404 / ensure-after-delete-running / volume-reused
 #                                 delete ends the container, the volume outlives it, and a
 #                                 second delete is still a 404
-#   purge-*                       purge ends the container and the home volume with it
+#   restart-*                     a plain `compose restart` of the control plane — no
+#                                 opt-in — leaves the sandbox, its home volume and the files
+#                                 in it alone, and the session works again (#263)
+#   purge-*                       purge ends the container and the home volume with it: it is
+#                                 the explicit per-bot opt-in that may remove a bot's home
+#                                 directory
 #   cleanup-*                     the admin route sweeps a stopped sandbox and its volume
 #   teardown-*                    TEARDOWN=1 left nothing named ${STACK}-* behind: no container,
 #                                 no volume, no network
@@ -72,6 +77,10 @@
 #                           file that is checked cannot be two different files. Default
 #                           apps/virtual-computer/docker-compose.poc.yml, resolved from the
 #                           repository root this script puts itself in.
+#   CONTROL_SERVICE         the compose *service* key of the control plane, default
+#                           vcomputer-control. It is the key in the compose file, not a name derived
+#                           from STACK — the file spells the service out and only the container
+#                           name is parameterised — so the restart check needs it by itself.
 #   OUT                     artefact directory. Default docs/poc-evidence/virtual-computer.
 #   STACK                   REQUIRED, no default (#244). The name of the stack under test, and
 #                           the only name this script takes as an input — every other one is
@@ -109,9 +118,12 @@
 #                           sweep what is left through POST /v1/admin/cleanup?volumes=true, run
 #                           scripts/cleanup.sh --running --volumes, `compose down`, and then
 #                           assert that no container, volume or network named ${STACK}-* is left
-#                           — the #245 criterion, checked rather than claimed. Off by default:
-#                           after a failure the containers and the per-bot volume are the state
-#                           a reviewer wants to look at.
+#                           — the #245 criterion, checked rather than claimed. This is the
+#                           explicit teardown #263 asks for: the control plane no longer
+#                           removes its sandboxes on SIGTERM, so `down` alone would leave them
+#                           (and the internal network they hold) behind. Off by default: after
+#                           a failure the containers and the per-bot volume are the state a
+#                           reviewer wants to look at.
 #
 # What stops the run, and why (#244). A failed check normally does not: the log is the whole
 # list of what broke, not the first thing. Three failures are different, because everything
@@ -196,7 +208,12 @@ CDP_PORT=9222
 # below), not compose's own.
 CONTROL_IMAGE="${STACK}-control:poc"
 SANDBOX_IMAGE="${STACK}-sandbox:poc"
-CONTROL_CONTAINER="${STACK}-control"
+# The compose service key of the control plane, which is the one name compose does not
+# interpolate: the file names it vcomputer-control and the container name above is what STACK
+# renames. The restart check below needs the key rather than the container name, because
+# `compose restart` is what a compose-driven restart looks like — the same SIGTERM an image
+# upgrade (`up -d --force-recreate`) sends, and the one that must not take a session with it.
+CONTROL_SERVICE=${CONTROL_SERVICE:-vcomputer-control}
 FIXTURE_CONTAINER="${STACK}-fixture"
 INTERNAL_NETWORK="${STACK}-internal"
 EDGE_NETWORK="${STACK}-edge"
@@ -338,11 +355,13 @@ finish() {
         fi
         # --running --volumes, not VOLUMES=1: the sandboxes are created by the control plane
         # rather than by the compose file, and the ones that matter here are the ones still
-        # running — a graceful `compose down` reaps them itself (the control plane removes what
-        # it owns on SIGTERM, docs/adr/0003-virtual-computer.md §3.9), but this branch also runs
-        # when the stack never came up, and a SIGKILLed control plane leaves its sandboxes up.
-        # The sweep is scoped to this stack's label and name prefix, so it is safe to run
-        # whether or not the port check above passed.
+        # running — a plain `compose down` no longer reaps them (#263: the control plane keeps
+        # what it created on SIGTERM, because a restart is not a teardown), and this branch also
+        # runs when the stack never came up, where a SIGKILLed control plane leaves its sandboxes
+        # up. It is scoped to this stack's label, so it is safe to run whether or not the port
+        # check above passed, and it is the documented teardown: the one that works whether or
+        # not the process got a SIGTERM at all. A caller who wants the control plane itself to
+        # remove its sandboxes says so with VCOMPUTER_REAP_ON_SHUTDOWN=1 before the teardown.
         VOLUMES=1 RUNNING=1 STACK="$STACK" DOCKER="$DOCKER" bash apps/virtual-computer/scripts/cleanup.sh ||
             printf 'teardown: cleanup.sh answered non-zero; see its output above\n'
         # shellcheck disable=SC2086  # COMPOSE is a word list; see the header
@@ -350,8 +369,8 @@ finish() {
         # The proof, rather than the claim: after all of the above, nothing named after this
         # stack may be left — no container (the control plane and the fixture go with `down`,
         # the sandboxes with the sweep), no volume, and no network (the internal network is the
-        # one a running sandbox keeps alive, which is why it was stuck before the reap existed).
-        # It is a check like any other, so a teardown that missed something fails the run
+        # one a running sandbox keeps alive, which is why the sweep has to take the sandbox
+        # first). It is a check like any other, so a teardown that missed something fails the run
         # instead of printing a happy line over it.
         # shellcheck disable=SC2086  # DOCKER may be "sudo docker"
         left_containers=$($DOCKER ps -a --filter "name=^${STACK}-" --format '{{.Names}}' 2>/dev/null | tr '\n' ' ')
@@ -495,8 +514,8 @@ pass "health-ready"
 # it uses it (#244). Two questions, both answered by docker: which container holds
 # 127.0.0.1:$PORT, and whose stack is that container part of. Both have to name this run's stack
 # — the name is ${STACK}-control and the compose project label is $STACK — because everything
-# below addresses that port as if it were this stack's: check 12 DELETEs a session, check 13
-# purges one, check 14 sweeps stopped sandboxes and their volumes, and TEARDOWN=1 does all three
+# below addresses that port as if it were this stack's: check 12 DELETEs a session, check 14
+# purges one, check 15 sweeps stopped sandboxes and their volumes, and TEARDOWN=1 does all three
 # again. A control plane that is somebody else's would answer those calls.
 #
 # Both are checks that stop the run rather than notes, because there is no later check whose
@@ -837,6 +856,112 @@ else
     fail "volume-reused" "the volume after the restart is ${vol2:-<none>}, was ${vol1:-<none>}: the browser profile must outlive the container"
 fi
 
+# ------------------------------------------------- a restart is not a teardown (#263)
+
+log "13. a restart of the control plane is not a teardown: the session survives it"
+# The check this branch is about. `compose restart` — and `up -d --force-recreate`, which is how
+# an image upgrade lands — sends the control plane a SIGTERM, and the control plane used to
+# remove every sandbox it had created on the way out. That took the bot's home volume with it:
+# the Chromium profile, the logged-in sessions and the files the volume exists for. A restart of
+# the stack is not a teardown, so the sandbox, its volume and its contents have to survive it,
+# and the session has to work again afterwards.
+#
+# Each fact gets its own check because each one fails for its own reason. The StartedAt
+# comparison is what makes the restart real: a `restart` that did nothing would let everything
+# else pass for the wrong reason. The volume being listed and the marker reading back are two
+# claims — the volume object still exists, and it is the same home directory with the same
+# contents — and the marker is the one an empty replacement volume cannot fake.
+#
+# This check needs the default, so it proves the default first: a stack started with
+# VCOMPUTER_REAP_ON_SHUTDOWN=1 was asked to remove its sandboxes on SIGTERM, and a restart under
+# it removes them on purpose. The value is read off the container rather than off this shell,
+# because `compose restart` does not re-create the container: whatever the control plane was
+# started with is what it still has.
+# shellcheck disable=SC2086  # DOCKER may be "sudo docker"
+reap_optin=$($DOCKER inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$CONTROL_CONTAINER" 2>/dev/null |
+    sed -n 's/^VCOMPUTER_REAP_ON_SHUTDOWN=//p' | head -n 1)
+case "$reap_optin" in
+    "" | 0 | false | FALSE) pass "restart-reap-off" ;;
+    *) fail "restart-reap-off" "${CONTROL_CONTAINER} was started with VCOMPUTER_REAP_ON_SHUTDOWN=${reap_optin}: this run proves the default, and that stack was asked to remove its sandboxes on shutdown" ;;
+esac
+
+marker="e2e-restart-marker"
+marker_body=$(api -X POST -H 'Content-Type: application/json' \
+    -d "{\"command\":\"printf '%s' ${marker} > /home/bolu/e2e-restart-marker\"}" \
+    "${BASE}/v1/sessions/${BOT}/exec")
+expect "restart-marker-written" "$(json_num "$marker_body" exit_code)" 0 \
+    "writing a marker into the bot's home must work before the restart: ${marker_body:-<empty>}"
+
+# shellcheck disable=SC2086  # DOCKER may be "sudo docker"
+before_started=$($DOCKER inspect --format '{{.State.StartedAt}}' "$CONTROL_CONTAINER" 2>/dev/null)
+# shellcheck disable=SC2086  # COMPOSE is a word list; see the header
+if $COMPOSE restart "$CONTROL_SERVICE" >/dev/null 2>&1; then
+    pass "restart-control"
+else
+    fail "restart-control" "$COMPOSE restart $CONTROL_SERVICE failed: everything below would be about a control plane that never went down"
+fi
+
+# The control plane has to be answering again before anything can be asked of it, and the same
+# loop as the one after `up` is the way to know: the container's own healthcheck is slower.
+tries=0
+while [ "$(status_open "${BASE}/health")" != "200" ]; do
+    tries=$((tries + 1))
+    if [ "$tries" -ge 60 ]; then
+        break
+    fi
+    sleep 1
+done
+if [ "$tries" -ge 60 ]; then
+    fail "restart-health" "/health did not answer 200 within 60s of the restart: the checks below cannot run"
+else
+    pass "restart-health"
+fi
+
+# shellcheck disable=SC2086  # DOCKER may be "sudo docker"
+after_started=$($DOCKER inspect --format '{{.State.StartedAt}}' "$CONTROL_CONTAINER" 2>/dev/null)
+if [ -n "$after_started" ] && [ "$after_started" != "$before_started" ]; then
+    pass "restart-happened"
+else
+    fail "restart-happened" "${CONTROL_CONTAINER}'s StartedAt is ${after_started:-<none>}, was ${before_started:-<none>}: the checks below would pass on a control plane that never restarted"
+fi
+
+# The sandbox is a container of its own, so a SIGTERM to the control plane must not have touched
+# it — and it is still running, not merely still there: a session that had to be re-ensured from
+# scratch is a session whose browser state was thrown away.
+# shellcheck disable=SC2086  # DOCKER may be "sudo docker"
+if [ "$($DOCKER inspect --format '{{.State.Running}}' "$SANDBOX_CONTAINER" 2>/dev/null)" = "true" ]; then
+    pass "restart-sandbox-kept"
+else
+    fail "restart-sandbox-kept" "${SANDBOX_CONTAINER} is not running after the restart: a SIGTERM to the control plane must not end a session (#263)"
+fi
+
+# shellcheck disable=SC2086  # DOCKER may be "sudo docker"
+if $DOCKER volume ls -q --filter label=vcomputer.bot 2>/dev/null | grep -qx "$SANDBOX_VOLUME"; then
+    pass "restart-volume-kept"
+else
+    fail "restart-volume-kept" "${SANDBOX_VOLUME} is gone after the restart: the home volume is the session, and a restart must not remove it (#263)"
+fi
+
+# And it works again, on the volume it already had. ensure is the call a worker makes before
+# every task, so this is also the check that a worker notices nothing after a restart.
+back_after=$(api -X POST -H 'Content-Type: application/json' -d "{\"bot_id\":\"${BOT}\"}" "${BASE}/v1/sessions")
+expect "restart-ensure-running" "$(json_str "$back_after" state)" running \
+    "ensure after a restart of the control plane must find the session running"
+vol3=$(json_str "$back_after" volume)
+if [ -n "$vol1" ] && [ "$vol3" = "$vol1" ]; then
+    pass "restart-volume-reused"
+else
+    fail "restart-volume-reused" "the volume after the restart is ${vol3:-<none>}, was ${vol1:-<none>}: ensure must reuse the home volume the session already had"
+fi
+
+marker_body=$(api -X POST -H 'Content-Type: application/json' \
+    -d '{"command":"cat /home/bolu/e2e-restart-marker"}' "${BASE}/v1/sessions/${BOT}/exec")
+if [ "$(json_str "$marker_body" stdout)" = "$marker" ]; then
+    pass "restart-marker-survived"
+else
+    fail "restart-marker-survived" "the marker read back as '$(json_str "$marker_body" stdout)', want '${marker}': the home directory after the restart is not the one the session had"
+fi
+
 # ------------------------------------------------------------------- the operator's URL
 
 log "the session is up: open this in a browser"
@@ -859,7 +984,7 @@ printf 'noVNC: http://127.0.0.1:%s%s%stoken=%s\n' "$PORT" "$novnc_path" "$sep" "
 # undone by re-ensuring the same bot — a purge removes the home volume as well — which is why
 # they cannot stand in the middle of the checklist either.
 
-log "13. purge ends the container and the home volume"
+log "14. purge ends the container and the home volume"
 # The pair of the delete in check 12: the same route, asked to remove what a session owns rather
 # than only what it runs. It is what a caller uses when the bot is finished rather than idle, and
 # it is the difference between "the browser profile outlives the container" (volume-reused above)
@@ -884,13 +1009,13 @@ else
     pass "purge-volume-gone"
 fi
 
-log "14. the admin route sweeps a stopped sandbox and its volume"
+log "15. the admin route sweeps a stopped sandbox and its volume"
 # A second bot, started through the route a worker uses and then stopped with the docker CLI: a
 # container that exists and is not running is exactly what the sweep is for, and a bot this run is
 # not otherwise about keeps the two endings from interfering. `volumes=true` is the part that
 # matters for TEARDOWN=1 — without it the volume survives its container, which is what the route
-# does by design — and the two counters in the answer are what say the sweep did something rather
-# than answering 200 to a request it ignored.
+# does by design, and what #263 keeps as the default — and the two counters in the answer are what
+# say the sweep did something rather than answering 200 to a request it ignored.
 expect "cleanup-stale-ensure" \
     "$(status -X POST -H 'Content-Type: application/json' -d "{\"bot_id\":\"${STALE_BOT}\"}" "${BASE}/v1/sessions")" \
     200 "POST /v1/sessions for ${STALE_BOT} must start a second sandbox"

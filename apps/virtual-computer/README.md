@@ -86,9 +86,9 @@ Enam hal yang dibaca dari diagram itu:
 | `sandbox/gate/` | `vcomputer-gate`: modul Go sendiri (hanya stdlib), dibangun di satu stage image dan jadi satu-satunya listener di alamat jaringan sandbox |
 | `fixture/` | Satu halaman statis yang disajikan `vcomputer-fixture` di jaringan internal |
 | `demo/index.html` | Halaman statis yang menyematkan noVNC asli lewat proxy control plane |
-| `docker-compose.poc.yml` | Stack PoC: `control` + `fixture` + target build `vcomputer-sandbox`, dan dua jaringan |
-| `scripts/e2e.sh` | Checklist QA end-to-end: build, jalankan, periksa, tulis bukti, cetak PASS/FAIL. `STACK` dan `VCOMPUTER_CONTROL_PORT` wajib diisi — skrip berhenti sebelum menyentuh apa pun bila salah satunya kosong — dan pemeriksaan terakhirnya membuktikan `TEARDOWN=1` tidak meninggalkan container, volume, maupun jaringan bernama `${STACK}-*` |
-| `scripts/cleanup.sh` | Versi CLI dari `POST /v1/admin/cleanup`: buang container berlabel `vcomputer.bot` yang tidak jalan (`VOLUMES=1` juga membuang volumenya, `--running` ikut membuang yang sedang jalan) |
+| `docker-compose.poc.yml` | Stack PoC: `vcomputer-control` + `vcomputer-fixture` + target build `vcomputer-sandbox`, dan dua jaringan |
+| `scripts/e2e.sh` | Checklist QA end-to-end: build, jalankan, periksa, tulis bukti, cetak PASS/FAIL. `STACK` dan `VCOMPUTER_CONTROL_PORT` wajib diisi — skrip berhenti sebelum menyentuh apa pun bila salah satunya kosong — pemeriksaan `restart-*` membuktikan `compose restart` tidak menghapus sesinya, dan pemeriksaan terakhirnya membuktikan `TEARDOWN=1` tidak meninggalkan container, volume, maupun jaringan bernama `${STACK}-*` |
+| `scripts/cleanup.sh` | Versi CLI dari `POST /v1/admin/cleanup`: buang container berlabel `vcomputer.bot` **dan** `vcomputer.stack=${STACK}` yang tidak jalan (`VOLUMES=1` juga membuang volumenya, `--running` ikut membuang yang sedang jalan). `STACK` wajib diisi — teardown yang didokumentasikan untuk sebuah stack |
 
 ## Permukaan API
 
@@ -109,12 +109,18 @@ Enam hal yang dibaca dari diagram itu:
 | `POST` | `/v1/admin/cleanup[?volumes=true]` | — | `{"removed_containers":N,"removed_volumes":M}` — container berlabel `vcomputer.bot` yang tidak jalan dihapus; `volumes=true` juga menghapus volume berlabel `vcomputer.bot`. Kunci `"failed":[...]` muncul hanya bila ada yang terpilih tapi gagal dibuang; `500` hanya bila daemon docker tidak terjangkau |
 
 **Setiap rute `/v1/*` butuh token.** `Authorization: Bearer <VCOMPUTER_CONTROL_TOKEN>`,
-dibandingkan constant-time; tanpa itu jawabannya `401 {"error":"unauthorized"}`. Control
-plane menolak start bila `VCOMPUTER_CONTROL_TOKEN` kosong, dan `/health` satu-satunya yang
-terbuka. Browser tidak bisa memasang header pada page load atau handshake websocket, jadi
-URL noVNC boleh membawa `?token=<t>` satu kali: token itu menukar dirinya dengan cookie
-`vc_token` (`HttpOnly`, `SameSite=Strict`, `Path=/v1/sessions/`), dan cookie itu diterima
-seperti bearer biasa setelahnya.
+dibandingkan constant-time; tanpa itu jawabannya `401`. Control plane menolak start bila
+`VCOMPUTER_CONTROL_TOKEN` kosong, dan `/health` satu-satunya yang terbuka. Browser tidak bisa
+memasang header pada page load atau handshake websocket, jadi URL noVNC boleh membawa
+`?token=<t>` satu kali: token itu menukar dirinya dengan cookie `vc_token` (`HttpOnly`,
+`SameSite=Strict`, `Path=/v1/sessions/`), dan cookie itu diterima seperti bearer biasa
+setelahnya.
+
+Dua `401` itu kalimat yang berbeda, karena keduanya kesalahan yang berbeda:
+`{"error":"a bearer token is required"}` bila tidak ada kredensial sama sekali, dan
+`{"error":"the token is not valid"}` bila kredensialnya ada tapi tidak cocok. Worker
+melaporkan kalimat itu apa adanya ke operator — token yang salah dilaporkan sebagai "token
+kosong" mengirim orang mencari variabel yang justru sudah diisi (isu #218).
 
 Status yang membawa arti: `400` input ditolak, `401` token tidak ada atau salah, `404`
 sesi tidak ada, `500`/`502` runtime gagal. Rute `/cdp/...` memakai arti yang sama: `404`
@@ -165,13 +171,14 @@ dan tanpa pernah memegang rahasia sandbox.
 | `VCOMPUTER_CONTROL_PORT` | `8090` | port host control plane |
 | `VCOMPUTER_DOCKER_BIN` | `docker` | CLI docker; boleh berisi spasi (`sudo docker`) |
 | `VCOMPUTER_SANDBOX_IMAGE` | `vcomputer-sandbox:poc` | image yang dijalankan runtime per bot |
-| `VCOMPUTER_SANDBOX_NAME_PREFIX` | `vcomputer` | awalan nama container (`<prefix>-<bot>`) dan volume (`<prefix>-<bot>-home`); juga dipakai sebagai filter nama saat membersihkan sisa, supaya dua stack di satu host tidak saling menghapus. Compose mengisinya dari `${VCOMPUTER_STACK:-vcomputer}` |
+| `VCOMPUTER_SANDBOX_NAME_PREFIX` | `vcomputer` | awalan nama container (`<prefix>-<bot>`) dan volume (`<prefix>-<bot>-home`), dan ditulis ke label `vcomputer.stack` setiap container dan volume — label itulah yang jadi cakupan pembersihan dan reap, supaya dua stack di satu host tidak saling menghapus (#263). Compose mengisinya dari `${VCOMPUTER_STACK:-vcomputer}` |
 | `VCOMPUTER_SANDBOX_NETWORK` | `vcomputer-internal` | jaringan Docker tempat sandbox bergabung |
 | `VCOMPUTER_SANDBOX_NOVNC_PORT` | `6080` | port noVNC **di dalam** sandbox, dikirim sebagai `-e NOVNC_PORT=`; websockify mengikat `127.0.0.1`, dan gate yang memproksikannya |
 | `VCOMPUTER_SANDBOX_GATE_PORT` | `8443` | port gate di alamat jaringan sandbox, dikirim sebagai `-e GATE_PORT=`; inilah port yang disapa control plane, untuk CDP maupun noVNC |
 | `VCOMPUTER_EXEC_TIMEOUT` | `30s` | batas waktu satu `exec` |
 | `VCOMPUTER_NAVIGATE_TIMEOUT` | `15s` | batas waktu satu `navigate`, termasuk verifikasi load-nya |
 | `SCREEN_GEOMETRY` | `1280x800x24` | geometri Xvfb, dikirim sebagai `-e` |
+| `VCOMPUTER_REAP_ON_SHUTDOWN` | `0` (simpan) | `1`/`true` membuat control plane menghapus sandboxnya sendiri saat menerima SIGTERM/SIGINT — container yang sedang jalan termasuk, beserta volumenya. Selain `1`/`true` berarti simpan: SIGTERM adalah restart, dan volume yang ikut terhapus adalah sesinya (#263) |
 | `VNC_PASSWORD` | kosong | password VNC opsional (control plane tidak pernah memasangnya) |
 
 Port sandbox **tidak pernah** dipublikasikan ke host: `docker run` tidak memakai `-p`
@@ -218,7 +225,7 @@ cd apps/virtual-computer/control && VCOMPUTER_CONTROL_TOKEN=$(openssl rand -hex 
 # Seluruh stack PoC (butuh Docker).
 export VCOMPUTER_CONTROL_TOKEN=$(openssl rand -hex 16)
 docker compose -f apps/virtual-computer/docker-compose.poc.yml --profile build build
-docker compose -f apps/virtual-computer/docker-compose.poc.yml up -d control fixture
+docker compose -f apps/virtual-computer/docker-compose.poc.yml up -d vcomputer-control vcomputer-fixture
 ```
 
 Lalu seluruh checklist QA dalam satu perintah:
@@ -230,7 +237,9 @@ Lalu seluruh checklist QA dalam satu perintah:
 STACK=vc2 VCOMPUTER_CONTROL_PORT=18092 BUILD_NETWORK=host apps/virtual-computer/scripts/e2e.sh
 
 # Stack sengaja dibiarkan hidup supaya bisa diperiksa tangan; TEARDOWN=1 yang
-# membersihkannya, dan membuktikan tidak ada sisa.
+# membersihkannya, dan membuktikan tidak ada sisa. Tanpa TEARDOWN, run ini juga
+# membuktikan bahwa `compose restart` pada control plane tidak menyentuh sesinya
+# (pemeriksaan restart-*).
 STACK=vc2 VCOMPUTER_CONTROL_PORT=18092 TEARDOWN=1 apps/virtual-computer/scripts/e2e.sh
 ```
 
@@ -276,6 +285,11 @@ mengambil paket apt lewat jembatan jaringannya), dan `TEARDOWN=1` (lihat di bawa
 di-generate sendiri kecuali `VCOMPUTER_CONTROL_TOKEN` sudah diisi; `DOCKER="sudo docker"`
 didukung lewat `${DOCKER:-docker}`. Skrip keluar non-nol bila ada satu pemeriksaan yang gagal.
 
+Pemeriksaan `restart-*` adalah pasangan `TEARDOWN=1`: yang satu membuktikan sesi **bertahan**
+melewati restart control plane (`compose restart`, tanpa opt-in; sandbox masih jalan, volume
+masih ada, berkas di `/home/bolu` masih terbaca, dan `Ensure` berikutnya memakai volume yang
+sama), yang satu lagi membuktikan teardown eksplisit benar-benar membereskan semuanya.
+
 `docker-compose.poc.yml` menerima `VCOMPUTER_STACK`, `VCOMPUTER_CONTROL_IMAGE`,
 `VCOMPUTER_CONTROL_CONTAINER`, `VCOMPUTER_FIXTURE_CONTAINER`, `VCOMPUTER_SANDBOX_IMAGE`,
 `VCOMPUTER_INTERNAL_NETWORK`, dan `VCOMPUTER_EDGE_NETWORK`, dengan default yang menjaga
@@ -302,41 +316,45 @@ yang terpilih tapi gagal dibuang — volume yang masih dipakai adalah kasus nyat
 jawabannya bertambah kunci `"failed":["<baris error docker>",...]`, dan hitungannya tetap
 jujur; `500` hanya dipakai bila daemon docker-nya sendiri tidak bisa dihubungi.
 
-**`docker compose down` sekarang benar-benar bersih — karena control plane yang membereskan.**
-Sandbox dibuat oleh control plane (`docker run`), bukan dideklarasikan di file compose, jadi
-sebelum ini `down` meninggalkan setiap sandbox yang masih hidup, volumenya, dan jaringan
-internal yang ditahan sandbox itu. Sekarang control plane menghapus sandboxnya sendiri saat
-menerima SIGTERM/SIGINT: setelah HTTP-nya berhenti (`-shutdown-grace`, 5 detik) ia menjalankan
-reap (`-reap-grace`, 60 detik) yang membuang setiap container berlabel `vcomputer.bot` dengan
-awalan nama stacknya — **termasuk yang sedang jalan** — berikut volumenya. Bedanya dengan
-`Cleanup` yang dipakai `POST /v1/admin/cleanup`: `Cleanup` sengaja tidak pernah menyentuh
-container yang jalan (ia untuk sisa yang sudah mati), sedangkan `Reap` justru sebaliknya, dan
-ia tidak punya rute HTTP sama sekali — hanya bisa dipanggil dari dalam proses, setelah sesinya
-selesai. Compose diberi `stop_grace_period: 90s` supaya docker tidak SIGKILL di tengah reap
-itu. Kegagalan reap dilaporkan sebagai log (`reaping the sandboxes failed: …`, dan satu baris
-per sisa yang gagal dibuang), bukan sebagai exit code — servernya sudah berhenti, dan yang
-dibutuhkan operator adalah hitungannya.
+**Restart bukan teardown: SIGTERM tidak menghapus apa pun.** Sebelumnya control plane
+menghapus sandboxnya sendiri saat menerima SIGTERM, dan itu salah arah (#263): SIGTERM adalah
+hal yang biasa — `compose restart`, `up -d --force-recreate` saat naik versi, daemon docker
+yang di-restart — dan yang ikut terhapus bersama sandbox adalah volume `/home/bolu`: profil
+Chromium, login yang sudah dilakukan, berkas yang belum selesai. Sekarang prosesnya berhenti
+dan **menyimpan** sandboxnya, berikut volumenya; log shutdown-nya menyebutkan kedua jalur
+untuk membereskannya nanti. Penghapusan saat berhenti tetap mungkin, tapi harus disebut:
+`VCOMPUTER_REAP_ON_SHUTDOWN=1` (hanya `1`/`true`; selain itu berarti simpan) menjalankan
+`Runtime.Reap` setelah HTTP-nya berhenti (`-shutdown-grace` 5 detik, `-reap-grace` 60 detik),
+yang membuang setiap container berlabel `vcomputer.bot` **dan** `vcomputer.stack=<prefix>`
+miliknya — termasuk yang sedang jalan — beserta volumenya. Kegagalannya dilaporkan sebagai log
+(`reaping the sandboxes failed: …`, satu baris per sisa yang gagal), bukan sebagai exit code.
 
-Urutan teardown yang didokumentasikan karena itu: `docker compose down` (control plane
-menerima SIGTERM, reaps sandboxnya, lalu kedua service dan dua jaringannya hilang), dan
-`cleanup.sh --running --volumes` untuk sisa yang tidak bisa dijangkau jalur itu — stack yang
-belum sempat naik, atau control plane yang kena SIGKILL.
+Teardown yang didokumentasikan karena itu jalur eksplisit: `scripts/cleanup.sh --running
+--volumes` dengan `STACK` yang disebut, lalu `docker compose down` untuk service dan jaringan
+compose. Jalur itu bekerja terlepas dari prosesnya sempat menerima sinyal atau tidak — stack
+yang belum sempat naik, atau control plane yang kena SIGKILL, ikut terbereskan. Compose tetap
+memberi `stop_grace_period: 90s`, dan itu hanya relevan di jalur opt-in di atas: proses yang
+menyimpan sandboxnya berhenti jauh di bawah satu detik, sementara yang diminta menghapusnya
+punya satu container untuk di-stop dan satu volume untuk dihapus per sesi.
 
 `scripts/cleanup.sh` adalah padanan CLI-nya, untuk dipakai saat tidak ada yang bisa
 menjawab HTTP (misalnya stack sudah turun). Ia memilih container dengan filter label
-`vcomputer.bot` dan awalan nama `${STACK}-` — container control plane dan fixture tidak
-membawa label itu, jadi keduanya tidak pernah tersentuh, dan awalan nama itu yang memisahkan
-dua stack di satu host. `STACK` menggeser nama yang dicari, `DOCKER` memilih CLI-nya,
+`vcomputer.bot` **dan** `vcomputer.stack=${STACK}` — container control plane dan fixture tidak
+membawa label pertama, jadi keduanya tidak pernah tersentuh, dan label kedua yang memisahkan
+dua stack di satu host **secara tepat**: awalan nama juga mencocokkan stack yang namanya
+berawalan sama (`vcomputer` cocok dengan `vcomputer-qa`), label tidak. `STACK` karena itu
+**wajib** dan tidak punya default: satu-satunya nilai yang masuk akal sebagai default adalah
+`vcomputer`, yaitu stack yang paling mungkin sedang dipakai. `DOCKER` memilih CLI-nya,
 `VOLUMES=1` (atau argumen `--volumes`) ikut membuang volumenya, dan `--running` (atau
 `RUNNING=1`) melebarkan pilihannya ke container yang sedang jalan — yang dibuang lebih dulu
 sebagai container (`docker rm -f`) sebelum volumenya, karena volume yang masih dipakai tidak
 bisa dihapus:
 
 ```bash
-# Buang container sisa stack default, berikut volumenya.
-VOLUMES=1 STACK=vc2 apps/virtual-computer/scripts/cleanup.sh
+# Buang container sisa stack vc2, berikut volumenya.
+STACK=vc2 VOLUMES=1 apps/virtual-computer/scripts/cleanup.sh
 
-# Termasuk yang sedang jalan — inilah yang dipakai teardown e2e.
+# Termasuk yang sedang jalan — inilah teardown yang didokumentasikan.
 STACK=vc2 apps/virtual-computer/scripts/cleanup.sh --running --volumes
 
 # Stack lain, docker lewat sudo.
@@ -379,7 +397,14 @@ menyambungkannya:
 - `NewVComputerTasks(cfg, log)` membangun set activity. Alamat kosong berarti **tanpa klien**:
   setiap activity menjawab `domain.ErrNotConfigured`, bukan memanggil alamat yang tidak
   dimaksud. Satu baris `Info` dicatat saat start dan menyebut apakah control plane
-  terkonfigurasi — token tidak pernah masuk log.
+  terkonfigurasi — token tidak pernah masuk log. Alamat terisi **tanpa** token dicatat sebagai
+  `Warn` yang menyebut `VCOMPUTER_CONTROL_TOKEN` kosong dan bahwa setiap panggilan akan
+  dijawab `401`: kliennya tetap dibangun, jadi yang dilaporkan adalah penolakan control plane,
+  bukan "tidak terkonfigurasi" yang menyembunyikan variabel mana yang kurang.
+- Kesalahan konfigurasi (alamat kosong maupun token ditolak) dijawab activity sebagai
+  `temporal.NewNonRetryableApplicationError` bertipe `VComputerNotConfigured`, jadi run gagal
+  pada attempt pertama alih-alih mengirim header yang sama tiga kali. `ErrUnavailable`,
+  `ErrInvalidInput`, dan `ErrNoSession` tetap retryable.
 - `Container.openVComputer` memanggilnya saat assembly, dan tidak butuh database, Redis, atau
   klien Temporal: komputer bot tidak bergantung pada apa yang diingat deployment.
 - `RegisterVComputerTasks(w, c)` dipanggil dari `RegisterAgentTasks` **sebelum** cabang

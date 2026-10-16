@@ -54,6 +54,15 @@ const (
 	tokenCookieDir = "/v1/sessions/"
 )
 
+// The two 401 sentences. They are constants because a caller classifies on them: the
+// backend carries whichever one it was answered into the error a task reports, and
+// "the token is not valid" is what sends an operator to compare two secrets rather
+// than to look for a variable they never set.
+const (
+	tokenMissing = "a bearer token is required"
+	tokenRefused = "the token is not valid"
+)
+
 // Server is the control plane's handler.
 type Server struct {
 	runtime sandbox.Runtime
@@ -174,6 +183,12 @@ func New(runtime sandbox.Runtime, logger *log.Logger, options ...Option) http.Ha
 // load and a websocket handshake cannot carry a header. A query parameter reaches
 // logs and history, so it is accepted exactly where a browser leaves no choice, and
 // the answer sets the cookie so the next request does not need it.
+//
+// The two refusals are different mistakes and the answer says which one it is: no
+// credential at all means the caller has nothing to present, while a credential that
+// does not match means the two sides were started with different secrets. A worker
+// reports this sentence to a person — "a bearer token is required" for a token that
+// was sent and merely wrong is how a wrong secret gets looked for in the wrong place.
 func (s *Server) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.open || r.URL.Path == "/health" {
@@ -183,7 +198,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 
 		if token := r.URL.Query().Get("token"); token != "" && isNoVNCPath(r.URL.Path) {
 			if !s.tokenMatches(token) {
-				s.writeError(w, http.StatusUnauthorized, "the token is not valid")
+				s.writeError(w, http.StatusUnauthorized, tokenRefused)
 				return
 			}
 			s.setTokenCookie(w, r, token)
@@ -191,11 +206,16 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			return
 		}
 
-		if s.tokenMatches(bearerToken(r)) || s.tokenMatches(cookieToken(r)) {
+		bearer, cookie := bearerToken(r), cookieToken(r)
+		if s.tokenMatches(bearer) || s.tokenMatches(cookie) {
 			next.ServeHTTP(w, r)
 			return
 		}
-		s.writeError(w, http.StatusUnauthorized, "a bearer token is required")
+		if bearer == "" && cookie == "" {
+			s.writeError(w, http.StatusUnauthorized, tokenMissing)
+			return
+		}
+		s.writeError(w, http.StatusUnauthorized, tokenRefused)
 	})
 }
 

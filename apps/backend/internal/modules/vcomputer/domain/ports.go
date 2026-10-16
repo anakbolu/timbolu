@@ -39,7 +39,9 @@ var (
 	// address was configured, or the control plane refused the bearer token with a
 	// 401 because VCOMPUTER_CONTROL_TOKEN is missing or does not match the one the
 	// control plane was started with. Both are deployment mistakes, and neither
-	// becomes true by asking again.
+	// becomes true by asking again — which is why the activities answer it as a
+	// non-retryable Temporal error rather than letting the policy spend its attempts
+	// on the same refused header.
 	ErrNotConfigured = errors.New("vcomputer: the control plane is not configured")
 	// ErrNoSession is an action on a bot whose session does not exist.
 	ErrNoSession = errors.New("vcomputer: no session for that bot")

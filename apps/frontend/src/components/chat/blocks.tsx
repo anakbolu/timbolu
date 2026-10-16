@@ -19,7 +19,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { NO_WORKSPACE_MESSAGE } from "@/components/dashboard/no-workspace";
 import {
   contentURL,
   decideDraft,
@@ -30,6 +29,7 @@ import {
   type TableBlock,
   type TextBlock,
 } from "@/lib/api";
+import { NO_WORKSPACE_MESSAGE } from "@/lib/workspace-messages";
 
 /**
  * The two block types that touch the document are loaded only in the browser.
