@@ -20,6 +20,7 @@ import { useWorkspace } from "@/components/dashboard/workspace-data";
 import {
   ApiResult,
   ActivityEvent,
+  Attachment,
   ChatConversation,
   ChatMessage,
   MessageEventPayload,
@@ -66,7 +67,23 @@ export type ChatState = {
    * the store's first read lands.
    */
   openByID: (conversationId: string) => boolean;
-  send: (text: string, agentId?: string) => Promise<void>;
+  /**
+   * send stores a message and answers with it.
+   *
+   * The message is what an attachment has to name — the backend refuses a file
+   * that belongs to no message — so the caller needs the row it just wrote, not
+   * only the fact that the write happened. Null is a message that was not
+   * stored, and the error is already in `error`.
+   */
+  send: (text: string, agentId?: string) => Promise<ChatMessage | null>;
+  /**
+   * attachToMessage merges uploaded files into a message already on screen.
+   *
+   * An upload is a second request that finishes after the message is rendered,
+   * and the stream keeps replacing that message with the server's version, so
+   * the files are merged into the row rather than waited for before it is shown.
+   */
+  attachToMessage: (messageId: string, attachments: Attachment[]) => void;
   loadOlder: () => Promise<void>;
   refresh: () => Promise<void>;
 };
@@ -181,9 +198,9 @@ export function useChat(): ChatState {
   }, [workspaceId, active, loadingOlder]);
 
   const send = useCallback(
-    async (text: string, agentId?: string) => {
+    async (text: string, agentId?: string): Promise<ChatMessage | null> => {
       if (!workspaceId || !active) {
-        return;
+        return null;
       }
 
       setSending(true);
@@ -196,7 +213,7 @@ export function useChat(): ChatState {
 
       if (!result.ok) {
         setError(result.message);
-        return;
+        return null;
       }
 
       setError(null);
@@ -212,9 +229,27 @@ export function useChat(): ChatState {
       // The reply placeholder is not added here: it arrives on the stream, which
       // is what makes a second tab show the same conversation.
       await reloadConversations();
+      return result.data.message;
     },
     [workspaceId, active, reloadConversations],
   );
+
+  const attachToMessage = useCallback((messageId: string, attachments: Attachment[]) => {
+    setMessages((previous) =>
+      previous.map((message) => {
+        if (message.message_id !== messageId) {
+          return message;
+        }
+        // Merged by id: the same upload answered twice must not be listed twice
+        // under one bubble.
+        const known = new Set(message.attachments.map((item) => item.id));
+        return {
+          ...message,
+          attachments: [...message.attachments, ...attachments.filter((item) => !known.has(item.id))],
+        };
+      }),
+    );
+  }, []);
 
   // The stream: the store's connection, filtered to this conversation.
   useEffect(() => {
@@ -259,6 +294,7 @@ export function useChat(): ChatState {
     openByAgent,
     openByID,
     send,
+    attachToMessage,
     loadOlder,
     refresh,
   };
