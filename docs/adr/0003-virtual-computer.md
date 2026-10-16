@@ -226,9 +226,11 @@ QA menemukan tiga hal di jalur konfigurasi worker → control plane, semuanya su
 - **Kesalahan konfigurasi tidak lagi di-retry.** Activity membungkus `ErrNotConfigured`
   sebagai `temporal.NewNonRetryableApplicationError` bertipe `VComputerNotConfigured`
   (`internal/modules/vcomputer/temporal`), dengan `ErrNotConfigured` tetap sebagai cause
-  sehingga `errors.Is` di workflow tidak berubah. Alamat kosong maupun token ditolak
-  karenanya gagal pada attempt pertama; `ErrUnavailable`, `ErrInvalidInput`, dan
-  `ErrNoSession` tetap retryable, karena sandbox yang belum siap memang layak ditanya lagi.
+  sehingga `errors.Is` di sisi dalam proses (klien dan activity) tidak berubah; di sisi
+  workflow yang bertahan hanya tipe dan kalimatnya, jadi cabangnya lewat pesan. Alamat kosong
+  maupun token yang ditolak karenanya gagal pada attempt pertama; `ErrUnavailable`,
+  `ErrInvalidInput`, dan `ErrNoSession` tetap retryable, karena sandbox yang belum siap memang
+  layak ditanya lagi.
 - **Alamat tanpa token tidak lagi "configured" tanpa catatan.** `NewVComputerTasks` mencatat
   `Warn` yang menyebut `VCOMPUTER_CONTROL_TOKEN` kosong dan bahwa setiap panggilan akan
   dijawab `401`. Kliennya tetap dibangun — yang dilaporkan jadi penolakan control plane,

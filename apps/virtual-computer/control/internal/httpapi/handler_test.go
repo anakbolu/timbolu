@@ -173,6 +173,18 @@ func TestEveryRouteExceptHealthRequiresTheToken(t *testing.T) {
 		t.Fatalf("query token off the noVNC route: status = %d, want 401", status)
 	}
 
+	// The same distinction on the noVNC route, where the token arrives as a query
+	// parameter: a wrong one is refused as invalid rather than as missing. That route
+	// has its own refusal, so leaving it out would let the browser path go back to
+	// reporting a token that was sent as one that never arrived.
+	status, body = doAs(t, "", http.MethodGet, server.URL+"/v1/sessions/bot-a/novnc/vnc.html?token=wrong-token", "")
+	if status != http.StatusUnauthorized {
+		t.Fatalf("wrong query token: status = %d, want 401", status)
+	}
+	if !strings.Contains(string(body), "not valid") {
+		t.Fatalf("body = %s, want the wrong query token reported as invalid", body)
+	}
+
 	// /health is open: the compose healthcheck and the e2e script both probe it
 	// before anything else exists.
 	if status, body := doAs(t, "", http.MethodGet, server.URL+"/health", ""); status != http.StatusOK {

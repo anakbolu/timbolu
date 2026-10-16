@@ -199,9 +199,12 @@ const notConfiguredType = "VComputerNotConfigured"
 // Everything else — an unreachable control plane, a sandbox that is not up yet — is left
 // alone, because that is what the policy is for.
 //
-// The cause is attached rather than only its sentence, so the error still unwraps to
-// domain.ErrNotConfigured: the sentinel is what a caller branches on, and it survives the
-// boundary that keeps only an activity error's type and text.
+// The cause is attached as well as the sentence, so what an operator reads in a run carries
+// the whole chain: the control plane's own words and the sentinel's. What survives the
+// activity boundary is that text and the error's type, not the identity of the value — an
+// errors.Is against domain.ErrNotConfigured holds on this side of the boundary, where the
+// client and this wrapper keep it, and does not on the workflow side, which is why a
+// caller there branches on the message.
 func permanent(err error) error {
 	if err == nil || !errors.Is(err, domain.ErrNotConfigured) {
 		return err

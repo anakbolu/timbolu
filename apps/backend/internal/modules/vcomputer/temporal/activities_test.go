@@ -79,8 +79,10 @@ func TestConfigurationMistakesAreNotRetryable(t *testing.T) {
 		t.Run(call.name, func(t *testing.T) {
 			err := call.call()
 
-			// The sentinel survives: the workflow's own error handling branches on it, and
-			// an application error that lost its cause would break that.
+			// The sentinel is still in the chain here: the wrapping keeps its cause, so
+			// a caller on this side of the activity boundary can branch on it. Only the
+			// type and the text cross into the workflow, which is why the workflow's own
+			// test asserts on the message.
 			require.ErrorIs(t, err, domain.ErrNotConfigured)
 
 			var application *sdktemporal.ApplicationError
