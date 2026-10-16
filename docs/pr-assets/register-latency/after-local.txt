@@ -1,0 +1,7 @@
+REKAP hasil pengukuran sebelumnya (bukan dijalankan ulang)
+Build: fix/register-latency c46960c, env sama (MAIL_HOST=10.255.255.1)
+POST /register #1  ->  HTTP 201   0,164 detik
+POST /register #2  ->  HTTP 201   0,131 detik
+POST /register #3  ->  HTTP 201   0,117 detik
+log: delivery failed after 3 attempts ... dial tcp 10.255.255.1:587: i/o timeout
+     (pengiriman email gagal di background, request tidak terblokir)

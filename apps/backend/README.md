@@ -788,7 +788,11 @@ Environment variables worth knowing: `JWT_SECRET` (signs access tokens **and**
 the OAuth state), `FRONTEND_URL` (the base of the emailed links and the Google
 callback target), `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`GOOGLE_REDIRECT_URL`
 (Google sign-in stays disabled while they are empty), `MAIL_DRIVER` (`log`
-prints the links, `smtp` sends them), and the model gateway's
+prints the links, `smtp` sends them — delivery is queued to a worker pool and
+never runs inside the request, so a registration is not held by a mail server
+and a delivery that fails does not fail the sign-up; each attempt is bounded by
+`MAIL_TIMEOUT_SECONDS` and retried three times with a backoff), and the model
+gateway's
 `SECRET_ENCRYPTION_KEY` (32 bytes, base64/hex/raw, seals the provider keys at
 rest), `LLM_DEFAULT_*` (the provider the platform offers a workspace that
 configured none), `LLM_QUOTA_ENABLED`/`LLM_TOKENS_PER_PERIOD`, and

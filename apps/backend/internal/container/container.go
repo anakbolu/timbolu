@@ -52,11 +52,15 @@ type Container struct {
 
 	// Authentication primitives. They are nil when the database is not
 	// configured, and the auth routes then answer 503.
-	Issuer  *authn.Issuer
-	States  *authn.StateSigner
-	Mailer  mail.Sender
-	Limiter *ratelimit.Limiter
-	Google  *google.Client
+	Issuer *authn.Issuer
+	States *authn.StateSigner
+	Mailer mail.Sender
+	// AsyncMailer is the worker pool behind Mailer when the SMTP driver is
+	// configured. It is nil for the log driver, and Close drains it so a message
+	// queued by the last request still leaves.
+	AsyncMailer *mail.AsyncSender
+	Limiter     *ratelimit.Limiter
+	Google      *google.Client
 
 	// Costs prices a model call. It is built with the gateway and shared with
 	// the task runtime, so a task's own total and the ledger cannot disagree.
@@ -119,6 +123,11 @@ type Container struct {
 
 	app *fiber.App
 }
+
+// mailDrainTimeout bounds the wait for queued mail at shutdown: enough for the
+// attempts of one message, short enough that a stuck SMTP server cannot hold the
+// process open.
+const mailDrainTimeout = 15 * time.Second
 
 // options holds the dependency overrides. A dependency that was explicitly
 // provided (even as nil) is never opened by New, which is what lets tests and
@@ -467,6 +476,16 @@ func (c *Container) App() *fiber.App {
 func (c *Container) Close() {
 	if c == nil {
 		return
+	}
+	// Queued mail first: a verification link the last request produced is worth a
+	// bounded wait, and it needs the logger below to report a failure.
+	if c.AsyncMailer != nil {
+		drainCtx, cancel := context.WithTimeout(context.Background(), mailDrainTimeout)
+		if err := c.AsyncMailer.Close(drainCtx); err != nil {
+			c.Logger.Warn("mail queue did not drain before shutdown", zap.Error(err))
+		}
+		cancel()
+		c.AsyncMailer = nil
 	}
 	// Metrics first: a measurement's last push is cheap, and a span that cannot be flushed is a
 	// lost trace rather than a lost count.

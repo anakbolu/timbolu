@@ -74,6 +74,9 @@ Mail:
   Port: 587
   Username: ""
   Password: ""
+  # One delivery, dial and session together. A mail server that is unreachable
+  # must cost a bounded moment rather than the kernel's own give-up time.
+  TimeoutSeconds: 10
 
 Llm:
   # Every secret and every endpoint comes from the environment in staging and
