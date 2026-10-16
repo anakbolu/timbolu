@@ -1,0 +1,22 @@
+$ go build ./...
+build OK
+$ go test ./internal/modules/chat/... -run 'TestSendOpensAnEmptyMessageForAnAttachment|TestSendValidatesItsInput|TestAttachWithoutMessageOpensOne' -v
+PASS
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain	0.006s [no tests to run]
+=== RUN   TestAttachWithoutMessageOpensOne
+--- PASS: TestAttachWithoutMessageOpensOne (0.00s)
+PASS
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/handler	0.018s
+=== RUN   TestSendValidatesItsInput
+--- PASS: TestSendValidatesItsInput (0.00s)
+=== RUN   TestSendOpensAnEmptyMessageForAnAttachment
+--- PASS: TestSendOpensAnEmptyMessageForAnAttachment (0.00s)
+PASS
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/service	0.011s
+$ go test ./internal/modules/chat/...
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain	0.026s
+?   	github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain/mocks	[no test files]
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/handler	0.017s
+?   	github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/repository	[no test files]
+?   	github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/repository/sqlcgen	[no test files]
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/service	0.071s

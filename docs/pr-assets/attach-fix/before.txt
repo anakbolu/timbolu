@@ -1,0 +1,13 @@
+$ git rev-parse --short HEAD  # origin/main
+66b0ecb
+$ go test ./internal/modules/chat/service/ -run TestReproAttachWithoutMessage -v
+=== RUN   TestReproAttachWithoutMessageOpensMessage
+    attach_repro_test.go:19: 
+        	Error Trace:	/workspace/clients/timbolu-wt/attach-fix/apps/backend/internal/modules/chat/service/attach_repro_test.go:19
+        	Error:      	Received unexpected error:
+        	            	chat: invalid input: write something first
+        	Test:       	TestReproAttachWithoutMessageOpensMessage
+--- FAIL: TestReproAttachWithoutMessageOpensMessage (0.00s)
+FAIL
+FAIL	github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/service	0.009s
+FAIL
