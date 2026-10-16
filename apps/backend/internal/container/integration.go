@@ -9,7 +9,9 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	ghconnector "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/adapters/github"
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/adapters/gmail"
+	"github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/adapters/slack"
 	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
 	integrationservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/service"
 	routinedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
@@ -182,6 +184,42 @@ func (c *Container) integrationAdapters(o *options, cfg *config.Config) []integr
 			c.Logger.Error("the Gmail adapter is disabled", zap.Error(err))
 		} else {
 			adapters = append(adapters, gmailAdapter)
+		}
+	}
+
+	// Slack is offered the same way Gmail is: a deployment that has not registered
+	// an app simply does not offer it, rather than offering it and failing at the
+	// consent screen.
+	if strings.TrimSpace(cfg.Integrations.SlackClientID) != "" &&
+		strings.TrimSpace(cfg.Integrations.SlackClientSecret) != "" {
+		slackAdapter, err := slack.New(slack.Config{
+			ClientID:      cfg.Integrations.SlackClientID,
+			ClientSecret:  cfg.Integrations.SlackClientSecret,
+			APIBase:       cfg.Integrations.SlackAPIBase,
+			AuthEndpoint:  cfg.Integrations.SlackAuthEndpoint,
+			TokenEndpoint: cfg.Integrations.SlackTokenEndpoint,
+		})
+		if err != nil {
+			c.Logger.Error("the Slack adapter is disabled", zap.Error(err))
+		} else {
+			adapters = append(adapters, slackAdapter)
+		}
+	}
+
+	// GitHub is offered the same way, and for the same reason.
+	if strings.TrimSpace(cfg.Integrations.GitHubClientID) != "" &&
+		strings.TrimSpace(cfg.Integrations.GitHubClientSecret) != "" {
+		githubAdapter, err := ghconnector.New(ghconnector.Config{
+			ClientID:      cfg.Integrations.GitHubClientID,
+			ClientSecret:  cfg.Integrations.GitHubClientSecret,
+			APIBase:       cfg.Integrations.GitHubAPIBase,
+			AuthEndpoint:  cfg.Integrations.GitHubAuthEndpoint,
+			TokenEndpoint: cfg.Integrations.GitHubTokenEndpoint,
+		})
+		if err != nil {
+			c.Logger.Error("the GitHub adapter is disabled", zap.Error(err))
+		} else {
+			adapters = append(adapters, githubAdapter)
 		}
 	}
 

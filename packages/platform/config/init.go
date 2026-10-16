@@ -220,6 +220,16 @@ func loadFromEnv(cfg *Config) error {
 		"GMAIL_API_BASE":                  &cfg.Integrations.GmailAPIBase,
 		"GMAIL_AUTH_ENDPOINT":             &cfg.Integrations.GmailAuthEndpoint,
 		"GMAIL_TOKEN_ENDPOINT":            &cfg.Integrations.GmailTokenEndpoint,
+		"SLACK_CLIENT_ID":                 &cfg.Integrations.SlackClientID,
+		"SLACK_CLIENT_SECRET":             &cfg.Integrations.SlackClientSecret,
+		"SLACK_API_BASE":                  &cfg.Integrations.SlackAPIBase,
+		"SLACK_AUTH_ENDPOINT":             &cfg.Integrations.SlackAuthEndpoint,
+		"SLACK_TOKEN_ENDPOINT":            &cfg.Integrations.SlackTokenEndpoint,
+		"GITHUB_CLIENT_ID":                &cfg.Integrations.GitHubClientID,
+		"GITHUB_CLIENT_SECRET":            &cfg.Integrations.GitHubClientSecret,
+		"GITHUB_API_BASE":                 &cfg.Integrations.GitHubAPIBase,
+		"GITHUB_AUTH_ENDPOINT":            &cfg.Integrations.GitHubAuthEndpoint,
+		"GITHUB_TOKEN_ENDPOINT":           &cfg.Integrations.GitHubTokenEndpoint,
 		// WhatsApp: the two processes reach each other over one shared secret, so
 		// every one of these is a secret or an address and none of them belongs in a
 		// YAML file that ships with the image.
