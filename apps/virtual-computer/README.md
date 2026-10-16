@@ -141,7 +141,7 @@ cd apps/virtual-computer/control && VCOMPUTER_CONTROL_TOKEN=$(openssl rand -hex 
 # Seluruh stack PoC (butuh Docker).
 export VCOMPUTER_CONTROL_TOKEN=$(openssl rand -hex 16)
 docker compose -f apps/virtual-computer/docker-compose.poc.yml --profile build build
-docker compose -f apps/virtual-computer/docker-compose.poc.yml up -d control fixture
+docker compose -f apps/virtual-computer/docker-compose.poc.yml up -d vcomputer-control vcomputer-fixture
 ```
 
 Lalu seluruh checklist QA dalam satu perintah:
@@ -210,6 +210,26 @@ Konfigurasinya lewat environment, semuanya opsional:
 | `VCOMPUTER_CONTROL_URL` | kosong | alamat **internal** control plane; kosong = tidak terkonfigurasi |
 | `VCOMPUTER_CONTROL_TOKEN` | kosong | rahasia bersama; harus sama dengan `VCOMPUTER_CONTROL_TOKEN` milik control plane |
 | `VCOMPUTER_CONTROL_TIMEOUT` | `30s` | batas satu panggilan; nilai yang tidak bisa di-parse menggagalkan startup |
+
+`docker-compose.yml` di root meneruskan ketiganya **hanya ke `agent-worker`** — proses yang
+mendaftarkan activity-nya — karena token itu rahasia bersama yang tidak dipakai API, gateway,
+maupun integration worker. Meneruskan alamatnya saja belum cukup: stack PoC adalah project
+compose tersendiri, dan satu-satunya port yang dipublikasikannya terikat ke loopback host,
+sehingga container tidak punya rute ke sana. Karena itu ada overlay opsional yang menyambungkan
+worker ke jaringan `vcomputer-edge` milik PoC — sambil tetap di jaringan produk, jadi Postgres,
+Redis, dan Temporal tetap terjangkau — dan memberi `VCOMPUTER_CONTROL_URL` default
+`http://vcomputer-control:8090`:
+
+```bash
+# Stack PoC sudah naik dengan token yang di-export (lihat **Menjalankan** di atas):
+docker compose -f docker-compose.yml -f docker-compose.vcomputer.yml up -d agent-worker
+```
+
+Control plane harus sudah hidup, karena jaringannya dibuat oleh stack PoC. Token harus sama di
+kedua sisi, dan meng-export nilainya adalah cara yang memberi keduanya nilai yang sama: setiap
+perintah membaca `.env` dari direktori compose-nya sendiri — root repo untuk overlay,
+`apps/virtual-computer/` untuk stack PoC — jadi `.env` di root saja tidak sampai ke control plane.
+`make up` tidak berubah: overlay hanya berlaku saat namanya disebut.
 
 Yang terdaftar adalah **`SmokeWorkflow`** (`internal/modules/vcomputer/workflow/smoke.go`), dan
 hanya itu: `AgentTaskWorkflow` dan katalog tool belum menyentuh sandbox (ADR 0003). Satu run

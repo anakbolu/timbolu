@@ -840,7 +840,12 @@ logged), and `VCOMPUTER_CONTROL_TIMEOUT` (bounds one call; a value that will not
 parse fails the startup). The agent worker registers the module's activities and
 `SmokeWorkflow` on its own queue; `cmd/vcomputer-smoke` runs one of them end to end
 from a checkout. The agent task loop and its tool catalog do not reach the sandbox
-yet.
+yet. `docker-compose.yml` forwards the three settings to `agent-worker` and to nothing
+else — it is the process that registers them, and the token is a secret the API, the
+gateway, and the integration worker have no use for. The PoC's stack is a project of
+its own whose only published port is bound to the host's loopback, so the optional
+`docker-compose.vcomputer.yml` overlay is what puts that worker on the control plane's
+network and defaults the address to `http://vcomputer-control:8090`.
 
 Deployment and region decisions: `docs/adr/0001-temporal-dan-region.md`.
 Test strategy and gates: `docs/testing.md`.
