@@ -3,17 +3,20 @@ package handler
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/fasthttp/websocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
@@ -34,22 +37,34 @@ type streamIdentity struct {
 	workspaceID uuid.UUID
 }
 
+// newStreamApp mounts the stream routes on an app with no server timeouts,
+// which is all the tests that only read the response need.
 func newStreamApp(t *testing.T, service chatdomain.Service, id streamIdentity) *fiber.App {
 	t.Helper()
+	return newStreamAppWith(t, service, id, fiber.Config{}, chatdomain.Heartbeat)
+}
 
-	app := fiber.New(fiber.Config{
-		DisableStartupMessage: true,
-		ErrorHandler: func(c *fiber.Ctx, err error) error {
-			var fiberErr *fiber.Error
-			code := fiber.StatusInternalServerError
-			if errors.As(err, &fiberErr) {
-				code = fiberErr.Code
-			}
-			return response.Error(c, code, err.Error(), "http_error", nil)
-		},
-	})
+// newStreamAppWith builds the same app under a given server configuration and
+// heartbeat. Both are inputs because they are what a stream has to outlive, and
+// a test cannot wait out the production values.
+func newStreamAppWith(
+	t *testing.T, service chatdomain.Service, id streamIdentity, config fiber.Config, heartbeat time.Duration,
+) *fiber.App {
+	t.Helper()
 
-	handler := New(service, zap.NewNop())
+	config.DisableStartupMessage = true
+	config.ErrorHandler = func(c *fiber.Ctx, err error) error {
+		var fiberErr *fiber.Error
+		code := fiber.StatusInternalServerError
+		if errors.As(err, &fiberErr) {
+			code = fiberErr.Code
+		}
+		return response.Error(c, code, err.Error(), "http_error", nil)
+	}
+
+	app := fiber.New(config)
+
+	handler := New(service, zap.NewNop()).WithHeartbeat(heartbeat)
 
 	group := app.Group("/api", func(c *fiber.Ctx) error {
 		middleware.SetIdentity(c, id.userID, "owner@example.com")
@@ -115,6 +130,246 @@ func TestSSEStreamsTheBacklogAndTheLiveEvents(t *testing.T) {
 
 	// The frames are separated by a blank line, which is what ends an event.
 	require.Contains(t, text, "\n\n")
+}
+
+// TestSSEOutlivesTheServerWriteTimeout is the issue #255 gate: the server's
+// WriteTimeout bounds one write, not the life of the stream. The app runs on a
+// real listener with a 300ms timeout, so a stream that kept the server's single
+// deadline would be cut at the first keep-alive after that; this one is read
+// across three timeouts, and then an event is written and must still arrive.
+func TestSSEOutlivesTheServerWriteTimeout(t *testing.T) {
+	const (
+		writeTimeout = 300 * time.Millisecond
+		heartbeat    = 50 * time.Millisecond
+	)
+
+	service := mocks.NewService(t)
+	id := streamIdentity{userID: uuid.New(), workspaceID: uuid.New()}
+
+	events := make(chan chatdomain.Event)
+	service.EXPECT().Stream(mock.Anything, mock.Anything, int64(0)).Return(events, nil).Once()
+
+	app := newStreamAppWith(t, service, id, fiber.Config{WriteTimeout: writeTimeout}, heartbeat)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		close(events)
+		_ = app.Shutdown()
+	})
+
+	go func() { _ = app.Listener(listener) }()
+
+	// A deadline on the request bounds the test even if the stream goes silent:
+	// a read of a response whose context is done fails instead of blocking.
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, fiber.MethodGet,
+		"http://"+listener.Addr().String()+"/api/events/stream", nil)
+	require.NoError(t, err)
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+
+	require.Equal(t, fiber.StatusOK, resp.StatusCode)
+	require.Equal(t, "text/event-stream", resp.Header.Get("Content-Type"))
+
+	reader := bufio.NewReader(resp.Body)
+	start := time.Now()
+	var keepAlives strings.Builder
+	for time.Since(start) < 3*writeTimeout {
+		line, err := reader.ReadString('\n')
+		require.NoError(t, err, "the stream was cut after %v", time.Since(start))
+		keepAlives.WriteString(line)
+	}
+	require.Contains(t, keepAlives.String(), ": keep-alive",
+		"the stream must still be written to after three write timeouts")
+
+	// An event written past the server's timeout still arrives, which is what
+	// makes this a live stream rather than a connection held open by silence.
+	events <- chatdomain.Event{
+		ID:             9,
+		WorkspaceID:    id.workspaceID,
+		Type:           chatdomain.EventMessageNew,
+		ConversationID: uuid.New(),
+		Payload:        []byte(`{"message_id":"late"}`),
+		CreatedAt:      time.Now(),
+	}
+
+	var frame strings.Builder
+	for !strings.Contains(frame.String(), "late") {
+		line, err := reader.ReadString('\n')
+		require.NoError(t, err, "the stream ended after %v without the event", time.Since(start))
+		frame.WriteString(line)
+	}
+	require.Contains(t, frame.String(), "id: 9\n")
+	require.Contains(t, frame.String(), "event: message.new\n")
+}
+
+// TestAPlainResponseStillHonoursTheServerWriteTimeout guards the other half of
+// issue #255: only the stream renews its deadline. A response whose body the
+// client stops taking is still cut one WriteTimeout after the server starts
+// writing it, so the fix cannot be mistaken for "the API no longer has a write
+// timeout".
+func TestAPlainResponseStillHonoursTheServerWriteTimeout(t *testing.T) {
+	const writeTimeout = 300 * time.Millisecond
+	// Larger than any combination of send and receive buffers a test host
+	// gives a socket, so the server's write has to block for the deadline to
+	// be what ends it.
+	body := bytes.Repeat([]byte("x"), 16<<20)
+
+	app := fiber.New(fiber.Config{DisableStartupMessage: true, WriteTimeout: writeTimeout})
+	app.Get("/slow-reader", func(c *fiber.Ctx) error { return c.Send(body) })
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = app.Shutdown() })
+
+	go func() { _ = app.Listener(listener) }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, fiber.MethodGet,
+		"http://"+listener.Addr().String()+"/slow-reader", nil)
+	require.NoError(t, err)
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	require.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	// The client takes nothing while the server writes: the write blocks, the
+	// deadline passes, and the response is cut rather than completed.
+	time.Sleep(2 * writeTimeout)
+
+	read, err := io.Copy(io.Discard, resp.Body)
+	require.Error(t, err, "a stalled reader must lose the response to the write timeout")
+	require.Less(t, read, int64(len(body)), "the whole body arrived, so nothing bounded the write")
+}
+
+// TestSocketOutlivesTheServerWriteTimeout covers the handler's other long-lived
+// stream. A WebSocket is hijacked, so fasthttp's per-response write deadline no
+// longer applies to it; this holds the socket open across three write timeouts
+// and then reads an event, which is what keeps that true.
+func TestSocketOutlivesTheServerWriteTimeout(t *testing.T) {
+	const (
+		writeTimeout = 300 * time.Millisecond
+		heartbeat    = 50 * time.Millisecond
+	)
+
+	service := mocks.NewService(t)
+	id := streamIdentity{userID: uuid.New(), workspaceID: uuid.New()}
+
+	events := make(chan chatdomain.Event)
+	service.EXPECT().Stream(mock.Anything, mock.Anything, int64(0)).Return(events, nil).Once()
+
+	app := newStreamAppWith(t, service, id, fiber.Config{WriteTimeout: writeTimeout}, heartbeat)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		close(events)
+		_ = app.Shutdown()
+	})
+
+	go func() { _ = app.Listener(listener) }()
+
+	conn, resp, err := websocket.DefaultDialer.Dial(
+		"ws://"+listener.Addr().String()+"/api/events/socket", nil)
+	require.NoError(t, err)
+	if resp != nil {
+		t.Cleanup(func() { _ = resp.Body.Close() })
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	// Nothing but the stream's own keep-alives crosses the socket for three
+	// write timeouts.
+	time.Sleep(3 * writeTimeout)
+
+	events <- chatdomain.Event{
+		ID:             11,
+		WorkspaceID:    id.workspaceID,
+		Type:           chatdomain.EventMessageNew,
+		ConversationID: uuid.New(),
+		Payload:        []byte(`{"message_id":"socket"}`),
+		CreatedAt:      time.Now(),
+	}
+
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(10*time.Second)))
+
+	var frame map[string]any
+	require.NoError(t, conn.ReadJSON(&frame), "the socket was cut by the write timeout")
+	require.Equal(t, float64(11), frame["id"])
+	require.Equal(t, chatdomain.EventMessageNew, frame["type"])
+}
+
+// TestSSELeavesTheConnectionUsableAfterTheStreamEnds: the stream renews the
+// connection's write deadline, and the connection outlives the stream. This
+// runs with WriteTimeout unset, which is the case where the server puts no
+// deadline of its own on the next request, so a deadline the stream left behind
+// would be the only one there — and it is expired by the time the client comes
+// back.
+func TestSSELeavesTheConnectionUsableAfterTheStreamEnds(t *testing.T) {
+	const heartbeat = 50 * time.Millisecond
+
+	service := mocks.NewService(t)
+	id := streamIdentity{userID: uuid.New(), workspaceID: uuid.New()}
+
+	events := make(chan chatdomain.Event)
+	service.EXPECT().Stream(mock.Anything, mock.Anything, int64(0)).Return(events, nil).Once()
+
+	app := newStreamAppWith(t, service, id, fiber.Config{}, heartbeat)
+	app.Get("/api/ping", func(c *fiber.Ctx) error { return c.SendString("pong") })
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = app.Shutdown() })
+
+	go func() { _ = app.Listener(listener) }()
+
+	base := "http://" + listener.Addr().String()
+	client := &http.Client{Transport: &http.Transport{MaxConnsPerHost: 1}}
+	t.Cleanup(client.CloseIdleConnections)
+
+	resp, err := client.Get(base + "/api/events/stream")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	require.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	// The stream ends on its own, which completes the response and leaves the
+	// connection idle.
+	go func() {
+		time.Sleep(3 * heartbeat)
+		close(events)
+	}()
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Contains(t, string(body), ": keep-alive")
+
+	// Long enough that the stream's own deadline has passed.
+	time.Sleep(2 * heartbeat)
+
+	var last httptrace.GotConnInfo
+	trace := &httptrace.ClientTrace{
+		GotConn: func(info httptrace.GotConnInfo) { last = info },
+	}
+	req, err := http.NewRequestWithContext(
+		httptrace.WithClientTrace(context.Background(), trace), fiber.MethodGet, base+"/api/ping", nil)
+	require.NoError(t, err)
+
+	next, err := client.Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = next.Body.Close() })
+	require.Equal(t, fiber.StatusOK, next.StatusCode)
+
+	content, err := io.ReadAll(next.Body)
+	require.NoError(t, err)
+	require.Equal(t, "pong", string(content))
+	require.True(t, last.Reused, "the request must reuse the stream's connection to prove it survived")
 }
 
 // TestSSEResumesFromTheQueryParameter covers the client that reconnects
