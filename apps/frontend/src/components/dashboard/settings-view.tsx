@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { Bolu } from "@/components/bolu/bolu";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import {
   currentWorkspace,
   setApprovalPolicy,
@@ -27,7 +28,7 @@ import { TIMEZONES, crewFor, expressionOf, stateOf } from "@/lib/dashboard-view"
 
 import { useWorkspace } from "./workspace-data";
 
-const CARD = "rounded-md border border-bolu-border bg-white";
+const CARD = "rounded-md border border-bolu-border bg-bolu-surface";
 const HEADING = "font-display text-[22px] font-semibold";
 
 const LANGUAGES = [
@@ -198,7 +199,7 @@ export function SettingsView() {
                 setEdit((previous) => ({ ...previous, name: value }));
               }}
               onBlur={() => void save({})}
-              className="min-h-11 rounded-md border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
+              className="min-h-11 rounded-md border border-bolu-border bg-bolu-surface px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
             />
           </label>
           <label className="flex min-w-[180px] flex-[0_1_240px] flex-col gap-1.5 text-[14px] font-semibold">
@@ -206,7 +207,7 @@ export function SettingsView() {
             <select
               value={shown.timezone ?? TIMEZONES[0].value}
               onChange={(event) => void save({ timezone: event.target.value })}
-              className="min-h-11 cursor-pointer rounded-md border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
+              className="min-h-11 cursor-pointer rounded-md border border-bolu-border bg-bolu-surface px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
             >
               {TIMEZONES.map((zone) => (
                 <option key={zone.value} value={zone.value}>
@@ -220,7 +221,7 @@ export function SettingsView() {
             <select
               value={shown.language ?? "id"}
               onChange={(event) => void save({ language: event.target.value })}
-              className="min-h-11 cursor-pointer rounded-md border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
+              className="min-h-11 cursor-pointer rounded-md border border-bolu-border bg-bolu-surface px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
             >
               {LANGUAGES.map((language) => (
                 <option key={language.value} value={language.value}>
@@ -245,7 +246,7 @@ export function SettingsView() {
               type="time"
               value={shown.work_hours_start || "08:00"}
               onChange={(event) => void save({ work_hours_start: event.target.value })}
-              className="min-h-11 rounded-md border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
+              className="min-h-11 rounded-md border border-bolu-border bg-bolu-surface px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
             />
           </label>
           <label className="flex flex-col gap-1.5 text-[14px] font-semibold">
@@ -254,7 +255,7 @@ export function SettingsView() {
               type="time"
               value={shown.work_hours_end || "21:00"}
               onChange={(event) => void save({ work_hours_end: event.target.value })}
-              className="min-h-11 rounded-md border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
+              className="min-h-11 rounded-md border border-bolu-border bg-bolu-surface px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
             />
           </label>
           <div className="flex flex-wrap gap-1.5">
@@ -273,8 +274,8 @@ export function SettingsView() {
                   }}
                   className={`min-h-11 min-w-11 cursor-pointer rounded-full border text-[14px] font-bold ${
                     on
-                      ? "border-bolu-ink bg-bolu-ink text-white"
-                      : "border-bolu-border bg-white text-bolu-body"
+                      ? "border-bolu-ink bg-bolu-solid text-bolu-solid-ink"
+                      : "border-bolu-border bg-bolu-surface text-bolu-body"
                   }`}
                 >
                   {item.label}
@@ -316,11 +317,11 @@ export function SettingsView() {
                   aria-label={copy.title}
                   onClick={() => void togglePolicy(policy)}
                   className={`h-[30px] w-[52px] flex-none cursor-pointer rounded-full border-0 p-[3px] transition-colors ${
-                    on ? "bg-bolu-ink" : "bg-bolu-chip"
+                    on ? "bg-bolu-solid" : "bg-bolu-chip"
                   }`}
                 >
                   <span
-                    className={`block size-6 rounded-full bg-white transition-transform ${
+                    className={`block size-6 rounded-full bg-bolu-surface transition-transform ${
                       on ? "translate-x-[22px]" : ""
                     }`}
                   />
@@ -342,8 +343,8 @@ export function SettingsView() {
               onClick={() => setTone(item.value)}
               className={`min-h-11 cursor-pointer rounded-full border px-4 text-[15px] font-semibold ${
                 item.value === tone
-                  ? "border-bolu-ink bg-bolu-ink text-white"
-                  : "border-bolu-border bg-white text-bolu-ink"
+                  ? "border-bolu-ink bg-bolu-solid text-bolu-solid-ink"
+                  : "border-bolu-border bg-bolu-surface text-bolu-ink"
               }`}
             >
               {item.label}
@@ -372,6 +373,16 @@ export function SettingsView() {
 
       <section className={`${CARD} flex flex-wrap items-center justify-between gap-3.5 p-[22px]`}>
         <div>
+          <h2 className={HEADING}>Tampilan</h2>
+          <div className="text-bolu-muted">
+            Terang, gelap, atau ikut pengaturan perangkatmu.
+          </div>
+        </div>
+        <ThemeToggle />
+      </section>
+
+      <section className={`${CARD} flex flex-wrap items-center justify-between gap-3.5 p-[22px]`}>
+        <div>
           <h2 className={HEADING}>Aplikasi terhubung</h2>
           <div className="text-bolu-muted">
             {store.hub.connections.length === 0
@@ -381,7 +392,7 @@ export function SettingsView() {
         </div>
         <a
           href="/dashboard/integrations"
-          className="flex min-h-11 items-center rounded-full bg-bolu-ink px-5 font-bold text-white no-underline hover:text-white"
+          className="flex min-h-11 items-center rounded-full bg-bolu-solid px-5 font-bold text-bolu-solid-ink no-underline hover:text-bolu-solid-ink"
         >
           Kelola integrasi
         </a>
@@ -456,7 +467,7 @@ export function SettingsView() {
         </div>
         <a
           href="/settings/subscription"
-          className="flex min-h-11 items-center rounded-full bg-bolu-ink px-5 font-bold text-white no-underline hover:text-white"
+          className="flex min-h-11 items-center rounded-full bg-bolu-solid px-5 font-bold text-bolu-solid-ink no-underline hover:text-bolu-solid-ink"
         >
           Buka langganan
         </a>

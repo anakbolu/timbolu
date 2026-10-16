@@ -21,9 +21,9 @@ export function Flow() {
         </p>
       </div>
 
-      <div className="flex flex-col gap-7 rounded-xl border border-bolu-border bg-white px-7 py-8">
+      <div className="flex flex-col gap-7 rounded-xl border border-bolu-border bg-bolu-surface px-7 py-8">
         <div aria-hidden="true" className="relative mx-[6%] h-3.5">
-          <div className="absolute inset-x-0 top-1.5 border-t-2 border-dashed border-[#C9CDE0]" />
+          <div className="absolute inset-x-0 top-1.5 border-t-2 border-dashed border-bolu-track" />
           <div className="courier absolute top-0 -ml-[13px] h-3.5 w-[26px] rounded-xl bg-bolu-accent" />
         </div>
 
@@ -31,7 +31,7 @@ export function Flow() {
           {FLOW.map((step) => (
             <li key={step.n} className="flex flex-col gap-2.5">
               <div className="flex items-center gap-2.5">
-                <div className="flex size-[30px] flex-none items-center justify-center rounded-full bg-bolu-ink text-[15px] font-bold text-white">
+                <div className="flex size-[30px] flex-none items-center justify-center rounded-full bg-bolu-solid text-[15px] font-bold text-bolu-solid-ink">
                   {step.n}
                 </div>
                 <div className="size-[58px]">

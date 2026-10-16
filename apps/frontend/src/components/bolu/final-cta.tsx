@@ -9,7 +9,7 @@ export function FinalCta() {
       aria-labelledby="mulai-title"
       className="mx-auto w-full max-w-[1248px] px-6 pt-28"
     >
-      <div className="flex flex-wrap items-center justify-between gap-8 rounded-xl bg-bolu-ink px-9 py-12 text-white">
+      <div className="flex flex-wrap items-center justify-between gap-8 rounded-xl bg-bolu-solid px-9 py-12 text-bolu-solid-ink">
         <div className="flex max-w-[560px] flex-col gap-3.5">
           <h2
             id="mulai-title"
@@ -22,12 +22,12 @@ export function FinalCta() {
             anggota tim kapan saja.
           </p>
           <div className="mt-1.5 flex flex-wrap gap-3">
-            <StartLink className="inline-flex min-h-12 items-center rounded-full bg-bolu-accent px-[26px] py-3.5 text-[18px] font-bold text-white no-underline hover:text-white">
+            <StartLink className="inline-flex min-h-12 items-center rounded-full bg-bolu-accent px-[26px] py-3.5 text-[18px] font-bold text-bolu-solid-ink no-underline hover:text-bolu-solid-ink">
               Coba gratis
             </StartLink>
             <a
               href="#mulai"
-              className="inline-flex min-h-12 items-center rounded-full border-2 border-white px-6 py-3 text-[18px] font-semibold text-white no-underline hover:text-white"
+              className="inline-flex min-h-12 items-center rounded-full border-2 border-bolu-solid-ink px-6 py-3 text-[18px] font-semibold text-bolu-solid-ink no-underline hover:text-bolu-solid-ink"
             >
               Jadwalkan demo
             </a>

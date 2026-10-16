@@ -45,9 +45,9 @@ import { crewFor, expressionOf, relativeAge, stateOf } from "@/lib/dashboard-vie
 
 import { useWorkspace } from "./workspace-data";
 
-const CARD = "rounded-md border border-bolu-border bg-white";
+const CARD = "rounded-md border border-bolu-border bg-bolu-surface";
 const FIELD =
-  "min-h-11 rounded-md border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent";
+  "min-h-11 rounded-md border border-bolu-border bg-bolu-surface px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent";
 const LABEL = "flex flex-col gap-1.5 text-[14px] font-semibold";
 
 /** STATUS_LABEL says what a number's state means, in the user's words. */
@@ -61,11 +61,11 @@ const STATUS_LABEL: Record<string, string> = {
 
 /** STATUS_DOT is the dot beside the state, matching the hub's own palette. */
 const STATUS_DOT: Record<string, string> = {
-  unlinked: "#8B88A0",
-  linking: "#E2602B",
-  connected: "#2FA65A",
-  needs_relink: "#E2602B",
-  disconnected: "#8B88A0",
+  unlinked: "var(--color-bolu-rest)",
+  linking: "var(--color-bolu-flag)",
+  connected: "var(--color-bolu-live)",
+  needs_relink: "var(--color-bolu-flag)",
+  disconnected: "var(--color-bolu-rest)",
 };
 
 /** OUTBOX_LABEL says what happened to a message this workspace asked for. */
@@ -96,6 +96,9 @@ function QrCode({ matrix }: { matrix: string[] }) {
   const cell = Math.max(2, Math.floor(220 / size));
   const side = size * cell;
 
+  // The one surface that must not follow the theme: a scanner needs dark modules
+  // on a light field, and an inverted code is a code that does not read. `bg-white`
+  // here is the code's own paper, not a card.
   return (
     <svg
       role="img"
@@ -460,7 +463,7 @@ export function WhatsAppPanel() {
               type="button"
               onClick={() => void prepare()}
               disabled={busy || agents.length === 0}
-              className="min-h-11 rounded-full bg-bolu-ink px-5 text-[14px] font-bold text-white disabled:opacity-60"
+              className="min-h-11 rounded-full bg-bolu-solid px-5 text-[14px] font-bold text-bolu-solid-ink disabled:opacity-60"
             >
               {busy ? "Menyiapkan…" : "Hubungkan WhatsApp"}
             </button>
@@ -506,7 +509,7 @@ export function WhatsAppPanel() {
               <select
                 value={current?.agent_id ?? ""}
                 onChange={(event) => void changeAgent(event.target.value)}
-                className="min-h-9 cursor-pointer rounded-full border border-bolu-border bg-white px-3 text-[13px] font-semibold text-bolu-ink outline-none"
+                className="min-h-9 cursor-pointer rounded-full border border-bolu-border bg-bolu-surface px-3 text-[13px] font-semibold text-bolu-ink outline-none"
               >
                 <option value="">Belum dipilih</option>
                 {agents.map((agent) => (
@@ -534,7 +537,7 @@ export function WhatsAppPanel() {
                   type="button"
                   onClick={() => void accept()}
                   disabled={accepting}
-                  className="min-h-11 rounded-full bg-bolu-ink px-5 text-[14px] font-bold text-white disabled:opacity-60"
+                  className="min-h-11 rounded-full bg-bolu-solid px-5 text-[14px] font-bold text-bolu-solid-ink disabled:opacity-60"
                 >
                   {accepting ? "Menyimpan…" : "Saya mengerti, lanjutkan"}
                 </button>
@@ -591,7 +594,7 @@ export function WhatsAppPanel() {
                       <button
                         type="button"
                         onClick={() => void start()}
-                        className="min-h-9 rounded-full bg-bolu-ink px-4 text-[13px] font-semibold text-white"
+                        className="min-h-9 rounded-full bg-bolu-solid px-4 text-[13px] font-semibold text-bolu-solid-ink"
                       >
                         Minta kode baru
                       </button>
@@ -610,7 +613,7 @@ export function WhatsAppPanel() {
                     type="button"
                     onClick={() => void start()}
                     disabled={busy}
-                    className="min-h-11 rounded-full bg-bolu-ink px-5 text-[14px] font-bold text-white disabled:opacity-60"
+                    className="min-h-11 rounded-full bg-bolu-solid px-5 text-[14px] font-bold text-bolu-solid-ink disabled:opacity-60"
                   >
                     {busy ? "Memulai…" : "Tautkan nomor"}
                   </button>

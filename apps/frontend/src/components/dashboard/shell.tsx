@@ -30,6 +30,7 @@ import { useState } from "react";
 
 import { Bolu } from "@/components/bolu/bolu";
 import { GroupIcon } from "@/components/bolu/group-icon";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import type { Agent, ChatConversation } from "@/lib/api";
 import { LOGO } from "@/lib/crew";
 import { countPending, relativeAge } from "@/lib/dashboard-view";
@@ -119,7 +120,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
     <div className="flex h-dvh flex-col overflow-hidden bg-bolu-bg text-bolu-ink min-[761px]:flex-row">
       {/* Mobile bar: the design hides the sidebar below 760px and puts the
           current screen's name here instead. */}
-      <div className="z-30 flex flex-none items-center gap-2.5 border-b border-bolu-border bg-white px-3 py-2 min-[761px]:hidden">
+      <div className="z-30 flex flex-none items-center gap-2.5 border-b border-bolu-border bg-bolu-surface px-3 py-2 min-[761px]:hidden">
         <button
           type="button"
           aria-label="Buka menu"
@@ -141,13 +142,13 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
       {navOpen ? (
         <div
           onClick={() => setNavOpen(false)}
-          className="fixed inset-0 z-[35] bg-[rgba(30,27,46,0.4)] min-[761px]:hidden"
+          className="fixed inset-0 z-[35] bg-bolu-scrim min-[761px]:hidden"
         />
       ) : null}
 
       <nav
         aria-label="Menu"
-        className={`box-border flex w-[248px] flex-none flex-col gap-1 overflow-y-auto border-r border-bolu-border bg-white p-[14px_12px] max-[760px]:fixed max-[760px]:inset-y-0 max-[760px]:left-0 max-[760px]:z-40 max-[760px]:w-[min(300px,86vw)] max-[760px]:transition-transform max-[760px]:duration-200 ${
+        className={`box-border flex w-[248px] flex-none flex-col gap-1 overflow-y-auto border-r border-bolu-border bg-bolu-surface p-[14px_12px] max-[760px]:fixed max-[760px]:inset-y-0 max-[760px]:left-0 max-[760px]:z-40 max-[760px]:w-[min(300px,86vw)] max-[760px]:transition-transform max-[760px]:duration-200 ${
           navOpen
             ? "max-[760px]:[transform:translateX(0)] max-[760px]:shadow-[0_10px_40px_rgba(30,27,46,0.25)]"
             : "max-[760px]:[transform:translateX(-105%)]"
@@ -177,14 +178,16 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                 href={item.href}
                 aria-current={on ? "page" : undefined}
                 onClick={() => setNavOpen(false)}
-                className={`flex min-h-[42px] items-center gap-2.5 rounded-md px-3 text-[15px] font-bold no-underline hover:text-bolu-ink ${
-                  on ? "bg-bolu-ink text-white hover:text-white" : "bg-transparent text-bolu-ink"
+                className={`flex min-h-[42px] items-center gap-2.5 rounded-md px-3 text-[15px] font-bold no-underline ${
+                  on
+                    ? "bg-bolu-solid text-bolu-solid-ink hover:text-bolu-solid-ink"
+                    : "bg-transparent text-bolu-ink hover:text-bolu-ink"
                 }`}
               >
                 <item.icon size={19} strokeWidth={2} aria-hidden="true" />
                 <span className="flex-1 text-left">{item.label}</span>
                 {item.href === "/dashboard" && pending > 0 ? (
-                  <span className="rounded-full bg-bolu-flag px-2 py-px text-[12px] font-bold text-white">
+                  <span className="rounded-full bg-bolu-flag px-2 py-px text-[12px] font-bold text-bolu-solid-ink">
                     {pending}
                   </span>
                 ) : null}
@@ -241,7 +244,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                   setAddOpen(false);
                   setNavOpen(false);
                 }}
-                className="flex min-h-[38px] items-center gap-2.5 rounded-md px-3 text-[14px] font-semibold text-bolu-body no-underline hover:bg-bolu-panel/60 hover:text-bolu-ink"
+                className="flex min-h-[38px] items-center gap-2.5 rounded-md px-3 text-[14px] font-semibold text-bolu-body no-underline hover:bg-bolu-hover/60 hover:text-bolu-ink"
               >
                 <Bot size={16} strokeWidth={2} aria-hidden="true" />
                 <span className="flex-1 text-left">Tambah Bolu</span>
@@ -252,7 +255,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                   setAddOpen(false);
                   setNavOpen(false);
                 }}
-                className="flex min-h-[38px] items-center gap-2.5 rounded-md px-3 text-[14px] font-semibold text-bolu-body no-underline hover:bg-bolu-panel/60 hover:text-bolu-ink"
+                className="flex min-h-[38px] items-center gap-2.5 rounded-md px-3 text-[14px] font-semibold text-bolu-body no-underline hover:bg-bolu-hover/60 hover:text-bolu-ink"
               >
                 <Users size={16} strokeWidth={2} aria-hidden="true" />
                 <span className="flex-1 text-left">Buat tim</span>
@@ -263,7 +266,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                   setAddOpen(false);
                   setNavOpen(false);
                 }}
-                className="flex min-h-[38px] items-center gap-2.5 rounded-md px-3 text-[14px] font-semibold text-bolu-body no-underline hover:bg-bolu-panel/60 hover:text-bolu-ink"
+                className="flex min-h-[38px] items-center gap-2.5 rounded-md px-3 text-[14px] font-semibold text-bolu-body no-underline hover:bg-bolu-hover/60 hover:text-bolu-ink"
               >
                 <MessageCircle size={16} strokeWidth={2} aria-hidden="true" />
                 <span className="flex-1 text-left">Buat grup</span>
@@ -278,23 +281,25 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           <Link
             href="/dashboard/integrations"
             onClick={() => setNavOpen(false)}
-            className={`flex min-h-[42px] items-center gap-2.5 rounded-md px-3 text-[15px] font-bold no-underline hover:text-bolu-ink ${
+            className={`flex min-h-[42px] items-center gap-2.5 rounded-md px-3 text-[15px] font-bold no-underline ${
               onIntegrations
-                ? "bg-bolu-ink text-white hover:text-white"
-                : "bg-transparent text-bolu-ink"
+                ? "bg-bolu-solid text-bolu-solid-ink hover:text-bolu-solid-ink"
+                : "bg-transparent text-bolu-ink hover:text-bolu-ink"
             }`}
           >
             <Plug size={19} strokeWidth={2} aria-hidden="true" />
             <span className="flex-1 text-left">Integrasi</span>
-            <span className={`text-[12px] font-bold ${onIntegrations ? "text-white" : "text-bolu-muted"}`}>
+            <span className={`text-[12px] font-bold ${onIntegrations ? "text-bolu-solid-ink" : "text-bolu-muted"}`}>
               {connected === 0 ? "—" : `${connected} aktif`}
             </span>
           </Link>
           <Link
             href="/settings"
             onClick={() => setNavOpen(false)}
-            className={`flex min-h-[42px] items-center gap-2.5 rounded-md px-3 text-[15px] font-bold no-underline hover:text-bolu-ink ${
-              onSettings ? "bg-bolu-ink text-white hover:text-white" : "bg-transparent text-bolu-ink"
+            className={`flex min-h-[42px] items-center gap-2.5 rounded-md px-3 text-[15px] font-bold no-underline ${
+              onSettings
+                ? "bg-bolu-solid text-bolu-solid-ink hover:text-bolu-solid-ink"
+                : "bg-transparent text-bolu-ink hover:text-bolu-ink"
             }`}
           >
             <Settings size={19} strokeWidth={2} aria-hidden="true" />
@@ -316,6 +321,14 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
               <span className="text-[12px] font-bold text-bolu-muted">platform</span>
             </Link>
           ) : null}
+
+          {/* The theme lives at the foot of the sidebar rather than in a menu: it
+              is a preference a person changes once and then forgets, so it should
+              be visible without being in the way. */}
+          <div className="flex items-center justify-between gap-2 px-3 pt-2">
+            <span className="text-[13px] font-bold text-bolu-muted">Tampilan</span>
+            <ThemeToggle />
+          </div>
         </div>
       </nav>
 

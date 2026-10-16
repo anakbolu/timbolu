@@ -30,7 +30,7 @@ export default function NotFound() {
 
           <Link
             href="/"
-            className="mt-9 rounded-full bg-bolu-ink px-6 py-3 font-semibold text-white no-underline hover:text-white"
+            className="mt-9 rounded-full bg-bolu-solid px-6 py-3 font-semibold text-bolu-solid-ink no-underline hover:text-bolu-solid-ink"
           >
             Kembali ke beranda
           </Link>

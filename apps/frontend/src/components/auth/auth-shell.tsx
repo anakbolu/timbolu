@@ -12,6 +12,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Bolu } from "@/components/bolu/bolu";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { bot } from "@/lib/crew";
 
 type AuthShellProps = {
@@ -26,6 +27,11 @@ type AuthShellProps = {
 export function AuthShell({ title, subtitle, children, footer, scene }: AuthShellProps) {
   return (
     <main className="mx-auto flex w-full max-w-[1120px] flex-1 flex-col justify-center gap-10 px-5 py-12 lg:flex-row lg:items-center lg:justify-center lg:gap-16">
+      {/* The auth screens have no nav of their own, and the theme is the one
+          preference a person may want before they even have an account. */}
+      <div className="fixed right-5 top-5 z-20">
+        <ThemeToggle />
+      </div>
       <div className="mx-auto flex w-full max-w-[460px] flex-col lg:mx-0 lg:flex-none">
         <Link href="/" className="mx-auto mb-8 flex flex-col items-center gap-2 text-bolu-ink no-underline">
           {/* The whole crew crowded together above the wordmark, each in its own colour and mood. */}
@@ -118,7 +124,7 @@ export function SubmitButton({
     <button
       type="submit"
       disabled={pending || disabled}
-      className="w-full rounded-md bg-bolu-accent px-4 py-2.5 text-[15px] font-semibold text-white transition hover:bg-[#1a6cba] disabled:cursor-not-allowed disabled:opacity-60"
+      className="w-full rounded-md bg-bolu-accent px-4 py-2.5 text-[15px] font-semibold text-bolu-solid-ink transition hover:bg-bolu-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
     >
       {pending ? pendingLabel : label}
     </button>
@@ -143,7 +149,7 @@ export function GoogleButton({ href }: { href: string }) {
   return (
     <a
       href={href}
-      className="mt-3 flex w-full items-center justify-center gap-2.5 rounded-md border border-bolu-border bg-bolu-surface px-4 py-2.5 text-[15px] font-medium text-bolu-ink transition hover:bg-bolu-panel/60"
+      className="mt-3 flex w-full items-center justify-center gap-2.5 rounded-md border border-bolu-border bg-bolu-surface px-4 py-2.5 text-[15px] font-medium text-bolu-ink transition hover:bg-bolu-hover/60"
     >
       {/* The four-colour Google "G" mark, inlined so the button needs no icon package. */}
       <svg viewBox="0 0 48 48" aria-hidden="true" className="size-[18px] flex-none">

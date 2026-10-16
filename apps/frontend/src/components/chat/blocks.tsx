@@ -284,7 +284,7 @@ function DraftCard({ block }: { block: DraftBlock }) {
               type="button"
               disabled={busy}
               onClick={() => decide("approve")}
-              className="rounded-full bg-bolu-accent px-3.5 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+              className="rounded-full bg-bolu-accent px-3.5 py-1.5 text-sm font-medium text-bolu-solid-ink disabled:opacity-50"
             >
               {busy ? "Menyimpan…" : "Setujui"}
             </button>
@@ -401,7 +401,7 @@ function HTMLView({ block }: { block: HTMLBlock }) {
         <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
-          className="rounded-md border border-bolu-border px-2.5 py-1 text-xs transition hover:bg-bolu-panel/60"
+          className="rounded-md border border-bolu-border px-2.5 py-1 text-xs transition hover:bg-bolu-hover/60"
         >
           {expanded ? "Perkecil" : "Layar penuh"}
         </button>
@@ -416,7 +416,7 @@ function HTMLView({ block }: { block: HTMLBlock }) {
         sandbox="allow-scripts"
         referrerPolicy="no-referrer"
         loading="lazy"
-        className="w-full rounded-md border border-bolu-border bg-white"
+        className="w-full rounded-md border border-bolu-border bg-bolu-surface"
         style={{ height: expanded ? "80vh" : height }}
       />
 

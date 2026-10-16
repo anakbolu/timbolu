@@ -42,9 +42,9 @@ import { TIMEZONES, crewFor, expressionOf, relativeAge, stateOf } from "@/lib/da
 
 import { useWorkspace } from "./workspace-data";
 
-const CARD = "rounded-md border border-bolu-border bg-white";
+const CARD = "rounded-md border border-bolu-border bg-bolu-surface";
 const HEADING = "font-display text-[22px] font-semibold";
-const FIELD = "min-h-11 rounded-md border border-bolu-border bg-white px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent";
+const FIELD = "min-h-11 rounded-md border border-bolu-border bg-bolu-surface px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent";
 const LABEL = "flex flex-col gap-1.5 text-[14px] font-semibold";
 
 /** The cadences the form offers, in the words the design uses. */
@@ -74,12 +74,12 @@ const STATUS_LABEL: Record<string, string> = {
   skipped: "Dilewati",
 };
 
-/** STATUS_STYLE is the chip each outcome wears. */
-const STATUS_STYLE: Record<string, { bg: string; fg: string }> = {
-  running: { bg: "#E2602B1F", fg: "#E2602B" },
-  succeeded: { bg: "#1E7A431F", fg: "#1E7A43" },
-  failed: { bg: "#C5362B1F", fg: "#C5362B" },
-  skipped: { bg: "#8B88A01F", fg: "#5E5B70" },
+/** STATUS_STYLE is the chip each outcome wears: a wash of the status colour. */
+const STATUS_STYLE: Record<string, string> = {
+  running: "bg-bolu-flag/12 text-bolu-flag",
+  succeeded: "bg-bolu-lunas/12 text-bolu-lunas",
+  failed: "bg-bolu-belum/12 text-bolu-belum",
+  skipped: "bg-bolu-rest/12 text-bolu-muted",
 };
 
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
@@ -659,7 +659,7 @@ export function RoutinesView() {
                 rows={3}
                 placeholder="Buka dokumen baru di folder Pesanan, catat pesanannya, lalu ringkas."
                 onChange={(event) => setForm({ ...form, instruction: event.target.value })}
-                className="rounded-md border border-bolu-border bg-white p-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
+                className="rounded-md border border-bolu-border bg-bolu-surface p-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
               />
             </label>
 
@@ -697,7 +697,7 @@ export function RoutinesView() {
                 type="button"
                 onClick={() => void save()}
                 disabled={busy}
-                className="min-h-11 rounded-full bg-bolu-ink px-5 text-[14px] font-bold text-white disabled:opacity-60"
+                className="min-h-11 rounded-full bg-bolu-solid px-5 text-[14px] font-bold text-bolu-solid-ink disabled:opacity-60"
               >
                 {busy ? "Menyimpan…" : editing ? "Simpan perubahan" : "Simpan rutinitas"}
               </button>
@@ -784,12 +784,9 @@ export function RoutinesView() {
                       </div>
                     </div>
                     <span
-                      className="flex-none rounded-full px-2.5 py-1 text-[12px] font-bold"
-                      style={
-                        routine.enabled
-                          ? { backgroundColor: "#1E7A431F", color: "#1E7A43" }
-                          : { backgroundColor: "#8B88A01F", color: "#5E5B70" }
-                      }
+                      className={`flex-none rounded-full px-2.5 py-1 text-[12px] font-bold ${
+                        routine.enabled ? "bg-bolu-lunas/12 text-bolu-lunas" : "bg-bolu-rest/12 text-bolu-muted"
+                      }`}
                     >
                       {routine.enabled ? "Aktif" : "Dijeda"}
                     </span>
@@ -835,7 +832,7 @@ export function RoutinesView() {
             <select
               value={filterAgent}
               onChange={(event) => setFilterAgent(event.target.value)}
-              className="min-h-9 cursor-pointer rounded-full border border-bolu-border bg-white px-3 text-[13px] font-semibold text-bolu-ink outline-none"
+              className="min-h-9 cursor-pointer rounded-full border border-bolu-border bg-bolu-surface px-3 text-[13px] font-semibold text-bolu-ink outline-none"
             >
               <option value="">Semua Bolu</option>
               {agents.map((agent) => (
@@ -856,7 +853,7 @@ export function RoutinesView() {
             {shownRuns.slice(0, 20).map((run) => {
               const agentId = routineAgent(run, routines);
               const agent = agents.find((item) => item.id === agentId) ?? null;
-              const style = STATUS_STYLE[run.status] ?? STATUS_STYLE.skipped;
+              const chip = STATUS_STYLE[run.status] ?? STATUS_STYLE.skipped;
               return (
                 <li
                   key={run.run_id}
@@ -890,8 +887,7 @@ export function RoutinesView() {
                     {relativeAge(run.started_at, now)}
                   </span>
                   <span
-                    className="flex-none rounded-full px-2.5 py-1 text-[12px] font-bold"
-                    style={{ backgroundColor: style.bg, color: style.fg }}
+                    className={`flex-none rounded-full px-2.5 py-1 text-[12px] font-bold ${chip}`}
                   >
                     {STATUS_LABEL[run.status] ?? run.status}
                   </span>

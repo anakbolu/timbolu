@@ -196,6 +196,15 @@ belongs to no workspace still has to be administrable. Its frame is shadcn's sid
 (`components/ui/*`, the registry's own source, retuned in `globals.css` to this
 palette), and its gate reads the platform role from `/auth/me` — the API checks it
 again on every request, so the gate is a door rather than the lock.
+The frontend has three themes — light, dark, and follow-the-system — and the choice
+is a class on `<html>` rather than the media query alone, so a person who wants the
+dark theme on a machine that reports light can have it. The control sits in the
+workspace sidebar, the admin header, the landing navigation, the auth screens, and
+on Pengaturan; `apps/frontend/src/lib/theme.ts` owns the choice and the inline script
+in `layout.tsx` applies it before the first paint. Every colour is a token that
+`.dark` re-derives in `globals.css`, so no screen knows which theme it is drawn in —
+see [`apps/frontend/README.md`](apps/frontend/README.md) for the two rules that keep
+it that way.
 `/tasks/[taskID]` is the app's first dynamic route: the layout above it
 reads the workspace from client hooks, so the route file carries `export const
 instant = false` — this repo builds with `cacheComponents`, which calls an unbounded

@@ -11,13 +11,17 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { useResolvedTheme } from "@/hooks/use-theme";
 import type { ChartBlock } from "@/lib/api";
 
-import { renderChart, type ChartHandle } from "./echarts-adapter";
+import { readChartPalette, renderChart, type ChartHandle } from "./echarts-adapter";
 
 export default function ChartView({ block }: { block: ChartBlock }) {
   const container = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
+  // The chart is a canvas: it cannot read a token, so it is redrawn when the
+  // theme it was drawn for changes.
+  const theme = useResolvedTheme();
 
   useEffect(() => {
     let disposed = false;
@@ -28,7 +32,7 @@ export default function ChartView({ block }: { block: ChartBlock }) {
     }
 
     try {
-      chart = renderChart(element, block.spec);
+      chart = renderChart(element, block.spec, readChartPalette());
     } catch (cause) {
       // Reported off the effect body: the draw belongs here, the state update
       // does not, and a failed draw has no follow-up work to lose.
@@ -54,7 +58,7 @@ export default function ChartView({ block }: { block: ChartBlock }) {
       observer.disconnect();
       chart?.dispose();
     };
-  }, [block.spec]);
+  }, [block.spec, theme]);
 
   if (error) {
     return (

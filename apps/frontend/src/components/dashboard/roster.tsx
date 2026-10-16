@@ -262,7 +262,7 @@ function RosterRow({
             size={36}
           />
           <span
-            className="absolute -right-px bottom-px size-[10px] rounded-full border-2 border-white"
+            className="absolute -right-px bottom-px size-[10px] rounded-full border-2 border-bolu-surface"
             style={{ backgroundColor: item.dot }}
           />
         </div>
@@ -273,7 +273,7 @@ function RosterRow({
           <span className="truncate text-[12px] text-bolu-muted">{item.line}</span>
         </div>
         {item.waiting > 0 ? (
-          <span className="box-border inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-bolu-ink px-1.5 text-[11px] font-extrabold text-white">
+          <span className="box-border inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-bolu-solid px-1.5 text-[11px] font-extrabold text-bolu-solid-ink">
             {item.waiting}
           </span>
         ) : null}

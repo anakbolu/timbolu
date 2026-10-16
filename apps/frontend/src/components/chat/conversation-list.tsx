@@ -68,7 +68,7 @@ export function ConversationList({
 
       <nav
         aria-label="Riwayat obrolan"
-        className={`box-border flex w-[260px] flex-none flex-col overflow-y-auto border-r border-bolu-border bg-white p-[14px_12px] max-[760px]:fixed max-[760px]:inset-y-0 max-[760px]:left-0 max-[760px]:z-40 max-[760px]:w-[min(300px,86vw)] max-[760px]:transition-transform max-[760px]:duration-200 ${
+        className={`box-border flex w-[260px] flex-none flex-col overflow-y-auto border-r border-bolu-border bg-bolu-surface p-[14px_12px] max-[760px]:fixed max-[760px]:inset-y-0 max-[760px]:left-0 max-[760px]:z-40 max-[760px]:w-[min(300px,86vw)] max-[760px]:transition-transform max-[760px]:duration-200 ${
           open
             ? "max-[760px]:[transform:translateX(0)] max-[760px]:shadow-[0_10px_40px_rgba(30,27,46,0.25)]"
             : "max-[760px]:[transform:translateX(-105%)]"
@@ -148,7 +148,7 @@ function DirectRow({
       onClick={onNavigate}
       aria-current={active ? "true" : undefined}
       className={`flex min-h-[52px] items-center gap-2.5 rounded-md border-2 border-transparent p-[5px_8px] text-left text-bolu-ink no-underline hover:text-bolu-ink ${
-        active ? "border-bolu-accent/40 bg-bolu-panel/70" : "hover:bg-bolu-panel/60"
+        active ? "border-bolu-accent/40 bg-bolu-panel/70" : "hover:bg-bolu-hover/60"
       }`}
     >
       <Bolu
@@ -188,7 +188,7 @@ function GroupRow({
       onClick={onNavigate}
       aria-current={active ? "true" : undefined}
       className={`flex min-h-[52px] items-center gap-2.5 rounded-md border-2 border-transparent p-[5px_8px] text-left text-bolu-ink no-underline hover:text-bolu-ink ${
-        active ? "border-bolu-accent/40 bg-bolu-panel/70" : "hover:bg-bolu-panel/60"
+        active ? "border-bolu-accent/40 bg-bolu-panel/70" : "hover:bg-bolu-hover/60"
       }`}
     >
       <GroupIcon participants={conversation.participants} agents={agents} size={36} className="flex-none" />

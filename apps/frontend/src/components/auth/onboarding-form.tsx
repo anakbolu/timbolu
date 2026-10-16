@@ -317,7 +317,7 @@ function StepDots({ step }: { step: 1 | 2 }) {
             <span
               className={`flex size-6 flex-none items-center justify-center rounded-full border text-[12px] font-semibold ${
                 current
-                  ? "border-bolu-accent bg-bolu-accent text-white"
+                  ? "border-bolu-accent bg-bolu-accent text-bolu-solid-ink"
                   : done
                     ? "border-bolu-accent text-bolu-accent"
                     : "border-bolu-border text-bolu-muted"
@@ -402,7 +402,7 @@ export function InviteAccept() {
           type="button"
           onClick={() => void join()}
           disabled={status === "joining"}
-          className="w-full rounded-md bg-bolu-accent px-4 py-2.5 text-[15px] font-semibold text-white transition hover:bg-[#1a6cba] disabled:opacity-60"
+          className="w-full rounded-md bg-bolu-accent px-4 py-2.5 text-[15px] font-semibold text-bolu-solid-ink transition hover:bg-bolu-accent-strong disabled:opacity-60"
         >
           {status === "joining" ? "Bergabung…" : "Terima undangan"}
         </button>
