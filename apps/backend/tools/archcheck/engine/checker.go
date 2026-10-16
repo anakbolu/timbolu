@@ -20,6 +20,10 @@ const (
 	LayerRepository = "repository"
 	LayerService    = "service"
 	LayerHandler    = "handler"
+	// LayerActivity is the Temporal activity layer of the task module. It talks
+	// to the outside world, so it is bounded like a service rather than trusted
+	// like the workflow next to it.
+	LayerActivity = "activity"
 )
 
 // Violation is one broken rule.
@@ -180,11 +184,17 @@ func checkInternal(from, to location, pkg Package, imp Import) (Violation, bool)
 }
 
 // checkModuleToPlatform limits which platform packages a layer may use.
+//
+// attachtext is the reading of a message's attachments: a service renders them
+// into the prompt and a task activity resolves them into the turns it sends, and
+// both do it through this one package so a file is read the same way whichever
+// path a question arrives on.
 func checkModuleToPlatform(from, to location, violation Violation) (Violation, bool) {
 	allowed := map[string]map[string]bool{
 		LayerDomain:     {},
 		LayerRepository: {"database": true, "redis": true},
-		LayerService:    {"logger": true, "config": true},
+		LayerService:    {"logger": true, "config": true, "attachtext": true},
+		LayerActivity:   {"attachtext": true},
 		LayerHandler:    {"logger": true, "middleware": true, "response": true},
 	}
 

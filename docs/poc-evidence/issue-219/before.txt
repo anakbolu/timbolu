@@ -1,0 +1,4 @@
+$ VCOMPUTER_CONTROL_TIMEOUT=banana go run ./cmd/agent-worker -env local
+agent-worker: load config: parse VCOMPUTER_CONTROL_TIMEOUT: time: invalid duration "banana"
+exit status 1
+exit=0

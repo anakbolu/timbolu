@@ -22,14 +22,33 @@ type Config struct {
 	Kms          KmsConfig
 	Integrations IntegrationConfig
 	Tasks        TasksConfig
-	Memory       MemoryConfig
-	Storage      StorageConfig
-	WhatsApp     WhatsAppConfig
-	Billing      BillingConfig
-	Retention    RetentionConfig
-	VComputer    VComputerConfig
-	Telemetry    TelemetryConfig
-	Logging      LoggingConfig
+	// AttachmentContext is how much of a message's files reaches the model.
+	AttachmentContext AttachmentContextConfig
+	Memory            MemoryConfig
+	Storage           StorageConfig
+	WhatsApp          WhatsAppConfig
+	Billing           BillingConfig
+	Retention         RetentionConfig
+	VComputer         VComputerConfig
+	Telemetry         TelemetryConfig
+	Logging           LoggingConfig
+
+	// warnings is what the loader could not use from the environment and went on without. It is
+	// unexported and read through Warnings, because nothing configures it: the loader is its only
+	// writer, and the process that owns a logger is the one that says it out loud.
+	warnings []string
+}
+
+// Warnings lists the environment values the loader could not use, in the order it found them,
+// each naming the variable and what stood in its place.
+//
+// It exists because refusing to start is not the only answer to a value that will not parse. A
+// bound on an optional feature is worth a warning and the configured default; a bound the product
+// bills against is worth refusing over, and those still are. The loader has no logger of its own
+// by design, so it hands the lines to the process, which logs them once at startup. A deployment
+// whose environment is coherent has none.
+func (c *Config) Warnings() []string {
+	return c.warnings
 }
 
 // DefaultServiceName names this binary in the traces, unless the deployment named it.
@@ -348,6 +367,24 @@ type TasksConfig struct {
 	MaxToolResultBytes int `mapstructure:"MaxToolResultBytes" validate:"optional"`
 }
 
+// AttachmentContextConfig bounds what the attachments of one message contribute
+// to a model call. Every field is optional: a zero falls back to the product
+// default, so a deployment only states what it wants to differ from.
+type AttachmentContextConfig struct {
+	// MaxFileBytes is the size above which a file is named rather than read. It
+	// is checked before the object is fetched, so a huge upload costs a note
+	// rather than a download.
+	MaxFileBytes int64 `mapstructure:"MaxFileBytes" validate:"optional"`
+	// MaxCharsPerFile truncates one file's text, and MaxCharsTotal bounds the
+	// text of all the files of one request together.
+	MaxCharsPerFile int `mapstructure:"MaxCharsPerFile" validate:"optional"`
+	MaxCharsTotal   int `mapstructure:"MaxCharsTotal" validate:"optional"`
+	// MaxImages is how many pictures one request may send to a vision model, and
+	// MaxImageBytes is the size above which a picture is named rather than sent.
+	MaxImages     int   `mapstructure:"MaxImages" validate:"optional"`
+	MaxImageBytes int64 `mapstructure:"MaxImageBytes" validate:"optional"`
+}
+
 // AppConfig holds application-level settings.
 type AppConfig struct {
 	Environment string `mapstructure:"Environment"`
@@ -515,6 +552,11 @@ type LlmConfig struct {
 	TokensPerPeriod int64 `mapstructure:"TokensPerPeriod"`
 	// ChainLimit is how many providers one request tries before giving up.
 	ChainLimit int `mapstructure:"ChainLimit"`
+	// TextOnlyModels names the models of this deployment that cannot read a
+	// picture, matched against the configured model name case-insensitively and by
+	// prefix. Everything not named is assumed to see: the list only takes vision
+	// away, so a deployment that lists nothing keeps the wire format's default.
+	TextOnlyModels []string `mapstructure:"TextOnlyModels" validate:"optional"`
 }
 
 // DefaultProviderConfig is the platform-level provider. Every field is optional:

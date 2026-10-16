@@ -340,6 +340,77 @@ func TestTestCallProvesTheKeyAndIsRecorded(t *testing.T) {
 	require.True(t, capabilities.Tools)
 }
 
+// TestChatNeverAsksAModelThatCannotReadPictures is issue #237 at the chain: the
+// picture is routed on, so a text-only provider is skipped before it is called
+// rather than after it answers 400. A refusal costs a round trip and, with a
+// provider that bills the attempt, money.
+func TestChatNeverAsksAModelThatCannotReadPictures(t *testing.T) {
+	h := newHarness(t)
+	scope := workspaceScope()
+
+	chain := twoProviders(scope)
+	h.store.EXPECT().List(mock.Anything, scope.WorkspaceID).Return(chain, nil)
+
+	asked := 0
+	h.provider("gpt-4o-mini", func(p *fakeProvider) {
+		p.caps.Vision = false
+		p.chatFn = func(domain.ChatRequest) (domain.ChatResponse, error) {
+			asked++
+			return domain.ChatResponse{}, errors.New("a text-only model must never be asked to read a picture")
+		}
+	})
+	h.provider(chain[1].Model, func(p *fakeProvider) {
+		p.name = domain.AdapterAnthropic
+		p.chatFn = func(req domain.ChatRequest) (domain.ChatResponse, error) {
+			require.Len(t, req.Messages[0].Images, 1, "the provider that can see is the one that gets the picture")
+			return domain.ChatResponse{Text: "Stok tinggal 3.", Usage: domain.Usage{InputTokens: 10, OutputTokens: 5}}, nil
+		}
+	})
+	h.recorder.EXPECT().Record(mock.Anything, mock.Anything).Return(nil).Once()
+
+	request := chatRequest(domain.RequestMetadata{})
+	request.Messages[0].Images = []domain.Image{{MediaType: "image/png", Data: "aGVsbG8="}}
+
+	response, err := h.service.Chat(context.Background(), scope, request)
+	require.NoError(t, err)
+	require.Equal(t, "Stok tinggal 3.", response.Text)
+	require.Zero(t, asked, "the text-only provider was never asked")
+	require.Equal(t, []string{"gpt-4o-mini", chain[1].Model}, h.factory.models())
+}
+
+// TestStreamRefusesAPictureBeforeCallingATextOnlyModel is the shape the chat
+// responder sees: a chain whose only model is text-only fails with
+// ErrUnsupported, which is what makes the reply ask again without the picture
+// instead of ending as failed.
+func TestStreamRefusesAPictureBeforeCallingATextOnlyModel(t *testing.T) {
+	h := newHarness(t)
+	scope := workspaceScope()
+
+	h.store.EXPECT().List(mock.Anything, scope.WorkspaceID).Return(
+		[]domain.StoredProvider{storedProvider(func(p *domain.StoredProvider) {
+			p.WorkspaceID = scope.WorkspaceID
+			p.Model = "gpt-4o-mini"
+		})}, nil)
+
+	asked := 0
+	h.provider("gpt-4o-mini", func(p *fakeProvider) {
+		p.caps.Vision = false
+		p.streamFn = func(domain.ChatRequest) (<-chan domain.StreamEvent, error) {
+			asked++
+			return scriptedStream(domain.StreamEvent{Type: domain.EventDone, FinishReason: domain.FinishStop}), nil
+		}
+	})
+
+	request := chatRequest(domain.RequestMetadata{})
+	request.Messages[0].Images = []domain.Image{{MediaType: "image/png", Data: "aGVsbG8="}}
+
+	_, err := h.service.Stream(context.Background(), scope, request)
+	require.ErrorIs(t, err, domain.ErrUnsupported,
+		"the responder retries without the pictures on exactly this error")
+	require.Zero(t, asked, "the stream never started, so the provider was never called")
+	require.False(t, domain.Retryable(err), "the next provider is tried by the chain, not by the caller")
+}
+
 // scriptedStream builds a closed channel that yields the events in order.
 func scriptedStream(events ...domain.StreamEvent) <-chan domain.StreamEvent {
 	out := make(chan domain.StreamEvent, len(events))

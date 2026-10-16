@@ -1,6 +1,5 @@
 // Command vcomputer-smoke runs one virtual computer end to end: it starts a worker on a
-// queue of its own, executes the smoke workflow on it, and saves the capture the workflow
-// asked for.
+// queue of its own, executes the smoke workflow on it, and stops the sandbox the run made.
 //
 // It is a development tool and it is not deployed. What it is for is the seam that no unit
 // test covers: a real Temporal server, a real control plane, a real sandbox, and the
@@ -13,7 +12,7 @@
 // all yet (docs/adr/0003-virtual-computer.md).
 //
 //	VCOMPUTER_CONTROL_URL=http://localhost:8090 VCOMPUTER_CONTROL_TOKEN=... \
-//	  go run ./cmd/vcomputer-smoke -bot bot-1 -url http://vcomputer-fixture:8080/ -out /tmp/smoke
+//	  go run ./cmd/vcomputer-smoke -bot bot-1 -url http://vcomputer-fixture:8080/ -keep-session -out /tmp/smoke
 //
 // The example URL is the stack's own fixture, and that is not an arbitrary choice: a
 // sandbox has no egress (docs/adr/0003-virtual-computer.md §3.6), so any address outside
@@ -22,7 +21,10 @@
 // as loaded.
 //
 // The run exits non-zero on the first failure and prints what the workflow observed as JSON,
-// so it can be read by a person and diffed by a script.
+// so it can be read by a person and diffed by a script. It leaves no sandbox behind: the
+// workflow ends the session it started, so a run costs one container that is gone by the time
+// the command exits. `-keep-session` is the way to ask for the opposite, and `-out` needs it,
+// because the capture it takes is asked of a sandbox that would otherwise already be down.
 package main
 
 import (
@@ -49,8 +51,8 @@ import (
 	"github.com/robzlabz/employeebot/packages/platform/config"
 )
 
-// defaultTimeout is what one call to the control plane gets when VCOMPUTER_CONTROL_TIMEOUT
-// says nothing, matching the configuration default.
+// defaultTimeout is what one call to the control plane gets when VCOMPUTER_CONTROL_TIMEOUT says
+// nothing or says something that is not a duration, matching the configuration default.
 const defaultTimeout = 30 * time.Second
 
 // runTimeout bounds the whole run. A smoke run is a person watching it, and a sandbox that
@@ -76,7 +78,13 @@ func run() error {
 	clickX := flag.Int("click-x", 0, "x coordinate to click after the page loads")
 	clickY := flag.Int("click-y", 0, "y coordinate to click after the page loads")
 	text := flag.String("text", "", "text to type after the click")
-	outDir := flag.String("out", "", "directory to write after-temporal-final.png into (optional)")
+	// The session is stopped at the end of the run unless this is set, because the sandbox
+	// a smoke run leaves behind is a container and a volume an operator deletes by hand
+	// later. The flag is here for the one case that needs the desktop to outlive the run:
+	// -out takes its capture after the workflow is done.
+	keepSession := flag.Bool("keep-session", false,
+		"leave the sandbox running after the run, so the desktop can be looked at afterwards")
+	outDir := flag.String("out", "", "directory to write after-temporal-final.png into (optional, and only with -keep-session)")
 	flag.Parse()
 
 	if strings.TrimSpace(*botID) == "" {
@@ -84,6 +92,13 @@ func run() error {
 	}
 	if strings.TrimSpace(*pageURL) == "" {
 		return errors.New("-url is required")
+	}
+	if *outDir != "" && !*keepSession {
+		// Refused here rather than discovered as a 404 at the end: the capture is asked of the
+		// sandbox after the workflow is done, and by default the workflow is what stopped that
+		// sandbox. An operator who asked for a file gets told which flag it needs before a
+		// worker starts, not after a whole run.
+		return errors.New("-out needs -keep-session: the run stops the sandbox it started")
 	}
 
 	controlURL := strings.TrimSpace(os.Getenv("VCOMPUTER_CONTROL_URL"))
@@ -94,10 +109,7 @@ func run() error {
 		return errors.New("VCOMPUTER_CONTROL_URL is empty: there is no control plane to smoke")
 	}
 
-	timeout, err := controlTimeout()
-	if err != nil {
-		return err
-	}
+	timeout := controlTimeout()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -139,11 +151,12 @@ func run() error {
 	defer worker.Stop()
 
 	in := vcomputerworkflow.SmokeInput{
-		BotID:  *botID,
-		URL:    *pageURL,
-		ClickX: *clickX,
-		ClickY: *clickY,
-		Text:   *text,
+		BotID:       *botID,
+		URL:         *pageURL,
+		ClickX:      *clickX,
+		ClickY:      *clickY,
+		Text:        *text,
+		KeepSession: *keepSession,
 	}
 
 	run, err := temporalClient.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
@@ -170,53 +183,64 @@ func run() error {
 	fmt.Println(string(encoded))
 
 	if *outDir != "" {
-		// The capture is taken outside the workflow, and that is the second half of the check:
-		// the bytes the workflow's own Screenshot activity returned were serialized into a
-		// workflow result and are not printed, so this is what proves a caller can still ask
-		// the control plane for an image after the run — and gives an operator something to
-		// look at.
-		if err := saveFinalCapture(ctx, cfg, *botID, *outDir); err != nil {
+		// The capture is taken outside the workflow, and that is the second half of the
+		// check: the bytes the workflow's own Screenshot activity returned were serialized
+		// into a workflow result and are not printed, so this is what proves a caller can
+		// still ask the control plane for an image after the run — and gives an operator
+		// something to look at. It is asked of a sandbox the run left up, which is what
+		// -keep-session is for; the flag pair is checked before the worker starts.
+		path, err := saveFinalCapture(ctx, cfg, *botID, *outDir)
+		if err != nil {
 			return err
 		}
+		fmt.Printf("saved %s\n", path)
 	}
 
 	return nil
 }
 
-// controlTimeout reads VCOMPUTER_CONTROL_TIMEOUT the way the configuration does, so a value
-// this command accepts is a value a deployment accepts.
-func controlTimeout() (time.Duration, error) {
+// controlTimeout reads VCOMPUTER_CONTROL_TIMEOUT the way the configuration does, so a value this
+// command accepts is a value a deployment accepts: one that will not parse is reported and the
+// default is used rather than the run refused, which is what the loader does with it (issue #219).
+func controlTimeout() time.Duration {
 	raw := strings.TrimSpace(os.Getenv("VCOMPUTER_CONTROL_TIMEOUT"))
 	if raw == "" {
-		return defaultTimeout, nil
+		return defaultTimeout
 	}
 
 	timeout, err := time.ParseDuration(raw)
 	if err != nil {
-		return 0, fmt.Errorf("parse VCOMPUTER_CONTROL_TIMEOUT: %w", err)
+		// On stderr, so the JSON a caller reads and diffs stays the only thing on stdout.
+		fmt.Fprintf(os.Stderr,
+			"vcomputer-smoke: VCOMPUTER_CONTROL_TIMEOUT=%q is not a duration, using %s: %v\n",
+			raw, defaultTimeout, err)
+
+		return defaultTimeout
 	}
-	return timeout, nil
+	return timeout
 }
 
-// saveFinalCapture asks the control plane for one more screenshot and writes it to outDir.
-func saveFinalCapture(ctx context.Context, cfg config.VComputerConfig, botID, outDir string) error {
+// saveFinalCapture asks the control plane for one more screenshot, writes it to outDir, and
+// describes what it wrote. It needs a live session, which is why the caller refuses -out
+// without -keep-session: the workflow stops the sandbox it started, and the capture is asked
+// for after the workflow is done.
+func saveFinalCapture(ctx context.Context, cfg config.VComputerConfig, botID, outDir string) (string, error) {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		return fmt.Errorf("create %s: %w", outDir, err)
+		return "", fmt.Errorf("create %s: %w", outDir, err)
 	}
 
 	computer := vcomputerservice.New(cfg.ControlURL, cfg.Token, cfg.Timeout)
 	png, err := computer.Screenshot(ctx, botID)
 	if err != nil {
-		return fmt.Errorf("capture after the run: %w", err)
+		return "", fmt.Errorf("capture after the run: %w", err)
 	}
 
 	path := filepath.Join(outDir, "after-temporal-final.png")
 	if err := os.WriteFile(path, png, 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
+		return "", fmt.Errorf("write %s: %w", path, err)
 	}
 
-	fmt.Printf("saved %s (%d bytes)\n", path, len(png))
-	return nil
+	return fmt.Sprintf("%s (%d bytes)", path, len(png)), nil
 }
 
 // envOr reads an environment variable, falling back to a default.
