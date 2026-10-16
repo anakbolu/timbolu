@@ -239,6 +239,18 @@ read back inside the transaction that creates it.
   cannot omit a `uuid.UUID` — it is an array — so the wire types carry ids as
   strings; a typed field would publish
   `00000000-0000-0000-0000-000000000000` and a client would read it as an author.
+- **A message's files are read, not just named.** Before a model call the attachments of the
+  turns being sent are rendered into the prompt: a text file, a CSV, a JSON document, and a
+  PDF's extracted text arrive as a delimited section (`[Lampiran: name (type, size)] …`), a
+  picture whose bytes sniff as an image travels as vision input, and everything else is a line
+  with the filename and MIME type. A file that cannot be read — missing object, oversized,
+  corrupt PDF — is a line saying so rather than a failed reply, and a chain with no vision is
+  retried once without the pictures and told to say it could not see them.
+- **The bytes are read inside the activity, never carried by the workflow.** A turn in workflow
+  state holds only `{id, filename, content type, size}`; the `CallModel` activity resolves them,
+  so a replayed workflow never holds a file and Temporal's history stays small. The budget is
+  spent newest message first, and the extractor lives in `internal/platform/attachtext` because
+  it needs `net/http` sniffing and a PDF parser, neither of which a module layer may import.
 
 #### Chat path (end-to-end)
 
@@ -799,7 +811,12 @@ rest), `LLM_DEFAULT_*` (the provider the platform offers a workspace that
 configured none), `LLM_QUOTA_ENABLED`/`LLM_TOKENS_PER_PERIOD`, and
 `LLM_CHAIN_LIMIT`. The task runtime's bounds are `TASK_MAX_STEPS`,
 `TASK_MAX_TOKENS`, `TASK_MAX_HANDOFF_DEPTH`, and `TASK_MAX_TOOL_RESULT_BYTES`;
-a zero falls back to the product default. Object storage is `STORAGE_DRIVER`
+a zero falls back to the product default. What a message's attachments may contribute is bounded
+by `ATTACHMENT_CONTEXT_MAX_FILE_BYTES` (a larger file is named rather than read, checked before
+the object is fetched), `ATTACHMENT_CONTEXT_MAX_CHARS_PER_FILE` and
+`ATTACHMENT_CONTEXT_MAX_CHARS_TOTAL` (per file and per request, spent newest message first),
+`ATTACHMENT_CONTEXT_MAX_IMAGES`, and `ATTACHMENT_CONTEXT_MAX_IMAGE_BYTES`. The defaults are
+10 MiB, 20000, 60000, 4, and 5 MiB, and a zero takes them. Object storage is `STORAGE_DRIVER`
 (`local` writes to a directory, `s3` speaks the S3 API that MinIO, R2, B2, and
 AWS share) plus
 `STORAGE_LOCAL_ROOT` or `S3_*`, and `CONTENT_ORIGIN` is where sandboxed documents

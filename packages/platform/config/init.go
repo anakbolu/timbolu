@@ -615,6 +615,46 @@ func loadFromEnv(cfg *Config) error {
 		cfg.Tasks.MaxToolResultBytes = size
 	}
 
+	if v := os.Getenv("ATTACHMENT_CONTEXT_MAX_FILE_BYTES"); v != "" {
+		size, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return fmt.Errorf("parse ATTACHMENT_CONTEXT_MAX_FILE_BYTES: %w", err)
+		}
+		cfg.AttachmentContext.MaxFileBytes = size
+	}
+
+	if v := os.Getenv("ATTACHMENT_CONTEXT_MAX_CHARS_PER_FILE"); v != "" {
+		chars, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse ATTACHMENT_CONTEXT_MAX_CHARS_PER_FILE: %w", err)
+		}
+		cfg.AttachmentContext.MaxCharsPerFile = chars
+	}
+
+	if v := os.Getenv("ATTACHMENT_CONTEXT_MAX_CHARS_TOTAL"); v != "" {
+		chars, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse ATTACHMENT_CONTEXT_MAX_CHARS_TOTAL: %w", err)
+		}
+		cfg.AttachmentContext.MaxCharsTotal = chars
+	}
+
+	if v := os.Getenv("ATTACHMENT_CONTEXT_MAX_IMAGES"); v != "" {
+		images, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parse ATTACHMENT_CONTEXT_MAX_IMAGES: %w", err)
+		}
+		cfg.AttachmentContext.MaxImages = images
+	}
+
+	if v := os.Getenv("ATTACHMENT_CONTEXT_MAX_IMAGE_BYTES"); v != "" {
+		size, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return fmt.Errorf("parse ATTACHMENT_CONTEXT_MAX_IMAGE_BYTES: %w", err)
+		}
+		cfg.AttachmentContext.MaxImageBytes = size
+	}
+
 	if v := os.Getenv("MEMORY_MAIN_TOKENS"); v != "" {
 		tokens, err := strconv.Atoi(v)
 		if err != nil {

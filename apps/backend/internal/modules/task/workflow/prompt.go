@@ -65,9 +65,11 @@ func Turns(loaded Context, input TaskInput) []domain.Turn {
 
 	for _, message := range loaded.History {
 		text := strings.TrimSpace(domain.RenderBlocks(message.Blocks))
-		if text == "" {
+		if text == "" && len(message.Attachments) == 0 {
 			// The placeholder the task's own answer fills is empty when the
-			// round starts, so it is skipped rather than sent as a blank turn.
+			// round starts, so it is skipped rather than sent as a blank turn. A
+			// message that is nothing but files is not blank: the files are what
+			// it says.
 			continue
 		}
 
@@ -75,7 +77,9 @@ func Turns(loaded Context, input TaskInput) []domain.Turn {
 		if message.FromAgent() {
 			role = llmdomain.RoleAssistant
 		}
-		turns = append(turns, domain.Turn{Role: role, Text: text})
+		turns = append(turns, domain.Turn{
+			Role: role, Text: text, Attachments: message.Attachments,
+		})
 		last = text
 	}
 

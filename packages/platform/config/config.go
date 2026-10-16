@@ -22,14 +22,16 @@ type Config struct {
 	Kms          KmsConfig
 	Integrations IntegrationConfig
 	Tasks        TasksConfig
-	Memory       MemoryConfig
-	Storage      StorageConfig
-	WhatsApp     WhatsAppConfig
-	Billing      BillingConfig
-	Retention    RetentionConfig
-	VComputer    VComputerConfig
-	Telemetry    TelemetryConfig
-	Logging      LoggingConfig
+	// AttachmentContext is how much of a message's files reaches the model.
+	AttachmentContext AttachmentContextConfig
+	Memory            MemoryConfig
+	Storage           StorageConfig
+	WhatsApp          WhatsAppConfig
+	Billing           BillingConfig
+	Retention         RetentionConfig
+	VComputer         VComputerConfig
+	Telemetry         TelemetryConfig
+	Logging           LoggingConfig
 }
 
 // DefaultServiceName names this binary in the traces, unless the deployment named it.
@@ -343,6 +345,24 @@ type TasksConfig struct {
 	// MaxToolResultBytes truncates a tool's answer, which is what keeps one
 	// large read from being re-sent to the model on every later round.
 	MaxToolResultBytes int `mapstructure:"MaxToolResultBytes" validate:"optional"`
+}
+
+// AttachmentContextConfig bounds what the attachments of one message contribute
+// to a model call. Every field is optional: a zero falls back to the product
+// default, so a deployment only states what it wants to differ from.
+type AttachmentContextConfig struct {
+	// MaxFileBytes is the size above which a file is named rather than read. It
+	// is checked before the object is fetched, so a huge upload costs a note
+	// rather than a download.
+	MaxFileBytes int64 `mapstructure:"MaxFileBytes" validate:"optional"`
+	// MaxCharsPerFile truncates one file's text, and MaxCharsTotal bounds the
+	// text of all the files of one request together.
+	MaxCharsPerFile int `mapstructure:"MaxCharsPerFile" validate:"optional"`
+	MaxCharsTotal   int `mapstructure:"MaxCharsTotal" validate:"optional"`
+	// MaxImages is how many pictures one request may send to a vision model, and
+	// MaxImageBytes is the size above which a picture is named rather than sent.
+	MaxImages     int   `mapstructure:"MaxImages" validate:"optional"`
+	MaxImageBytes int64 `mapstructure:"MaxImageBytes" validate:"optional"`
 }
 
 // AppConfig holds application-level settings.

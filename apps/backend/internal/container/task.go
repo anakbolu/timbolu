@@ -78,10 +78,15 @@ func (c *Container) openTask(_ context.Context, cfg *config.Config) error {
 		Budget:   c.budget(),
 		Events:   c.taskEventSink(),
 		Reply:    c.taskReplyWriter(),
-		Outcomes: taskOutcomeSink{container: c},
-		Namer:    c.taskAgentNamer(),
-		Limits:   taskLimits(cfg),
-		Logger:   c.Logger,
+		// The files of a message reach the prompt through the chat module, which
+		// owns them: the activity asks for the bytes, and the workflow only ever
+		// held the reference.
+		Attachments:      c.taskAttachmentReader(),
+		AttachmentLimits: attachmentLimits(cfg),
+		Outcomes:         taskOutcomeSink{container: c},
+		Namer:            c.taskAgentNamer(),
+		Limits:           taskLimits(cfg),
+		Logger:           c.Logger,
 		// The activity set starts the spans of a task's rounds and tool calls, under the
 		// activity span the Temporal interceptor opens.
 		Tracer:  c.telemetryTracer(),
@@ -218,6 +223,37 @@ func (c *Container) taskReplyWriter() taskdomain.ReplyWriter {
 		return nil
 	}
 	return taskReplyWriter{messages: c.Repositories.Chat, events: c.Repositories.Chat, sink: c.taskEventSink()}
+}
+
+// taskAttachmentReader reads a message's files for the task runtime.
+//
+// The chat service already resolves an attachment inside its workspace scope and
+// refuses one that is not there, so this is an adapter rather than a second
+// implementation: a file is read the same way whichever path asked for it.
+func (c *Container) taskAttachmentReader() taskdomain.AttachmentReader {
+	if c == nil || c.Services.Chat == nil {
+		return nil
+	}
+
+	return taskAttachmentReader{service: c.Services.Chat}
+}
+
+type taskAttachmentReader struct {
+	service chatdomain.Service
+}
+
+// ReadAttachment implements taskdomain.AttachmentReader.
+func (r taskAttachmentReader) ReadAttachment(ctx context.Context, scope taskdomain.Scope, id uuid.UUID) (taskdomain.AttachmentContent, error) {
+	attachment, content, err := r.service.AttachmentContent(ctx, chatScopeOf(scope), id)
+	if err != nil {
+		return taskdomain.AttachmentContent{}, err
+	}
+
+	return taskdomain.AttachmentContent{
+		Filename:    attachment.Filename,
+		ContentType: attachment.ContentType,
+		Content:     content,
+	}, nil
 }
 
 // ------------------------------------------------------------------- starter
@@ -512,12 +548,25 @@ func toTaskMessage(message chatdomain.Message) taskdomain.Message {
 		blocks = append(blocks, taskdomain.Block{Type: block.Type, Body: block.Body})
 	}
 
+	// Only the reference travels: the activity reads the bytes when it renders
+	// the prompt, so a workflow's state never holds a file.
+	attachments := make([]taskdomain.AttachmentRef, 0, len(message.Attachments))
+	for _, attachment := range message.Attachments {
+		attachments = append(attachments, taskdomain.AttachmentRef{
+			ID:          attachment.ID,
+			Filename:    attachment.Filename,
+			ContentType: attachment.ContentType,
+			ByteSize:    attachment.ByteSize,
+		})
+	}
+
 	return taskdomain.Message{
 		ID:             message.ID,
 		ConversationID: message.ConversationID,
 		AgentID:        message.AuthorAgentID,
 		UserID:         message.AuthorUserID,
 		Blocks:         blocks,
+		Attachments:    attachments,
 	}
 }
 

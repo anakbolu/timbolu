@@ -187,6 +187,50 @@ func TestLoadRejectsAMalformedMemorySetting(t *testing.T) {
 	require.Contains(t, err.Error(), "MEMORY_SIMILARITY")
 }
 
+// TestLoadReadsTheAttachmentContextSettings covers the bounds on what a
+// message's files contribute to a model call, and the defaults a deployment that
+// names none gets.
+func TestLoadReadsTheAttachmentContextSettings(t *testing.T) {
+	clearOverrides(t)
+	t.Setenv("ENVIRONMENT", "local")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	require.Equal(t, int64(10485760), cfg.AttachmentContext.MaxFileBytes)
+	require.Equal(t, 20000, cfg.AttachmentContext.MaxCharsPerFile)
+	require.Equal(t, 60000, cfg.AttachmentContext.MaxCharsTotal)
+	require.Equal(t, 4, cfg.AttachmentContext.MaxImages)
+	require.Equal(t, int64(5242880), cfg.AttachmentContext.MaxImageBytes)
+
+	t.Setenv("ATTACHMENT_CONTEXT_MAX_FILE_BYTES", "1024")
+	t.Setenv("ATTACHMENT_CONTEXT_MAX_CHARS_PER_FILE", "100")
+	t.Setenv("ATTACHMENT_CONTEXT_MAX_CHARS_TOTAL", "250")
+	t.Setenv("ATTACHMENT_CONTEXT_MAX_IMAGES", "1")
+	t.Setenv("ATTACHMENT_CONTEXT_MAX_IMAGE_BYTES", "2048")
+
+	cfg, err = Load()
+	require.NoError(t, err)
+
+	require.Equal(t, int64(1024), cfg.AttachmentContext.MaxFileBytes)
+	require.Equal(t, 100, cfg.AttachmentContext.MaxCharsPerFile)
+	require.Equal(t, 250, cfg.AttachmentContext.MaxCharsTotal)
+	require.Equal(t, 1, cfg.AttachmentContext.MaxImages)
+	require.Equal(t, int64(2048), cfg.AttachmentContext.MaxImageBytes)
+}
+
+// TestLoadRejectsAMalformedAttachmentContextSetting: a bound that will not parse
+// is an error rather than a silently unlimited one.
+func TestLoadRejectsAMalformedAttachmentContextSetting(t *testing.T) {
+	clearOverrides(t)
+	t.Setenv("ENVIRONMENT", "local")
+	t.Setenv("ATTACHMENT_CONTEXT_MAX_CHARS_TOTAL", "banyak")
+
+	_, err := Load()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "ATTACHMENT_CONTEXT_MAX_CHARS_TOTAL")
+}
+
 // TestLocalDefaultsSealProviderSecrets: the development key exists so a
 // developer can store a provider key without configuring anything.
 func TestLocalDefaultsSealProviderSecrets(t *testing.T) {
