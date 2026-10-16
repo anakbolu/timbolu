@@ -20,6 +20,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Alert } from "@/components/auth/auth-shell";
+import { NoWorkspaceNotice } from "@/components/dashboard/no-workspace";
 import { Bolu } from "@/components/bolu/bolu";
 import {
   type Routine,
@@ -234,6 +235,7 @@ export function RoutinesView() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [noWorkspace, setNoWorkspace] = useState(false);
 
   // One clock per render, so every row in the history is read against the same
   // "now" rather than each one taking its own reading.
@@ -243,7 +245,9 @@ export function RoutinesView() {
     const active = await ensureActiveWorkspace();
     setWorkspaceID(active);
     if (!active) {
-      setError("Pilih workspace dulu.");
+      // The session is fine; the account just has nothing to work in yet. That is
+      // not an error line, it is the screen that offers to make one.
+      setNoWorkspace(true);
       setLoading(false);
       return;
     }
@@ -432,6 +436,14 @@ export function RoutinesView() {
 
   const scheduled = routines.filter((routine) => routine.scheduled).length;
   const running = runs.filter((run) => run.status === "running").length;
+
+  if (noWorkspace) {
+    return (
+      <div className="p-[24px_28px_48px] max-[760px]:p-[18px_14px_36px]">
+        <NoWorkspaceNotice />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-[22px] p-[24px_28px_48px] max-[760px]:p-[18px_14px_36px]">

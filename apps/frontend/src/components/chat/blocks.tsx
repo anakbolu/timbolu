@@ -19,6 +19,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { NO_WORKSPACE_MESSAGE } from "@/components/dashboard/no-workspace";
 import {
   contentURL,
   decideDraft,
@@ -195,7 +196,7 @@ function DraftCard({ block }: { block: DraftBlock }) {
     // that has no workspace stored yet.
     const workspaceId = await ensureActiveWorkspace();
     if (!workspaceId) {
-      setError("Pilih workspace dulu.");
+      setError(NO_WORKSPACE_MESSAGE);
       return;
     }
 
