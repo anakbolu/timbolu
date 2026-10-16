@@ -239,6 +239,8 @@ VComputer:
   ControlURL: ""
   Token: ""
   # A screenshot of a cold sandbox includes the container starting, so this is generous.
+  # Zero or a negative value is no bound at all, so the client's own 30s default is used
+  # instead and startup warns.
   Timeout: "30s"
 
 Logging:

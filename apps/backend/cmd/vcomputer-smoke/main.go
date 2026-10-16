@@ -45,12 +45,9 @@ import (
 	"github.com/robzlabz/employeebot/packages/platform/config"
 )
 
-// defaultTimeout is what one call to the control plane gets when VCOMPUTER_CONTROL_TIMEOUT says
-// nothing or says something that is not a duration, matching the configuration default.
-const defaultTimeout = 30 * time.Second
-
 // runTimeout bounds the whole run. A smoke run is a person watching it, and a sandbox that
 // never answers must not leave them with a process that hangs rather than a message.
+
 const runTimeout = 5 * time.Minute
 
 func main() {
@@ -194,12 +191,18 @@ func run() error {
 }
 
 // controlTimeout reads VCOMPUTER_CONTROL_TIMEOUT the way the configuration does, so a value this
-// command accepts is a value a deployment accepts: one that will not parse is reported and the
-// default is used rather than the run refused, which is what the loader does with it (issue #219).
+// command accepts is a value a deployment accepts. Two rules come together here, and both are
+// deliberate:
+//
+//   - a value that will not parse is reported and the default is used rather than the run
+//     refused, which is what the loader does with it (issue #219);
+//   - a zero or a negative value is carried through as given, because the rule that it is not a
+//     bound lives in vcomputerservice.EffectiveTimeout, applied where the client is built — so a
+//     smoke run logs and enforces the same timeout a deployment does (issue #257).
 func controlTimeout() time.Duration {
 	raw := strings.TrimSpace(os.Getenv("VCOMPUTER_CONTROL_TIMEOUT"))
 	if raw == "" {
-		return defaultTimeout
+		return vcomputerservice.DefaultTimeout
 	}
 
 	timeout, err := time.ParseDuration(raw)
@@ -207,9 +210,9 @@ func controlTimeout() time.Duration {
 		// On stderr, so the JSON a caller reads and diffs stays the only thing on stdout.
 		fmt.Fprintf(os.Stderr,
 			"vcomputer-smoke: VCOMPUTER_CONTROL_TIMEOUT=%q is not a duration, using %s: %v\n",
-			raw, defaultTimeout, err)
+			raw, vcomputerservice.DefaultTimeout, err)
 
-		return defaultTimeout
+		return vcomputerservice.DefaultTimeout
 	}
 	return timeout
 }

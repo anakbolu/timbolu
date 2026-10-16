@@ -34,6 +34,30 @@ import (
 // seam, and 8 MiB is a generous ceiling for a 1280x800 PNG.
 const maxResponse = 8 << 20
 
+// DefaultTimeout bounds one call to the control plane when the configuration does not
+// set a positive one. It is generous because a screenshot of a cold sandbox includes
+// the container starting: the PoC would rather wait than report a failure that would
+// have resolved itself.
+//
+// It is exported because three places have to agree on it: the client that enforces
+// it, the container that logs the timeout in force at startup, and cmd/vcomputer-smoke,
+// which reads the same variable a deployment does.
+const DefaultTimeout = 30 * time.Second
+
+// EffectiveTimeout is the timeout a call to the control plane really gets: the
+// configured one when it is positive, DefaultTimeout otherwise. A zero or negative
+// value is not a bound at all — an http.Client with no timeout waits forever — so it
+// is replaced rather than honored, and every caller that reports the timeout in force
+// asks here instead of repeating the rule and printing a value that is not the one
+// being used (issue #257).
+func EffectiveTimeout(timeout time.Duration) time.Duration {
+	if timeout <= 0 {
+		return DefaultTimeout
+	}
+
+	return timeout
+}
+
 // Client calls the control plane.
 type Client struct {
 	baseURL string
@@ -51,17 +75,13 @@ var _ domain.ComputerUseClient = (*Client)(nil)
 // empty one is not refused here, because the control plane is the one that knows
 // whether it is wrong: it answers 401, which classify turns into ErrNotConfigured.
 //
-// The default timeout is generous because a screenshot of a cold sandbox includes
-// the container starting: the PoC would rather wait than report a failure that
-// would have resolved itself.
+// The timeout is EffectiveTimeout, so a deployment that configured zero or a negative
+// duration is bounded by DefaultTimeout rather than left unbounded.
 func New(baseURL, token string, timeout time.Duration) *Client {
-	if timeout <= 0 {
-		timeout = 30 * time.Second
-	}
 	return &Client{
 		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
 		token:   strings.TrimSpace(token),
-		client:  &http.Client{Timeout: timeout},
+		client:  &http.Client{Timeout: EffectiveTimeout(timeout)},
 	}
 }
 

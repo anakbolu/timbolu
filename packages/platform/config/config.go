@@ -137,8 +137,11 @@ type VComputerConfig struct {
 	// with an empty token is a startup warning rather than a quiet success: that deployment
 	// looks complete and is refused on every call.
 	Token string `mapstructure:"Token" validate:"optional"`
-	// Timeout bounds one call to the control plane. Zero takes the client's own default, which
-	// is generous on purpose: a screenshot of a cold sandbox includes the container starting.
+	// Timeout bounds one call to the control plane. Zero or a negative value is not a bound —
+	// an http.Client built with one waits forever — so it is replaced by the client's own
+	// default (vcomputerservice.DefaultTimeout, 30s), which is generous on purpose: a
+	// screenshot of a cold sandbox includes the container starting. The startup log names the
+	// timeout in force and warns when the configured one is not it (issue #257).
 	Timeout time.Duration `mapstructure:"Timeout" validate:"optional"`
 }
 

@@ -32,10 +32,21 @@ import (
 // An address with no token is a warning rather than a quiet "configured", because the control
 // plane requires the bearer on every /v1 route: that deployment is complete-looking at startup
 // and refused on every call.
+//
+// The timeout is logged as the one in force rather than as the one configured: a
+// non-positive value is not a bound at all, so the client replaces it with
+// vcomputerservice.DefaultTimeout — and a log line that repeated "-5s" while every call
+// waited 30s is how an operator comes to believe the bound they wrote is being applied
+// (issue #257). A configured value that is not in force is said so once, in a warning of
+// its own, with the value that was given.
 func NewVComputerTasks(cfg config.VComputerConfig, log *zap.Logger) *vcomputertemporal.Activities {
 	if log == nil {
 		log = zap.NewNop()
 	}
+
+	// The one place the rule lives: what the client enforces and what this function logs
+	// are the same value, so neither can drift from the other.
+	timeout := vcomputerservice.EffectiveTimeout(cfg.Timeout)
 
 	// The interface is left nil rather than holding a typed nil: the client is only built
 	// when there is an address to reach, so the activity set's own `Computer == nil` check is
@@ -48,16 +59,29 @@ func NewVComputerTasks(cfg config.VComputerConfig, log *zap.Logger) *vcomputerte
 	} else if strings.TrimSpace(cfg.Token) == "" {
 		// The client is still built: the refusal is the honest answer, and treating this as
 		// unconfigured would hide which of the two variables is missing.
-		computer = vcomputerservice.New(url, cfg.Token, cfg.Timeout)
+		computer = vcomputerservice.New(url, cfg.Token, timeout)
 		log.Warn("virtual computer is configured without a token: VCOMPUTER_CONTROL_TOKEN is "+
 			"empty, so every call will be refused with a 401",
 			zap.String("control_url", url),
-			zap.Duration("timeout", cfg.Timeout))
+			zap.Duration("timeout", timeout))
 	} else {
-		computer = vcomputerservice.New(url, cfg.Token, cfg.Timeout)
+		computer = vcomputerservice.New(url, cfg.Token, timeout)
 		log.Info("virtual computer is configured",
 			zap.String("control_url", url),
-			zap.Duration("timeout", cfg.Timeout))
+			zap.Duration("timeout", timeout))
+	}
+
+	if url != "" && cfg.Timeout <= 0 {
+		// Only a configured virtual computer is worth a line: without an address no call is
+		// made, so the bound is inert. The value is named here rather than in the line above,
+		// which now reports the timeout in force; the shipped YAML sets 30s, so a zero that
+		// arrives is an override or a config file that dropped the key, and either is worth
+		// telling an operator about — the bound they are reading is not the one being applied.
+		log.Warn("the virtual computer timeout is not a positive duration "+
+			"(VCOMPUTER_CONTROL_TIMEOUT, or the config file's VComputer.Timeout), so it is no "+
+			"bound: the control plane's calls use the default timeout instead",
+			zap.Duration("configured_timeout", cfg.Timeout),
+			zap.Duration("timeout", timeout))
 	}
 
 	return vcomputertemporal.New(vcomputertemporal.Deps{Computer: computer, Logger: log})

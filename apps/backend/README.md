@@ -868,8 +868,11 @@ virtual computer, and the activities then answer `ErrNotConfigured`),
 logged; an address with no token is a startup warning, because that deployment is
 refused on every call), and `VCOMPUTER_CONTROL_TIMEOUT` (bounds one call; a value
 that will not parse is warned about and ignored — the timeout the config file carries
-stands — because an optional feature's bad value must not take the worker down). A
-missing control plane and a refused token are answered as non-retryable Temporal
+stands — because an optional feature's bad value must not take the worker down; one
+that is zero or negative is no bound at all, so the client's 30s default is used
+instead, the startup log names the timeout in force, and a warning names the value
+that was given, so an operator never reads a bound that is not the one being applied).
+A missing control plane and a refused token are answered as non-retryable Temporal
 errors (`VComputerNotConfigured`), so a configuration mistake fails a run on the
 first attempt; an unreachable control plane stays retryable. The agent worker
 registers the module's activities and `SmokeWorkflow` on its own queue;
