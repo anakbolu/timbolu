@@ -213,6 +213,29 @@ port `6080`; baris "Jaringan" di Ringkasan dan §3.6 menyebut control plane hany
 internal dan tidak pernah dipublikasikan. Revisi ini yang berlaku untuk CDP, port per sandbox,
 dan pembagian dua jaringan — control plane tetap hanya di `127.0.0.1` pada host.
 
+## Revisi 2026-10-16 setelah QA PR #211
+
+QA menemukan tiga hal di jalur konfigurasi worker → control plane, semuanya sudah diperbaiki:
+
+- **Token salah bukan token kosong.** Control plane menjawab dua `401` yang berbeda:
+  `{"error":"a bearer token is required"}` bila tidak ada kredensial sama sekali, dan
+  `{"error":"the token is not valid"}` bila kredensialnya ada tapi tidak cocok
+  (`internal/httpapi`). Kalimat itu diteruskan klien apa adanya, jadi laporan run menyebut
+  token yang salah sebagai token yang salah, bukan menyuruh operator mencari variabel yang
+  sudah diisi.
+- **Kesalahan konfigurasi tidak lagi di-retry.** Activity membungkus `ErrNotConfigured`
+  sebagai `temporal.NewNonRetryableApplicationError` bertipe `VComputerNotConfigured`
+  (`internal/modules/vcomputer/temporal`), dengan `ErrNotConfigured` tetap sebagai cause
+  sehingga `errors.Is` di sisi dalam proses (klien dan activity) tidak berubah; di sisi
+  workflow yang bertahan hanya tipe dan kalimatnya, jadi cabangnya lewat pesan. Alamat kosong
+  maupun token yang ditolak karenanya gagal pada attempt pertama; `ErrUnavailable`,
+  `ErrInvalidInput`, dan `ErrNoSession` tetap retryable, karena sandbox yang belum siap memang
+  layak ditanya lagi.
+- **Alamat tanpa token tidak lagi "configured" tanpa catatan.** `NewVComputerTasks` mencatat
+  `Warn` yang menyebut `VCOMPUTER_CONTROL_TOKEN` kosong dan bahwa setiap panggilan akan
+  dijawab `401`. Kliennya tetap dibangun — yang dilaporkan jadi penolakan control plane,
+  bukan "tidak terkonfigurasi" yang menyembunyikan variabel mana yang kurang.
+
 ## Revisi 2026-10-16: activity terdaftar di agent worker
 
 PoC-nya sekarang punya jalur dari worker ke sandbox. Yang berubah, dan batasnya:

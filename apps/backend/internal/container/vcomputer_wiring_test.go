@@ -119,6 +119,29 @@ func TestNewVComputerTasksNeverLogsTheToken(t *testing.T) {
 	require.NotContains(t, entries[0].ContextMap()["control_url"], "shared-secret")
 }
 
+// TestNewVComputerTasksWarnsAboutAnAddressWithoutAToken: an address with no token is a
+// deployment that looks complete at startup and is refused on every call, because the control
+// plane requires the bearer on every /v1 route. Saying "configured" there is how an operator
+// ends up reading a 401 as a control plane problem (issue #218).
+//
+// The warning names the variable and never a value, the same rule the line beside it follows.
+func TestNewVComputerTasksWarnsAboutAnAddressWithoutAToken(t *testing.T) {
+	core, logs := observer.New(zap.WarnLevel)
+	// The client is still built, so what a run reports is the control plane's own refusal
+	// rather than a local sentinel that hides which of the two variables is missing. The
+	// assertion is on the log line alone: reaching a control plane is the client's test.
+	_ = NewVComputerTasks(config.VComputerConfig{
+		ControlURL: "http://vcomputer-control:8090",
+		Timeout:    30 * time.Second,
+	}, zap.New(core))
+
+	entries := logs.All()
+	require.Len(t, entries, 1, "the startup line says which of the two variables is missing")
+	require.Equal(t, zap.WarnLevel, entries[0].Level)
+	require.Contains(t, entries[0].Message, "VCOMPUTER_CONTROL_TOKEN is empty")
+	require.Equal(t, "http://vcomputer-control:8090", entries[0].ContextMap()["control_url"])
+}
+
 // TestAgentWorkerRegistrationInventory is the inventory of what the agent worker installs,
 // printed one name per line.
 //

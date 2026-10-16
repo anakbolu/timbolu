@@ -147,20 +147,42 @@ func TestEveryRouteExceptHealthRequiresTheToken(t *testing.T) {
 			if status != http.StatusUnauthorized {
 				t.Fatalf("without a token: status = %d, body = %s, want 401", status, body)
 			}
-			if !strings.Contains(string(body), "token") {
+			// The sentence is the one a caller repeats to a person, and it is the
+			// one that says no credential arrived at all rather than that the one
+			// that arrived is wrong (issue #218).
+			if !strings.Contains(string(body), "a bearer token is required") {
 				t.Fatalf("body = %s, want it to name the missing token", body)
 			}
 		})
 	}
 
-	// A wrong token is refused the same way, and a token in the query string is only
-	// accepted on the noVNC route: it reaches logs and history, so it is not a second
-	// way to call the API.
-	if status, _ := doAs(t, "wrong-token", http.MethodGet, server.URL+"/v1/sessions/bot-a", ""); status != http.StatusUnauthorized {
+	// A wrong token is refused the same way, and the sentence says which of the two
+	// mistakes it is: the caller is a worker that reports this to a person, and "a
+	// bearer token is required" for a token that was sent and merely wrong sends them
+	// looking for a variable they did set. A token in the query string is only accepted
+	// on the noVNC route: it reaches logs and history, so it is not a second way to call
+	// the API.
+	status, body := doAs(t, "wrong-token", http.MethodGet, server.URL+"/v1/sessions/bot-a", "")
+	if status != http.StatusUnauthorized {
 		t.Fatalf("wrong token: status = %d, want 401", status)
+	}
+	if !strings.Contains(string(body), "not valid") || strings.Contains(string(body), "required") {
+		t.Fatalf("body = %s, want a wrong token reported as invalid rather than missing", body)
 	}
 	if status, _ := doAs(t, "", http.MethodGet, server.URL+"/v1/sessions/bot-a?token="+testToken, ""); status != http.StatusUnauthorized {
 		t.Fatalf("query token off the noVNC route: status = %d, want 401", status)
+	}
+
+	// The same distinction on the noVNC route, where the token arrives as a query
+	// parameter: a wrong one is refused as invalid rather than as missing. That route
+	// has its own refusal, so leaving it out would let the browser path go back to
+	// reporting a token that was sent as one that never arrived.
+	status, body = doAs(t, "", http.MethodGet, server.URL+"/v1/sessions/bot-a/novnc/vnc.html?token=wrong-token", "")
+	if status != http.StatusUnauthorized {
+		t.Fatalf("wrong query token: status = %d, want 401", status)
+	}
+	if !strings.Contains(string(body), "not valid") {
+		t.Fatalf("body = %s, want the wrong query token reported as invalid", body)
 	}
 
 	// /health is open: the compose healthcheck and the e2e script both probe it

@@ -1,0 +1,6 @@
+$ curl -H 'Authorization: Bearer wrong-token' /v1/sessions/bot1
+{"error":"a bearer token is required"}
+ HTTP 401
+$ curl (tanpa header)
+{"error":"a bearer token is required"}
+ HTTP 401
