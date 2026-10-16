@@ -843,8 +843,11 @@ are answered as non-retryable Temporal errors (`VComputerNotConfigured`), so a
 configuration mistake fails a run on the first attempt; an unreachable control plane
 stays retryable. The agent worker registers the module's activities and
 `SmokeWorkflow` on its own queue; `cmd/vcomputer-smoke` runs one of them end to end
-from a checkout, and the run ends the sandbox it started rather than leaving a
-container behind for an operator to delete (`-keep-session` asks for the opposite).
+from a checkout, and the run stops the sandbox it started rather than leaving it
+running for an operator to delete (`-keep-session` asks for the opposite). That stop is
+not a purge: the in-memory runtime forgets the session, so `GET /v1/sessions/<bot>` is
+404 afterwards, while the Docker runtime answers 200 with `state: "stopped"` and leaves
+the Exited container and its `vcomputer-<bot>-home` volume for an explicit teardown.
 The agent task loop and its tool catalog do not reach the sandbox yet.
 
 Deployment and region decisions: `docs/adr/0001-temporal-dan-region.md`.

@@ -294,6 +294,12 @@ menjadwalkannya.
   akhir tugas, karena sesi yang berakhir bersama tugasnya kehilangan profil browser yang justru
   disimpan volume itu; smoke run tidak punya penerus yang memakai profil itu, dan pemilik sandbox
   yang baru dibuatnya adalah run itu sendiri.
+- **`StopSession` bukan purge, dan hasilnya berbeda per runtime.** Di runtime `memory`,
+  `Stop` melupakan record sesi, jadi `GET /v1/sessions/<bot>` sesudahnya `404`. Di runtime
+  `docker` yang nyata, `Stop` hanya `docker stop` dan menjawab `200` (`{"stopped":true}`;
+  `GET` sesudahnya `200` dengan `state:"stopped"`): container `vcomputer-<bot>` tertinggal
+  dalam keadaan Exited bersama volume `vcomputer-<bot>-home`, dan keduanya hanya hilang lewat
+  teardown eksplisit — bukan `404`.
 
 ## Keputusan yang tetap terbuka
 

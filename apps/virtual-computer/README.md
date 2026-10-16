@@ -242,6 +242,13 @@ yang tertinggal, dan run yang melaporkan sukses sambil menyisakannya justru kead
 akan dilihat lagi. `keep_session: true` pada input membalik perilaku itu untuk kasus melihat
 desktop setelah run; hasilnya jujur soal itu lewat `session_stopped`.
 
+`StopSession` bukan purge, dan kedua runtime menjawabnya berbeda. Di runtime `memory`,
+`Stop` melupakan record sesinya, jadi `GET /v1/sessions/<bot>` sesudahnya `404`. Di runtime
+`docker`, `Stop` hanya menjalankan `docker stop`: `GET` sesudahnya tetap `200` dengan
+`state:"stopped"`, dan container `vcomputer-<bot>` dalam keadaan Exited beserta volume
+`vcomputer-<bot>-home` tetap ada sampai dihapus eksplisit (`docker rm -f vcomputer-<bot>`,
+`docker volume rm vcomputer-<bot>-home`) — bukan `404`.
+
 Menjalankannya, dari checkout, dengan control plane yang hidup (lihat **Menjalankan**):
 
 ```bash
