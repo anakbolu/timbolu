@@ -52,7 +52,7 @@ import {
   type Workspace,
 } from "@/lib/api";
 import { moveAgentTo } from "@/lib/dashboard-view";
-import { connect, type RealtimeConnection, type RealtimeStatus } from "@/lib/realtime";
+import { connect, readLastEventId, type RealtimeConnection, type RealtimeStatus } from "@/lib/realtime";
 import { NO_WORKSPACE_MESSAGE } from "@/lib/workspace-messages";
 
 /** Hub is the integration hub's reads, kept together because a screen needs them together. */
@@ -360,7 +360,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           }
         },
       },
-      0,
+      // Where the last page load stopped, so this one resumes from there instead
+      // of replaying the workspace's history over a screen that already has it.
+      readLastEventId(id),
     );
 
     return () => {

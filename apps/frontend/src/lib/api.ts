@@ -33,6 +33,15 @@ export type ApiSuccess<T> = {
    * without remembering what it asked for.
    */
   meta?: Record<string, unknown>;
+  /**
+   * The `Date` header, as epoch milliseconds, when the response carried a
+   * parsable one.
+   *
+   * It is the server's own clock, which is what a read that later has to compare
+   * itself against a server-written timestamp needs: a client clock that is
+   * minutes off would otherwise decide which of two records is the older one.
+   */
+  serverDate?: number;
 };
 
 export type ApiResult<T> = ApiSuccess<T> | ApiError;
@@ -394,7 +403,15 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<A
       };
     }
 
-    return { ok: true, status: response.status, data: envelope.data as T, meta: envelope.meta };
+    const header = response.headers.get("Date");
+    const serverDate = header === null ? Number.NaN : Date.parse(header);
+    return {
+      ok: true,
+      status: response.status,
+      data: envelope.data as T,
+      meta: envelope.meta,
+      serverDate: Number.isFinite(serverDate) ? serverDate : undefined,
+    };
   } catch {
     // The signal is what tells an abandoned call apart from one the network
     // refused: both arrive here as a rejected fetch, and only the first has a
