@@ -27,10 +27,16 @@ export function CredentialsForm({ mode }: { mode: "signup" | "login" }) {
   const router = useRouter();
   const isRegister = mode === "signup";
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  // The address can arrive in the URL: the sign-up form sends somebody here when
+  // its own call ran out of time, and making them retype what they just entered
+  // would be the second thing that attempt cost them.
   const params = useSearchParams();
+  const [email, setEmail] = useState(() => params.get("email") ?? "");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Whether the error above is a call that ran out of time. It is kept apart from
+  // the message because that failure has a next step rather than a retry.
+  const [timedOut, setTimedOut] = useState(false);
   // Two things bring somebody here with something to say: a link that just verified
   // their address, and a session that ended underneath them. Both are said above the
   // form rather than as a refusal, because neither is the visitor's mistake.
@@ -49,51 +55,59 @@ export function CredentialsForm({ mode }: { mode: "signup" | "login" }) {
     event.preventDefault();
     setError(null);
     setNotice(null);
+    setTimedOut(false);
     setPending(true);
 
-    if (isRegister) {
-      const result = await register(email, password);
+    // Every exit below runs through `finally`, because the busy state is the only
+    // thing standing between the person and a second submission: a path that
+    // returned early — or threw — would leave the button saying "Mendaftarkan…"
+    // with no way to try again.
+    try {
+      if (isRegister) {
+        const result = await register(email, password);
+
+        if (!result.ok) {
+          setTimedOut(result.code === "timeout");
+          setError(result.message);
+          return;
+        }
+
+        // A deployment with verification off creates the account already usable, so
+        // there is no link to wait for: sign in and land where the account belongs.
+        // The register response carries the answer, which is what keeps the two
+        // sides from having to agree on a second flag.
+        if (result.data.email_verified) {
+          const session = await login(email, password);
+          if (!session.ok) {
+            setTimedOut(session.code === "timeout");
+            setError(session.message);
+            return;
+          }
+          router.push(session.data.user.onboarded ? "/dashboard" : "/onboarding");
+          return;
+        }
+
+        // The account exists but is not verified yet: the next step is the link
+        // that was just emailed.
+        router.push(`/verify?email=${encodeURIComponent(email)}`);
+        return;
+      }
+
+      const result = await login(email, password);
 
       if (!result.ok) {
-        setPending(false);
+        setTimedOut(result.code === "timeout");
         setError(result.message);
         return;
       }
-
-      // A deployment with verification off creates the account already usable, so
-      // there is no link to wait for: sign in and land where the account belongs.
-      // The register response carries the answer, which is what keeps the two
-      // sides from having to agree on a second flag.
-      if (result.data.email_verified) {
-        const session = await login(email, password);
-        setPending(false);
-        if (!session.ok) {
-          setError(session.message);
-          return;
-        }
-        router.push(session.data.user.onboarded ? "/dashboard" : "/onboarding");
+      if (!result.data.user.email_verified) {
+        setNotice("Emailmu belum diverifikasi. Cek tautan yang kami kirim.");
         return;
       }
-
-      // The account exists but is not verified yet: the next step is the link
-      // that was just emailed.
+      router.push(result.data.user.onboarded ? "/dashboard" : "/onboarding");
+    } finally {
       setPending(false);
-      router.push(`/verify?email=${encodeURIComponent(email)}`);
-      return;
     }
-
-    const result = await login(email, password);
-    setPending(false);
-
-    if (!result.ok) {
-      setError(result.message);
-      return;
-    }
-    if (!result.data.user.email_verified) {
-      setNotice("Emailmu belum diverifikasi. Cek tautan yang kami kirim.");
-      return;
-    }
-    router.push(result.data.user.onboarded ? "/dashboard" : "/onboarding");
   }
 
   return (
@@ -117,7 +131,22 @@ export function CredentialsForm({ mode }: { mode: "signup" | "login" }) {
         )
       }
     >
-      {error ? <Alert tone="error">{error}</Alert> : null}
+      {error ? (
+        <Alert tone="error">
+          {error}
+          {/* The deadline is the one failure whose next step is not "try again":
+              the account may have been created, so the link goes to signing in
+              with the address already filled in. */}
+          {timedOut ? (
+            <>
+              {" "}
+              <Link className="underline" href={`/login?email=${encodeURIComponent(email)}`}>
+                Masuk
+              </Link>
+            </>
+          ) : null}
+        </Alert>
+      ) : null}
       {notice ? <Alert tone="info">{notice}</Alert> : null}
 
       <form onSubmit={onSubmit}>

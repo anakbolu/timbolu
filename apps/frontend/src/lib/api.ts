@@ -223,6 +223,16 @@ type RequestOptions = {
   workspace?: string | null;
   /** Sends the in-memory access token as a bearer token. */
   authenticated?: boolean;
+  /**
+   * How long the call may take before it is abandoned, in milliseconds.
+   *
+   * Only the calls a person is waiting on a button for need one: a fetch has no
+   * deadline of its own, so a backend that accepts the connection and then never
+   * answers leaves the button saying "Mendaftarkan…" for as long as the browser
+   * keeps the socket open. Omitting it keeps the old behaviour — a screen's
+   * background reads are not on anybody's clock.
+   */
+  timeoutMs?: number;
 };
 
 /**
@@ -323,6 +333,16 @@ async function authorizedFetch(
   return response;
 }
 
+/**
+ * What a call that ran past its deadline reports.
+ *
+ * An abandoned request is not a request that did not happen: the server may have
+ * finished the work and lost only the answer, which for sign-up means the account
+ * exists. So the wording tells the person what to do about that rather than
+ * inviting a second attempt that would be refused as a duplicate.
+ */
+const TIMEOUT_MESSAGE = "Server terlalu lama menjawab. Akunmu mungkin sudah terbuat — coba masuk.";
+
 /** request performs one API call and normalises the envelope. */
 async function request<T>(path: string, options: RequestOptions = {}): Promise<ApiResult<T>> {
   const authenticated = options.authenticated !== false;
@@ -334,52 +354,75 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<A
     return headers;
   };
 
-  let response: Response;
+  // The deadline is an abort signal rather than a race against a timer, because
+  // the socket is what has to be let go: `fetch` has no timeout of its own, and a
+  // server that holds the connection open would otherwise keep this promise — and
+  // the button awaiting it — pending indefinitely.
+  const controller = options.timeoutMs === undefined ? null : new AbortController();
+  const timer = controller === null ? null : setTimeout(() => controller.abort(), options.timeoutMs);
+
   try {
-    response = await authorizedFetch(
+    const response = await authorizedFetch(
       `${API_URL}/api${path}`,
       {
         method: options.method ?? "GET",
         credentials: "include",
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
         cache: "no-store",
+        signal: controller?.signal,
       },
       buildHeaders,
       authenticated,
     );
+
+    const text = await response.text();
+    let envelope: Envelope<T> | null = null;
+    if (text) {
+      try {
+        envelope = JSON.parse(text) as Envelope<T>;
+      } catch {
+        envelope = null;
+      }
+    }
+
+    if (!response.ok || !envelope?.success) {
+      return {
+        ok: false,
+        status: response.status,
+        message: envelope?.message ?? "Terjadi kesalahan. Coba lagi sebentar.",
+        code: envelope?.error?.code,
+      };
+    }
+
+    return { ok: true, status: response.status, data: envelope.data as T, meta: envelope.meta };
   } catch {
+    // The signal is what tells an abandoned call apart from one the network
+    // refused: both arrive here as a rejected fetch, and only the first has a
+    // deadline behind it.
+    if (controller?.signal.aborted) {
+      return { ok: false, status: 0, code: "timeout", message: TIMEOUT_MESSAGE };
+    }
     return {
       ok: false,
       status: 0,
       message: "Tidak bisa menghubungi server. Cek koneksimu lalu coba lagi.",
     };
+  } finally {
+    if (timer !== null) clearTimeout(timer);
   }
-
-  const text = await response.text();
-  let envelope: Envelope<T> | null = null;
-  if (text) {
-    try {
-      envelope = JSON.parse(text) as Envelope<T>;
-    } catch {
-      envelope = null;
-    }
-  }
-
-  if (!response.ok || !envelope?.success) {
-    return {
-      ok: false,
-      status: response.status,
-      message: envelope?.message ?? "Terjadi kesalahan. Coba lagi sebentar.",
-      code: envelope?.error?.code,
-    };
-  }
-
-  return { ok: true, status: response.status, data: envelope.data as T, meta: envelope.meta };
 }
 
 /** register creates a password account and emails a verification link. */
 export function register(email: string, password: string): Promise<ApiResult<User>> {
-  return request<User>("/auth/register", { method: "POST", body: { email, password }, authenticated: false });
+  // Sign-up is a person watching a button, and it creates an account on the
+  // server, so it may not hang: the deadline is what turns a backend that never
+  // answers into something the form can explain.
+  return request<User>("/auth/register", {
+    method: "POST",
+    body: { email, password },
+    authenticated: false,
+    timeoutMs: 20_000,
+  });
 }
 
 /** verifyEmail consumes the one-time verification token. */
@@ -394,7 +437,12 @@ export function resendVerification(email: string): Promise<ApiResult<null>> {
 
 /** login signs in and stores the access token in memory. */
 export async function login(email: string, password: string): Promise<ApiResult<Session>> {
-  const result = await request<Session>("/auth/login", { method: "POST", body: { email, password }, authenticated: false });
+  const result = await request<Session>("/auth/login", {
+    method: "POST",
+    body: { email, password },
+    authenticated: false,
+    timeoutMs: 20_000,
+  });
   if (result.ok) {
     setAccessToken(result.data.access_token, result.data.access_expires_at);
   }
