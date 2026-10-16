@@ -1,12 +1,16 @@
 package handler
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"io"
 	"mime/multipart"
+	"net"
+	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -149,6 +153,59 @@ func TestSSEIgnoresAnUnreadableResumePoint(t *testing.T) {
 	t.Cleanup(func() { _ = resp.Body.Close() })
 
 	require.Equal(t, fiber.StatusOK, resp.StatusCode)
+}
+
+// TestSSESendsItsHeadBeforeAnyEvent is the gate on the open delay: fasthttp
+// writes nothing until the first flush, so a stream with nothing to replay — the
+// ordinary reconnect, whose cursor is already the newest event — used to leave
+// the client "connecting" until the first heartbeat, 25s later. The response
+// head and the opening comment must reach the client on their own.
+func TestSSESendsItsHeadBeforeAnyEvent(t *testing.T) {
+	service := mocks.NewService(t)
+	id := streamIdentity{userID: uuid.New(), workspaceID: uuid.New()}
+
+	// The stream stays silent: no backlog, no live event, no close.
+	events := make(chan chatdomain.Event)
+	service.EXPECT().Stream(mock.Anything, mock.Anything, int64(9)).Return(events, nil).Once()
+
+	app := newStreamApp(t, service, id)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = app.Listener(listener) }()
+	t.Cleanup(func() { _ = app.Shutdown() })
+
+	// A real connection, not app.Test: the helper waits for the handler to
+	// return before it reads the response, which is exactly the delay under
+	// test.
+	req, err := http.NewRequest(http.MethodGet, "http://"+listener.Addr().String()+"/api/events/stream", nil)
+	require.NoError(t, err)
+	req.Header.Set("Last-Event-ID", "9")
+
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	start := time.Now()
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	opened := time.Since(start)
+
+	var once sync.Once
+	stop := func() { once.Do(func() { close(events) }) }
+	t.Cleanup(stop)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, "text/event-stream", resp.Header.Get("Content-Type"))
+	require.Less(t, opened, time.Second, "the response head waited for an event")
+
+	reader := bufio.NewReader(resp.Body)
+	line, err := reader.ReadString('\n')
+	require.NoError(t, err)
+	require.Equal(t, ": connected\n", line, "the stream opens with a comment, not an event")
+
+	// Let the handler return before the server shuts down.
+	stop()
+	_, _ = io.Copy(io.Discard, resp.Body)
 }
 
 // TestSocketRefusesAPlainRequest keeps the WebSocket endpoint honest about what
