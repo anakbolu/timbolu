@@ -20,7 +20,6 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Alert } from "@/components/auth/auth-shell";
-import { NoWorkspaceNotice } from "@/components/dashboard/no-workspace";
 import {
   Agent,
   ApiResult,
@@ -82,7 +81,6 @@ export function MemoryView() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [noWorkspace, setNoWorkspace] = useState(false);
 
   const load = useCallback(async () => {
     const session = await refreshSession();
@@ -97,9 +95,9 @@ export function MemoryView() {
     const active = await ensureActiveWorkspace();
     setWorkspaceId(active);
     if (!active) {
-      // The session is fine; the account just has nothing to work in yet. That is
-      // not an error line, it is the screen that offers to make one.
-      setNoWorkspace(true);
+      // The session is fine; the account just has nothing to work in yet, and the
+      // provider is already sending it to /onboarding. The screen stops here
+      // rather than reading lists for a workspace that is not there.
       return;
     }
 
@@ -349,16 +347,9 @@ export function MemoryView() {
     });
   }
 
-  if (noWorkspace) {
-    return (
-      <main className="mx-auto w-full max-w-3xl px-5 py-12">
-        <NoWorkspaceNotice />
-      </main>
-    );
-  }
-
-  // Still resolving: the notice must not flash at everyone who has a workspace,
-  // so the screen waits for the answer before it shows either state.
+  // Still resolving: the provider owns the answer to "is there a workspace" and
+  // sends an account without one to /onboarding, so the screen holds a neutral
+  // state until it knows which workspace it is reading for.
   if (!workspaceId) {
     return (
       <main className="mx-auto w-full max-w-3xl px-5 py-12">
