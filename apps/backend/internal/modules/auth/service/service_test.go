@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -183,7 +184,7 @@ func TestRegister(t *testing.T) {
 
 		created, err := h.service.Register(context.Background(), domain.RegisterRequest{
 			Email:    "owner@example.com",
-			Password: "a-good-password",
+			Password: "A-good-password1",
 		})
 		require.NoError(t, err)
 		require.True(t, created.EmailVerified, "a deployment without verification creates a usable account")
@@ -219,6 +220,53 @@ func TestRegister(t *testing.T) {
 			Password: "A-good-password1",
 		})
 		require.ErrorIs(t, err, domain.ErrEmailTaken)
+	})
+
+	// TestRegisterKeepsTheAccountWhenTheMailFails: the account and its token are
+	// already stored, so an unreachable mail server must not turn a successful
+	// sign-up into a failure the user cannot see past.
+	t.Run("keeps the account when the verification email cannot be sent", func(t *testing.T) {
+		var logged []string
+		h := newHarness(t, func(d *Deps) {
+			d.Logf = func(format string, args ...any) { logged = append(logged, fmt.Sprintf(format, args...)) }
+		})
+		user := domain.User{ID: uuid.New(), Email: "owner@example.com"}
+
+		h.repo.EXPECT().CreateUser(mock.Anything, "owner@example.com", mock.Anything).
+			Return(user, nil).Once()
+		h.repo.EXPECT().CreateEmailVerificationToken(mock.Anything, user.ID, mock.Anything, mock.Anything).
+			Return(nil).Once()
+		h.mailer.EXPECT().Send(mock.Anything, "owner@example.com", mock.Anything, mock.Anything).
+			Return(errors.New("dial tcp: i/o timeout")).Once()
+
+		created, err := h.service.Register(context.Background(), domain.RegisterRequest{
+			Email:    "owner@example.com",
+			Password: "A-good-password1",
+		})
+		require.NoError(t, err, "a mail failure must not fail the registration")
+		require.Equal(t, user.ID, created.ID)
+
+		require.Len(t, logged, 1, "the failure must be reported")
+		require.Contains(t, logged[0], "owner@example.com")
+		require.Contains(t, logged[0], "dial tcp")
+	})
+
+	// A token that could not be written is a broken request, not a delivery
+	// problem: it still fails.
+	t.Run("fails when the verification token cannot be stored", func(t *testing.T) {
+		h := newHarness(t)
+		user := domain.User{ID: uuid.New(), Email: "owner@example.com"}
+
+		h.repo.EXPECT().CreateUser(mock.Anything, mock.Anything, mock.Anything).
+			Return(user, nil).Once()
+		h.repo.EXPECT().CreateEmailVerificationToken(mock.Anything, user.ID, mock.Anything, mock.Anything).
+			Return(errors.New("connection refused")).Once()
+
+		_, err := h.service.Register(context.Background(), domain.RegisterRequest{
+			Email:    "owner@example.com",
+			Password: "A-good-password1",
+		})
+		require.Error(t, err)
 	})
 }
 
