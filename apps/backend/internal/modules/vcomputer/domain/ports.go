@@ -49,9 +49,18 @@ var (
 	// cannot name a container, a URL whose scheme is not one of the four it accepts,
 	// or an empty command.
 	ErrInvalidInput = errors.New("vcomputer: the control plane refused the request")
-	// ErrUnavailable is the control plane being unreachable or failing. It is worth
-	// retrying, unlike the three above.
+	// ErrUnavailable is the control plane being unreachable or failing in a way that
+	// may pass. It is worth retrying, unlike the three above.
 	ErrUnavailable = errors.New("vcomputer: the control plane is unavailable")
+	// ErrNavigationFailed is a navigation the control plane carried out and that
+	// still did not put the page in front of the caller: the browser landed on its
+	// own error page, the document never finished loading inside the control
+	// plane's navigate timeout, or the page answered 4xx/5xx. It is not retryable
+	// for the same reason a refused request is not: the same URL produces the same
+	// answer, so a retry spends the budget reaching it again — and a page that is
+	// temporarily down is better handled by a caller that decides to try later than
+	// by a retry policy that cannot tell the two apart.
+	ErrNavigationFailed = errors.New("vcomputer: the navigation failed")
 )
 
 // Session is one bot's virtual computer, as much of it as the backend needs: where
@@ -67,13 +76,19 @@ type Session struct {
 	ContainerID string `json:"container_id,omitempty"`
 	// NoVNCURL is where a person watches the desktop. It is a path on the control
 	// plane (`/v1/sessions/<bot>/novnc/...`), not a sandbox address: the control
-	// plane reverse-proxies it to the sandbox's noVNC port, which is never published
-	// and never reachable from outside the sandbox network.
+	// plane reverse-proxies it to the sandbox's noVNC port, which listens on the
+	// sandbox's own loopback and is exposed to anything outside it only by the gate
+	// on the sandbox's network address, which demands that sandbox's secret.
 	NoVNCURL string `json:"novnc_url,omitempty"`
-	// CDPURL is Chromium's DevTools endpoint, `http://<sandbox-ip>:<cdp-port>`. The
-	// sandbox publishes that port through socat because Chromium only listens on
-	// localhost, and the control plane uses this address to carry out Navigate. Like
-	// the noVNC port it is reachable only from the sandbox network.
+	// CDPURL is where this session's DevTools endpoint is reachable: a path on the
+	// control plane (`/v1/sessions/<bot>/cdp`), not a sandbox address. Chromium
+	// listens on the sandbox's loopback only, and the one listener the sandbox has
+	// on its network address is vcomputer-gate, which forwards `/cdp/*` there after
+	// checking a per-sandbox secret. So the control plane is the only thing that can
+	// dial CDP, and a caller holding just the control token goes through the same
+	// path (`/v1/sessions/<bot>/cdp[/<rest>]`, any method — the DevTools HTTP API is
+	// not method-uniform); the control plane rewrites `webSocketDebuggerUrl` in
+	// `/json/list` answers to that prefix for exactly this reason.
 	CDPURL string `json:"cdp_url,omitempty"`
 	// Volume is the named volume holding the browser profile and the bot's home. The
 	// container may die; the session does not, which is what makes "log in once,

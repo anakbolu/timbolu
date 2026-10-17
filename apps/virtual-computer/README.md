@@ -20,51 +20,82 @@ flowchart LR
     C -->|"HTTP /v1/* + Authorization: Bearer<br/>(jaringan internal)"| P
 
     subgraph vc["apps/virtual-computer"]
-        P["control plane :8090<br/>sessions · navigate · screenshot · click · type · exec<br/>+ reverse proxy noVNC"]
+        P["control plane :8090<br/>sessions · navigate · screenshot · click · type · exec<br/>+ reverse proxy noVNC + CDP"]
         P -->|"Runtime interface"| R1["InMemoryRuntime<br/>(tanpa Docker: uji & laptop)"]
         P -->|"Runtime interface"| R2["DockerRuntime<br/>(docker CLI, nyata)"]
     end
 
-    R2 -->|"docker run · docker exec · docker inspect"| S
+    R2 -->|"DOCKER_HOST=tcp://vcomputer-socket-proxy:2375<br/>docker run · docker exec · docker inspect"| SX
 
-    subgraph S["sandbox container — vcomputer-internal (internal: true, tanpa egress)"]
-        X["Xvfb :99"] --> F["fluxbox"] --> V["x11vnc :5900<br/>(localhost)"] --> N["noVNC<br/>:${NOVNC_PORT:-6080}"]
-        X --> B["Chromium<br/>CDP 127.0.0.1:9222"]
-        SO["socat<br/>TCP-LISTEN:${CDP_PORT:-9223}"] --> B
+    subgraph DX["vcomputer-dockerapi (internal: true, tanpa port)"]
+        SX["vcomputer-socket-proxy :2375<br/>haproxy + allowlist Engine API"]
     end
 
-    P -->|"proxy noVNC + upgrade websocket"| N
-    R2 -->|"PUT /json/new ke CDP<br/>via http://ip-sandbox:9223"| SO
+    SX -->|"unix socket /var/run/docker.sock (ro), hanya section yang diizinkan"| DD["dockerd host"]
 
-    S --- VOL[("volume vcomputer-bot-home<br/>/home/bolu: profil + berkas")]
+    subgraph S["sandbox container — vcomputer-internal (internal: true, tanpa egress)"]
+        X["Xvfb :99"] --> F["fluxbox"] --> V["x11vnc :5900<br/>(-localhost)"] --> N["websockify + noVNC<br/>127.0.0.1:${NOVNC_PORT:-6080}"]
+        X --> B["Chromium<br/>--remote-debugging-port=9222<br/>(loopback)"]
+        GT["vcomputer-gate<br/>0.0.0.0:${GATE_PORT:-8443}<br/>satu-satunya listener"]
+        GT -->|"/novnc/*"| N
+        GT -->|"/cdp/*"| B
+    end
+
+    P -->|"proxy noVNC + CDP + upgrade websocket<br/>X-Sandbox-Secret"| GT
+
+    S --- VOL[("volume vcomputer-<bot>-home<br/>/home/bolu: profil + berkas")]
 
     FX["fixture: busybox httpd :8080<br/>(satu-satunya halaman tujuan)"] -.->|"vcomputer-internal"| S
 
     G["gerbang approval<br/>(EPIC 7, belum tersambung)"] -.->|"write_external"| P
 ```
 
-Enam hal yang dibaca dari diagram itu:
+Delapan hal yang dibaca dari diagram itu:
 
 1. **Backend tidak memanggil Docker.** Ia memanggil satu API HTTP di jaringan internal,
    dengan `Authorization: Bearer`. Control plane boleh berganti cara ia membuat sandbox
    (Docker hari ini, gVisor/K8s kelak) tanpa worker berubah.
-2. **Sandbox adalah proses yang bisa dibaca daftarnya**, bukan satu "komputer" opaque:
-   Xvfb → fluxbox → x11vnc → noVNC, plus Chromium dengan CDP.
-3. **State yang bertahan ada di volume**, bukan di proses: profil browser dan berkas
+2. **Socket Docker tidak ada di container control plane.** CLI docker di dalam
+   `vcomputer-control` diarahkan `DOCKER_HOST=tcp://vcomputer-socket-proxy:2375`, dan
+   `vcomputer-socket-proxy` satu-satunya container yang memegang `/var/run/docker.sock`
+   (read-only). Proxy itu menjawab `403` untuk setiap section Engine API yang tidak
+   dipakai runtime, dan tidak punya port yang dipublikasikan: satu-satunya jalan masuk
+   adalah jaringan `vcomputer-dockerapi`, yang hanya memuat proxy dan control plane.
+3. **Sandbox adalah proses yang bisa dibaca daftarnya**, bukan satu "komputer" opaque:
+   Xvfb → fluxbox → x11vnc → websockify/noVNC, Chromium dengan CDP, dan satu gerbang
+   (`vcomputer-gate`) yang mengekspos dua yang terakhir.
+4. **State yang bertahan ada di volume**, bukan di proses: profil browser dan berkas
    hidup di `/home/bolu`, jadi container boleh mati dan sesi tidak hilang. Workflow
    hanya membawa pengenal — aturan *claim check* di ADR 0001.
-4. **CDP hanya mendengarkan di loopback Chromium.** `--remote-debugging-address=0.0.0.0`
-   diabaikan Chromium baru, jadi `socat TCP-LISTEN:${CDP_PORT},fork,reuseaddr,bind=0.0.0.0`
-   yang mempublikasikannya ke alamat container. Control plane menyapa
-   `http://<ip-sandbox>:9223` — **IP, bukan nama host** — karena endpoint DevTools menolak
-   Host header yang bukan IP atau `localhost`.
-5. **noVNC di-proxy.** Browser hanya perlu menjangkau control plane: path
-   `/v1/sessions/<bot>/novnc/...` di-strip lalu diteruskan ke
-   `http://<ip-sandbox>:<port-novnc>/` berikut upgrade websocket-nya. Tidak ada port
-   sandbox yang pernah dipublikasikan ke host.
-6. **Gerbang approval belum tersambung** (garis putus-putus). `click`, `type`, dan
+5. **Sandbox hanya punya satu listener di alamat jaringannya: `vcomputer-gate`.**
+   Xvfb dan fluxbox tidak membuka port sama sekali; x11vnc (`-localhost`),
+   websockify/noVNC (`127.0.0.1:${NOVNC_PORT:-6080}`), dan Chromium
+   (`--remote-debugging-port=9222`) mengikat loopback. Yang mendengarkan di
+   `0.0.0.0:${GATE_PORT:-8443}` hanya gate: `/cdp/*` diteruskan ke `127.0.0.1:9222`,
+   `/novnc/*` ke `127.0.0.1:${NOVNC_PORT}`, Host header ditulis ulang menjadi `localhost`
+   (endpoint DevTools menolak nilai lain dengan 500), upgrade websocket diteruskan, dan
+   setiap rute kecuali `/healthz` menuntut header `X-Sandbox-Secret`.
+
+   Yang melindungi port itu adalah gate, **bukan** topologi jaringannya: host tetap
+   bisa menyapa IP container di jaringan bridge buatan Docker — `internal: true`
+   memblokir egress dari dalam container, bukan host → container.
+6. **noVNC dan CDP di-proxy.** Browser (dan worker) hanya perlu menjangkau control
+   plane: `/v1/sessions/<bot>/novnc/...` dan `/v1/sessions/<bot>/cdp/...` diteruskan ke
+   gate di alamat container berikut upgrade websocket-nya dan header
+   `X-Sandbox-Secret`. Tidak ada port sandbox yang pernah dipublikasikan ke host.
+7. **Gerbang approval belum tersambung** (garis putus-putus). `click`, `type`, dan
    `exec` adalah `write_external` menurut riset §5.1; PoC men-stub jalur itu dan
    menyatakannya, bukan menganggapnya selesai.
+8. **Proxy socket adalah pagar, bukan isolasi.** Ia mempersempit apa yang bisa dilakukan
+   control plane yang diambil alih, tetapi `CONTAINERS` tetap ada di allowlist — jadi
+   sandbox dengan HostConfig sembarang masih mungkin. Yang ditambahkan control plane sendiri
+   adalah validasi sebelum render: permintaan create-nya divalidasi sebagai data
+   (`control/internal/sandbox/spec.go`) sebelum jadi argv `docker run`, dan `--privileged`,
+   `--cap-add`, bind mount, network/pid/ipc/userns host, device, serta image di luar
+   `VCOMPUTER_SANDBOX_IMAGE_ALLOWLIST` ditolak di situ. Itu pertahanan berlapis, **bukan**
+   tembok: proxy tidak bisa membaca body, jadi container control plane yang sudah diambil
+   alih masih bisa mengirim body apa pun ke section yang diizinkan untuknya. Rinciannya di
+   trade-off di bawah.
 
 ## Isi direktori
 
@@ -72,12 +103,14 @@ Enam hal yang dibaca dari diagram itu:
 | --- | --- |
 | `control/` | Control plane (modul Go sendiri, tanpa dependensi selain stdlib) |
 | `control/internal/sandbox/` | Port `Runtime` + `InMemoryRuntime` (tanpa Docker) + `DockerRuntime` (nyata, lewat CLI docker) |
-| `control/internal/httpapi/` | Permukaan HTTP, autentikasi token, proxy noVNC, plus ujinya |
+| `control/internal/httpapi/` | Permukaan HTTP, autentikasi token, proxy noVNC + CDP ke gate sandbox, plus ujinya |
 | `sandbox/` | Image sandbox: `Dockerfile` + `entrypoint.sh` |
+| `sandbox/gate/` | `vcomputer-gate`: modul Go sendiri (hanya stdlib), dibangun di satu stage image dan jadi satu-satunya listener di alamat jaringan sandbox |
 | `fixture/` | Satu halaman statis yang disajikan `vcomputer-fixture` di jaringan internal |
 | `demo/index.html` | Halaman statis yang menyematkan noVNC asli lewat proxy control plane |
-| `docker-compose.poc.yml` | Stack PoC: `control` + `fixture` + target build `vcomputer-sandbox`, dan dua jaringan |
-| `scripts/e2e.sh` | Checklist QA end-to-end: build, jalankan, periksa, tulis bukti, cetak PASS/FAIL |
+| `docker-compose.poc.yml` | Stack PoC: `vcomputer-control` + `vcomputer-fixture` + `vcomputer-socket-proxy` + target build `vcomputer-sandbox`, dan tiga jaringan |
+| `scripts/e2e.sh` | Checklist QA end-to-end: build, jalankan, periksa, tulis bukti, cetak PASS/FAIL. `STACK` dan `VCOMPUTER_CONTROL_PORT` wajib diisi — skrip berhenti sebelum menyentuh apa pun bila salah satunya kosong — pemeriksaan `restart-*` membuktikan `compose restart` tidak menghapus sesinya, pemeriksaan `control-no-docker-sock`/`proxy-refuses-forbidden`/`sandbox-cannot-reach-proxy` membuktikan pagar socket, dan pemeriksaan terakhirnya membuktikan `TEARDOWN=1` tidak meninggalkan container, volume, maupun jaringan bernama `${STACK}-*` |
+| `scripts/cleanup.sh` | Versi CLI dari `POST /v1/admin/cleanup`: buang container berlabel `vcomputer.bot` **dan** `vcomputer.stack=${STACK}` yang tidak jalan (`VOLUMES=1` juga membuang volumenya, `--running` ikut membuang yang sedang jalan). `STACK` wajib diisi — teardown yang didokumentasikan untuk sebuah stack |
 
 ## Permukaan API
 
@@ -86,13 +119,16 @@ Enam hal yang dibaca dari diagram itu:
 | `GET` | `/health` | — | `{"status":"ok","service":"vcomputer-control","poc":true}` — satu-satunya rute tanpa token |
 | `POST` | `/v1/sessions` | `{"bot_id":"..."}` | `Session` (idempoten) |
 | `GET` | `/v1/sessions/:bot_id` | — | `Session`, `404` bila belum ada |
-| `DELETE` | `/v1/sessions/:bot_id` | — | `{"stopped":true}` |
+| `DELETE` | `/v1/sessions/:bot_id` | — | `{"stopped":true}` — container dihentikan, volume rumahnya tetap |
+| `DELETE` | `/v1/sessions/:bot_id?purge=true` | — | `{"stopped":true,"purged":true}` — container **dan** volume rumahnya dihapus |
 | `POST` | `/v1/sessions/:bot_id/screenshot` | — | `image/png` (juga `GET`, untuk `<img>`) |
 | `POST` | `/v1/sessions/:bot_id/click` | `{"x":0,"y":0}` | `{"clicked":true}` |
 | `POST` | `/v1/sessions/:bot_id/type` | `{"text":"..."}` | `{"typed":true}` |
-| `POST` | `/v1/sessions/:bot_id/navigate` | `{"url":"http://..."}` | `200`; `400` bila skemanya bukan `http`, `https`, `data`, atau `about` |
+| `POST` | `/v1/sessions/:bot_id/navigate` | `{"url":"http://..."}` | `200 {"navigated":true,"final_url":...,"title":...,"http_status":...}` setelah load-nya terbukti selesai dan dokumen utamanya menjawab < 400; `400` bila skemanya bukan `http`, `https`, `data`, atau `about`; `502 {"error":"navigation failed","url":...,"final_url":...,"http_status":...}` bila halaman berakhir di `chrome-error://`, tidak selesai dimuat dalam `VCOMPUTER_NAVIGATE_TIMEOUT`, **atau** dokumen utamanya menjawab 4xx/5xx |
 | `POST` | `/v1/sessions/:bot_id/exec` | `{"command":"..."}` | `ExecResult` — perintahnya benar-benar dijalankan (`stub:false`) di runtime docker |
-| `ANY` | `/v1/sessions/:bot_id/novnc/...` | — | `httputil.ReverseProxy` ke `http://<ip-sandbox>:<port-novnc>/` dengan prefix `/v1/sessions/:bot_id/novnc` dibuang; upgrade websocket didukung |
+| `GET` | `/v1/sessions/:bot_id/novnc/...` | — | `httputil.ReverseProxy` ke gate sandbox (`/novnc/`), Host ditulis ulang jadi `localhost`, header `X-Sandbox-Secret` dipasang; upgrade websocket didukung |
+| `GET`/`POST`/`PUT`/... | `/v1/sessions/:bot_id/cdp[/...]` | — | `httputil.ReverseProxy` ke gate sandbox (`/cdp/`), sama seperti noVNC — HTTP maupun websocket; `webSocketDebuggerUrl` di jawaban `/json/list` ditulis ulang ke prefix rute ini. Method **tidak** disaring — apa pun yang datang diteruskan apa adanya dan gate yang memutuskan — karena DevTools HTTP API bukan API seragam-method: `/json/list` dan `/json/version` `GET`, `/json/new` `PUT`, `/json/close` `GET`, dan rute yang menyebut method akan menjawab `405` untuk permintaan yang sah. Rute kosong `/cdp` juga dilayani, bukan dialihkan; itulah `Session.cdp_url` |
+| `POST` | `/v1/admin/cleanup[?volumes=true]` | — | `{"removed_containers":N,"removed_volumes":M}` — container berlabel `vcomputer.bot` yang tidak jalan dihapus; `volumes=true` juga menghapus volume berlabel `vcomputer.bot`. Kunci `"failed":[...]` muncul hanya bila ada yang terpilih tapi gagal dibuang; `500` hanya bila daemon docker tidak terjangkau |
 
 **Setiap rute `/v1/*` butuh token.** `Authorization: Bearer <VCOMPUTER_CONTROL_TOKEN>`,
 dibandingkan constant-time; tanpa itu jawabannya `401`. Control plane menolak start bila
@@ -109,7 +145,43 @@ melaporkan kalimat itu apa adanya ke operator — token yang salah dilaporkan se
 kosong" mengirim orang mencari variabel yang justru sudah diisi (isu #218).
 
 Status yang membawa arti: `400` input ditolak, `401` token tidak ada atau salah, `404`
-sesi tidak ada, `500`/`502` runtime gagal. Setiap rute di atas dilayani kedua runtime.
+sesi tidak ada, `500`/`502` runtime gagal. Rute `/cdp/...` memakai arti yang sama: `404`
+bila sesinya tidak ada, dan `502 {"error":"the session's browser is not reachable"}` bila
+gate tidak terjangkau atau menolak rahasianya — jawaban gate yang berhasil diteruskan apa
+adanya, termasuk `101` untuk upgrade websocket. Setiap rute sesi di atas dilayani kedua
+runtime.
+
+**`navigate` memverifikasi load-nya, bukan cuma mengirim perintah.** Setelah
+`PUT /json/new` ke CDP, control plane menyambung ke websocket target yang baru, memanggil
+`Page.enable`, lalu berulang kali (tiap 100 ms) membaca `document.readyState`,
+`location.href`, `document.title`, dan status HTTP dokumen utamanya sampai `readyState`
+bernilai `complete` dan `location.href` bukan lagi `about:blank` — atau sampai
+`VCOMPUTER_NAVIGATE_TIMEOUT` habis. Kalau halaman berakhir di `chrome-error://` atau tidak
+selesai dimuat dalam batas itu, jawabannya `502 {"error":"navigation failed","url":...,"final_url":...}`;
+kalau selesai, `200 {"navigated":true,"final_url":...,"title":...,"http_status":...}`.
+Sebelum ini `navigate` hanya berarti "perintahnya terkirim", dan halaman error lolos sebagai
+sukses.
+
+**Halaman yang menjawab 4xx/5xx bukan navigasi yang berhasil.** Status dokumen utamanya
+dibaca dari `performance.getEntriesByType("navigation")[0].responseStatus` di target yang
+sama, dengan polling yang sama, jadi tidak ada permintaan kedua dan tidak ada `fetch` yang
+bisa berbenturan dengan CORS. `404` dari server tetap `readyState: "complete"` dengan judul
+yang terlihat seperti halaman biasa (`404 Not Found`), dan jawaban `200 {"navigated":true}`
+untuk halaman seperti itu adalah kebohongan yang paling mudah dipercaya: worker yang
+mendapatkannya akan lanjut membaca layar yang isinya pesan error. Karena itu
+`status >= 400` pada dokumen yang sudah selesai dimuat dijawab `502` dengan `"http_status"`
+berisi status yang dikatakan halaman itu sendiri — `502 {"error":"navigation failed",
+"url":...,"final_url":...,"http_status":404}`. Yang **tidak** berubah: `http_status: 0`
+berarti "tidak ada jawaban HTTP" (`about:blank`, `data:`), bukan kegagalan, dan pada `502`
+field itu hanya muncul bila ada angkanya. Kegagalan yang bukan halaman error — timeout,
+`chrome-error://`, runtime yang tidak menjawab — tetap tidak punya status dokumen.
+
+**`cdp_url` adalah path control plane, bukan alamat sandbox.** `GET /v1/sessions/<bot>`
+mengembalikan `cdp_url: "/v1/sessions/<bot>/cdp"`, dan rute itu — sama seperti
+`/novnc/...` — di-proxy ke gate sandbox dengan `X-Sandbox-Secret`. Jawaban `/json/list`
+diteruskan setelah `webSocketDebuggerUrl`-nya ditulis ulang ke prefix itu, jadi worker yang
+hanya memegang token control plane bisa mengendarai CDP tanpa pernah tahu alamat container,
+dan tanpa pernah memegang rahasia sandbox.
 
 ## Environment
 
@@ -120,19 +192,52 @@ sesi tidak ada, `500`/`502` runtime gagal. Setiap rute di atas dilayani kedua ru
 | `VCOMPUTER_CONTROL_TOKEN` | — (**wajib**) | rahasia bersama untuk setiap rute `/v1/*` |
 | `VCOMPUTER_CONTROL_PORT` | `8090` | port host control plane |
 | `VCOMPUTER_DOCKER_BIN` | `docker` | CLI docker; boleh berisi spasi (`sudo docker`) |
+| `DOCKER_HOST` | — (diisi compose) | alamat daemon untuk CLI docker di dalam container control; compose menunjuknya ke `tcp://vcomputer-socket-proxy:2375`, dan container itu tidak punya `docker.sock` untuk jadi fallback |
 | `VCOMPUTER_SANDBOX_IMAGE` | `vcomputer-sandbox:poc` | image yang dijalankan runtime per bot |
+| `VCOMPUTER_SANDBOX_NAME_PREFIX` | `vcomputer` | awalan nama container (`<prefix>-<bot>`) dan volume (`<prefix>-<bot>-home`), dan ditulis ke label `vcomputer.stack` setiap container dan volume — label itulah yang jadi cakupan pembersihan dan reap, supaya dua stack di satu host tidak saling menghapus (#263). Compose mengisinya dari `${VCOMPUTER_STACK:-vcomputer}` |
 | `VCOMPUTER_SANDBOX_NETWORK` | `vcomputer-internal` | jaringan Docker tempat sandbox bergabung |
-| `VCOMPUTER_SANDBOX_NOVNC_PORT` | `6080` | port noVNC tiap sandbox, dikirim sebagai `-e NOVNC_PORT=` |
-| `VCOMPUTER_SANDBOX_CDP_PORT` | `9223` | port CDP tiap sandbox, dikirim sebagai `-e CDP_PORT=` |
+| `VCOMPUTER_SANDBOX_NOVNC_PORT` | `6080` | port noVNC **di dalam** sandbox, dikirim sebagai `-e NOVNC_PORT=`; websockify mengikat `127.0.0.1`, dan gate yang memproksikannya |
+| `VCOMPUTER_SANDBOX_GATE_PORT` | `8443` | port gate di alamat jaringan sandbox, dikirim sebagai `-e GATE_PORT=`; inilah port yang disapa control plane, untuk CDP maupun noVNC |
 | `VCOMPUTER_EXEC_TIMEOUT` | `30s` | batas waktu satu `exec` |
+| `VCOMPUTER_NAVIGATE_TIMEOUT` | `15s` | batas waktu satu `navigate`, termasuk verifikasi load-nya |
+| `VCOMPUTER_SANDBOX_IMAGE_ALLOWLIST` | `VCOMPUTER_SANDBOX_IMAGE` | daftar image yang boleh dijalankan runtime, dipisah koma; permintaan create dengan image di luar daftar ditolak sebelum `docker run` di-render |
 | `SCREEN_GEOMETRY` | `1280x800x24` | geometri Xvfb, dikirim sebagai `-e` |
+| `VCOMPUTER_REAP_ON_SHUTDOWN` | `0` (simpan) | `1`/`true` membuat control plane menghapus sandboxnya sendiri saat menerima SIGTERM/SIGINT — container yang sedang jalan termasuk, beserta volumenya. Selain `1`/`true` berarti simpan: SIGTERM adalah restart, dan volume yang ikut terhapus adalah sesinya (#263) |
 | `VNC_PASSWORD` | kosong | password VNC opsional (control plane tidak pernah memasangnya) |
+
+Variabel compose yang menggeser nama ada di §Menjalankan di bawah: semuanya punya default yang
+menjaga nama lama, jadi `docker compose up` tanpa environment apa pun tidak berubah.
 
 Port sandbox **tidak pernah** dipublikasikan ke host: `docker run` tidak memakai `-p`
 sama sekali. Satu-satunya port yang menyeberang ke host adalah control plane, dan hanya di
-loopback: `127.0.0.1:${VCOMPUTER_CONTROL_PORT:-8090}:8090`. noVNC dan CDP dijangkau dari
-jaringan internal — browser lewat proxy control plane, worker lewat `cdp_url` di
-`Session`.
+loopback: `127.0.0.1:${VCOMPUTER_CONTROL_PORT:-8090}:8090`. Alamat jaringan sandbox
+sendiri bisa dijangkau host — bridge buatan Docker tidak memblokir arah itu — jadi yang
+menjaga CDP dan noVNC bukan topologi jaringannya, melainkan gate: satu-satunya listener di
+alamat itu, dan setiap rutenya menuntut `X-Sandbox-Secret`. Control plane satu-satunya yang
+memegang rahasia itu, jadi ia pula satu-satunya yang menyapa gate; browser lewat proxy
+control plane, worker lewat `cdp_url` di `Session`.
+
+### Rahasia sandbox: `SANDBOX_SECRET`
+
+Control plane meng-generate satu rahasia per sandbox pada saat `Ensure`: 32 karakter hex
+dari `crypto/rand`, diteruskan ke container sebagai `-e SANDBOX_SECRET=`, dan gate memakai
+rahasia itu untuk membandingkan header `X-Sandbox-Secret` (constant-time). Rahasia itu
+hidup di record sesi, tapi **tidak pernah** ikut ke jawaban JSON: `Session` yang
+dikembalikan `POST`/`GET /v1/sessions` tidak membawanya, jadi memegang token control plane
+tidak otomatis berarti memegang kunci sandbox. Setelah control plane restart, record sesi
+dibangun ulang dari container yang sudah jalan lewat
+`docker inspect --format '{{json .Config.Env}}'` — itu sebabnya rahasianya harus bisa
+dibaca kembali dari container, bukan hanya disimpan di memori proses.
+
+Ia sengaja tidak ada di tabel environment di atas: tidak ada yang perlu mengisinya, karena
+control plane yang membuatnya dan container yang menyimpannya selama sandbox itu hidup.
+
+Yang dibeli: penyerang yang bisa menjangkau IP sandbox di jembatan jaringan tetap tidak
+bisa memakai CDP atau noVNC tanpa rahasia itu. Port yang terbuka bukan lagi izin. Yang
+**tidak** dibeli: siapa pun yang bisa membaca env container — yaitu siapa pun yang punya
+akses docker di host — memegang rahasianya juga. Akses docker sudah setara root, jadi ini
+bukan batas keamanan terhadap operator host; yang ditutup adalah jalur dari dalam jaringan,
+dan itu jalur yang paling mudah dijangkau container lain di jaringan yang sama.
 
 ## Menjalankan
 
@@ -147,35 +252,217 @@ cd apps/virtual-computer/control && VCOMPUTER_CONTROL_TOKEN=$(openssl rand -hex 
 # Seluruh stack PoC (butuh Docker).
 export VCOMPUTER_CONTROL_TOKEN=$(openssl rand -hex 16)
 docker compose -f apps/virtual-computer/docker-compose.poc.yml --profile build build
-docker compose -f apps/virtual-computer/docker-compose.poc.yml up -d control fixture
+docker compose -f apps/virtual-computer/docker-compose.poc.yml up -d vcomputer-control vcomputer-fixture vcomputer-socket-proxy
 ```
 
 Lalu seluruh checklist QA dalam satu perintah:
 
 ```bash
-# Build image, naikkan control + fixture, jalankan pemeriksaan, tulis bukti ke
-# docs/poc-evidence/virtual-computer, cetak PASS/FAIL per pemeriksaan.
-BUILD_NETWORK=host apps/virtual-computer/scripts/e2e.sh
+# Build image, naikkan control + fixture + proxy, jalankan pemeriksaan, tulis bukti ke
+# docs/poc-evidence/virtual-computer, cetak PASS/FAIL per pemeriksaan. Dua variabel
+# pertama wajib: skrip menolak jalan tanpa keduanya.
+STACK=vc2 VCOMPUTER_CONTROL_PORT=18092 BUILD_NETWORK=host apps/virtual-computer/scripts/e2e.sh
 
-# Stack sengaja dibiarkan hidup supaya bisa diperiksa tangan; TEARDOWN=1 menurunkannya.
-TEARDOWN=1 apps/virtual-computer/scripts/e2e.sh
+# Stack sengaja dibiarkan hidup supaya bisa diperiksa tangan; TEARDOWN=1 yang
+# membersihkannya, dan membuktikan tidak ada sisa. Tanpa TEARDOWN, run ini juga
+# membuktikan bahwa `compose restart` pada control plane tidak menyentuh sesinya
+# (pemeriksaan restart-*).
+STACK=vc2 VCOMPUTER_CONTROL_PORT=18092 TEARDOWN=1 apps/virtual-computer/scripts/e2e.sh
 ```
 
-`scripts/e2e.sh` men-generate token sendiri (dan menghormati `VCOMPUTER_CONTROL_TOKEN`
-yang sudah ada), memakai `${DOCKER:-docker}` sehingga `DOCKER="sudo docker"` bisa dipakai,
-dan keluar non-nol bila ada satu pemeriksaan yang gagal. `BUILD_NETWORK=host` hanya perlu
-bila daemon build tidak bisa mengambil paket apt lewat jembatan jaringannya.
+**`STACK` dan `VCOMPUTER_CONTROL_PORT` wajib, tanpa default.** Keduanya satu-satunya nama yang
+tidak bisa ditebak skrip, dan keduanya dulu punya default yang berbahaya (`vcomputer` dan
+`18090`). Setiap nama yang **dihapus** skrip ini turunan dari `STACK` — project compose, tiga
+jaringan, dua image, tiga container, sandbox yang dibuat runtime, dan volumenya — jadi default
+berarti satu run bisa menyebut satu stack dan menghapus stack yang lain. Port adalah
+kebalikannya: ia tidak bisa diturunkan dari `STACK`, karena compose mempublikasikan apa pun
+yang dikatakan `VCOMPUTER_CONTROL_PORT`, jadi default `18090` adalah default ke *suatu*
+control plane. Di host yang sudah menjalankan stack demo di port itu, `compose up` gagal pada
+bind — dan dulu kegagalan itu hanya dicatat sebagai note, sehingga seluruh `DELETE`, `purge`,
+dan `admin/cleanup` di bawahnya tetap dikirim ke control plane yang memang memiliki port itu:
+401 bila tokennya berbeda, dan penghapusan sandbox stack lain bila tokennya kebetulan sama.
+Karena itu keduanya `${VAR:?…}`.
 
-### Trade-off yang diterima: `/var/run/docker.sock`
+**Yang menghentikan run, dan yang tidak.** Satu pemeriksaan yang gagal tidak menghentikan apa
+pun: lognya memang daftar lengkap apa yang rusak, bukan hal pertama yang rusak. Empat
+kegagalan berbeda, karena semua sesudahnya akan diarahkan ke tempat yang salah: build gagal,
+`compose up` gagal, `/health` tidak menjawab 200 dalam 60 detik, dan port yang ternyata milik
+stack lain. Keempatnya berhenti lewat `finish()` — yang sekaligus membuat `TEARDOWN=1` aman
+dipakai bersama kegagalan itu, karena yang dibongkar hanya stack yang disebut run ini, atau
+tidak ada sama sekali.
 
-Control plane mengendarai daemon lewat CLI docker, dan CLI itu butuh socket-nya. Container
-`vcomputer-control` karena itu me-mount `/var/run/docker.sock` dan berjalan sebagai root:
-itu **setara akses root di host**, dan siapa pun yang bisa mencapai permukaan HTTP-nya bisa
-menjalankan container sebagai root. Ini lubang terbesar di PoC ini, dan ditulis di sini
-supaya tidak ketemu belakangan. Dua pagar yang dipasang: token wajib (control plane
-menolak start tanpa itu) dan port host hanya di `127.0.0.1`. Jalur produksinya **bukan**
-socket di dalam container, melainkan klien Docker API di node sandbox — atau socket di
-belakang proxy yang memfilter request — persis seperti riset §4.2.
+**Port dibuktikan sebelum dipakai.** `docker ps --filter publish=$PORT` menyebut container
+yang memegang port itu, dan jawabannya harus `${STACK}-control`; label project compose-nya
+harus `$STACK`. Itulah fakta yang diasumsikan sisa skrip: `DELETE`, `purge`, dan
+`admin/cleanup` semuanya pergi ke `127.0.0.1:$PORT`, jadi run ini membuktikan alamat itu milik
+stacknya sebelum menghapus apa pun — dan `finish()` melewati bagian HTTP dari teardown-nya
+bila pembuktian itu tidak pernah terjadi, karena satu-satunya hal yang bisa membuat
+pemeriksaan itu gagal adalah control plane milik orang lain.
+
+**Satu variabel, semua nama.** `scripts/e2e.sh` menurunkan setiap nama dari `STACK`:
+`${STACK}-internal`, `${STACK}-edge`, dan `${STACK}-dockerapi` untuk tiga jaringan,
+`${STACK}-sandbox:poc` dan `${STACK}-control:poc` untuk image yang dibangun, `${STACK}-control`
+untuk container control plane, `${STACK}-fixture` untuk fixture, `${STACK}-socket-proxy` untuk
+proxy socket-nya, dan `${STACK}-<bot>` untuk sandbox yang dibuat runtime. Variabel lain yang dibaca:
+`BOT` (id bot yang diuji, default `e2e-bot`), `COMPOSE_FILE` (file compose yang dibaca dan
+diperiksa precondition-nya, default `apps/virtual-computer/docker-compose.poc.yml`, relatif
+terhadap root repo), `COMPOSE` (seluruh invokasi compose, default
+`"$DOCKER compose -p $STACK -f $COMPOSE_FILE"`), `PREBUILT=1` (lewati semua build image),
+`BUILD_NETWORK=host` (build lewat `--network host`, perlu bila daemon build tidak bisa
+mengambil paket apt lewat jembatan jaringannya), dan `TEARDOWN=1` (lihat di bawah). Token
+di-generate sendiri kecuali `VCOMPUTER_CONTROL_TOKEN` sudah diisi; `DOCKER="sudo docker"`
+didukung lewat `${DOCKER:-docker}`. Skrip keluar non-nol bila ada satu pemeriksaan yang gagal.
+
+Pemeriksaan `restart-*` adalah pasangan `TEARDOWN=1`: yang satu membuktikan sesi **bertahan**
+melewati restart control plane (`compose restart`, tanpa opt-in; sandbox masih jalan, volume
+masih ada, berkas di `/home/bolu` masih terbaca, dan `Ensure` berikutnya memakai volume yang
+sama), yang satu lagi membuktikan teardown eksplisit benar-benar membereskan semuanya.
+
+`docker-compose.poc.yml` menerima `VCOMPUTER_STACK`, `VCOMPUTER_CONTROL_IMAGE`,
+`VCOMPUTER_CONTROL_CONTAINER`, `VCOMPUTER_FIXTURE_CONTAINER`,
+`VCOMPUTER_SOCKET_PROXY_CONTAINER`, `VCOMPUTER_SANDBOX_IMAGE`,
+`VCOMPUTER_INTERNAL_NETWORK`, `VCOMPUTER_EDGE_NETWORK`, dan `VCOMPUTER_DOCKERAPI_NETWORK`,
+dengan default yang menjaga nama-nama aslinya — `docker compose` tanpa variabel apa pun tetap
+memberi stack `vcomputer-*` seperti sebelumnya. `VCOMPUTER_STACK` juga diteruskan sebagai
+`VCOMPUTER_SANDBOX_NAME_PREFIX`, jadi sandbox dan volume yang dibuat runtime ikut bergeser
+namanya; tiga variabel jaringan itu hanya menyetel `name:` ketiga jaringan di file ini,
+sedangkan `VCOMPUTER_SANDBOX_NETWORK` tetap nama yang dicari runtime. Kunci service di dalam
+file (`vcomputer-control`, `vcomputer-fixture`, `vcomputer-socket-proxy`, `vcomputer-sandbox`)
+bukan variabel: compose menginterpolasi nilai, bukan kunci.
+
+### Membersihkan sisa
+
+`DELETE /v1/sessions/<bot>` menghentikan container dan **menyisakan** volumenya; itu yang
+membuat "login sekali, lanjut besok" berlaku. Kalau yang diinginkan justru sebaliknya,
+`DELETE /v1/sessions/<bot>?purge=true` menghapus container (`docker rm -f`) sekaligus volume
+rumahnya, jadi `Ensure` berikutnya mulai dari profil kosong. Purge adalah "hapus yang ada",
+bukan "pastikan sudah tidak ada": bot yang sesinya memang sudah hilang tetap dijawab `404`,
+sama seperti `DELETE` biasa. Volume dibuat dengan label `vcomputer.bot=<bot id>` justru
+supaya sisa seperti itu bisa ditemukan kembali: `POST /v1/admin/cleanup` menghapus setiap
+container berlabel `vcomputer.bot` yang tidak jalan, dan
+`POST /v1/admin/cleanup?volumes=true` juga menghapus setiap volume berlabel `vcomputer.bot`,
+dengan jawaban `{"removed_containers":N,"removed_volumes":M}`. Rute itu token-protected
+seperti rute `/v1/*` yang lain, dan tidak menyentuh container yang sedang jalan. Ketika ada
+yang terpilih tapi gagal dibuang — volume yang masih dipakai adalah kasus nyatanya —
+jawabannya bertambah kunci `"failed":["<baris error docker>",...]`, dan hitungannya tetap
+jujur; `500` hanya dipakai bila daemon docker-nya sendiri tidak bisa dihubungi.
+
+**Restart bukan teardown: SIGTERM tidak menghapus apa pun.** Sebelumnya control plane
+menghapus sandboxnya sendiri saat menerima SIGTERM, dan itu salah arah (#263): SIGTERM adalah
+hal yang biasa — `compose restart`, `up -d --force-recreate` saat naik versi, daemon docker
+yang di-restart — dan yang ikut terhapus bersama sandbox adalah volume `/home/bolu`: profil
+Chromium, login yang sudah dilakukan, berkas yang belum selesai. Sekarang prosesnya berhenti
+dan **menyimpan** sandboxnya, berikut volumenya; log shutdown-nya menyebutkan kedua jalur
+untuk membereskannya nanti. Penghapusan saat berhenti tetap mungkin, tapi harus disebut:
+`VCOMPUTER_REAP_ON_SHUTDOWN=1` (hanya `1`/`true`; selain itu berarti simpan) menjalankan
+`Runtime.Reap` setelah HTTP-nya berhenti (`-shutdown-grace` 5 detik, `-reap-grace` 60 detik),
+yang membuang setiap container berlabel `vcomputer.bot` **dan** `vcomputer.stack=<prefix>`
+miliknya — termasuk yang sedang jalan — beserta volumenya. Kegagalannya dilaporkan sebagai log
+(`reaping the sandboxes failed: …`, satu baris per sisa yang gagal), bukan sebagai exit code.
+
+Teardown yang didokumentasikan karena itu jalur eksplisit: `scripts/cleanup.sh --running
+--volumes` dengan `STACK` yang disebut, lalu `docker compose down` untuk service dan jaringan
+compose. Jalur itu bekerja terlepas dari prosesnya sempat menerima sinyal atau tidak — stack
+yang belum sempat naik, atau control plane yang kena SIGKILL, ikut terbereskan. Compose tetap
+memberi `stop_grace_period: 90s`, dan itu hanya relevan di jalur opt-in di atas: proses yang
+menyimpan sandboxnya berhenti jauh di bawah satu detik, sementara yang diminta menghapusnya
+punya satu container untuk di-stop dan satu volume untuk dihapus per sesi.
+
+`scripts/cleanup.sh` adalah padanan CLI-nya, untuk dipakai saat tidak ada yang bisa
+menjawab HTTP (misalnya stack sudah turun). Ia memilih container dengan filter label
+`vcomputer.bot` **dan** `vcomputer.stack=${STACK}` — container control plane, fixture, dan proxy
+socket tidak membawa label pertama, jadi ketiganya tidak pernah tersentuh, dan label kedua yang
+memisahkan dua stack di satu host **secara tepat**: awalan nama juga mencocokkan stack yang
+namanya berawalan sama (`vcomputer` cocok dengan `vcomputer-qa`), label tidak. `STACK` karena itu
+**wajib** dan tidak punya default: satu-satunya nilai yang masuk akal sebagai default adalah
+`vcomputer`, yaitu stack yang paling mungkin sedang dipakai. `DOCKER` memilih CLI-nya,
+`VOLUMES=1` (atau argumen `--volumes`) ikut membuang volumenya, dan `--running` (atau
+`RUNNING=1`) melebarkan pilihannya ke container yang sedang jalan — yang dibuang lebih dulu
+sebagai container (`docker rm -f`) sebelum volumenya, karena volume yang masih dipakai tidak
+bisa dihapus:
+
+```bash
+# Buang container sisa stack vc2, berikut volumenya.
+STACK=vc2 VOLUMES=1 apps/virtual-computer/scripts/cleanup.sh
+
+# Termasuk yang sedang jalan — inilah teardown yang didokumentasikan.
+STACK=vc2 apps/virtual-computer/scripts/cleanup.sh --running --volumes
+
+# Stack lain, docker lewat sudo.
+STACK=vc2 DOCKER="sudo docker" apps/virtual-computer/scripts/cleanup.sh
+```
+
+### Trade-off yang diterima: proxy socket dengan allowlist per section
+
+Control plane mengendarai daemon lewat CLI docker, dan CLI itu butuh alamat daemon. Yang
+**tidak** dilakukan PoC ini: me-mount socket ke container control plane. Yang dilakukan:
+satu container tambahan, `vcomputer-socket-proxy`
+(`tecnativa/docker-socket-proxy:v0.5.0`, tag dipin), memegang
+`/var/run/docker.sock` read-only dan meneruskan Engine API lewat haproxy di port `2375`
+dengan allowlist per section. CLI di container control plane diarahkan ke sana lewat
+`DOCKER_HOST`, dan proxy itu hanya ada di jaringan `vcomputer-dockerapi`
+(`internal: true`) bersama control plane — tanpa port yang dipublikasikan.
+
+Allowlist-nya adalah **apa yang benar-benar dipanggil `internal/sandbox/docker.go`**, bukan
+seluruh API:
+
+| Section | Nilai | Yang memakainya |
+| --- | --- | --- |
+| `VOLUMES` | `1` | `docker volume create` (volume home per bot) |
+| `CONTAINERS` | `1` | `docker run`, `docker inspect`, `docker start`, `docker stop` |
+| `EXEC` | `1` | `docker exec` untuk screenshot / click / type |
+| `POST` | `1` | setiap panggilan di atas adalah POST — dan CLI melakukan `HEAD /_ping` sebelum apa pun; ini juga yang mematikan gerbang method di proxy (lihat di bawah) |
+| `ALLOW_START` / `ALLOW_STOP` | `1` | `docker start` / `docker stop` (redundan selama `CONTAINERS=1`; ditulis eksplisit karena itu operasi yang benar-benar dipakai runtime) |
+| `PING` | `1` | ping CLI saat start (dari situ versi API dinegosiasikan) |
+| sisanya (`IMAGES`, `INFO`, `NETWORKS`, `SYSTEM`, `SWARM`, `SECRETS`, `PLUGINS`, `EVENTS`, `AUTH`, `BUILD`, `COMMIT`, `CONFIGS`, `DISTRIBUTION`, `GRPC`, `NODES`, `SERVICES`, `SESSION`, `TASKS`, `VERSION`) | `0` | tidak ada — dijawab `403` oleh proxy, daemon tidak pernah melihat request-nya |
+| `ALLOW_RESTARTS` / `ALLOW_PAUSE` / `ALLOW_UNPAUSE` | `0` | bukan penolakan: selama `CONTAINERS=1`, `restart`/`kill`/`pause` tetap lolos lewat section `/containers` (lihat di bawah) |
+
+Yang **tidak** dibeli proxy ini, dan ditulis di sini supaya tidak ketemu belakangan. Allowlist
+itu per **section**, bukan per operasi:
+
+- `CONTAINERS=1` membuka **seluruh** path di bawah `/containers` — termasuk `restart`, `kill`,
+  `pause`, `attach`, dan `DELETE` (`docker rm`), plus `DELETE /volumes/<name>`. Nilai
+  `ALLOW_RESTARTS=0` tidak menutupnya: haproxy memeriksa rule `ALLOW_*` sebelum rule section,
+  jadi selama `CONTAINERS=1`, `restart`/`kill` tetap lolos lewat `/containers`.
+- `POST=1` — yang wajib, karena setiap tulis adalah POST — mematikan gerbang method di rule
+  pertama (`deny unless METH_GET || POST`). Konsekuensinya method tidak lagi jadi batas: `PUT`
+  ke section yang diizinkan tetap diterima.
+- Proxy tidak memeriksa body request. Jadi `POST /containers/create` dengan HostConfig apa pun
+  tetap bisa: container privileged, atau host root yang di-bind-mount. Control plane yang
+  diambil alih karena itu **masih bisa mencapai root host** lewat API yang memang diizinkan
+  untuknya.
+
+Yang ditambahkan control plane sendiri, dan batasnya. Permintaan create tidak lagi dirakit
+langsung jadi argv: `control/internal/sandbox/spec.go` memegangnya sebagai data, `validate`
+menolaknya bila ada `--privileged`, `--cap-add`, bind mount (termasuk path host yang
+diselundupkan lewat field volume), volume yang bukan rumah container itu sendiri,
+`--network`/`networkMode` selain jaringan sandbox yang dikonfigurasi (`host` termasuk),
+`pid`/`ipc`/`userns` mode host, device, atau image di luar
+`VCOMPUTER_SANDBOX_IMAGE_ALLOWLIST`; `args()` merender argv dari spec yang sama, jadi tidak
+ada jalur kode yang bisa menghasilkan `docker run` tanpa melewati pemeriksaan itu.
+
+**Ini pertahanan berlapis, bukan tembok.** Proxy tidak bisa melihat body, jadi validasi itu
+menahan bug atau penyalahgunaan di dalam control plane sendiri — bukan control container yang
+sudah diambil alih: container itu masih bisa mengirim body apa pun ke section yang diizinkan
+untuknya, dan daemon yang memutuskan. Yang benar-benar menutup kelas risiko ini adalah runtime
+yang tidak memberi host root ke container control plane sejak awal — gVisor/rootless, isu
+terpisah, dan urutan Gerbang 1 tidak berubah.
+
+Yang benar-benar hilang dari permukaan: tarik image, swarm, secret, plugin, `system`, `info`,
+dan setiap section lain yang tidak dipakai runtime. Ditambah pagar yang sudah ada — token wajib
+(control plane menolak start tanpa itu) dan port host hanya di `127.0.0.1` — dan dua yang baru:
+sandbox tidak punya rute ke proxy sama sekali (`vcomputer-internal` ≠ `vcomputer-dockerapi`),
+dan tidak ada `docker.sock` di container control plane.
+
+Harga yang dibayar: `IMAGES=0` berarti runtime tidak bisa menarik image, jadi
+`vcomputer-sandbox:poc` harus sudah dibangun di daemon itu (`--profile build build`, atau
+`scripts/e2e.sh`). Proxy juga satu titik kegagalan: tanpa dia, control plane tidak bisa
+memanggil daemon sama sekali — dan itu disengaja, karena fallback ke socket akan
+mengembalikan persis lubang yang ditutup.
+
+Jalur produksinya tetap **bukan** proxy: ia klien Docker API di node sandbox yang terpisah
+dari node API — atau gVisor/Kubernetes di Fase 2 riset. Proxy ini yang membuat PoC hari ini
+berhenti memegang socket host; ia tidak mengubah rekomendasi itu.
 
 ## Halaman demo
 
@@ -249,6 +536,10 @@ desktop setelah run; hasilnya jujur soal itu lewat `session_stopped`.
 `vcomputer-<bot>-home` tetap ada sampai dihapus eksplisit (`docker rm -f vcomputer-<bot>`,
 `docker volume rm vcomputer-<bot>-home`) — bukan `404`.
 
+Karena `navigate` sekarang memverifikasi load-nya, `Navigate` di activity berhenti menjadi
+"perintah terkirim": halaman yang tidak jadi termuat muncul sebagai error ke workflow,
+bukan sebagai sukses yang harus ditebak dari tangkapan layar berikutnya.
+
 Menjalankannya, dari checkout, dengan control plane yang hidup (lihat **Menjalankan**):
 
 ```bash
@@ -279,19 +570,24 @@ seharusnya menulis PNG ke object storage Jakarta dan mengembalikan kuncinya — 
 
 | Bagian | Keadaan PoC | Yang dibutuhkan untuk produksi |
 | --- | --- | --- |
-| `DockerRuntime` | **Nyata**: `docker volume create`, `docker run`, `docker exec`, `docker inspect`, `docker stop` lewat CLI, tanpa `-p` | Klien Docker API di node sandbox, tanpa `docker.sock` di dalam container control |
+| `DockerRuntime` | **Nyata**: `docker volume create`, `docker run`, `docker exec`, `docker inspect`, `docker stop` lewat CLI, tanpa `-p`, dan tanpa `docker.sock` di container control plane (lewat `vcomputer-socket-proxy` dengan allowlist) | Klien Docker API di node sandbox, tanpa `docker.sock` di dalam container control |
 | `exec` di runtime `memory` | Echo; perintah tidak pernah dijalankan — hanya runtime ini yang begitu, runtime `docker` menjalankannya sungguhan | Label `write_external` + gerbang approval, atau allowlist perintah `read`-only |
 | Gerbang approval | Tidak tersambung | Draf untuk `click`/`type`/`exec`, dengan tangkapan layar sebagai konteks |
 | Isolasi | Container runc yang dikeraskan (`cap_drop: ALL`, `no-new-privileges`, limit RAM/PID), jaringan internal tanpa egress | gVisor di Kubernetes (riset Fase 2) |
+| Permukaan jaringan sandbox | Satu listener (`vcomputer-gate`) dan satu rahasia statis per sandbox | mTLS per sandbox, rotasi rahasia, atau gate yang dijalankan sebagai sidecar dengan identitasnya sendiri |
 | Biaya saat idle | Tidak ada reaper | Idle timeout + snapshot, kuota per paket |
 | Lease layar | Tidak ada (satu sandbox per bot, jadi belum perlu) | Lease Redis bila kelak satu sandbox per workspace |
 
 ## Bukti
 
 - `go test ./...` di `control/` menutup siklus sesi, PNG yang benar-benar bisa didekode,
-  lima aksi (termasuk `navigate`), autentikasi 401/200, proxy noVNC, dan pemetaan status ke
-  error. Runtime docker diuji dengan CLI docker palsu (skrip di `t.TempDir`), jadi `go test`
-  tidak butuh Docker.
+  lima aksi, autentikasi 401/200, proxy noVNC dan CDP, verifikasi `navigate`, purge,
+  `admin/cleanup`, dan pemetaan status ke error. Runtime docker diuji dengan CLI docker
+  palsu (skrip di `t.TempDir`), jadi `go test` tidak butuh Docker.
+- `go test ./...` di `sandbox/gate/` menutup kontrak gate: `401` tanpa atau dengan
+  `X-Sandbox-Secret` yang salah, `404` untuk path yang bukan pintu (`/cdp` dan `/novnc` telanjang
+  tetap pintu, dan diteruskan ke akar upstream), `/healthz` terbuka, penerusan `/cdp/*` dan
+  `/novnc/*` berikut Host yang ditulis ulang menjadi `localhost`, dan upgrade websocket.
 - `go test ./internal/modules/vcomputer/...` di backend menutup kontrak klien terhadap
   control plane (body yang dikirim, bearer token, PNG yang lewat utuh, sentinel error).
 - `go test ./internal/modules/vcomputer/... ./internal/container/` menutup workflow smoke
@@ -300,7 +596,26 @@ seharusnya menulis PNG ke object storage Jakarta dan mengembalikan kuncinya — 
   yang sampai, tiga kali percobaan lalu gagal) dan registrasinya di worker (nama workflow dan
   activity yang terdaftar tercetak oleh `TestAgentWorkerRegistrationInventory`).
 - `scripts/e2e.sh` menjalankan jalur yang sebenarnya di Docker dan menulis buktinya ke
-  `docs/poc-evidence/virtual-computer/`.
+  `docs/poc-evidence/virtual-computer/`: termasuk `cdp-version` lewat gate, dan
+  pemeriksaan bahwa tidak ada port sandbox yang dipublikasikan.
+- `scripts/e2e.sh` juga memeriksa pagar socket itu sendiri: container control tidak
+  me-mount `docker.sock`, proxy tidak mempublikasikan port, `vcomputer-dockerapi` benar
+  `internal: true`, `GET /images/json` lewat proxy dijawab `403`, dan sandbox tidak punya
+  rute ke proxy.
+- `go test ./internal/sandbox/` di `control/` menutup validasi create: setiap field yang
+  ditolak (`privileged`, `cap-add`, bind mount, volume asing, `networkMode`/`pid`/`ipc`/
+  `userns` host, device, image di luar allowlist) diuji sendiri-sendiri, `args()` dibandingkan
+  flag per flag dengan argv yang selama ini dikirim, dan satu uji runtime membuktikan
+  `Ensure` menolak sebelum `docker run` pernah dipanggil.
+- Tabel allowlist di atas diukur, bukan dibaca dari dokumentasi: haproxy dari image
+  `tecnativa/docker-socket-proxy:v0.5.0` dijalankan di atas daemon tiruan dengan env yang sama
+  seperti compose, dan CLI docker sungguhan digerakkan lewat proxy itu. Semua panggilan
+  runtime (`volume create`, `run -d`, `inspect`, `start`, `stop`, `exec`) selesai dengan exit
+  0; `image ls`, `info`, `network ls`, `pull`, `version` dan `system df` dijawab `403`. Dari
+  situ juga terlihat batasnya: `restart`, `kill`, `DELETE /containers/<id>`,
+  `DELETE /volumes/<name>` dan `PUT /containers/create` ikut lolos (docs/adr/0003 §Revisi
+  2026-10-16 (b)). Harness-nya tidak ikut masuk repo karena butuh `python3` sebagai daemon
+  tiruan; yang tetap ada di repo adalah pemeriksaan `403` di `scripts/e2e.sh`.
 
 Perintah yang menjalankannya, dan alasannya bukan bagian dari `make test`/`make lint`:
 kedua target itu per modul produk, masing-masing dengan `.golangci.yml` dan

@@ -14,11 +14,13 @@
 // what a deployment without a virtual computer looks like rather than a worker that has never
 // heard of one.
 
-// A configuration mistake is answered as a non-retryable Temporal error, and that is the
-// one thing this package adds to the client's answer: a missing control plane and a refused
-// token will not become true by asking again, so the activity stops instead of spending its
-// attempts on the same refused header (issue #218). Everything else the client classifies —
-// an unreachable control plane, a sandbox that is not up yet — stays retryable.
+// A configuration mistake is answered as a non-retryable Temporal error, and that is one of
+// the two things this package adds to the client's answer: a missing control plane and a
+// refused token will not become true by asking again, so the activity stops instead of
+// spending its attempts on the same refused header (issue #218). The other is Navigate's —
+// a page the control plane could not load answers the same way on every attempt, so it is
+// non-retryable too (PR #234). Everything else the client classifies — an unreachable
+// control plane, a sandbox that is not up yet — stays retryable.
 //
 // Nothing else calls these yet: the agent task loop and its tool catalog do not reach the
 // sandbox (docs/adr/0003-virtual-computer.md), so no tool a model can call becomes a click or
@@ -37,6 +39,8 @@ import (
 	"errors"
 	"time"
 
+	// The SDK's own package is aliased because this package is called temporal too:
+	// an unaliased import would read as if the module were calling itself.
 	sdktemporal "go.temporal.io/sdk/temporal"
 	"go.uber.org/zap"
 
@@ -169,9 +173,28 @@ func (a *Activities) Type(ctx context.Context, request TypeRequest) error {
 // the task is reading a page or writing to a third party's
 // (docs/riset-microvm.md §5.1): the control plane refuses a scheme it does not accept,
 // and the approval gate is what decided the call was allowed at all.
+//
+// A navigation the control plane carried out and that did not load is turned into a
+// non-retryable error here, on top of the configuration-mistake classification every
+// activity already shares through permanent: a page that answered a 404, or that never
+// committed, is not going to answer differently. The default retry policy would otherwise
+// spend the activity's whole budget on the same URL: the page is missing, or the sandbox
+// has no route to it, and neither answer changes by asking again — while the cost of
+// asking is a fresh browser navigation each time. The errors that do deserve a retry are
+// the ones where the control plane itself did not answer (ErrUnavailable), and those are
+// left alone.
 func (a *Activities) Navigate(ctx context.Context, request NavigateRequest) error {
-	return permanent(a.client().Navigate(ctx, request.BotID, request.URL))
+	err := a.client().Navigate(ctx, request.BotID, request.URL)
+	if errors.Is(err, domain.ErrNavigationFailed) {
+		return sdktemporal.NewNonRetryableApplicationError(err.Error(), navigationFailedType, err)
+	}
+	return permanent(err)
 }
+
+// navigationFailedType is the error type the failed navigation crosses the activity
+// boundary as. It is a short name rather than the sentence because a Temporal error
+// type is what a workflow branches on, and the sentence is already in the message.
+const navigationFailedType = "NavigationFailed"
 
 // Exec runs one command inside the sandbox and answers what it printed.
 //

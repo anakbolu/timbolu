@@ -22,14 +22,18 @@ RUN CGO_ENABLED=0 go build -trimpath -o /out/vcomputer-control .
 # (docs/adr/0003-virtual-computer.md §3.2). It is the same client an operator would use
 # by hand, which is what makes every call reproducible from a terminal.
 #
-# It runs as root, and that is a real trade-off, not an oversight: the process needs to
-# write to /var/run/docker.sock, and the socket is owned by root. Anyone who can reach
-# this container's HTTP surface can start a container as root on the host, so the
-# token (VCOMPUTER_CONTROL_TOKEN) is not optional and the port is bound to the host's
-# loopback only. The PoC accepts this because the alternative — a Docker API proxy that
-# filters requests — is more machinery than the PoC can justify; a deployment that
-# needs it puts the socket behind such a proxy or moves to a runtime with an API
-# (docs/adr/0003-virtual-computer.md §3.3, §3.7).
+# It runs as root, and that is a leftover rather than a requirement: this process never
+# opens /var/run/docker.sock — the CLI inside it is pointed at the socket proxy with
+# DOCKER_HOST (docker-compose.poc.yml) — and it binds an unprivileged port, so nothing in
+# the image needs uid 0. It stays root because the CLI is the stock docker:27-cli user and
+# the PoC has no reason to add a second one; the privilege is written down here because it
+# is no longer what protects the host. The proxy's allowlist is: no socket in this container,
+# and the Engine API it can reach is containers, volumes, exec, start and stop — no images, no
+# swarm, no secrets, no plugins, no system. That list is per API *section*, which is coarser
+# than it sounds: CONTAINERS also admits restart, kill and rm, and it lets a caller create a
+# container with any HostConfig, so a compromised control plane remains a serious incident
+# (docs/adr/0003-virtual-computer.md §3.3, §3.7). The token (VCOMPUTER_CONTROL_TOKEN) and the
+# loopback-only port still gate the HTTP surface.
 FROM docker:27-cli
 
 # The docker CLI needs nothing from the build stage but the binary; keep the layers

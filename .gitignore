@@ -51,3 +51,6 @@ next-env.d.ts
 # omp / agent scratch
 omp-*.log
 prompts/
+
+# built gate binary (#248)
+apps/virtual-computer/sandbox/gate/gate
