@@ -315,3 +315,93 @@ export function spendCounter(counter: {
     },
   };
 }
+
+// --- memory's conversation reader and debounce ------------------------------
+
+/** The id of one conversation's extraction run. */
+export function memoryWorkflowId(conversationId: string): string {
+  return `memory-${conversationId}`;
+}
+
+/** Concatenates the text a model reads out of a message's blocks. */
+function textOf(blocks: unknown): string {
+  if (!Array.isArray(blocks)) return "";
+  const parts: string[] = [];
+  for (const block of blocks) {
+    const b = block as Record<string, unknown>;
+    if (typeof b.markdown === "string") parts.push(b.markdown);
+    else if (typeof b.text === "string") parts.push(b.text);
+  }
+  return parts.join("\n").trim();
+}
+
+/**
+ * The thread an extraction runs over, read out of chat.
+ *
+ * A port rather than a direct call because memory may only import chat's domain —
+ * the Go architecture rule, and the reason this lives in the container.
+ */
+export function memoryConversations(
+  chatRepo: { latestMessages(scope: any, conversationId: string, limit: number): Promise<any[]> },
+  agentService: { get(scope: any, id: string): Promise<any> } | null,
+) {
+  return {
+    async recent(scope: any, conversationId: string, limit: number) {
+      const messages = await chatRepo.latestMessages(scope, conversationId, limit);
+      return Promise.all(
+        messages.map(async (m: any) => {
+          let agentName = "";
+          if (m.authorAgentId && agentService) {
+            try {
+              agentName = (await agentService.get(scope, m.authorAgentId)).name;
+            } catch {
+              // A Bolu that has since been deleted keeps its words, unnamed.
+              agentName = "";
+            }
+          }
+          return {
+            messageId: m.id,
+            agentId: m.authorAgentId ?? "",
+            agentName,
+            text: textOf(m.blocks),
+            createdAt: m.createdAt,
+          };
+        }),
+      );
+    },
+  };
+}
+
+/**
+ * Pushes a thread's quiet timer out.
+ *
+ * SignalWithStart, not Signal: the first message of a thread has no run yet, and
+ * starting one with the signal already delivered is what makes the debounce
+ * correct from the first write.
+ */
+export function memoryScheduler(
+  handle: { client(): any; StartOptions(id: string): any } | null,
+  quietMs: number,
+  workflowName: string,
+  signalName: string,
+) {
+  return {
+    async conversationActive(scope: any, conversationId: string, agentId: string): Promise<void> {
+      if (!handle || !conversationId) return;
+      const cli = handle.client();
+      await cli.workflow.signalWithStart(workflowName, {
+        ...handle.StartOptions(memoryWorkflowId(conversationId)),
+        args: [
+          {
+            WorkspaceID: scope.workspaceId,
+            ConversationID: conversationId,
+            AgentID: agentId,
+            QuietPeriod: quietMs > 0 ? quietMs : 5 * 60_000,
+          },
+        ],
+        signal: signalName,
+        signalArgs: [],
+      });
+    },
+  };
+}

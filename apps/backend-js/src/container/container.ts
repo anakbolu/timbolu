@@ -47,10 +47,13 @@ import {
   chatMemory,
   routineTaskStarter,
   spendCounter,
+  memoryConversations,
+  memoryScheduler,
 } from "./adapters.ts";
 import { newTemporalStarter } from "../worker/starter.ts";
 import { Scheduler } from "../platform/routine/temporal/scheduler.ts";
 import { WorkflowName as RoutineWorkflowName } from "../modules/routine/workflow/workflow.ts";
+import { WorkflowName as MemoryWorkflowName, SignalActive as MemorySignalActive } from "../modules/memory/workflow/workflow.ts";
 import { ModelResponder } from "../modules/chat/service/responder.ts";
 import { GroupRouter } from "../modules/chat/service/router.ts";
 
@@ -535,6 +538,17 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
       repository: new MemoryRepository(db),
       embedder: llmService as any,
       model: llmService as any,
+      // The thread an extraction reads, and the debounce that decides when it
+      // runs. Without both, extraction is configured and never happens.
+      threads: memoryConversations(chatRepo as any, agentService as any),
+      scheduler: runtime
+        ? memoryScheduler(
+            clientHandleOver(runtime.client, config.temporal.taskQueueAgent || "agent"),
+            config.memory.quietSeconds * 1000,
+            MemoryWorkflowName,
+            MemorySignalActive,
+          )
+        : null,
       limits: { maxContentRunes: config.memory.maxContentRunes } as any,
       logger: log,
     } as any);
