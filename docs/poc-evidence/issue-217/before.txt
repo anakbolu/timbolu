@@ -1,0 +1,2 @@
+$ VCOMPUTER_CONTROL_URL=http://vcomputer-control:8090 VCOMPUTER_CONTROL_TOKEN=xxx docker compose config agent-worker | grep VCOMPUTER
+(tidak ada VCOMPUTER_* di environment agent-worker)

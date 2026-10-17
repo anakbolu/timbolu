@@ -289,7 +289,16 @@ services:
         BINARY: agent-worker
     container_name: bolu-agent-worker
     restart: unless-stopped
-    environment: *backend-env
+    environment:
+      <<: *backend-env
+      # The virtual computer (docs/adr/0003-virtual-computer.md). Only this process is given
+      # the three: it is the one that registers the module's activities, and the token is a
+      # shared secret the API, the gateway, and the integration worker have no use for. An
+      # empty address is a deployment without a control plane, which is what a stack that
+      # never names the overlay gets; reaching one is what docker-compose.vcomputer.yml adds.
+      VCOMPUTER_CONTROL_URL: ${VCOMPUTER_CONTROL_URL:-}
+      VCOMPUTER_CONTROL_TOKEN: ${VCOMPUTER_CONTROL_TOKEN:-}
+      VCOMPUTER_CONTROL_TIMEOUT: ${VCOMPUTER_CONTROL_TIMEOUT:-30s}
     volumes:
       # The same directory the API writes to: a worker reads an attachment the
       # API stored, so the two must see one filesystem.

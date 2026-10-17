@@ -879,7 +879,17 @@ the sandbox it started rather than leaving it running for an operator to delete
 runtime forgets the session, so `GET /v1/sessions/<bot>` is 404 afterwards, while the
 Docker runtime answers 200 with `state: "stopped"` and leaves the Exited container and
 its `vcomputer-<bot>-home` volume for an explicit teardown. The agent task loop and
-its tool catalog do not reach the sandbox yet.
+its tool catalog do not reach the sandbox yet. `docker-compose.yml` forwards the three
+settings to `agent-worker` and to nothing else — it is the process that registers them,
+and the token is a secret the API, the gateway, and the integration worker have no use
+for. The PoC's stack is a project of its own whose only published port is bound to the
+host's loopback, so the optional `docker-compose.vcomputer.yml` overlay is what puts
+that worker on the control plane's network and defaults the address to
+`http://vcomputer-control:8090`.
+
+The external network's name comes from `VCOMPUTER_EDGE_NETWORK` (default `vcomputer-edge`, the
+name the PoC gives it); the key in the overlay stays fixed, so only the name compose resolves
+changes.
 
 Deployment and region decisions: `docs/adr/0001-temporal-dan-region.md`.
 Test strategy and gates: `docs/testing.md`.

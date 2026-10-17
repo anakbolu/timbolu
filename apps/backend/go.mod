@@ -123,7 +123,6 @@ require (
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
 	go.uber.org/atomic v1.12.0 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
@@ -137,6 +136,7 @@ require (
 require (
 	github.com/ledongthuc/pdf v0.0.0-20260907135840-6c8c28e0e8a0
 	github.com/robzlabz/employeebot/packages v0.0.0
+	go.yaml.in/yaml/v3 v3.0.5
 )
 
 replace github.com/robzlabz/employeebot/packages => ../../packages

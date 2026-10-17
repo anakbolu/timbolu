@@ -1,0 +1,4 @@
+$ VCOMPUTER_EDGE_NETWORK=foo-edge docker compose -f docker-compose.yml -f docker-compose.vcomputer.yml config | grep -A2 "vcomputer-edge:"
+  vcomputer-edge:
+    name: vcomputer-edge
+    external: true

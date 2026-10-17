@@ -1,0 +1,9 @@
+$ VCOMPUTER_CONTROL_URL=http://vcomputer-control:8090 VCOMPUTER_CONTROL_TOKEN=xxx docker compose config agent-worker | grep VCOMPUTER
+      VCOMPUTER_CONTROL_TIMEOUT: 30s
+      VCOMPUTER_CONTROL_TOKEN: xxx
+      VCOMPUTER_CONTROL_URL: http://vcomputer-control:8090
+
+$ go test ./internal/container/ -run "AgentWorkerIsGiven|VirtualComputerOverlay" -v
+--- PASS: TestAgentWorkerIsGivenTheVirtualComputerSettings (0.00s)
+--- PASS: TestTheVirtualComputerOverlayReachesTheControlPlane (0.00s)
+ok  	github.com/robzlabz/employeebot/apps/backend/internal/container	0.021s

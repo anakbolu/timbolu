@@ -1,0 +1,51 @@
+# An optional overlay that points the agent worker at the virtual computer PoC
+# (docs/adr/0003-virtual-computer.md).
+#
+# The base file forwards the `VCOMPUTER_*` settings to the worker but gives it no route to the
+# control plane, and forwarding the address is not enough on its own: the PoC is a compose
+# project of its own (`apps/virtual-computer/docker-compose.poc.yml`), the only port it
+# publishes is bound to the host's loopback, and a container has no route to that. This overlay
+# attaches the worker to the network the control plane listens on and names that service as the
+# address.
+#
+# It is an *override* rather than a change to `.env`, so `make up` stays exactly what it was and
+# this is only in play when it is named. The PoC has to be up first, because the network it
+# joins is the one that stack creates:
+#
+#   export VCOMPUTER_CONTROL_TOKEN=$(openssl rand -hex 16)
+#   docker compose -f apps/virtual-computer/docker-compose.poc.yml up -d
+#   docker compose -f docker-compose.yml -f docker-compose.vcomputer.yml up -d agent-worker
+#
+# The token has to be the same value on both sides: the control plane refuses to start without
+# one, and every `/v1` route compares it. Exporting it is what gives both commands the same
+# value — each reads `.env` from the directory of its own compose file, which is the repository
+# root here and `apps/virtual-computer/` there, so a root `.env` alone would leave the control
+# plane without one. That README also has the PoC's build step, which produces the sandbox
+# image its runtime starts.
+
+services:
+  agent-worker:
+    environment:
+      # The service name resolves because this file puts the worker on the network the control
+      # plane is on. `:-` rather than `-`: an empty value in `.env` is a deployment without a
+      # control plane, and naming this file is the statement that there is one.
+      VCOMPUTER_CONTROL_URL: ${VCOMPUTER_CONTROL_URL:-http://vcomputer-control:8090}
+    networks:
+      # `default` is the product stack, which the worker has to stay on: Postgres, Redis, and
+      # Temporal are all there. The edge network is added, not substituted.
+      - default
+      - vcomputer-edge
+
+networks:
+  # Created by the PoC's own project, with an explicit `name:` so that compose does not prefix
+  # it (apps/virtual-computer/docker-compose.poc.yml). External because this file starts none
+  # of the PoC: without the stack running there is nothing to join, and saying so here is
+  # clearer than a DNS failure from the worker.
+  #
+  # The key stays `vcomputer-edge`, because it is what the service's `networks:` list names;
+  # only the name compose resolves is configurable. `VCOMPUTER_EDGE_NETWORK` is for a control
+  # plane whose edge network is not the one the PoC creates under the default name, and the
+  # value has to be the name that stack actually gave it.
+  vcomputer-edge:
+    name: ${VCOMPUTER_EDGE_NETWORK:-vcomputer-edge}
+    external: true

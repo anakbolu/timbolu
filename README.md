@@ -44,6 +44,7 @@ Indonesia dulu: transfer bank / virtual account. **Tidak ada Stripe.**
 │   └── riset-heartbeat.md   # the five heartbeats Bolu already has, and where they lie
 ├── go.work            # the three-module dev workspace
 ├── docker-compose.yml
+├── docker-compose.vcomputer.yml # optional: points the agent worker at the virtual computer PoC
 ├── Makefile
 └── .env.example
 ```

@@ -279,3 +279,9 @@ with its UI, a one-shot `migrate` service, the API, both workers, the WhatsApp g
 frontend. The compose file is the same shape as a deployment with everything on one host, which is why
 it is worth reading before writing manifests: the services, the environment and the ordering are all
 there.
+
+The virtual computer PoC is not part of `make up`: it is a compose project of its own
+(`apps/virtual-computer/docker-compose.poc.yml`) and the product starts none of it. The worker's
+three `VCOMPUTER_*` settings come from `.env` through `docker-compose.yml`, and reaching a running
+control plane needs the optional overlay, which puts that worker on the PoC's network
+(`docker-compose.vcomputer.yml`, and `apps/virtual-computer/README.md` for the two commands).

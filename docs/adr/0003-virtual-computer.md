@@ -271,6 +271,32 @@ Catatan supersesi: urutan langkah di atas tidak lagi berakhir di `Exec` — revi
 Batas §1 dan §4 tentang jalur produksi karena itu berlaku dengan satu pengecualian: yang
 terdaftar adalah activity dan satu workflow smoke, bukan loop tugas agennya.
 
+## Revisi 2026-10-16: konfigurasi sampai ke worker di compose
+
+Revisi sebelumnya membuat konfigurasinya opsional, tetapi stack lokal belum bisa memakainya: QA PR
+#211 menemukan `.env` yang berisi `VCOMPUTER_CONTROL_URL` tetap menghasilkan worker yang "not
+configured" (isu #217). Penyebabnya bukan loader melainkan compose.
+
+- **Ketiganya diteruskan, hanya ke `agent-worker`.** `docker-compose.yml` memberi service itu
+  `VCOMPUTER_CONTROL_URL`, `VCOMPUTER_CONTROL_TOKEN`, dan `VCOMPUTER_CONTROL_TIMEOUT` dari
+  environment, bukan lewat anchor `x-backend-env`. Anchor itu dipakai API, gateway, dan integration
+  worker, yang tidak pernah memanggil control plane: token tidak dibagikan ke proses yang tidak
+  membutuhkannya. Nilai kosong tetap berarti "tidak terkonfigurasi", jadi `make up` tidak berubah.
+- **Overlay opsional `docker-compose.vcomputer.yml`.** Meneruskan alamat saja tidak cukup: stack PoC
+  adalah project compose tersendiri dan satu-satunya port yang dipublikasikannya terikat ke loopback
+  host, yang tidak punya rute dari container. Overlay menyambungkan `agent-worker` ke jaringan
+  `vcomputer-edge` milik PoC (jaringan produk tetap dipakai, jadi Postgres, Redis, dan Temporal tetap
+  terjangkau) dan memberi `VCOMPUTER_CONTROL_URL` default `http://vcomputer-control:8090`. Jaringan
+  itu `external: true` karena yang membuatnya stack PoC, yang harus hidup lebih dulu. Namanya bisa
+  diganti lewat `VCOMPUTER_EDGE_NETWORK` (default `vcomputer-edge`); key-nya tetap, karena itulah
+  yang disebut daftar `networks:` service-nya.
+- **Kontraknya diuji.** `internal/container/vcomputer_compose_test.go` membaca kedua file compose
+  sebagai YAML dan memastikan ketiga variabel sampai ke `agent-worker`, tidak ada di service lain,
+  dan overlay benar-benar menyambung ke jaringan control plane — sehingga menghapus baris mana pun
+  menggagalkan uji, bukan hanya diam-diam mengembalikan worker ke `ErrNotConfigured`.
+  Nama jaringan itu punya uji sendiri: default `vcomputer-edge`, dan nilai `VCOMPUTER_EDGE_NETWORK`
+  yang menimpanya.
+
 ## Revisi 2026-10-16 setelah QA PR #211 (isu #220): smoke run mematikan sesinya sendiri
 
 `SmokeWorkflow` menjalankan `EnsureSession` → … → `Exec` tanpa pernah memanggil `StopSession`,
