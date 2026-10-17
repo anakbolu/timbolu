@@ -92,22 +92,15 @@ export type ChatState = {
    */
   openByID: (conversationId: string) => boolean;
   /**
-   * send stores a message and answers with it.
+   * send stores a message with the files it carries and answers with it.
    *
-   * The message is what an attachment has to name — the backend refuses a file
-   * that belongs to no message — so the caller needs the row it just wrote, not
-   * only the fact that the write happened. Null is a message that was not
-   * stored, and the error is already in `error`.
+   * The attachments are already uploaded and named by id, so the message and its
+   * files are written in one call: the reply sees them on the turn they were sent
+   * with, and a file cannot end up hanging off a message that was stored without
+   * it. A refused send answers with the API's failure, which is what tells the
+   * composer which files to mark.
    */
-  send: (text: string, agentId?: string) => Promise<ChatMessage | null>;
-  /**
-   * attachToMessage merges uploaded files into a message already on screen.
-   *
-   * An upload is a second request that finishes after the message is rendered,
-   * and the stream keeps replacing that message with the server's version, so
-   * the files are merged into the row rather than waited for before it is shown.
-   */
-  attachToMessage: (messageId: string, attachments: Attachment[]) => void;
+  send: (text: string, attachmentIds?: string[], agentId?: string) => Promise<ApiResult<ChatMessage>>;
   loadOlder: () => Promise<void>;
   refresh: () => Promise<void>;
 };
@@ -254,9 +247,9 @@ export function useChat(): ChatState {
   }, [workspaceId, active, loadingOlder]);
 
   const send = useCallback(
-    async (text: string, agentId?: string): Promise<ChatMessage | null> => {
+    async (text: string, attachmentIds?: string[], agentId?: string): Promise<ApiResult<ChatMessage>> => {
       if (!workspaceId || !active) {
-        return null;
+        return { ok: false, status: 0, message: "Pilih obrolan dulu." };
       }
 
       setSending(true);
@@ -264,12 +257,15 @@ export function useChat(): ChatState {
         text,
         reply: true,
         agent_id: agentId,
+        attachment_ids: attachmentIds,
       });
       setSending(false);
 
       if (!result.ok) {
-        setError(result.message);
-        return null;
+        // The reason is not put in the thread's banner: a refused send is about
+        // the draft and the files beside it, and the composer says so where they
+        // are, in the words the code calls for.
+        return result;
       }
 
       setError(null);
@@ -285,20 +281,10 @@ export function useChat(): ChatState {
       // The reply placeholder is not added here: it arrives on the stream, which
       // is what makes a second tab show the same conversation.
       await reloadConversations();
-      return result.data.message;
+      return { ok: true, status: result.status, data: result.data.message };
     },
     [workspaceId, active, reloadConversations],
   );
-
-  const attachToMessage = useCallback((messageId: string, attachments: Attachment[]) => {
-    setMessages((previous) =>
-      previous.map((message) =>
-        message.message_id === messageId
-          ? { ...message, attachments: mergeAttachments(message.attachments, attachments) }
-          : message,
-      ),
-    );
-  }, []);
 
   // The stream: the store's connection, filtered to this conversation.
   useEffect(() => {
@@ -344,7 +330,6 @@ export function useChat(): ChatState {
     openByAgent,
     openByID,
     send,
-    attachToMessage,
     loadOlder,
     refresh,
   };
@@ -486,35 +471,6 @@ function applyEvent(
 /** readString narrows one field of a streamed payload. */
 function readString(value: unknown): string | undefined {
   return typeof value === "string" && value !== "" ? value : undefined;
-}
-
-/**
- * mergeAttachments folds files into the ones already shown.
- *
- * Keyed by id, because the same file is seen twice: once from the request that
- * stored it and once from the message event that followed, and the two must be
- * one row. The order already on screen is kept so a file does not move while it
- * is being read, and the server's copy of a row replaces the local one.
- */
-function mergeAttachments(known: Attachment[], incoming: Attachment[]): Attachment[] {
-  if (incoming.length === 0) {
-    return known;
-  }
-
-  const merged = [...known];
-  const at = new Map(merged.map((item, index) => [item.id, index]));
-
-  for (const item of incoming) {
-    const index = at.get(item.id);
-    if (index === undefined) {
-      at.set(item.id, merged.length);
-      merged.push(item);
-      continue;
-    }
-    merged[index] = item;
-  }
-
-  return merged;
 }
 
 /**

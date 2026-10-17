@@ -20,7 +20,10 @@ export type ApiError = {
   ok: false;
   status: number;
   message: string;
+  /** The API's machine-readable reason, which a screen acts on rather than shows. */
   code?: string;
+  /** Whatever the API attached to that reason, when it names what went wrong. */
+  details?: unknown;
 };
 
 export type ApiSuccess<T> = {
@@ -400,6 +403,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<A
         status: response.status,
         message: envelope?.message ?? "Terjadi kesalahan. Coba lagi sebentar.",
         code: envelope?.error?.code,
+        details: envelope?.error?.details,
       };
     }
 
@@ -1199,18 +1203,42 @@ export function listEvents(
   });
 }
 
-/** uploadAttachment stores a file and returns its metadata. */
-export async function uploadAttachment(
+/**
+ * One file the API holds until the message that names it is stored.
+ *
+ * Its id is what a send carries; the bytes are already in storage, so the
+ * message and its files are written in one transaction and the reply sees them
+ * on the turn they were sent with.
+ */
+export type StagedAttachment = {
+  attachment_id: string;
+  name: string;
+  mime: string;
+  size: number;
+  url: string;
+};
+
+/**
+ * uploadStagedAttachment stores a file before the message that will carry it.
+ *
+ * XMLHttpRequest rather than `fetch`, because only it reports how far an upload
+ * has got: a person watching a large file over a slow line needs to see it
+ * moving, and a stalled upload otherwise looks exactly like a slow one.
+ *
+ * The file belongs to no message yet, so the API holds it for a day and the ids
+ * this returns travel in the body of the send that claims them. Aborting through
+ * `signal` drops the chip's upload; the request is answered with `code:
+ * "aborted"` rather than a rejection, like every other failure here.
+ */
+export async function uploadStagedAttachment(
   workspaceId: string,
   conversationId: string,
   file: File,
-  messageId?: string,
-): Promise<ApiResult<Attachment>> {
+  onProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
+): Promise<ApiResult<StagedAttachment>> {
   const form = new FormData();
   form.append("file", file);
-  if (messageId) {
-    form.append("message_id", messageId);
-  }
 
   // No Content-Type: the browser sets it with the multipart boundary.
   const buildHeaders = () => {
@@ -1221,35 +1249,109 @@ export async function uploadAttachment(
     return headers;
   };
 
-  let response: Response;
-  try {
-    response = await authorizedFetch(
-      `${API_URL}/api/conversations/${conversationId}/attachments`,
-      { method: "POST", credentials: "include", body: form },
-      buildHeaders,
-      true,
-    );
-  } catch {
-    return { ok: false, status: 0, message: "Tidak bisa menghubungi server." };
+  // The renewal the other calls get from `authorizedFetch`: an upload started
+  // after an idle spell would otherwise be refused with a 401.
+  if (tokenIsSpent()) {
+    await refreshSession();
+  }
+  if (signal?.aborted) {
+    return ABORTED_UPLOAD;
   }
 
-  const text = await response.text();
-  let envelope: Envelope<Attachment> | null = null;
-  try {
-    envelope = text ? (JSON.parse(text) as Envelope<Attachment>) : null;
-  } catch {
-    envelope = null;
+  const url = `${API_URL}/api/conversations/${conversationId}/attachments?staged=true`;
+  let attempt = await sendUpload<StagedAttachment>(url, form, buildHeaders(), onProgress, signal);
+  if (attempt.kind === "response" && attempt.status === 401) {
+    const renewal = await refreshSession();
+    if (renewal.ok && !signal?.aborted) {
+      attempt = await sendUpload<StagedAttachment>(url, form, buildHeaders(), onProgress, signal);
+    }
   }
 
-  if (!response.ok || !envelope?.success || !envelope.data) {
+  if (attempt.kind === "aborted") {
+    return ABORTED_UPLOAD;
+  }
+  if (attempt.kind === "transport") {
+    return { ok: false, status: 0, message: "Tidak bisa menghubungi server. Cek koneksimu lalu coba lagi." };
+  }
+
+  const { status, envelope } = attempt;
+  if (status < 200 || status >= 300 || !envelope?.success || !envelope.data) {
     return {
       ok: false,
-      status: response.status,
+      status,
       message: envelope?.message ?? "Gagal mengunggah berkas.",
       code: envelope?.error?.code,
+      details: envelope?.error?.details,
     };
   }
-  return { ok: true, status: response.status, data: envelope.data };
+  return { ok: true, status, data: envelope.data };
+}
+
+/** What a call abandoned by its own caller reports. */
+const ABORTED_UPLOAD: ApiError = {
+  ok: false,
+  status: 0,
+  code: "aborted",
+  message: "Unggahan dibatalkan.",
+};
+
+/** One upload attempt: what the XHR answered, or how it ended without an answer. */
+type UploadAttempt<T> =
+  | { kind: "response"; status: number; envelope: Envelope<T> | null }
+  | { kind: "transport" }
+  | { kind: "aborted" };
+
+/**
+ * sendUpload performs one multipart POST and reports how far it has got.
+ *
+ * This is the piece `fetch` cannot do: `xhr.upload` fires while the bytes are
+ * leaving, which is the only moment a person can tell an upload from a hang.
+ */
+function sendUpload<T>(
+  url: string,
+  form: FormData,
+  headers: Record<string, string>,
+  onProgress: ((fraction: number) => void) | undefined,
+  signal: AbortSignal | undefined,
+): Promise<UploadAttempt<T>> {
+  const { promise, resolve } = Promise.withResolvers<UploadAttempt<T>>();
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", url);
+  xhr.withCredentials = true;
+  for (const [name, value] of Object.entries(headers)) {
+    xhr.setRequestHeader(name, value);
+  }
+
+  if (onProgress) {
+    xhr.upload.onprogress = (event) => {
+      // A length the browser cannot compute is not a progress report.
+      if (event.lengthComputable && event.total > 0) {
+        onProgress(Math.min(1, event.loaded / event.total));
+      }
+    };
+  }
+
+  const onAbort = () => xhr.abort();
+  signal?.addEventListener("abort", onAbort);
+  const settle = (attempt: UploadAttempt<T>) => {
+    signal?.removeEventListener("abort", onAbort);
+    resolve(attempt);
+  };
+
+  xhr.onload = () => {
+    let envelope: Envelope<T> | null = null;
+    try {
+      envelope = xhr.responseText ? (JSON.parse(xhr.responseText) as Envelope<T>) : null;
+    } catch {
+      envelope = null;
+    }
+    settle({ kind: "response", status: xhr.status, envelope });
+  };
+  xhr.onerror = () => settle({ kind: "transport" });
+  xhr.onabort = () => settle({ kind: "aborted" });
+
+  xhr.send(form);
+  return promise;
 }
 
 /** contentURL is where one sandboxed HTML document is served from. */

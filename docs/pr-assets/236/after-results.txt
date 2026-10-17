@@ -1,0 +1,11 @@
+[1] send disabled while uploading = true
+[1] pressed Enter
+[1] message left composer after 4444 ms
+[2] user message.new attachments = ["laporan-236.txt"]; later message.updated for it = 0
+[2] user message in history: attachments=1
+[2] event order: message.new id=254, first task event id=256, first attachment update id=-
+[3] attachment-only: send disabled = false
+[3] attachment-only message stored = true
+[4] failed chip text: gagal-236.txt | 9 B | storage down | Coba lagi | Hapus atau unggah ulang lampiran yang gagal untuk mengirim.
+[4] retry clicked = true | send disabled after retry = false
+[5] 409 message shown = true

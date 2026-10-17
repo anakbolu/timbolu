@@ -1,0 +1,5 @@
+[1] send disabled while uploading = false
+[1] pressed Enter
+[2] user message.new attachments = []; later message.updated for it = 1
+[2] user message in history: attachments=1
+[2] event order: message.new id=233, first task event id=235, first attachment update id=243
