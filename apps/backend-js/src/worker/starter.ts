@@ -30,10 +30,17 @@ export interface TemporalStarter {
  * the same shape as a deployment without a task runtime: tasks are recorded and
  * stay queued rather than the process refusing to start.
  */
+export interface TemporalRuntime {
+  starter: TemporalStarter;
+  /** Shared with the routine scheduler: one connection per process, not two. */
+  client: Client;
+  connection: Connection;
+}
+
 export async function newTemporalStarter(
   config: Config,
   log: Logger,
-): Promise<TemporalStarter | null> {
+): Promise<TemporalRuntime | null> {
   const address = config.temporal.hostPort;
   if (!address) {
     log.warn("the task runtime is not configured: tasks are recorded and stay queued");
@@ -55,7 +62,7 @@ export async function newTemporalStarter(
   const client = new Client({ connection, namespace: config.temporal.namespace || "default" });
   const taskQueue = config.temporal.taskQueueAgent || "agent";
 
-  return {
+  const starter: TemporalStarter = {
     async start(_ctx, scope, input) {
       const handle = await client.workflow.start(WorkflowName, {
         taskQueue,
@@ -88,6 +95,8 @@ export async function newTemporalStarter(
       }
     },
   };
+
+  return { starter, client, connection };
 }
 
 export { AgentTaskWorkflow };

@@ -49,6 +49,8 @@ import {
   spendCounter,
 } from "./adapters.ts";
 import { newTemporalStarter } from "../worker/starter.ts";
+import { Scheduler } from "../platform/routine/temporal/scheduler.ts";
+import { WorkflowName as RoutineWorkflowName } from "../modules/routine/workflow/workflow.ts";
 import { ModelResponder } from "../modules/chat/service/responder.ts";
 import { GroupRouter } from "../modules/chat/service/router.ts";
 
@@ -421,6 +423,10 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
   let task: TaskHandler | null = null;
   let taskService: TaskService | null = null;
 
+  // One Temporal connection per process, shared by the task starter and the
+  // routine scheduler.
+  const runtime = await newTemporalStarter(config, log);
+
   if (db) {
     // Each service takes the ports it declares and nothing more; the optional ones
     // stay null, which is the same shape as a deployment that has not connected
@@ -521,8 +527,14 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
     retentionService = new RetentionService({ repository: retentionRepo, logger: log } as any);
     retention = new RetentionHandler(retentionService, log);
 
+    // The embedder and the model are the same gateway object: memory imports the
+    // llm domain's ports, so the service satisfies both structurally. With no
+    // provider configured the writes that need a vector answer with the reason
+    // instead of pretending they stored something.
     memoryService = new MemoryService({
       repository: new MemoryRepository(db),
+      embedder: llmService as any,
+      model: llmService as any,
       limits: { maxContentRunes: config.memory.maxContentRunes } as any,
       logger: log,
     } as any);
@@ -537,6 +549,14 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
             return routineTaskStarter(taskService as any).start(scope, req);
           },
         },
+        // The schedule engine is the platform scheduler over the same Temporal
+        // client: without it a routine is stored and never fires. The scheduler
+        // wants the platform's ClientHandle (it calls .client() and
+        // .StartOptions()), so the already-open client is presented that way
+        // rather than opening a second connection to the same frontend.
+        engine: runtime
+          ? Scheduler.create(clientHandleOver(runtime.client, config.temporal.taskQueueAgent || "agent"), config.temporal.taskQueueAgent || "agent", RoutineWorkflowName)
+          : null,
         logger: log,
       } as any),
       log,
@@ -545,8 +565,7 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
     const taskRepo = new TaskRepository(db);
     // The starter is the Temporal seam: without it a task is recorded and stays
     // queued, which is the documented behaviour of a deployment with no runtime.
-    const starter = await newTemporalStarter(config, log);
-    taskService = new TaskService({ tasks: taskRepo, steps: taskRepo, starter, logger: log } as any);
+    taskService = new TaskService({ tasks: taskRepo, steps: taskRepo, starter: runtime?.starter ?? null, logger: log } as any);
     task = new TaskHandler(taskService, log);
 
     whatsapp = new WhatsAppHandler(
@@ -603,6 +622,21 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
     retentionService,
     billingService,
     close,
+  };
+}
+
+/**
+ * Presents an open Temporal client as the platform's `ClientHandle`.
+ *
+ * `ClientHandle.connect` is the canonical way to get one, and it health-checks
+ * the endpoint. The task starter already opened a connection, so wrapping it
+ * here keeps one connection per process; the follow-up is to build both from a
+ * single `ClientHandle`.
+ */
+function clientHandleOver(client: unknown, taskQueue: string): any {
+  return {
+    client: () => client,
+    StartOptions: (workflowId: string) => ({ taskQueue, workflowId }),
   };
 }
 
