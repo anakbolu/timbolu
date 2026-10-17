@@ -30,6 +30,10 @@ type Handler struct {
 	service chatdomain.Service
 	log     *zap.Logger
 	content ContentConfig
+	// heartbeat is how often the SSE stream sends a keep-alive. It is a field
+	// rather than the constant so a test can shorten it without changing the
+	// production value.
+	heartbeat time.Duration
 }
 
 // ContentConfig describes the sandboxed content origin.
@@ -43,13 +47,28 @@ type ContentConfig struct {
 
 // New builds the handler.
 func New(service chatdomain.Service, log *zap.Logger) *Handler {
-	return &Handler{service: service, log: log, content: ContentConfig{FrameAncestors: []string{"'self'"}}}
+	return &Handler{
+		service:   service,
+		log:       log,
+		content:   ContentConfig{FrameAncestors: []string{"'self'"}},
+		heartbeat: chatdomain.Heartbeat,
+	}
 }
 
 // WithContent sets the content origin policy.
 func (h *Handler) WithContent(config ContentConfig) *Handler {
 	if len(config.FrameAncestors) > 0 {
 		h.content = config
+	}
+	return h
+}
+
+// WithHeartbeat sets how often a live stream sends a keep-alive. The default is
+// what a proxy between the client and the API needs, and a test that cannot
+// wait that long is the only caller that has a reason to change it.
+func (h *Handler) WithHeartbeat(interval time.Duration) *Handler {
+	if interval > 0 {
+		h.heartbeat = interval
 	}
 	return h
 }
@@ -458,6 +477,17 @@ func (h *Handler) SSE(c *fiber.Ctx) error {
 	c.Set("Connection", "keep-alive")
 	c.Set("X-Accel-Buffering", "no")
 
+	// The server puts one write deadline on the connection for the whole
+	// response, which is right for a request and wrong for a stream: it would
+	// cut every connection after Http.WriteTimeout however alive it is. The
+	// deadline is renewed before each write instead. Two heartbeats of headroom
+	// keep a live stream ahead of its own deadline even when an event and a
+	// keep-alive land back to back, and a client that stopped reading still
+	// fails the write one timeout after the last byte it took, which is what
+	// the deadline is for.
+	perWrite := 2 * h.heartbeat
+	conn := c.Context().Conn()
+
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 		// The head goes out on its own, before there is an event to carry it:
 		// fasthttp sends the status line and the headers only when the first
@@ -466,6 +496,13 @@ func (h *Handler) SSE(c *fiber.Ctx) error {
 		// would otherwise wait for the first heartbeat before its EventSource
 		// reported itself open. A comment is not an event, so a client ignores
 		// the line and a listener that only knows named events is unaffected.
+		//
+		// This write is the first one on the connection, so it is also the
+		// first that needs the deadline renewed: the server's own would have
+		// expired by the second heartbeat (issue #255).
+		if conn != nil {
+			_ = conn.SetWriteDeadline(time.Now().Add(perWrite))
+		}
 		if _, err := w.WriteString(": connected\n\n"); err != nil {
 			return
 		}
@@ -473,8 +510,29 @@ func (h *Handler) SSE(c *fiber.Ctx) error {
 			return
 		}
 
-		heartbeat := time.NewTicker(chatdomain.Heartbeat)
+		heartbeat := time.NewTicker(h.heartbeat)
 		defer heartbeat.Stop()
+
+		// The connection may outlive the stream: it is keep-alive, and the
+		// deadline renewed below would otherwise still be on it, expired, for
+		// the next request on the same socket. The server puts its own deadline
+		// on each request that has a WriteTimeout, so removing ours restores
+		// exactly what it would have left.
+		defer func() {
+			if conn != nil {
+				_ = conn.SetWriteDeadline(time.Time{})
+			}
+		}()
+
+		// flush renews the connection's deadline and sends what was written.
+		// The renewal has to happen before the bytes reach the socket, because
+		// a write that blocks on an expired deadline fails instead of waiting.
+		flush := func() error {
+			if conn != nil {
+				_ = conn.SetWriteDeadline(time.Now().Add(perWrite))
+			}
+			return w.Flush()
+		}
 
 		encoder := json.NewEncoder(w)
 		for {
@@ -487,7 +545,9 @@ func (h *Handler) SSE(c *fiber.Ctx) error {
 				if _, err := w.Write([]byte(": keep-alive\n\n")); err != nil {
 					return
 				}
-				_ = w.Flush()
+				if flush() != nil {
+					return
+				}
 			case event, ok := <-events:
 				if !ok {
 					return
@@ -501,7 +561,9 @@ func (h *Handler) SSE(c *fiber.Ctx) error {
 				if _, err := w.Write([]byte("\n")); err != nil {
 					return
 				}
-				_ = w.Flush()
+				if flush() != nil {
+					return
+				}
 			}
 		}
 	})
@@ -518,6 +580,10 @@ func (h *Handler) Socket(c *fiber.Ctx) error {
 
 	// The scope and the resume point are read before the upgrade: once the
 	// connection is hijacked, Fiber's context no longer holds the request.
+	//
+	// The upgrade hijacks the connection, and fasthttp clears the connection
+	// deadline when it hands the socket over, so the server's WriteTimeout does
+	// not bound this stream the way it bounded the SSE response.
 	streamScope := scope(c)
 	afterID := lastEventID(c)
 
@@ -545,7 +611,7 @@ func (h *Handler) Socket(c *fiber.Ctx) error {
 			}
 		}()
 
-		heartbeat := time.NewTicker(chatdomain.Heartbeat)
+		heartbeat := time.NewTicker(h.heartbeat)
 		defer heartbeat.Stop()
 
 		for {

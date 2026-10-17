@@ -353,7 +353,7 @@ the backend did not check.
 | `POST /conversations/:id/attachments` | bearer + tenant | any | multipart `file`, optional `message_id` |
 | `GET /attachments/:id` | bearer + tenant | any | The bytes, served inline with `nosniff` |
 | `GET /events` | bearer + tenant | any | `?after_id=&limit=`; the replay a reconnect makes |
-| `GET /events/stream` | bearer + tenant (query token) | any | Server-Sent Events; `Last-Event-ID` resumes |
+| `GET /events/stream` | bearer + tenant (query token) | any | Server-Sent Events; `Last-Event-ID` resumes; not bounded by `Http.WriteTimeout` |
 | `GET /events/socket` | bearer + tenant (query token) | any | WebSocket; the primary transport |
 | `GET /content/:reference` | none | — | One sandboxed document, from the content origin |
 

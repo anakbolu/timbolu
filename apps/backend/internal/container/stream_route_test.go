@@ -1,8 +1,13 @@
 package container
 
 import (
+	"bufio"
+	"context"
 	"io"
+	"net"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,6 +72,108 @@ func TestTheLiveStreamAuthenticatesFromTheQuery(t *testing.T) {
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	require.Contains(t, string(body), "event: message.new")
+}
+
+// TestTheConfiguredWriteTimeoutDoesNotCutTheLiveStream is the end-to-end gate on
+// issue #255: the app is built from a config whose Http.WriteTimeout is short,
+// served on a real listener, and the stream is read across three of those
+// timeouts. This is the wiring the report is about — the value reaches
+// fiber.Config through newApp, so a fix that only worked on a hand-built app
+// would not pass here.
+//
+// The read timeout is shortened alongside it because the deployed config sets
+// both to the same value: the stream has to outlive the pair, not just the one
+// the deadline renewal touches.
+func TestTheConfiguredWriteTimeoutDoesNotCutTheLiveStream(t *testing.T) {
+	const (
+		writeTimeout = 300 * time.Millisecond
+		heartbeat    = 50 * time.Millisecond
+	)
+
+	auth := authmocks.NewService(t)
+	workspace := workspacemocks.NewService(t)
+	chat := chatmocks.NewService(t)
+
+	userID := uuid.New()
+	workspaceID := uuid.New()
+
+	auth.EXPECT().Authenticate(mock.Anything, "query-token").
+		Return(authdomain.User{ID: userID, Email: "owner@example.com"}, nil).Once()
+	workspace.EXPECT().Resolve(mock.Anything, workspaceID, userID).Return("owner", nil).Once()
+
+	events := make(chan chatdomain.Event)
+	chat.EXPECT().Stream(mock.Anything, mock.Anything, int64(0)).Return(events, nil).Once()
+
+	cfg := testConfig()
+	cfg.Http.WriteTimeout = writeTimeout
+	cfg.Http.ReadTimeout = writeTimeout
+
+	c := &Container{
+		Config: cfg,
+		Logger: zap.NewNop(),
+		Services: &Services{
+			Auth:      auth,
+			Workspace: workspace,
+			Chat:      chat,
+		},
+		Handlers: &Handlers{
+			Chat: chathandler.New(chat, zap.NewNop()).WithHeartbeat(heartbeat),
+		},
+	}
+
+	app := c.newApp(cfg)
+	c.app = app
+	c.registerStreamRoutes()
+	c.registerRoutes()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		close(events)
+		_ = app.Shutdown()
+	})
+
+	go func() { _ = app.Listener(listener) }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, fiber.MethodGet,
+		"http://"+listener.Addr().String()+"/api/events/stream?workspace_id="+workspaceID.String()+
+			"&token=query-token", nil)
+	require.NoError(t, err)
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	require.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	reader := bufio.NewReader(resp.Body)
+	start := time.Now()
+	var streamed strings.Builder
+	for time.Since(start) < 3*writeTimeout {
+		line, err := reader.ReadString('\n')
+		require.NoError(t, err, "the stream was cut after %v", time.Since(start))
+		streamed.WriteString(line)
+	}
+	require.Contains(t, streamed.String(), ": keep-alive")
+
+	events <- chatdomain.Event{
+		ID:             3,
+		WorkspaceID:    workspaceID,
+		Type:           chatdomain.EventMessageNew,
+		ConversationID: uuid.New(),
+		Payload:        []byte(`{"message_id":"e2e"}`),
+		CreatedAt:      time.Now(),
+	}
+
+	var frame strings.Builder
+	for !strings.Contains(frame.String(), "e2e") {
+		line, err := reader.ReadString('\n')
+		require.NoError(t, err, "the stream ended after %v without the event", time.Since(start))
+		frame.WriteString(line)
+	}
+	require.Contains(t, frame.String(), "event: message.new\n")
 }
 
 // TestTheSocketAlsoAuthenticatesFromTheQuery covers the primary transport.
