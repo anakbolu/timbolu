@@ -64,6 +64,51 @@ import { Handler as AgentHandler } from "../modules/agent/handler/handler.ts";
 import { Repository as LlmRepository, AgentStore } from "../modules/llm/repository/postgres.ts";
 import { Service as LlmService } from "../modules/llm/service/service.ts";
 import { Handler as LlmHandler } from "../modules/llm/handler/handler.ts";
+
+// chat
+import { PostgresRepository as ChatRepository } from "../modules/chat/repository/postgres.ts";
+import { Service as ChatService } from "../modules/chat/service/service.ts";
+import { Handler as ChatHandler } from "../modules/chat/handler/handler.ts";
+// integration
+import { PostgresRepository as IntegrationRepository } from "../modules/integration/repository/postgres.ts";
+import { IntegrationService } from "../modules/integration/service/service.ts";
+import { Handler as IntegrationHandler } from "../modules/integration/handler/handler.ts";
+// checklist
+import { PostgresRepository as ChecklistRepository } from "../modules/checklist/repository/postgres.ts";
+import { ChecklistService } from "../modules/checklist/service/service.ts";
+import { Handler as ChecklistHandler } from "../modules/checklist/handler/handler.ts";
+// order
+import { PostgresRepository as OrderRepository } from "../modules/order/repository/postgres.ts";
+import { Service as OrderService } from "../modules/order/service/service.ts";
+import { Handler as OrderHandler } from "../modules/order/handler/handler.ts";
+// billing
+import { PostgresRepository as BillingRepository } from "../modules/billing/repository/postgres.ts";
+import { BillingService } from "../modules/billing/service/service.ts";
+import { Handler as BillingHandler } from "../modules/billing/handler/handler.ts";
+// approval
+import { Repository as ApprovalRepository } from "../modules/approval/repository/postgres.ts";
+import { Service as ApprovalService } from "../modules/approval/service/service.ts";
+import { Handler as ApprovalHandler } from "../modules/approval/handler/handler.ts";
+// retention
+import { PostgresRepository as RetentionRepository } from "../modules/retention/repository/postgres.ts";
+import { Service as RetentionService } from "../modules/retention/service/service.ts";
+import { Handler as RetentionHandler } from "../modules/retention/handler/handler.ts";
+// memory
+import { PostgresRepository as MemoryRepository } from "../modules/memory/repository/postgres.ts";
+import { Service as MemoryService } from "../modules/memory/service/service.ts";
+import { Handler as MemoryHandler } from "../modules/memory/handler/handler.ts";
+// routine
+import { PostgresRepository as RoutineRepository } from "../modules/routine/repository/postgres.ts";
+import { RoutineService } from "../modules/routine/service/service.ts";
+import { Handler as RoutineHandler } from "../modules/routine/handler/handler.ts";
+// whatsapp
+import { PostgresRepository as WhatsAppRepository } from "../modules/whatsapp/repository/postgres.ts";
+import { Service as WhatsAppService } from "../modules/whatsapp/service/service.ts";
+import { Handler as WhatsAppHandler } from "../modules/whatsapp/handler/handler.ts";
+// task
+import { PostgresRepository as TaskRepository } from "../modules/task/repository/postgres.ts";
+import { Service as TaskService } from "../modules/task/service/service.ts";
+import { Handler as TaskHandler } from "../modules/task/handler/handler.ts";
 // admin
 import { Repository as AdminRepository } from "../modules/admin/repository/postgres.ts";
 import { Service as AdminService } from "../modules/admin/service/service.ts";
@@ -91,6 +136,17 @@ export interface Container {
   agent: AgentHandler | null;
   llm: LlmHandler | null;
   admin: AdminHandler | null;
+  chat: ChatHandler | null;
+  integration: IntegrationHandler | null;
+  checklist: ChecklistHandler | null;
+  order: OrderHandler | null;
+  billing: BillingHandler | null;
+  approval: ApprovalHandler | null;
+  retention: RetentionHandler | null;
+  memory: MemoryHandler | null;
+  routine: RoutineHandler | null;
+  whatsapp: WhatsAppHandler | null;
+  task: TaskHandler | null;
   /** The guards call these directly; a handler keeps its service private. */
   authService: AuthService | null;
   workspaceService: WorkspaceService | null;
@@ -332,6 +388,108 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
     admin = new AdminHandler(new AdminService({ repository: new AdminRepository(db) }), log);
   }
 
+
+  // --- the rest of the modules ---------------------------------------------
+  let chat: ChatHandler | null = null;
+  let integration: IntegrationHandler | null = null;
+  let checklist: ChecklistHandler | null = null;
+  let order: OrderHandler | null = null;
+  let billing: BillingHandler | null = null;
+  let approval: ApprovalHandler | null = null;
+  let retention: RetentionHandler | null = null;
+  let memory: MemoryHandler | null = null;
+  let routine: RoutineHandler | null = null;
+  let whatsapp: WhatsAppHandler | null = null;
+  let task: TaskHandler | null = null;
+
+  if (db) {
+    // Each service takes the ports it declares and nothing more; the optional ones
+    // stay null, which is the same shape as a deployment that has not connected
+    // that dependency yet.
+    const chatRepo = new ChatRepository(db);
+    chat = new ChatHandler(
+      new ChatService({
+        conversations: chatRepo,
+        messages: chatRepo,
+        attachments: chatRepo,
+        events: chatRepo,
+        publisher,
+        agents: new AgentRepository(db),
+        responder: { start: async () => ({ taskId: "" }) } as any,
+        storage,
+        logger: log,
+      } as any),
+      log,
+    );
+
+    const integrationRepo = new IntegrationRepository(db);
+    integration = new IntegrationHandler(
+      new IntegrationService({ repository: integrationRepo, box, kms, logger: log } as any),
+      log,
+      {
+        frontendUrl: config.application.frontendUrl,
+        redirectBase: config.integrations.oauthRedirectBase,
+      },
+    );
+
+    checklist = new ChecklistHandler(
+      new ChecklistService({ repository: new ChecklistRepository(db), logger: log } as any),
+      log,
+    );
+
+    order = new OrderHandler(
+      new OrderService({ repository: new OrderRepository(db), logger: log } as any),
+      log,
+    );
+
+    billing = new BillingHandler(
+      new BillingService({ repository: new BillingRepository(db), counter: quota, logger: log } as any),
+      log,
+    );
+
+    approval = new ApprovalHandler(
+      new ApprovalService({ drafts: new ApprovalRepository(db), logger: log } as any),
+      log,
+    );
+
+    const retentionRepo = new RetentionRepository(db);
+    retention = new RetentionHandler(
+      new RetentionService({ repository: retentionRepo, logger: log } as any),
+      log,
+    );
+
+    memory = new MemoryHandler(
+      new MemoryService({
+        repository: new MemoryRepository(db),
+        limits: { maxContentRunes: config.memory.maxContentRunes } as any,
+        logger: log,
+      } as any),
+      log,
+    );
+
+    routine = new RoutineHandler(
+      new RoutineService({ repository: new RoutineRepository(db), logger: log } as any),
+      log,
+    );
+
+    const taskRepo = new TaskRepository(db);
+    task = new TaskHandler(
+      new TaskService({ tasks: taskRepo, steps: taskRepo, logger: log } as any),
+      log,
+    );
+
+    whatsapp = new WhatsAppHandler(
+      new WhatsAppService({
+        repository: new WhatsAppRepository(db),
+        sessions: { forget: async () => undefined } as any,
+        storage,
+        hourlyLimit: config.whatsApp.hourlyLimit,
+        logger: log,
+      } as any),
+      log,
+    );
+  }
+
   const close = async (): Promise<void> => {
     await db?.close().catch(() => undefined);
     await redis?.close().catch(() => undefined);
@@ -358,6 +516,17 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
     agent,
     llm,
     admin,
+    chat,
+    integration,
+    checklist,
+    order,
+    billing,
+    approval,
+    retention,
+    memory,
+    routine,
+    whatsapp,
+    task,
     authService,
     workspaceService,
     close,

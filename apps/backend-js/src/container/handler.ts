@@ -17,7 +17,7 @@ import { Hono } from "hono";
 import type { AppEnv } from "../platform/context.ts";
 import { error as errorEnvelope } from "../platform/response.ts";
 import type { Container } from "./container.ts";
-import { requirePlatformAdmin, requireRole, requireTenant, requireUser, requireVerified, type GuardDeps } from "./middleware-auth.ts";
+import { requirePlatformAdmin, requireRole, requireStreamAuth, requireTenant, requireUser, requireVerified, type GuardDeps } from "./middleware-auth.ts";
 import { isAdminRole } from "../modules/admin/domain/admin.ts";
 
 import { routes as healthRoutes } from "../modules/health/handler/handler.ts";
@@ -36,6 +36,17 @@ import {
 } from "../modules/agent/handler/handler.ts";
 import { managerRoutes as llmManager, routes as llmRoutes } from "../modules/llm/handler/handler.ts";
 import { routes as adminRoutes } from "../modules/admin/handler/handler.ts";
+import { routes as chatRoutes, managerRoutes as chatManager, streamRoutes as chatStream, contentRoutes as chatContent } from "../modules/chat/handler/handler.ts";
+import { routes as integrationRoutes, callbackRoutes as integrationCallback } from "../modules/integration/handler/handler.ts";
+import { routes as checklistRoutes } from "../modules/checklist/handler/handler.ts";
+import { routes as orderRoutes, managerRoutes as orderManager } from "../modules/order/handler/handler.ts";
+import { routes as billingRoutes, webhookRoutes as billingWebhook } from "../modules/billing/handler/handler.ts";
+import { routes as approvalRoutes, managerRoutes as approvalManager } from "../modules/approval/handler/handler.ts";
+import { ownerRoutes as retentionOwner } from "../modules/retention/handler/handler.ts";
+import { routes as memoryRoutes } from "../modules/memory/handler/handler.ts";
+import { routes as routineRoutes } from "../modules/routine/handler/handler.ts";
+import { routes as whatsappRoutes, linkStreamRoutes as whatsappLinkStream } from "../modules/whatsapp/handler/handler.ts";
+import { routes as taskRoutes } from "../modules/task/handler/handler.ts";
 
 /** A route that answers 503 rather than 404, for a module this deployment lacks. */
 function unavailable(message: string, code: string) {
@@ -70,6 +81,15 @@ export function registerRoutes(app: Hono<AppEnv>, c: Container): void {
   if (c.auth) authRoutes(api, c.auth);
   else api.all("/auth/*", unavailable("authentication is not configured", "auth_not_configured"));
 
+  // The endpoints a provider reaches directly. Where they are registered is what
+  // makes them public: an empty-path group below applies its middleware to the
+  // whole prefix, so a route added after it would be asked for a session it
+  // cannot have. What makes them safe is what each carries — a signed,
+  // single-use state for the redirect, and the adapter's own signature for a
+  // webhook.
+  if (c.integration) integrationCallback(api, c.integration);
+  if (c.billing) billingWebhook(api, c.billing);
+
   // --- authenticated, no active workspace -----------------------------------
   const user = new Hono<AppEnv>();
   user.use("*", requireUser(deps));
@@ -96,9 +116,15 @@ export function registerRoutes(app: Hono<AppEnv>, c: Container): void {
 
   // Verified accounts only: onboarding and accepting an invitation create or join
   // tenancy, so the address must be confirmed first.
-  const verified = new Hono<AppEnv>();
-  verified.use("*", requireUser(deps), requireVerified(deps));
-  if (c.workspace) workspaceVerified(verified, c.workspace);
+  //
+  // The guard is registered on the two paths rather than on an empty-path group.
+  // An empty-path group applies its middleware to every route registered after
+  // it, whichever group registers that route — mounted at "/" it would put
+  // requireVerified on every tenant read as well, and a member whose address is
+  // unconfirmed would be told to verify before they could see their own chat.
+  api.use("/workspaces/onboard", requireUser(deps), requireVerified(deps));
+  api.use("/invitations/accept", requireUser(deps), requireVerified(deps));
+  if (c.workspace) workspaceVerified(api, c.workspace);
 
   // --- active workspace required --------------------------------------------
   const tenant = new Hono<AppEnv>();
@@ -107,25 +133,31 @@ export function registerRoutes(app: Hono<AppEnv>, c: Container): void {
   if (c.workspace) workspaceTenant(tenant, c.workspace);
   if (c.agent) agentRoutes(tenant, c.agent);
   if (c.llm) llmRoutes(tenant, c.llm);
+  if (c.chat) chatRoutes(tenant, c.chat);
+  if (c.task) taskRoutes(tenant, c.task);
+  if (c.memory) memoryRoutes(tenant, c.memory);
+  if (c.routine) routineRoutes(tenant, c.routine);
+  if (c.whatsapp) whatsappRoutes(tenant, c.whatsapp);
+  if (c.billing) billingRoutes(tenant, c.billing);
+  if (c.approval) approvalRoutes(tenant, c.approval);
+  if (c.integration) integrationRoutes(tenant, c.integration);
+  if (c.order) orderRoutes(tenant, c.order);
+  if (c.checklist) checklistRoutes(tenant, c.checklist);
 
   // Modules not yet wired answer 503 on their documented paths rather than 404,
   // so a screen that asks for one says "not configured" instead of looking like a
   // typo. Kept in the same order as the Go container's registerUnavailableModules.
-  const pending: Array<[string, string, string]> = [
-    ["/conversations*", "chat is not configured", "chat_not_configured"],
-    ["/tasks*", "tasks are not configured", "task_not_configured"],
-    ["/memories*", "memory is not configured", "memory_not_configured"],
-    ["/knowledge*", "memory is not configured", "memory_not_configured"],
-    ["/routines*", "routines are not configured", "routine_not_configured"],
-    ["/routine-runs*", "routines are not configured", "routine_not_configured"],
-    ["/whatsapp*", "whatsapp is not configured", "whatsapp_not_configured"],
-    ["/billing*", "billing is not configured", "billing_not_configured"],
-    ["/drafts*", "approvals are not configured", "approval_not_configured"],
-    ["/approval-policies*", "approvals are not configured", "approval_not_configured"],
-    ["/integrations*", "integrations are not configured", "integration_not_configured"],
-    ["/orders*", "orders are not configured", "order_not_configured"],
-    ["/checklists*", "checklists are not configured", "checklist_not_configured"],
-  ];
+  const pending: Array<[string, string, string]> = [];
+  if (!c.chat) pending.push(["/conversations*", "chat is not configured", "chat_not_configured"], ["/events*", "chat is not configured", "chat_not_configured"]);
+  if (!c.task) pending.push(["/tasks*", "tasks are not configured", "task_not_configured"]);
+  if (!c.memory) pending.push(["/memories*", "memory is not configured", "memory_not_configured"], ["/knowledge*", "memory is not configured", "memory_not_configured"]);
+  if (!c.routine) pending.push(["/routines*", "routines are not configured", "routine_not_configured"], ["/routine-runs*", "routines are not configured", "routine_not_configured"]);
+  if (!c.whatsapp) pending.push(["/whatsapp*", "whatsapp is not configured", "whatsapp_not_configured"]);
+  if (!c.billing) pending.push(["/billing*", "billing is not configured", "billing_not_configured"]);
+  if (!c.approval) pending.push(["/drafts*", "approvals are not configured", "approval_not_configured"], ["/approval-policies*", "approvals are not configured", "approval_not_configured"]);
+  if (!c.integration) pending.push(["/integrations*", "integrations are not configured", "integration_not_configured"]);
+  if (!c.order) pending.push(["/orders*", "orders are not configured", "order_not_configured"]);
+  if (!c.checklist) pending.push(["/checklists*", "checklists are not configured", "checklist_not_configured"]);
   for (const [path, message, code] of pending) tenant.all(path, unavailable(message, code));
 
   // --- role groups, registered last -----------------------------------------
@@ -134,14 +166,35 @@ export function registerRoutes(app: Hono<AppEnv>, c: Container): void {
   if (c.workspace) workspaceManager(managers, c.workspace);
   if (c.agent) agentManager(managers, c.agent);
   if (c.llm) llmManager(managers, c.llm);
+  if (c.chat) chatManager(managers, c.chat);
+  if (c.order) orderManager(managers, c.order);
+  if (c.approval) approvalManager(managers, c.approval);
 
   const owners = new Hono<AppEnv>();
   owners.use("*", requireUser(deps), requireTenant(deps), requireRole("owner"));
   if (c.workspace) workspaceOwner(owners, c.workspace);
+  if (c.retention) retentionOwner(owners, c.retention);
+
+  // The live stream carries its own authentication because a browser cannot set
+  // a header on a WebSocket or an EventSource: the token and the workspace travel
+  // in the query string. The middleware is registered on the stream paths only, so
+  // a public route is never asked for a token.
+  if (c.chat) {
+    app.use(`${prefix}/events/stream`, requireStreamAuth(deps, "chat_not_configured"));
+    app.use(`${prefix}/events/socket`, requireStreamAuth(deps, "chat_not_configured"));
+    chatStream(api, c.chat);
+    // The content origin is mounted on the app root and is deliberately
+    // unauthenticated: an iframe without allow-same-origin sends no cookie, so the
+    // reference in the URL is the only capability and it names one document.
+    chatContent(app, c.chat);
+  }
+  if (c.whatsapp) {
+    app.use(`${prefix}/whatsapp/links/:linkID/socket`, requireStreamAuth(deps, "whatsapp_not_configured"));
+    whatsappLinkStream(api, c.whatsapp);
+  }
 
   // Everything assembled under the API prefix.
   api.route("/", user);
-  api.route("/", verified);
   api.route("/", tenant);
   api.route("/", managers);
   api.route("/", owners);
