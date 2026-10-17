@@ -41,6 +41,13 @@ const (
 	// replyTimeout bounds one reply, so a stuck provider cannot hold a
 	// placeholder message open forever.
 	replyTimeout = 5 * time.Minute
+	// pruneEmitTimeout bounds the detached context a sweep publishes its updates on.
+	//
+	// The sweep can stop because the caller's context was cancelled, and the rows it already
+	// removed are gone either way, so the events that tell clients about them are published on
+	// context.WithoutCancel and outlive the request. The timeout is what keeps a stuck event
+	// store from holding the sweep open instead.
+	pruneEmitTimeout = 5 * time.Second
 )
 
 // Config holds the service settings.
@@ -430,9 +437,14 @@ func (s *Service) AttachmentContent(ctx context.Context, scope chatdomain.Scope,
 // One event per message, not one per row, and it carries the whole attachment list as it reads
 // after the last row of that message went. Several files of one message expire in the same pass,
 // and a client replaces the entire list on every update it receives: an event per row would show
-// it states the message never had. The events go out after the loop rather than from inside it,
-// so a pass that stopped on a cancelled context, or that lost an object and kept going, still
-// tells clients what it did remove.
+// it states the message never had. The events go out after the loop rather than from inside it, so
+// a pass that lost an object and kept going still tells clients about the files it did remove.
+//
+// The pass can also stop because the caller gave up, and the rows it removed before that are gone
+// all the same, so the events are published on a context detached from the caller's by
+// context.WithoutCancel and bounded by pruneEmitTimeout. An event that still could not be written
+// is logged rather than dropped: the row is the record and the next history read is right, but
+// nothing else would ever tell the live clients, and the file would stay on screen.
 func (s *Service) PruneAttachments(ctx context.Context, scope chatdomain.Scope, olderThan time.Time, limit int) (chatdomain.AttachmentPrune, error) {
 	if err := requireWorkspace(scope); err != nil {
 		return chatdomain.AttachmentPrune{}, err
@@ -484,9 +496,21 @@ func (s *Service) PruneAttachments(ctx context.Context, scope chatdomain.Scope, 
 		result.BytesFreed += attachment.ByteSize
 	}
 
+	// One detached context for the batch: the messages are already in hand, so the deadline is
+	// there to bound a stuck event store rather than the number of events.
+	emitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pruneEmitTimeout)
+	defer cancel()
+
 	for _, id := range order {
 		message := updated[id]
-		s.emitMessage(ctx, scope, message, message.ConversationID, chatdomain.EventMessageUpdated)
+		if err := s.emitMessageErr(emitCtx, scope, message, message.ConversationID, chatdomain.EventMessageUpdated); err != nil {
+			if s.deps.Logger != nil {
+				s.deps.Logger.Error("could not publish the message an attachment was pruned from",
+					zap.String("message_id", message.ID.String()),
+					zap.String("conversation_id", message.ConversationID.String()),
+					zap.Error(err))
+			}
+		}
 	}
 
 	return result, errors.Join(failures...)
