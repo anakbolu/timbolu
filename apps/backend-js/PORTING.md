@@ -72,10 +72,10 @@ repository function, so those are absorbed into `repository/postgres.ts`.
 
 | Go | TypeScript | status |
 | --- | --- | --- |
-| `apps/backend/cmd/agent-worker/main.go` | `apps/backend-js/src/cmd/agent-worker/main.ts` | missing |
-| `apps/backend/cmd/api/main.go` | `apps/backend-js/src/cmd/api/main.ts` | missing |
-| `apps/backend/cmd/integration-worker/main.go` | `apps/backend-js/src/cmd/integration-worker/main.ts` | missing |
-| `apps/backend/cmd/vcomputer-smoke/main.go` | `apps/backend-js/src/cmd/vcomputer-smoke/main.ts` | missing |
+| `apps/backend/cmd/agent-worker/main.go` | `apps/backend-js/src/cmd/agent-worker.ts` | missing |
+| `apps/backend/cmd/api/main.go` | `apps/backend-js/src/cmd/api.ts` | ported — consolidated into one file |
+| `apps/backend/cmd/integration-worker/main.go` | `apps/backend-js/src/cmd/integration-worker.ts` | missing |
+| `apps/backend/cmd/vcomputer-smoke/main.go` | `apps/backend-js/src/cmd/vcomputer-smoke.ts` | missing |
 | `apps/backend/cmd/vcomputer-smoke/main_test.go` | `—` | skipped — test file |
 | `apps/backend/internal/modules/admin/domain/admin.go` | `apps/backend-js/src/modules/admin/domain/admin.ts` | ported |
 | `apps/backend/internal/modules/admin/domain/mocks/mock_Repository.go` | `—` | skipped — generated mock |
