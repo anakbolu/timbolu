@@ -1,0 +1,3 @@
+2026-10-16T08:51:06.658Z	INFO	container/retention.go:242	retention is disabled: only the staged upload sweep runs	{"interval": "1m0s", "staged_ttl": "1m0s"}
+2026-10-16T08:52:06.674Z	INFO	container/retention.go:281	the staged upload sweep ran	{"workspaces": 20, "attachments_pruned": 21, "bytes_freed": 5867251, "staged_ttl": "1m0s"}
+2026-10-16T08:53:06.680Z	INFO	container/retention.go:281	the staged upload sweep ran	{"workspaces": 20, "attachments_pruned": 1, "bytes_freed": 4, "staged_ttl": "1m0s"}
