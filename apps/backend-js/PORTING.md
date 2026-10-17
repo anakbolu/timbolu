@@ -5,6 +5,24 @@ Generated 2026-10-17 from the filesystem, not from a checklist.
 Every `.go` file under `apps/backend` and `packages/platform` is listed below with its
 TypeScript counterpart. `ported` means the file exists and `bun run typecheck` accepts it.
 
+## Status
+
+`bun run typecheck` clean. The server boots and the flows below were exercised
+against the live Postgres, Redis and Temporal (see the PR description):
+
+- auth: register, verify, login, me
+- tenancy: onboard, teams, members, roles
+- agents: catalog, create from template, list
+- chat -> task: a message creates a task and its Temporal workflow starts
+- routines: create/pause/resume/delete, each mirrored onto a real Temporal
+  Schedule with the same `routine-<id>` format the Go deployment uses
+- memory: a message starts `memory-<conversationId>` as MemoryExtractionWorkflow
+
+Not yet wired: the task activity's internal ports (tools, executor, drafts,
+reply writer, event sink, memory recall, outcome sink, namer) — so the agent loop
+records a task and reaches the worker but cannot complete a round. The ports are
+ported; the adapters between them and the other modules' services are not.
+
 ## Summary
 
 | | count |
