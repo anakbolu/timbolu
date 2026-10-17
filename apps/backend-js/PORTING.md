@@ -9,8 +9,8 @@ TypeScript counterpart. `ported` means the file exists and `bun run typecheck` a
 
 | | count |
 | --- | --- |
-| ported | 198 |
-| missing | 13 |
+| ported | 211 |
+| missing | 0 |
 | folded | 53 |
 | skipped | 194 |
 | **total** | **458** |
@@ -23,7 +23,7 @@ repository function, so those are absorbed into `repository/postgres.ts`.
 
 | group | ported | missing | folded | skipped |
 | --- | --- | --- | --- | --- |
-| `cmd` | 0 | 4 | 0 | 1 |
+| `cmd` | 4 | 0 | 0 | 1 |
 | `module/admin` | 4 | 0 | 3 | 4 |
 | `module/agent` | 5 | 0 | 3 | 5 |
 | `module/approval` | 6 | 0 | 3 | 3 |
@@ -36,11 +36,11 @@ repository function, so those are absorbed into `repository/postgres.ts`.
 | `module/llm` | 12 | 0 | 5 | 19 |
 | `module/memory` | 13 | 0 | 3 | 12 |
 | `module/order` | 5 | 0 | 3 | 6 |
-| `module/retention` | 0 | 6 | 3 | 3 |
+| `module/retention` | 6 | 0 | 3 | 3 |
 | `module/routine` | 8 | 0 | 3 | 12 |
 | `module/task` | 16 | 0 | 3 | 11 |
 | `module/vcomputer` | 4 | 0 | 0 | 3 |
-| `module/whatsapp` | 7 | 3 | 3 | 5 |
+| `module/whatsapp` | 10 | 0 | 3 | 5 |
 | `module/workspace` | 7 | 0 | 3 | 8 |
 | `platform/attachtext` | 2 | 0 | 0 | 1 |
 | `platform/authn` | 3 | 0 | 0 | 3 |
@@ -72,10 +72,10 @@ repository function, so those are absorbed into `repository/postgres.ts`.
 
 | Go | TypeScript | status |
 | --- | --- | --- |
-| `apps/backend/cmd/agent-worker/main.go` | `apps/backend-js/src/cmd/agent-worker.ts` | missing |
+| `apps/backend/cmd/agent-worker/main.go` | `apps/backend-js/src/cmd/agent-worker.ts` | ported — consolidated into one file |
 | `apps/backend/cmd/api/main.go` | `apps/backend-js/src/cmd/api.ts` | ported — consolidated into one file |
-| `apps/backend/cmd/integration-worker/main.go` | `apps/backend-js/src/cmd/integration-worker.ts` | missing |
-| `apps/backend/cmd/vcomputer-smoke/main.go` | `apps/backend-js/src/cmd/vcomputer-smoke.ts` | missing |
+| `apps/backend/cmd/integration-worker/main.go` | `apps/backend-js/src/cmd/integration-worker.ts` | ported — consolidated into one file |
+| `apps/backend/cmd/vcomputer-smoke/main.go` | `apps/backend-js/src/cmd/vcomputer-smoke.ts` | ported — consolidated into one file |
 | `apps/backend/cmd/vcomputer-smoke/main_test.go` | `—` | skipped — test file |
 | `apps/backend/internal/modules/admin/domain/admin.go` | `apps/backend-js/src/modules/admin/domain/admin.ts` | ported |
 | `apps/backend/internal/modules/admin/domain/mocks/mock_Repository.go` | `—` | skipped — generated mock |
@@ -327,17 +327,17 @@ repository function, so those are absorbed into `repository/postgres.ts`.
 | `apps/backend/internal/modules/order/repository/sqlcgen/order.sql.go` | `—` | folded — sqlc-generated; folded into the repository |
 | `apps/backend/internal/modules/order/service/service.go` | `apps/backend-js/src/modules/order/service/service.ts` | ported |
 | `apps/backend/internal/modules/order/service/service_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/modules/retention/domain/erasure.go` | `apps/backend-js/src/modules/retention/domain/erasure.ts` | missing |
-| `apps/backend/internal/modules/retention/domain/retention.go` | `apps/backend-js/src/modules/retention/domain/retention.ts` | missing |
-| `apps/backend/internal/modules/retention/handler/handler.go` | `apps/backend-js/src/modules/retention/handler/handler.ts` | missing |
+| `apps/backend/internal/modules/retention/domain/erasure.go` | `apps/backend-js/src/modules/retention/domain/erasure.ts` | ported |
+| `apps/backend/internal/modules/retention/domain/retention.go` | `apps/backend-js/src/modules/retention/domain/retention.ts` | ported |
+| `apps/backend/internal/modules/retention/handler/handler.go` | `apps/backend-js/src/modules/retention/handler/handler.ts` | ported |
 | `apps/backend/internal/modules/retention/handler/handler_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/modules/retention/repository/postgres.go` | `apps/backend-js/src/modules/retention/repository/postgres.ts` | missing |
+| `apps/backend/internal/modules/retention/repository/postgres.go` | `apps/backend-js/src/modules/retention/repository/postgres.ts` | ported |
 | `apps/backend/internal/modules/retention/repository/sqlcgen/db.go` | `—` | folded — sqlc-generated; folded into the repository |
 | `apps/backend/internal/modules/retention/repository/sqlcgen/models.go` | `—` | folded — sqlc-generated; folded into the repository |
 | `apps/backend/internal/modules/retention/repository/sqlcgen/retention.sql.go` | `—` | folded — sqlc-generated; folded into the repository |
-| `apps/backend/internal/modules/retention/service/erasure.go` | `apps/backend-js/src/modules/retention/service/erasure.ts` | missing |
+| `apps/backend/internal/modules/retention/service/erasure.go` | `apps/backend-js/src/modules/retention/service/erasure.ts` | ported |
 | `apps/backend/internal/modules/retention/service/erasure_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/modules/retention/service/service.go` | `apps/backend-js/src/modules/retention/service/service.ts` | missing |
+| `apps/backend/internal/modules/retention/service/service.go` | `apps/backend-js/src/modules/retention/service/service.ts` | ported |
 | `apps/backend/internal/modules/retention/service/service_test.go` | `—` | skipped — test file |
 | `apps/backend/internal/modules/routine/activity/activity.go` | `apps/backend-js/src/modules/routine/activity/activity.ts` | ported |
 | `apps/backend/internal/modules/routine/activity/activity_test.go` | `—` | skipped — test file |
@@ -399,13 +399,13 @@ repository function, so those are absorbed into `repository/postgres.ts`.
 | `apps/backend/internal/modules/vcomputer/temporal/activities_test.go` | `—` | skipped — test file |
 | `apps/backend/internal/modules/vcomputer/workflow/smoke.go` | `apps/backend-js/src/modules/vcomputer/workflow/smoke.ts` | ported |
 | `apps/backend/internal/modules/vcomputer/workflow/smoke_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/modules/whatsapp/adapter/adapter.go` | `apps/backend-js/src/modules/whatsapp/adapter/adapter.ts` | missing |
+| `apps/backend/internal/modules/whatsapp/adapter/adapter.go` | `apps/backend-js/src/modules/whatsapp/adapter/adapter.ts` | ported |
 | `apps/backend/internal/modules/whatsapp/adapter/adapter_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/modules/whatsapp/handler/handler.go` | `apps/backend-js/src/modules/whatsapp/handler/handler.ts` | missing |
+| `apps/backend/internal/modules/whatsapp/handler/handler.go` | `apps/backend-js/src/modules/whatsapp/handler/handler.ts` | ported |
 | `apps/backend/internal/modules/whatsapp/handler/handler_test.go` | `—` | skipped — test file |
 | `apps/backend/internal/modules/whatsapp/handler/qr.go` | `apps/backend-js/src/modules/whatsapp/handler/qr.ts` | ported |
 | `apps/backend/internal/modules/whatsapp/handler/qr_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/modules/whatsapp/handler/stream.go` | `apps/backend-js/src/modules/whatsapp/handler/stream.ts` | missing |
+| `apps/backend/internal/modules/whatsapp/handler/stream.go` | `apps/backend-js/src/modules/whatsapp/handler/stream.ts` | ported |
 | `apps/backend/internal/modules/whatsapp/repository/convert.go` | `apps/backend-js/src/modules/whatsapp/repository/convert.ts` | ported |
 | `apps/backend/internal/modules/whatsapp/repository/links.go` | `apps/backend-js/src/modules/whatsapp/repository/links.ts` | ported |
 | `apps/backend/internal/modules/whatsapp/repository/postgres.go` | `apps/backend-js/src/modules/whatsapp/repository/postgres.ts` | ported |
@@ -438,11 +438,11 @@ repository function, so those are absorbed into `repository/postgres.ts`.
 | `apps/backend/internal/platform/attachtext/attachtext.go` | `apps/backend-js/src/platform/attachtext/attachtext.ts` | ported |
 | `apps/backend/internal/platform/attachtext/attachtext_test.go` | `—` | skipped — test file |
 | `apps/backend/internal/platform/attachtext/pdf.go` | `apps/backend-js/src/platform/attachtext/pdf.ts` | ported |
-| `apps/backend/internal/platform/authn/password.go` | `apps/backend-js/src/platform/authn/index.ts` | ported — consolidated into one module |
+| `apps/backend/internal/platform/authn/password.go` | `apps/backend-js/src/platform/authn/index.ts` | ported — consolidated into one file |
 | `apps/backend/internal/platform/authn/password_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/platform/authn/state.go` | `apps/backend-js/src/platform/authn/index.ts` | ported — consolidated into one module |
+| `apps/backend/internal/platform/authn/state.go` | `apps/backend-js/src/platform/authn/index.ts` | ported — consolidated into one file |
 | `apps/backend/internal/platform/authn/state_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/platform/authn/token.go` | `apps/backend-js/src/platform/authn/index.ts` | ported — consolidated into one module |
+| `apps/backend/internal/platform/authn/token.go` | `apps/backend-js/src/platform/authn/index.ts` | ported — consolidated into one file |
 | `apps/backend/internal/platform/authn/token_test.go` | `—` | skipped — test file |
 | `apps/backend/internal/platform/llm/anthropic/client.go` | `apps/backend-js/src/platform/llm/anthropic/client.ts` | ported |
 | `apps/backend/internal/platform/llm/anthropic/contract_test.go` | `—` | skipped — test file |
@@ -478,7 +478,7 @@ repository function, so those are absorbed into `repository/postgres.ts`.
 | `apps/backend/internal/platform/middleware/request_context_test.go` | `—` | skipped — test file |
 | `apps/backend/internal/platform/middleware/tracing.go` | `apps/backend-js/src/platform/middleware/tracing.ts` | ported |
 | `apps/backend/internal/platform/middleware/tracing_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/platform/migrate/migrate.go` | `apps/backend-js/src/cmd/migrate.ts` | ported — consolidated into one module |
+| `apps/backend/internal/platform/migrate/migrate.go` | `apps/backend-js/src/cmd/migrate.ts` | ported — consolidated into one file |
 | `apps/backend/internal/platform/migrate/migrate_test.go` | `—` | skipped — test file |
 | `apps/backend/internal/platform/oauth/google/google.go` | `apps/backend-js/src/platform/oauth/google/google.ts` | ported |
 | `apps/backend/internal/platform/oauth/google/google_test.go` | `—` | skipped — test file |
@@ -491,7 +491,7 @@ repository function, so those are absorbed into `repository/postgres.ts`.
 | `apps/backend/internal/platform/quota/counter_test.go` | `—` | skipped — test file |
 | `apps/backend/internal/platform/ratelimit/ratelimit.go` | `apps/backend-js/src/platform/ratelimit/ratelimit.ts` | ported |
 | `apps/backend/internal/platform/ratelimit/ratelimit_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/platform/response/response.go` | `apps/backend-js/src/platform/response.ts` | ported — consolidated into one module |
+| `apps/backend/internal/platform/response/response.go` | `apps/backend-js/src/platform/response.ts` | ported — consolidated into one file |
 | `apps/backend/internal/platform/response/response_test.go` | `—` | skipped — test file |
 | `apps/backend/internal/platform/routine/temporal/scheduler.go` | `apps/backend-js/src/platform/routine/temporal/scheduler.ts` | ported |
 | `apps/backend/internal/platform/routine/temporal/scheduler_test.go` | `—` | skipped — test file |
@@ -508,17 +508,17 @@ repository function, so those are absorbed into `repository/postgres.ts`.
 | `packages/platform/config/validation.go` | `apps/backend-js/src/platform/config/validation.ts` | ported |
 | `packages/platform/crypto/secretbox.go` | `apps/backend-js/src/platform/crypto/secretbox.ts` | ported |
 | `packages/platform/crypto/secretbox_test.go` | `—` | skipped — test file |
-| `packages/platform/database/database.go` | `apps/backend-js/src/platform/database/index.ts` | ported — consolidated into one module |
+| `packages/platform/database/database.go` | `apps/backend-js/src/platform/database/index.ts` | ported — consolidated into one file |
 | `packages/platform/database/database_test.go` | `—` | skipped — test file |
-| `packages/platform/database/scope.go` | `apps/backend-js/src/platform/database/index.ts` | ported — consolidated into one module |
-| `packages/platform/database/tenant.go` | `apps/backend-js/src/platform/database/index.ts` | ported — consolidated into one module |
+| `packages/platform/database/scope.go` | `apps/backend-js/src/platform/database/index.ts` | ported — consolidated into one file |
+| `packages/platform/database/tenant.go` | `apps/backend-js/src/platform/database/index.ts` | ported — consolidated into one file |
 | `packages/platform/kms/kms.go` | `apps/backend-js/src/platform/kms/kms.ts` | ported |
 | `packages/platform/kms/kms_test.go` | `—` | skipped — test file |
-| `packages/platform/logger/logger.go` | `apps/backend-js/src/platform/logger.ts` | ported — consolidated into one module |
+| `packages/platform/logger/logger.go` | `apps/backend-js/src/platform/logger.ts` | ported — consolidated into one file |
 | `packages/platform/logger/logger_test.go` | `—` | skipped — test file |
-| `packages/platform/logger/redact.go` | `apps/backend-js/src/platform/logger.ts` | ported — consolidated into one module |
+| `packages/platform/logger/redact.go` | `apps/backend-js/src/platform/logger.ts` | ported — consolidated into one file |
 | `packages/platform/logger/redact_test.go` | `—` | skipped — test file |
-| `packages/platform/logger/writer.go` | `apps/backend-js/src/platform/logger.ts` | ported — consolidated into one module |
+| `packages/platform/logger/writer.go` | `apps/backend-js/src/platform/logger.ts` | ported — consolidated into one file |
 | `packages/platform/metrics/metrics.go` | `apps/backend-js/src/platform/metrics/metrics.ts` | ported |
 | `packages/platform/metrics/metrics_test.go` | `—` | skipped — test file |
 | `packages/platform/metrics/recorder.go` | `apps/backend-js/src/platform/metrics/recorder.ts` | ported |

@@ -560,6 +560,11 @@ function parseOptionalTime(value: string | undefined): Date | null | undefined {
   if (text === "") {
     return null;
   }
+  // Go's `time.Parse(time.RFC3339, ...)`: a full date-time with seconds and an
+  // explicit offset. A bare date or a local-looking string is not one.
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(text)) {
+    return undefined;
+  }
   const parsed = new Date(text);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }

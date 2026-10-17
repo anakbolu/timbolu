@@ -345,10 +345,13 @@ export class Handler {
     // replace the type with whatever it guessed: a JPEG that starts with an
     // unusual marker would be served as octet-stream and downloaded instead of
     // shown.
-    return c.body(content, 200, {
-      "Content-Type": contentTypeFor(message.media.kind),
-      "Content-Disposition": `inline; filename=${JSON.stringify(filenameFor(message))}`,
-      "Cache-Control": "private, max-age=3600",
+    return new Response(content, {
+      status: 200,
+      headers: {
+        "Content-Type": contentTypeFor(message.media.kind),
+        "Content-Disposition": `inline; filename=${JSON.stringify(filenameFor(message))}`,
+        "Cache-Control": "private, max-age=3600",
+      },
     });
   };
 
@@ -431,6 +434,15 @@ export function routes(group: Hono<AppEnv>, h: Handler): void {
   group.get("/whatsapp/numbers/:numberID/outbox", h.outbox);
   group.get("/whatsapp/messages/:messageID/media", h.media);
 }
+
+/**
+ * Registers the per-attempt socket. The container applies the middleware that
+ * authenticates from the query string, as it does for the event stream.
+ *
+ * Declared in stream.ts and re-exported here so wiring imports one file, as it
+ * does for every module.
+ */
+export { linkStreamRoutes } from "./stream.ts";
 
 // ------------------------------------------------------------------- payloads
 

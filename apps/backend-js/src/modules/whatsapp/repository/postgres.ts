@@ -17,6 +17,7 @@ import {
   ErrAlreadyLinked,
   ErrInvalidInput,
   ErrNotFound,
+  ErrNotConfigured,
   NilUUID,
   scopeIsZero,
   wrap,

@@ -22,7 +22,6 @@ import type {
   Replies,
   Scope,
   Store,
-  Watchers,
 } from "../domain/whatsapp.ts";
 import {
   AlertLimit,
@@ -42,7 +41,7 @@ import {
   scopeIsZero,
   wrap,
 } from "../domain/whatsapp.ts";
-import type { Claimed } from "../domain/engine.ts";
+import type { Claimed, Watchers } from "../domain/engine.ts";
 import { EventMessageReceived, type EnqueueRequest } from "../domain/service.ts";
 import { maskPhone, normalizePhone } from "./service.ts";
 

@@ -19,6 +19,7 @@
  * Ported 1:1 from internal/modules/vcomputer/workflow/smoke.go.
  */
 
+import { ApplicationFailure } from "@temporalio/common";
 import { CancellationScope, proxyActivities, sleep, type ActivityOptions } from "@temporalio/workflow";
 import type { ExecResult, Session } from "../domain/ports.ts";
 import type {
@@ -195,27 +196,33 @@ export async function SmokeWorkflow(input: SmokeInput): Promise<SmokeResult> {
 /**
  * Joins the two failures the way Go's `errors.Join` does, keeping both messages.
  *
- * The result is one plain `Error` rather than an `AggregateError`: the SDK
- * converts an error thrown by a workflow into a failure, and a message that
- * carries both answers is what an operator reads — the step that failed first,
- * and the sandbox that was left behind.
+ * It is an `ApplicationFailure` rather than a plain `Error`: the SDK turns a
+ * non-application error thrown by a workflow into a retried workflow-task
+ * failure, so a plain one would leave the run hanging until its execution
+ * timeout instead of failing with the sentence an operator needs. When only one
+ * step failed, its own failure is rethrown unchanged.
  */
 function joinedFailure(botId: string, failure: unknown, stopFailure: unknown): Error {
-  const messageOf = (err: unknown): string => {
-    // The SDK's `ActivityFailure` keeps the activity's own sentence in `cause`,
-    // which is the part an operator needs.
-    let current: unknown = err;
-    for (let guard = 0; guard < 16 && current instanceof Error && current.cause instanceof Error; guard++) {
-      current = current.cause;
-    }
-    return current instanceof Error ? current.message : String(current);
-  };
-
-  if (stopFailure !== null) {
-    const stop = `stop the session for ${botId}: ${messageOf(stopFailure)}`;
-    if (failure === null) return new Error(stop);
-    return new Error(`${messageOf(failure)}\n${stop}`, { cause: failure });
+  if (stopFailure === null) {
+    return failure instanceof Error ? failure : ApplicationFailure.nonRetryable(String(failure), "SmokeFailed");
   }
 
-  return failure instanceof Error ? failure : new Error(messageOf(failure));
+  const stop = `stop the session for ${botId}: ${messageOf(stopFailure)}`;
+  const message = failure === null ? stop : `${messageOf(failure)}\n${stop}`;
+  return ApplicationFailure.nonRetryable(message, "SmokeCleanupFailed", failure ?? undefined);
+}
+
+/**
+ * The message an operator reads.
+ *
+ * The SDK's `ActivityFailure` says only "Activity task failed" and keeps the
+ * activity's own sentence in `cause`; Go's error carried that sentence in its
+ * text. The chain is walked to the deepest error for that reason.
+ */
+function messageOf(err: unknown): string {
+  let current: unknown = err;
+  for (let guard = 0; guard < 16 && current instanceof Error && current.cause instanceof Error; guard++) {
+    current = current.cause;
+  }
+  return current instanceof Error ? current.message : String(current);
 }

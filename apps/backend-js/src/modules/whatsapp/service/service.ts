@@ -32,7 +32,6 @@ import type {
   SessionForgetter,
   Store,
   Transport,
-  Watchers,
 } from "../domain/whatsapp.ts";
 import {
   AlertDisconnected,
@@ -59,7 +58,7 @@ import {
   scopeIsZero,
   wrap,
 } from "../domain/whatsapp.ts";
-import type { Claimed, Connections, ReportRequest } from "../domain/engine.ts";
+import type { Claimed, Connections, ReportRequest, Watchers } from "../domain/engine.ts";
 import type { EnqueueRequest, LinkRequest, ServicePort } from "../domain/service.ts";
 import {
   claim as claimMessages,
