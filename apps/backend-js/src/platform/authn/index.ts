@@ -1,68 +1,100 @@
 /**
- * Authentication primitives: password hashing with argon2id, one-time token
- * generation, and access-token issuing and verification.
+ * Authentication primitives: password hashing, one-time token generation, and
+ * access-token issuing and verification.
  *
  * Ported from apps/backend/internal/platform/authn. Nothing here knows about
  * HTTP or the database.
  *
- * Password hashing uses @node-rs/argon2 rather than Bun.password: Bun's
- * verifier rejects the unpadded base64 that Go's argon2 encoder writes
- * (RawStdEncoding), so existing hashes would stop verifying. @node-rs/argon2
- * parses the PHC string as written.
+ * **Hashing is bcrypt for new passwords, with argon2id still verified.** The Go
+ * deployment wrote argon2id, and 15 accounts in the live database hold one, so a
+ * bcrypt-only verifier would lock every existing user out. `verifyPassword`
+ * therefore dispatches on the stored format:
+ *
+ *   $argon2id$…  → @node-rs/argon2   (what Go wrote; Bun.password rejects its
+ *                                     unpadded base64, so this library stays)
+ *   $2a$/$2b$…   → Bun.password      (built in, no native module)
+ *
+ * New hashes use bcrypt, which is what `Bun.password` implements natively and
+ * what the product asked for.
  */
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { hash as argonHash, verify as argonVerify } from "@node-rs/argon2";
 import { SignJWT, jwtVerify } from "jose";
 
-// The architecture mandates argon2id; these values follow the OWASP
-// recommendation (64 MiB, 3 iterations, 2 lanes) and must stay identical to the
-// Go constants or old hashes will not verify.
+// Kept identical to the Go constants: an old hash carries its own parameters in
+// the PHC string, but these are what a fresh argon2id hash would use.
 export const ARGON_MEMORY_KIB = 64 * 1024;
 export const ARGON_ITERATIONS = 3;
 export const ARGON_PARALLELISM = 2;
 export const ARGON_SALT_LENGTH = 16;
 export const ARGON_KEY_LENGTH = 32;
 
-/** The stored hash is not in the expected encoded format. */
+/** bcrypt's cost factor. 12 is the current OWASP recommendation. */
+export const BCRYPT_COST = 12;
+
+/** The stored hash is not in a format this build can verify. */
 export class InvalidHashError extends Error {
   constructor() {
-    super("authn: password hash is not in the argon2id format");
+    super("authn: password hash is not in a recognised format");
     this.name = "InvalidHashError";
   }
 }
 
 const PHC = /^\$argon2id\$v=19\$m=(\d+),t=(\d+),p=(\d+)\$[A-Za-z0-9+/]+\$[A-Za-z0-9+/]+$/;
+const BCRYPT = /^\$2[abxy]?\$\d{2}\$[./A-Za-z0-9]{53}$/;
 
-/** Derives an argon2id hash and encodes it with its parameters. */
+/** Derives a bcrypt hash. This is what a new password is stored as. */
 export async function hashPassword(password: string): Promise<string> {
   if (!password) throw new Error("authn: password is required");
-  return argonHash(password, {
-    algorithm: 2, // Argon2id
-    memoryCost: ARGON_MEMORY_KIB,
-    timeCost: ARGON_ITERATIONS,
-    parallelism: ARGON_PARALLELISM,
-    outputLen: ARGON_KEY_LENGTH,
-    salt: randomBytes(ARGON_SALT_LENGTH),
-  });
+  return Bun.password.hash(password, { algorithm: "bcrypt", cost: BCRYPT_COST });
 }
 
-/** Reports whether `password` matches the encoded hash, in constant time. */
+/**
+ * Reports whether `password` matches the encoded hash, in constant time.
+ *
+ * The format decides the verifier, so a hash written by the Go deployment still
+ * verifies after the switch to bcrypt.
+ */
 export async function verifyPassword(encoded: string, password: string): Promise<boolean> {
-  if (!encoded || !PHC.test(encoded)) throw new InvalidHashError();
-  try {
-    return await argonVerify(encoded, password);
-  } catch (err: any) {
-    // @node-rs/argon2 throws on a malformed encoding; treat that as a mismatch
-    // only when the string itself is unusable.
-    if (String(err?.code ?? "").includes("INVALID_ENCODING")) throw new InvalidHashError();
-    return false;
+  if (!encoded) throw new InvalidHashError();
+
+  if (PHC.test(encoded)) {
+    try {
+      return await argonVerify(encoded, password);
+    } catch (err: any) {
+      if (String(err?.code ?? "").includes("INVALID_ENCODING")) throw new InvalidHashError();
+      return false;
+    }
   }
+
+  if (BCRYPT.test(encoded)) {
+    try {
+      return await Bun.password.verify(password, encoded);
+    } catch {
+      return false;
+    }
+  }
+
+  throw new InvalidHashError();
 }
 
 /** True when the stored value is an argon2id PHC string. */
 export function isArgon2Hash(encoded: string | null | undefined): boolean {
   return !!encoded && PHC.test(encoded);
+}
+
+/** True when the stored value is a bcrypt hash. */
+export function isBcryptHash(encoded: string | null | undefined): boolean {
+  return !!encoded && BCRYPT.test(encoded);
+}
+
+/**
+ * True when a stored hash should be replaced on the next successful sign-in:
+ * an argon2id hash is still valid but is no longer what this build writes.
+ */
+export function needsRehash(encoded: string | null | undefined): boolean {
+  return isArgon2Hash(encoded);
 }
 
 /** Returns a fresh random token and the hash to store. */
