@@ -1,0 +1,248 @@
+# Local development defaults. Environment variables override these values.
+Application:
+  Environment: "local"
+  FrontendURL: "http://localhost:3000"
+  # Local development accepts any origin; staging and production list theirs.
+  CORSOrigins: []
+
+Http:
+  Address: ":8080"
+  InternalAddress: ":8091"
+  # The workers serve their probes here when one is running them outside compose.
+  OpsAddress: ""
+  ReadTimeout: "30s"
+  WriteTimeout: "30s"
+  ApiPrefix: "/api"
+
+Database:
+  URL: "postgres://employeebot:employeebot_secret@localhost:5432/employeebot?sslmode=disable"
+  MaxOpenConns: 25
+  MaxIdleConns: 5
+  ConnMaxLifetime: 3600
+
+Redis:
+  URL: "redis://localhost:6379/0"
+
+# docker-compose runs a self-hosted Temporal; staging/production use Temporal
+# Cloud (Singapore) and supply these values through the environment.
+Temporal:
+  HostPort: "localhost:7233"
+  UIBaseURL: "http://localhost:8233"
+  Namespace: "default"
+  TaskQueueAgent: "bolu-agent"
+  TaskQueueIntegration: "bolu-integration"
+  TLS: false
+  APIKey: ""
+
+JWT:
+  Secret: "local_dev_jwt_secret"
+  ExpireHours: 24
+
+Auth:
+  AccessTokenMinutes: 15
+  RefreshHours: 720
+  VerificationHours: 24
+  ResetMinutes: 60
+  StateMinutes: 10
+  CookieDomain: ""
+  # Plain HTTP locally, so the cookie cannot be Secure here.
+  CookieSecure: false
+  LoginThrottleCapacity: 5
+  LoginThrottleRefill: 0.2
+  # Local development reads this file alone, so the product default is repeated
+  # here. docker-compose turns it off for the stack; a bare `go run` keeps the
+  # verification flow, whose links the log mailer prints.
+  RequireEmailVerification: true
+
+# Google sign-in stays disabled until a client is registered; the endpoints then
+# report it as not configured instead of failing the whole API.
+Google:
+  ClientID: ""
+  ClientSecret: ""
+  RedirectURL: "http://localhost:8080/api/auth/google/callback"
+
+Mail:
+  # The log driver prints the verification and invitation links to the log,
+  # which is what a developer clicks.
+  Driver: "log"
+  From: "Bolu <no-reply@bolu.local>"
+
+Llm:
+  # A development key, exactly 32 characters. Production supplies its own through
+  # SECRET_ENCRYPTION_KEY, and rotating the key means re-entering the provider
+  # keys: the stored ciphertext cannot be read with another key.
+  SecretEncryptionKey: "local_dev_secret_key_32_byte_len"
+  Default:
+    # Empty means the platform offers no fallback provider, so a workspace must
+    # configure its own before a Bolu can think. Point these at a local model to
+    # develop without spending anything:
+    #   Adapter: openai
+    #   BaseURL: http://localhost:11434   # Ollama
+    #   Model:   llama3.1
+    Adapter: ""
+    BaseURL: ""
+    Model: ""
+    APIKey: ""
+    MaxTokens: 0
+    ContextTokens: 0
+  # Local development runs without the token check, so a fresh workspace can call
+  # a model before any package exists.
+  QuotaEnabled: false
+  TokensPerPeriod: 0
+  ChainLimit: 3
+  # A model here that cannot read a picture, so a developer pointing the platform
+  # at a local text-only server sees the same answer a deployment would. Empty
+  # assumes every model sees.
+  TextOnlyModels: []
+
+Plan:
+  # The cost ceiling of one day per workspace, in micro-rupiah (1 IDR = 1e6).
+  # Zero means unlimited, which is what local development runs with. It is the
+  # second bound the quota asks: the period's token allowance stops a workspace
+  # from spending a month's tokens, and this stops one runaway task from
+  # spending a month in an afternoon.
+  DailyCostMicros: 0
+
+# What one task may spend. A zero falls back to the product default, so the
+# section states only what differs from it.
+Memory:
+  # A short quiet period locally, so an extraction can be watched without waiting
+  # five minutes between messages.
+  QuietSeconds: 20
+
+Tasks:
+  MaxSteps: 12
+  MaxTokens: 120000
+  MaxHandoffDepth: 2
+  MaxToolResultBytes: 16384
+
+# How much of a message's attachments reaches the model. A zero falls back to
+# the product default, so the section states only what differs from it.
+AttachmentContext:
+  MaxFileBytes: 10485760
+  MaxCharsPerFile: 20000
+  MaxCharsTotal: 60000
+  MaxImages: 4
+  MaxImageBytes: 5242880
+
+Storage:
+  # The local driver writes to a directory, so development needs no container and
+  # the stored files are inspectable. Deployments use "s3".
+  Driver: "local"
+  LocalRoot: ".storage"
+  Endpoint: ""
+  Region: ""
+  Bucket: ""
+  AccessKey: ""
+  SecretKey: ""
+  UseSSL: false
+  PathStyle: true
+  # In development the content origin is the API itself, because the iframe is
+  # sandboxed without allow-same-origin either way. Production points this at a
+  # separate host.
+  ContentOrigin: "http://localhost:8080"
+  ContentFrameAncestors:
+    - "http://localhost:3000"
+
+# WhatsApp runs as its own process because a session is a socket that stays open.
+# Locally the two ends share this file: the API reaches the gateway on the compose
+# network, and the gateway listens on the same port name.
+WhatsApp:
+  # Empty means numbers can be listed and read but not linked or sent as, which is
+  # what a deployment without a gateway looks like.
+  # Compose is the local stack, so the address is the service name. An API run on
+  # the host overrides this with WA_GATEWAY_URL=http://localhost:8090.
+  GatewayURL: "http://wa-gateway:8090"
+  GatewayToken: "local_dev_wa_gateway_token"
+  Address: ":8090"
+  # Empty generates a name per process, which is right for a single instance and
+  # wrong for a fleet that restarts: a fresh name each time looks like a new
+  # claimant and delays every takeover.
+  Owner: ""
+  # Zero takes the product default of forty messages an hour.
+  HourlyLimit: 0
+  LeaseTTL: "30s"
+  LeaseRenew: "10s"
+  TypingDelay: "1200ms"
+  # Zero takes the product default of 25 MB.
+  MaxMediaBytes: 0
+  # whatsmeow's own protocol log writes a line per decrypted message, so it is a
+  # debugging switch rather than a default.
+  LogWhatsmeow: false
+
+# Billing: the package a workspace is on, the allowance it grants, and how it is
+# paid for. Local development takes no online payment — the module still writes
+# invoices and still enforces the package, which is what makes it testable without
+# a gateway account.
+Billing:
+  # Empty means no payment provider: an invoice is created and the screen says to
+  # transfer and confirm. The Duitku credentials fill this in.
+  Provider: ""
+  # Zero takes the product default of a week.
+  GraceDays: 0
+  SyncInterval: "15m"
+  # Zero disables the reconciliation pass, which local development may want when it
+  # is stepping through one.
+  SweepInterval: "15m"
+  SweepLimit: 0
+  Duitku:
+    MerchantCode: ""
+    APIKey: ""
+    Sandbox: true
+    # Duitku's own code for the payment channel to offer. Empty takes a bank virtual
+    # account, which is what the product's customers already use.
+    PaymentMethod: ""
+    ExpiryMinutes: 0
+    # Duitku reaches the callback from outside, so it has to be an absolute address this
+    # deployment serves. Locally it is the host-run API; a tunnel is what makes it
+    # reachable, and without one the payment page works but nothing hears that it was paid.
+    CallbackURL: "http://localhost:8080/api/billing/webhooks/duitku"
+    ReturnURL: "http://localhost:3000/settings/subscription"
+    # Empty follows DUITKU_SANDBOX. A sandbox run that wants to verify its own wiring
+    # points this at a stand-in.
+    BaseURL: ""
+
+# Telemetry: local development reads its spans on standard output rather than sending them
+# anywhere, and every trace is kept — there are a handful of them and each one is being read.
+Telemetry:
+  ServiceName: ""
+  Exporter: "console"
+  Endpoint: ""
+  SampleRatio: 1.0
+  Insecure: true
+
+
+# Retention: what the deployment keeps, and for how long.
+#
+# The split is the design: a task's shape — which step, which tool, how many tokens — is kept
+# for good, and its raw payload is not. Local development keeps everything, because a stack
+# somebody is stepping through should not lose the payload they are reading.
+Retention:
+  # Zero takes the product default of thirty days.
+  StepDays: 0
+  # Zero keeps attachments as long as the message that carries them.
+  AttachmentDays: 0
+  # Zero disables the job, which is what local development wants.
+  Interval: 0s
+  Batch: 0
+  SweepLimit: 0
+
+# Virtual computer: the control plane that drives one sandbox per bot. Left empty, because
+# nothing is running locally until somebody starts it — `VCOMPUTER_CONTROL_URL` and
+# `VCOMPUTER_CONTROL_TOKEN` point this at a control plane, and until then every activity
+# answers ErrNotConfigured rather than calling an address nobody meant.
+#
+# The address is the internal one (`http://localhost:8090` when the control plane runs on the
+# host, or `http://vcomputer-control:8090` from inside the compose network). The token must be
+# the same VCOMPUTER_CONTROL_TOKEN the control plane was started with.
+VComputer:
+  ControlURL: ""
+  Token: ""
+  # A screenshot of a cold sandbox includes the container starting, so this is generous.
+  # Zero or a negative value is no bound at all, so the client's own 30s default is used
+  # instead and startup warns.
+  Timeout: "30s"
+
+Logging:
+  Level: "debug"
+  Format: "console"
