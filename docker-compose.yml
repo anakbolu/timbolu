@@ -95,6 +95,20 @@ x-backend-env: &backend-env
   LLM_QUOTA_ENABLED: ${LLM_QUOTA_ENABLED:-false}
   LLM_TOKENS_PER_PERIOD: ${LLM_TOKENS_PER_PERIOD:-0}
   LLM_CHAIN_LIMIT: ${LLM_CHAIN_LIMIT:-3}
+  # The models of this deployment that cannot read a picture, comma separated and
+  # matched by prefix against the configured model name. A model left out is
+  # assumed to see; a provider's own refusal is answered by retrying without the
+  # picture, so the list is a shortcut and not the only protection.
+  LLM_TEXT_ONLY_MODELS: ${LLM_TEXT_ONLY_MODELS:-}
+  # How much of a message's files reaches the model. MAX_FILE_BYTES is checked
+  # before the object is fetched, so a large upload costs a note rather than a
+  # download; MAX_CHARS_TOTAL is the budget for one request and is spent newest
+  # message first. A zero falls back to the product default.
+  ATTACHMENT_CONTEXT_MAX_FILE_BYTES: ${ATTACHMENT_CONTEXT_MAX_FILE_BYTES:-}
+  ATTACHMENT_CONTEXT_MAX_CHARS_PER_FILE: ${ATTACHMENT_CONTEXT_MAX_CHARS_PER_FILE:-}
+  ATTACHMENT_CONTEXT_MAX_CHARS_TOTAL: ${ATTACHMENT_CONTEXT_MAX_CHARS_TOTAL:-}
+  ATTACHMENT_CONTEXT_MAX_IMAGES: ${ATTACHMENT_CONTEXT_MAX_IMAGES:-}
+  ATTACHMENT_CONTEXT_MAX_IMAGE_BYTES: ${ATTACHMENT_CONTEXT_MAX_IMAGE_BYTES:-}
   # The cost ceiling of one day per workspace, in micro-rupiah. Zero means
   # unlimited. It is the second bound the quota asks, alongside the period's
   # token allowance. With billing wired, each package carries its own ceiling and
