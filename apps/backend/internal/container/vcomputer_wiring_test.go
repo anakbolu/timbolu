@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/domain"
+	vcomputerservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/service"
 	vcomputertemporal "github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/temporal"
 	vcomputerworkflow "github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/workflow"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/temporal"
@@ -140,6 +141,63 @@ func TestNewVComputerTasksWarnsAboutAnAddressWithoutAToken(t *testing.T) {
 	require.Equal(t, zap.WarnLevel, entries[0].Level)
 	require.Contains(t, entries[0].Message, "VCOMPUTER_CONTROL_TOKEN is empty")
 	require.Equal(t, "http://vcomputer-control:8090", entries[0].ContextMap()["control_url"])
+}
+
+// TestNewVComputerTasksLogsTheTimeoutInForce is issue #257: a timeout that is not a bound is
+// replaced by the client's default, so a startup line repeating the configured value told an
+// operator the bound they wrote was in force while every call waited 30s.
+//
+// The warning is the other half of it. The replacement must not be silent, and because the
+// line that reports the timeout in force no longer names the configured value, the warning is
+// where the value that was given is seen.
+func TestNewVComputerTasksLogsTheTimeoutInForce(t *testing.T) {
+	cases := map[string]struct {
+		configured time.Duration
+		effective  time.Duration
+		warns      bool
+	}{
+		"negative": {-5 * time.Second, vcomputerservice.DefaultTimeout, true},
+		"zero":     {0, vcomputerservice.DefaultTimeout, true},
+		"positive": {90 * time.Second, 90 * time.Second, false},
+	}
+
+	for name, testCase := range cases {
+		t.Run(name, func(t *testing.T) {
+			core, logs := observer.New(zap.InfoLevel)
+			NewVComputerTasks(config.VComputerConfig{
+				ControlURL: "http://vcomputer-control:8090",
+				Token:      "shared-secret",
+				Timeout:    testCase.configured,
+			}, zap.New(core))
+
+			configured := logs.FilterMessage("virtual computer is configured").All()
+			require.Len(t, configured, 1, "a configured virtual computer is still reported once")
+			require.Equal(t, testCase.effective, configured[0].ContextMap()["timeout"],
+				"the line reports the timeout every call waits, not the one that was configured")
+
+			warnings := logs.FilterLevelExact(zap.WarnLevel).All()
+			if !testCase.warns {
+				require.Empty(t, warnings, "a timeout that is in force needs no warning")
+				return
+			}
+
+			require.Len(t, warnings, 1)
+			require.Contains(t, warnings[0].Message, "VCOMPUTER_CONTROL_TIMEOUT")
+			require.Equal(t, testCase.configured, warnings[0].ContextMap()["configured_timeout"],
+				"the warning names the value that was given, which no other line does")
+			require.Equal(t, testCase.effective, warnings[0].ContextMap()["timeout"])
+		})
+	}
+}
+
+// TestNewVComputerTasksDoesNotWarnAboutATimeoutWithNoControlPlane: without an address no call
+// is made, so a non-positive timeout bounds nothing and a warning about it would be noise in
+// the deployment that has no virtual computer — which is every deployment until one runs.
+func TestNewVComputerTasksDoesNotWarnAboutATimeoutWithNoControlPlane(t *testing.T) {
+	core, logs := observer.New(zap.WarnLevel)
+	NewVComputerTasks(config.VComputerConfig{Timeout: -5 * time.Second}, zap.New(core))
+
+	require.Empty(t, logs.All())
 }
 
 // TestAgentWorkerRegistrationInventory is the inventory of what the agent worker installs,

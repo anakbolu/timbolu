@@ -385,3 +385,31 @@ func TestUnconfiguredClientRefuses(t *testing.T) {
 		t.Fatalf("navigate: err = %v, want ErrNotConfigured", err)
 	}
 }
+
+// TestEffectiveTimeoutIsTheBoundACallReallyGets: a zero or negative timeout is not a bound —
+// an http.Client built with one waits forever — so it is replaced rather than honored, and the
+// replacement is reported by the same function the container logs from, which is what keeps a
+// startup line from naming a timeout no call waits (issue #257).
+func TestEffectiveTimeoutIsTheBoundACallReallyGets(t *testing.T) {
+	cases := map[string]struct {
+		configured time.Duration
+		want       time.Duration
+	}{
+		"negative": {-5 * time.Second, DefaultTimeout},
+		"zero":     {0, DefaultTimeout},
+		"positive": {90 * time.Second, 90 * time.Second},
+	}
+
+	for name, testCase := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := EffectiveTimeout(testCase.configured); got != testCase.want {
+				t.Fatalf("EffectiveTimeout(%s) = %s, want %s", testCase.configured, got, testCase.want)
+			}
+
+			client := New("http://vcomputer-control:8090", fakeToken, testCase.configured)
+			if got := client.client.Timeout; got != testCase.want {
+				t.Fatalf("client timeout = %s, want %s", got, testCase.want)
+			}
+		})
+	}
+}
