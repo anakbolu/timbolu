@@ -42,7 +42,15 @@ import {
   workspacePlanLimits,
   workspaceTokens,
   agentPlanLimits,
+  agentDirectory,
+  chatTaskStarter,
+  chatMemory,
+  routineTaskStarter,
+  spendCounter,
 } from "./adapters.ts";
+import { newTemporalStarter } from "../worker/starter.ts";
+import { ModelResponder } from "../modules/chat/service/responder.ts";
+import { GroupRouter } from "../modules/chat/service/router.ts";
 
 // health
 import { Repository as HealthRepository } from "../modules/health/repository/postgres.ts";
@@ -150,6 +158,9 @@ export interface Container {
   /** The guards call these directly; a handler keeps its service private. */
   authService: AuthService | null;
   workspaceService: WorkspaceService | null;
+  /** The two loops `cmd/api.ts` runs in-process. */
+  retentionService: RetentionService | null;
+  billingService: BillingService | null;
   close: () => Promise<void>;
 }
 
@@ -325,15 +336,18 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
   }
 
   let agent: AgentHandler | null = null;
+  let agentService: AgentService | null = null;
   if (db) {
     const service = new AgentService({
       repository: new AgentRepository(db),
       limits: agentPlanLimits(config.plan.maxAgentsPerWorkspace),
     });
+    agentService = service;
     agent = new AgentHandler(service, log);
   }
 
   let llm: LlmHandler | null = null;
+  let llmService: LlmService | null = null;
   if (db) {
     const repo = new LlmRepository(db);
     const service = new LlmService({
@@ -380,6 +394,7 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
         chainLimit: config.llm.chainLimit,
       },
     });
+    llmService = service;
     llm = new LlmHandler(service, log);
   }
 
@@ -395,18 +410,46 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
   let checklist: ChecklistHandler | null = null;
   let order: OrderHandler | null = null;
   let billing: BillingHandler | null = null;
+  let billingService: BillingService | null = null;
   let approval: ApprovalHandler | null = null;
   let retention: RetentionHandler | null = null;
+  let retentionService: RetentionService | null = null;
   let memory: MemoryHandler | null = null;
+  let memoryService: MemoryService | null = null;
   let routine: RoutineHandler | null = null;
   let whatsapp: WhatsAppHandler | null = null;
   let task: TaskHandler | null = null;
+  let taskService: TaskService | null = null;
 
   if (db) {
     // Each service takes the ports it declares and nothing more; the optional ones
     // stay null, which is the same shape as a deployment that has not connected
     // that dependency yet.
     const chatRepo = new ChatRepository(db);
+    const directory = agentService ? agentDirectory(agentService as any) : null;
+
+    // A message is answered in process by the model gateway, and becomes a
+    // durable task when the runtime is configured. The task runtime needs the
+    // registry to know which Bolu the message addresses, so both must be present.
+    const responder = llmService
+      ? new ModelResponder({
+          gateway: llmService as any,
+          storage,
+          limits: {
+            maxFileBytes: config.attachmentContext.maxFileBytes,
+            maxCharsPerFile: config.attachmentContext.maxCharsPerFile,
+            maxCharsTotal: config.attachmentContext.maxCharsTotal,
+            maxImages: config.attachmentContext.maxImages,
+            maxImageBytes: config.attachmentContext.maxImageBytes,
+          } as any,
+          logger: log,
+        })
+      : null;
+
+    if (!responder || !directory) {
+      log.warn("chat replies are disabled: the model gateway or the agent registry is not configured");
+    }
+
     chat = new ChatHandler(
       new ChatService({
         conversations: chatRepo,
@@ -414,10 +457,30 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
         attachments: chatRepo,
         events: chatRepo,
         publisher,
-        agents: new AgentRepository(db),
-        responder: { start: async () => ({ taskId: "" }) } as any,
+        agents: directory as any,
+        responder: responder as any,
+        router: responder && directory ? new GroupRouter({ gateway: llmService as any, agents: directory as any, logger: log }) : null,
+        // Chat is built before the task runtime, so these read the container's
+        // field at call time rather than capturing a null.
+        tasks: {
+          start: async (scope: any, req: any) => {
+            if (!taskService) throw new Error("chat: the task runtime is not configured");
+            return chatTaskStarter(taskService as any).start(scope, req);
+          },
+        },
+        memory: {
+          remember: async (scope: any, req: any) => {
+            if (!memoryService) throw new Error("chat: memory is not configured");
+            return chatMemory(memoryService as any).remember(scope, req);
+          },
+          conversationActive: async (scope: any, conversationId: string, agentId: string) => {
+            if (!memoryService) return;
+            return chatMemory(memoryService as any).conversationActive(scope, conversationId, agentId);
+          },
+        },
         storage,
         logger: log,
+        config: { attachmentAllowedExtensions: config.storage.attachmentAllowedExtensions },
       } as any),
       log,
     );
@@ -442,10 +505,12 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
       log,
     );
 
-    billing = new BillingHandler(
-      new BillingService({ repository: new BillingRepository(db), counter: quota, logger: log } as any),
-      log,
-    );
+    billingService = new BillingService({
+      repository: new BillingRepository(db),
+      counter: quota ? spendCounter(quota) : null,
+      logger: log,
+    } as any);
+    billing = new BillingHandler(billingService, log);
 
     approval = new ApprovalHandler(
       new ApprovalService({ drafts: new ApprovalRepository(db), logger: log } as any),
@@ -453,30 +518,36 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
     );
 
     const retentionRepo = new RetentionRepository(db);
-    retention = new RetentionHandler(
-      new RetentionService({ repository: retentionRepo, logger: log } as any),
-      log,
-    );
+    retentionService = new RetentionService({ repository: retentionRepo, logger: log } as any);
+    retention = new RetentionHandler(retentionService, log);
 
-    memory = new MemoryHandler(
-      new MemoryService({
-        repository: new MemoryRepository(db),
-        limits: { maxContentRunes: config.memory.maxContentRunes } as any,
+    memoryService = new MemoryService({
+      repository: new MemoryRepository(db),
+      limits: { maxContentRunes: config.memory.maxContentRunes } as any,
+      logger: log,
+    } as any);
+    memory = new MemoryHandler(memoryService, log);
+
+    routine = new RoutineHandler(
+      new RoutineService({
+        repository: new RoutineRepository(db),
+        tasks: {
+          start: async (scope: any, req: any) => {
+            if (!taskService) throw new Error("routine: the task runtime is not configured");
+            return routineTaskStarter(taskService as any).start(scope, req);
+          },
+        },
         logger: log,
       } as any),
       log,
     );
 
-    routine = new RoutineHandler(
-      new RoutineService({ repository: new RoutineRepository(db), logger: log } as any),
-      log,
-    );
-
     const taskRepo = new TaskRepository(db);
-    task = new TaskHandler(
-      new TaskService({ tasks: taskRepo, steps: taskRepo, logger: log } as any),
-      log,
-    );
+    // The starter is the Temporal seam: without it a task is recorded and stays
+    // queued, which is the documented behaviour of a deployment with no runtime.
+    const starter = await newTemporalStarter(config, log);
+    taskService = new TaskService({ tasks: taskRepo, steps: taskRepo, starter, logger: log } as any);
+    task = new TaskHandler(taskService, log);
 
     whatsapp = new WhatsAppHandler(
       new WhatsAppService({
@@ -529,6 +600,8 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
     task,
     authService,
     workspaceService,
+    retentionService,
+    billingService,
     close,
   };
 }

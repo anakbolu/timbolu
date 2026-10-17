@@ -169,3 +169,149 @@ export function agentPlanLimits(maxAgents: number): AgentPlanLimits {
     },
   };
 }
+
+// --- the task runtime, reached from chat and from routines -------------------
+
+/**
+ * Hands a chat message to the task runtime.
+ *
+ * The container is where the two modules meet, so it is where one module's error
+ * becomes the other's: the task module's failure is returned as-is and the chat
+ * handler renders it. `prompt` is the title, which is what the Go adapter does —
+ * the task's own context load reads the conversation.
+ */
+export function chatTaskStarter(taskService: {
+  dispatch(ctx: undefined, scope: { userId?: string; workspaceId?: string }, req: any): Promise<{ id: string }>;
+}) {
+  return {
+    async start(scope: { userId?: string; workspaceId?: string }, req: any): Promise<string> {
+      const task = await taskService.dispatch(undefined, scope, {
+        agentId: req.agentId,
+        conversationId: req.conversationId,
+        replyMessageId: req.messageId,
+        trigger: req.trigger,
+        title: req.title,
+        prompt: req.title,
+        parentTaskId: "",
+        depth: 0,
+      });
+      return task.id;
+    },
+  };
+}
+
+/** Opens the task one routine run performs. */
+export function routineTaskStarter(taskService: {
+  dispatch(ctx: undefined, scope: { userId?: string; workspaceId?: string }, req: any): Promise<{ id: string }>;
+}) {
+  return {
+    async start(scope: { userId?: string; workspaceId?: string }, request: any): Promise<string> {
+      const task = await taskService.dispatch(undefined, scope, {
+        agentId: request.agentId,
+        conversationId: "",
+        replyMessageId: "",
+        trigger: "routine",
+        title: request.title,
+        prompt: request.prompt,
+        parentTaskId: "",
+        depth: 0,
+      });
+      return task.id;
+    },
+  };
+}
+
+// --- the agent registry, read by chat ---------------------------------------
+
+/**
+ * The registry as chat reads it: a Bolu's identity and whether it is awake.
+ *
+ * A port rather than a direct call because chat must not import another module's
+ * service — only its domain — which is the Go architecture rule.
+ */
+export function agentDirectory(agentService: {
+  get(scope: any, id: string): Promise<any>;
+  list(scope: any): Promise<any[]>;
+}) {
+  const toRef = (agent: any) => ({
+    id: agent.id,
+    name: agent.name,
+    role: agent.role,
+    persona: agent.persona,
+    tone: agent.tone ?? "",
+    stored: agent.status ?? "",
+    display: agent.displayStatus ?? agent.status ?? "",
+    tools: agent.tools ?? [],
+    defaultModel: agent.defaultModel ?? {},
+  });
+
+  return {
+    async agent(scope: any, id: string) {
+      return toRef(await agentService.get(scope, id));
+    },
+    async agents(scope: any, ids: string[]) {
+      return Promise.all(ids.map((id) => agentService.get(scope, id).then(toRef)));
+    },
+    // A Bolu is awake unless it was explicitly rested: only the rest switch is a
+    // column, and the display status is derived.
+    active(ref: { stored: string }) {
+      return ref.stored !== "resting" && ref.stored !== "paused";
+    },
+  };
+}
+
+// --- the memory module, read by chat ----------------------------------------
+
+/**
+ * What chat asks of memory: store a "remember this" request, and tell the
+ * extractor the thread is still moving.
+ *
+ * A port rather than a direct call because chat may only import another module's
+ * domain — which is the Go architecture rule, and the reason the container owns
+ * this seam.
+ */
+export function chatMemory(memoryService: {
+  remember(scope: any, req: any): Promise<any>;
+  active(scope: any, conversationId: string, agentId: string): Promise<void>;
+}) {
+  return {
+    async remember(scope: any, req: any) {
+      const result = await memoryService.remember(scope, {
+        text: req.text,
+        agentId: req.agentId,
+        messageId: req.messageId,
+      });
+      return {
+        handled: result.handled,
+        confirmation: result.confirmation ?? "",
+        refused: result.refused ?? false,
+      };
+    },
+    async conversationActive(scope: any, conversationId: string, agentId: string) {
+      await memoryService.active(scope, conversationId, agentId);
+    },
+  };
+}
+
+// --- the spend counter, read by billing -------------------------------------
+
+/**
+ * The live spend as billing reads it.
+ *
+ * The platform counter counts tokens and cost with an abort signal and a Go-style
+ * signature; billing's port is the two numbers it needs. Adapting here keeps the
+ * platform free of billing's vocabulary and billing free of the platform's.
+ */
+export function spendCounter(counter: {
+  spent(ctx: AbortSignal | undefined, workspaceId: string): Promise<number>;
+  spentCostToday(ctx: AbortSignal | undefined, workspaceId: string): Promise<number>;
+}) {
+  return {
+    periodTokens(workspaceId: string): Promise<number> {
+      return counter.spent(undefined, workspaceId);
+    },
+    dailyCost(workspaceId: string): Promise<number> {
+      return counter.spentCostToday(undefined, workspaceId);
+    },
+  };
+}

@@ -60,6 +60,21 @@ async function run(): Promise<void> {
 
   log.info({ url: `http://${host}:${port}` }, "api listening");
 
+  // The billing sweep is a loop in this process rather than a durable workflow,
+  // because nothing in it waits: each pass recomputes the allowance from the
+  // times and the ledger, so a pass that never ran is corrected by the next one.
+  // The retention pass shares the process for the same reason. A deployment sets
+  // the interval to 0 to switch either off.
+  startLoop("billing sweep", config.billing.sweepInterval, log, async () => {
+    if (!container.billingService) return;
+    await container.billingService.sweep();
+  });
+
+  startLoop("retention", config.retention.interval, log, async () => {
+    if (!container.retentionService) return;
+    await container.retentionService.run();
+  });
+
   const shutdown = async (signal: string): Promise<void> => {
     log.info({ signal }, "shutting down api");
     server.stop();
@@ -69,6 +84,39 @@ async function run(): Promise<void> {
 
   process.on("SIGINT", () => void shutdown("SIGINT"));
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
+}
+
+/**
+ * Runs one pass immediately, then every interval until the process stops.
+ *
+ * The first pass is immediate on purpose: a deployment that has just started is
+ * exactly when a correction is most likely to be needed. A pass that throws is
+ * logged and the loop continues — a sweep is a correction, not a transaction, so
+ * one failure must not end it.
+ */
+function startLoop(name: string, intervalMs: number, log: any, pass: () => Promise<void>): void {
+  if (!intervalMs || intervalMs <= 0) {
+    log.info({ loop: name }, "loop is disabled");
+    return;
+  }
+
+  let running = false;
+  const tick = async (): Promise<void> => {
+    if (running) return;
+    running = true;
+    try {
+      await pass();
+    } catch (err) {
+      log.error({ err, loop: name }, "pass failed; the next one will correct it");
+    } finally {
+      running = false;
+    }
+  };
+
+  void tick();
+  const timer = setInterval(() => void tick(), intervalMs);
+  // The loop must not hold the process open on its own.
+  timer.unref?.();
 }
 
 /** Splits `:8080` or `127.0.0.1:8080` into a hostname and a port. */

@@ -442,13 +442,12 @@ export class AgentStore implements AgentStorePort {
     agentId: string,
     override: AgentOverride,
   ): Promise<void> {
-    const encoded = JSON.stringify(this.encode(override));
-
     await this.write(workspaceId, async (tx) => {
+      const encoded = tx.json(this.encode(override) as any);
       // name: SetAgentModelOverride
       const result = await tx`
         UPDATE agents
-        SET default_model = ${encoded}::jsonb, updated_at = now()
+        SET default_model = ${encoded}, updated_at = now()
         WHERE id = ${agentId} AND workspace_id = ${workspaceId} AND deleted_at IS NULL
       `;
       if (result.count === 0) throw ErrProviderNotFound;

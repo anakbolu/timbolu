@@ -292,10 +292,12 @@ export class PostgresRepository {
 
   /** Stores one message and returns it as stored. */
   async append(scope: Scope, message: Message): Promise<Message> {
-    const blocks = JSON.stringify(marshalBlocks(message.blocks));
-    const attachments = JSON.stringify(marshalAttachments(message.attachments));
-
     return this.write(scope, async (tx) => {
+      // tx.json, not JSON.stringify: a stringified value passed to ::jsonb is
+      // stored as a JSON *string*, which the Go worker and the frontend cannot
+      // read back as an array.
+      const blocks = tx.json(marshalBlocks(message.blocks) as any);
+      const attachments = tx.json(marshalAttachments(message.attachments) as any);
       // name: AppendMessage
       const rows = await this.translate("append message", () =>
         tx<MessageRow[]>`
@@ -325,10 +327,9 @@ export class PostgresRepository {
 
   /** Replaces a message's body and status. */
   async update(scope: Scope, message: Message): Promise<Message> {
-    const blocks = JSON.stringify(marshalBlocks(message.blocks));
-    const attachments = JSON.stringify(marshalAttachments(message.attachments));
-
     return this.write(scope, async (tx) => {
+      const blocks = tx.json(marshalBlocks(message.blocks) as any);
+      const attachments = tx.json(marshalAttachments(message.attachments) as any);
       // name: UpdateMessage
       const rows = await tx<MessageRow[]>`
         UPDATE messages
@@ -443,7 +444,7 @@ export class PostgresRepository {
       // name: AppendMessageAttachment
       const rows = await tx<MessageRow[]>`
         UPDATE messages
-        SET attachments = COALESCE(attachments, '[]'::jsonb) || jsonb_build_array(${JSON.stringify(elementOf(stored))}::jsonb)
+        SET attachments = COALESCE(attachments, '[]'::jsonb) || jsonb_build_array(${tx.json(elementOf(stored) as any)})
         WHERE id = ${stored.messageId} AND workspace_id = ${scope.workspaceId}
         RETURNING ${tx.unsafe(MESSAGE_COLUMNS)}
       `;
@@ -468,9 +469,8 @@ export class PostgresRepository {
     attachment: Attachment,
     content: Uint8Array,
   ): Promise<{ message: Message; attachment: Attachment }> {
-    const blocks = JSON.stringify(marshalBlocks(message.blocks));
-
     return this.write(scope, async (tx) => {
+      const blocks = tx.json(marshalBlocks(message.blocks) as any);
       // name: AppendMessage
       const created = await this.translate("append message", () =>
         tx<MessageRow[]>`
@@ -497,7 +497,7 @@ export class PostgresRepository {
       // name: AppendMessageAttachment
       const filled = await tx<MessageRow[]>`
         UPDATE messages
-        SET attachments = COALESCE(attachments, '[]'::jsonb) || jsonb_build_array(${JSON.stringify(elementOf(stored))}::jsonb)
+        SET attachments = COALESCE(attachments, '[]'::jsonb) || jsonb_build_array(${tx.json(elementOf(stored) as any)})
         WHERE id = ${created[0].id} AND workspace_id = ${scope.workspaceId}
         RETURNING ${tx.unsafe(MESSAGE_COLUMNS)}
       `;
@@ -639,7 +639,7 @@ export class PostgresRepository {
             ${event.workspaceId}, ${event.type}, ${optionalId(event.actorAgentId)},
             ${optionalId(event.actorUserId)}, ${optionalId(event.conversationId)},
             ${optionalId(event.taskId)}, ${optionalId(event.draftId)},
-            ${JSON.stringify(payload)}::jsonb
+            ${tx.json(payload as any)}
         )
         RETURNING id, workspace_id, type, actor_agent_id, actor_user_id, conversation_id, task_id, draft_id, payload, created_at
       `;

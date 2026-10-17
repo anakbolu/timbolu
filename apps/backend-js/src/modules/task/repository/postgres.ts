@@ -386,8 +386,8 @@ export class PostgresRepository implements TaskRepository, StepRepository, StepP
             ${workspaceId}, ${step.taskId},
             COALESCE((SELECT max(seq) FROM task_steps WHERE task_id = ${step.taskId}), 0) + 1,
             ${step.kind}, ${step.toolName}, ${step.toolLabel},
-            ${JSON.stringify(step.input ?? {})}::jsonb,
-            ${JSON.stringify(step.output ?? {})}::jsonb,
+            ${tx.json((step.input ?? {}) as any)},
+            ${tx.json((step.output ?? {}) as any)},
             ${step.inputTokens}, ${step.outputTokens}
         )
         RETURNING *

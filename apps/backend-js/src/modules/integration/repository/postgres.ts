@@ -500,7 +500,7 @@ export class PostgresRepository {
     const rows = await this.translateWrite("save MCP tools", () =>
       this.readWrite(scope, (tx) => tx<MCPServerRow[]>`
         UPDATE mcp_servers
-        SET tools = ${encoded}, tool_count = ${tools.length}, last_error = '', updated_at = now()
+        SET tools = ${tx.json(encoded as any)}, tool_count = ${tools.length}, last_error = '', updated_at = now()
         WHERE workspace_id = ${scope.workspaceId} AND id = ${id}
         RETURNING *
       `),
@@ -669,16 +669,14 @@ function scopesOr(scopes: string[]): string[] {
 }
 
 /** Encodes the tool list the way Go's `json.Marshal` renders the domain struct. */
-function encodeMCPTools(tools: MCPTool[]): string {
-  return JSON.stringify(
-    tools.map((tool) => ({
-      Name: tool.name,
-      Label: tool.label,
-      Description: tool.description,
-      Schema: Buffer.from(tool.schema).toString("base64"),
-      RemoteName: tool.remoteName,
-    })),
-  );
+function encodeMCPTools(tools: MCPTool[]): unknown {
+  return tools.map((tool) => ({
+    Name: tool.name,
+    Label: tool.label,
+    Description: tool.description,
+    Schema: Buffer.from(tool.schema).toString("base64"),
+    RemoteName: tool.remoteName,
+  }));
 }
 
 /**
