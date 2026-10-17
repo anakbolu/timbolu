@@ -63,37 +63,108 @@ func TestSessionNamesFollowTheContainerContract(t *testing.T) {
 	if session.NoVNCURL != wantNoVNC {
 		t.Fatalf("novnc url = %q, want %q", session.NoVNCURL, wantNoVNC)
 	}
-	// CDPURL is an address, not a name: Chromium refuses a request whose Host header
-	// is neither an IP nor localhost, and the docker runtime answers a container IP
-	// here for the same reason.
-	if session.CDPURL != "http://vcomputer-bot-a:"+DefaultCDPPort {
-		t.Fatalf("cdp url = %q", session.CDPURL)
+	// CDPURL is a path on the control plane too, and not an address on the sandbox
+	// network: the control plane proxies it to the sandbox's gate and attaches the
+	// sandbox's own secret, so a worker holding the control token never needs the
+	// container's address or the gate's secret. The docker runtime answers the same
+	// path, which is what makes a caller's code identical against either runtime.
+	if session.CDPURL != CDPPath("bot-a") {
+		t.Fatalf("cdp url = %q, want %q", session.CDPURL, CDPPath("bot-a"))
+	}
+	// The volume outlives the container: it holds the browser profile and the bot's
+	// home, which is what makes a session resumable after a stop.
+	if session.Volume != "vcomputer-bot-a-home" {
+		t.Fatalf("volume = %q, want the per-bot volume", session.Volume)
 	}
 	if session.Runtime != "memory" || session.State != StateRunning {
 		t.Fatalf("session = %+v", session)
 	}
 }
 
-// TestNoVNCTargetIsTheAddressTheProxyForwardsTo covers the one call the control
-// plane makes before it proxies a desktop: the stub has no container, so it answers
-// the address the container would have had on the sandbox network.
-func TestNoVNCTargetIsTheAddressTheProxyForwardsTo(t *testing.T) {
+// TestGateTargetIsTheAddressAndSecretTheProxyForwardsTo covers the one call the
+// control plane makes before it proxies a desktop or a browser: the stub has no
+// container, so it answers the address the container would have had on the sandbox
+// network, together with the secret a gate listening there would demand.
+//
+// The address is the gate's, not noVNC's: websockify is loopback-only inside the
+// sandbox, and the gate is the only thing on the container's network address.
+func TestGateTargetIsTheAddressAndSecretTheProxyForwardsTo(t *testing.T) {
 	runtime := NewInMemory()
 	ctx := context.Background()
 
-	if _, err := runtime.NoVNCTarget(ctx, "bot-a"); !errors.Is(err, ErrNoSession) {
+	if _, err := runtime.GateTarget(ctx, "bot-a"); !errors.Is(err, ErrNoSession) {
 		t.Fatalf("target before ensure: err = %v, want ErrNoSession", err)
 	}
 	if _, err := runtime.Ensure(ctx, "bot-a"); err != nil {
 		t.Fatalf("ensure: %v", err)
 	}
 
-	target, err := runtime.NoVNCTarget(ctx, "bot-a")
+	target, err := runtime.GateTarget(ctx, "bot-a")
 	if err != nil {
 		t.Fatalf("target: %v", err)
 	}
-	if target != "http://vcomputer-bot-a:"+DefaultNOVNCPort {
-		t.Fatalf("target = %q", target)
+	if want := "http://vcomputer-bot-a:" + DefaultGatePort; target.URL != want {
+		t.Fatalf("target url = %q, want %q", target.URL, want)
+	}
+	// The stub's own secret, and never an empty one: a gate that accepted an empty
+	// secret would be an open door to a browser that can be driven, which is the whole
+	// reason the two values travel together.
+	if target.Secret != stubSecret {
+		t.Fatalf("target secret = %q, want %q", target.Secret, stubSecret)
+	}
+}
+
+// TestPurgeForgetsTheSession covers the destructive half of the lifecycle: a purge is
+// what makes a bot forgettable, so the record has to be gone afterwards — and a purge
+// of a bot that has no session is the same answer as every other action without one.
+func TestPurgeForgetsTheSession(t *testing.T) {
+	runtime := NewInMemory()
+	ctx := context.Background()
+
+	if err := runtime.Purge(ctx, "bot-a"); !errors.Is(err, ErrNoSession) {
+		t.Fatalf("purge without a session: err = %v, want ErrNoSession", err)
+	}
+	if _, err := runtime.Ensure(ctx, "bot-a"); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+
+	if err := runtime.Purge(ctx, "bot-a"); err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+	if _, err := runtime.Status(ctx, "bot-a"); !errors.Is(err, ErrNoSession) {
+		t.Fatalf("status after purge: err = %v, want ErrNoSession", err)
+	}
+	// The record is gone rather than emptied, so a second purge has nothing to act on.
+	if err := runtime.Purge(ctx, "bot-a"); !errors.Is(err, ErrNoSession) {
+		t.Fatalf("second purge: err = %v, want ErrNoSession", err)
+	}
+}
+
+// TestCleanupRemovesNothing is the honest answer rather than a stub: every session the
+// stub holds is running, and a cleanup never touches a running sandbox. The result
+// shape is still the real one, so a caller built against the stub reads the same fields
+// it will read in production.
+func TestCleanupRemovesNothing(t *testing.T) {
+	runtime := NewInMemory()
+	ctx := context.Background()
+
+	if _, err := runtime.Ensure(ctx, "bot-a"); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+
+	for _, volumes := range []bool{false, true} {
+		result, err := runtime.Cleanup(ctx, volumes)
+		if err != nil {
+			t.Fatalf("cleanup(volumes=%v): %v", volumes, err)
+		}
+		if result.RemovedContainers != 0 || result.RemovedVolumes != 0 || len(result.Failed) != 0 {
+			t.Fatalf("cleanup(volumes=%v) = %+v, want a zero result", volumes, result)
+		}
+	}
+
+	// The running session survived both calls: that is what the zero result promises.
+	if _, err := runtime.Status(ctx, "bot-a"); err != nil {
+		t.Fatalf("status after cleanup: %v", err)
 	}
 }
 
@@ -141,8 +212,16 @@ func TestActionsWithoutASessionAreRefused(t *testing.T) {
 	if _, err := runtime.Exec(ctx, "bot-a", "ls"); !errors.Is(err, ErrNoSession) {
 		t.Fatalf("exec: err = %v, want ErrNoSession", err)
 	}
-	if err := runtime.Navigate(ctx, "bot-a", "https://example.com"); !errors.Is(err, ErrNoSession) {
+	if _, err := runtime.Navigate(ctx, "bot-a", "https://example.com"); !errors.Is(err, ErrNoSession) {
 		t.Fatalf("navigate: err = %v, want ErrNoSession", err)
+	}
+	// The proxy path is refused the same way: a route that answered a gate address for
+	// a bot with no session would proxy a request to a container that does not exist.
+	if _, err := runtime.GateTarget(ctx, "bot-a"); !errors.Is(err, ErrNoSession) {
+		t.Fatalf("gate target: err = %v, want ErrNoSession", err)
+	}
+	if err := runtime.Purge(ctx, "bot-a"); !errors.Is(err, ErrNoSession) {
+		t.Fatalf("purge: err = %v, want ErrNoSession", err)
 	}
 }
 
@@ -216,8 +295,15 @@ func TestNavigateRecordsTheURLAndRefusesWhatABrowserShouldNotOpen(t *testing.T) 
 		t.Fatalf("ensure: %v", err)
 	}
 
-	if err := runtime.Navigate(ctx, "bot-a", "  https://example.com/riset  "); err != nil {
+	navigation, err := runtime.Navigate(ctx, "bot-a", "  https://example.com/riset  ")
+	if err != nil {
 		t.Fatalf("navigate: %v", err)
+	}
+	// The stub cannot redirect, so it answers the URL it was given, trimmed. The title
+	// is empty because there is no document: a stub that invented one would be inventing
+	// the very thing this result exists to report.
+	if navigation.FinalURL != "https://example.com/riset" || navigation.Title != "" {
+		t.Fatalf("navigation = %+v, want the trimmed url and no title", navigation)
 	}
 	actions := runtime.Actions("bot-a")
 	if len(actions) != 1 || actions[0].Kind != "navigate" || actions[0].Detail != "https://example.com/riset" {
@@ -235,7 +321,7 @@ func TestNavigateRecordsTheURLAndRefusesWhatABrowserShouldNotOpen(t *testing.T) 
 		"chrome://settings",
 		"view-source:https://example.com",
 	} {
-		err := runtime.Navigate(ctx, "bot-a", target)
+		_, err := runtime.Navigate(ctx, "bot-a", target)
 		want := ErrInvalidURL
 		if strings.TrimSpace(target) == "" {
 			want = ErrNoURL
@@ -267,7 +353,7 @@ func TestActionsAreRecordedInOrder(t *testing.T) {
 	if err := runtime.Type(ctx, "bot-a", "halo"); err != nil {
 		t.Fatalf("type: %v", err)
 	}
-	if err := runtime.Navigate(ctx, "bot-a", "https://example.com"); err != nil {
+	if _, err := runtime.Navigate(ctx, "bot-a", "https://example.com"); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
 	if _, err := runtime.Exec(ctx, "bot-a", "ls -la"); err != nil {

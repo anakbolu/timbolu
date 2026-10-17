@@ -227,9 +227,23 @@ func sessionPath(botID string) string {
 // ends up retrying something that will never succeed: the same rejected header is
 // rejected again. The sentence the control plane wrote is carried through rather than
 // replaced.
+//
+// The 502 is the one status that carries two different meanings, and the control
+// plane's own sentence is what separates them. `navigation failed` is the browser
+// being asked to open a page and not getting one — the same URL answers the same way,
+// so a caller that retried would spend its budget on an answer that cannot change —
+// while every other 502 is the runtime failing to do something, which may well pass.
+// Reading the body rather than the status is not a heuristic here: that sentence is
+// the control plane's contract for this failure (apps/virtual-computer/README.md),
+// and it is the only fact that distinguishes "the page is not there" from "the
+// control plane is not there".
 func classify(status int, payload []byte) error {
 	var failure struct {
 		Error string `json:"error"`
+		// HTTPStatus is the status the browser recorded for the document that failed to
+		// load. The control plane sends it only when it knows one, which is why 0 is
+		// "not reported" rather than a status.
+		HTTPStatus int `json:"http_status"`
 	}
 	_ = json.Unmarshal(payload, &failure)
 
@@ -247,7 +261,26 @@ func classify(status int, payload []byte) error {
 		return fmt.Errorf("%w: %s", domain.ErrNotConfigured, message)
 	case http.StatusNotFound:
 		return fmt.Errorf("%w: %s", domain.ErrNoSession, message)
+	case http.StatusBadGateway:
+		if strings.EqualFold(message, navigationFailedMessage) {
+			// The status the page answered with is the one fact that says *why* the
+			// navigation failed, and it is what a person reads in the task summary: a
+			// message that only repeated "navigation failed" would hide the 404 that
+			// explains it.
+			if failure.HTTPStatus != 0 {
+				message = fmt.Sprintf("%s (HTTP %d)", message, failure.HTTPStatus)
+			}
+			return fmt.Errorf("%w: %s", domain.ErrNavigationFailed, message)
+		}
+		return fmt.Errorf("%w: %s", domain.ErrUnavailable, message)
 	default:
 		return fmt.Errorf("%w: %s", domain.ErrUnavailable, message)
 	}
 }
+
+// navigationFailedMessage is the control plane's own sentence for a navigation it
+// carried out and that did not load. It is a constant rather than an inline string
+// because it is a contract with another service: the 502 body is where the two
+// meanings of that status are told apart, and a rename on the control plane's side
+// has to fail here rather than silently turn a permanent failure into a retried one.
+const navigationFailedMessage = "navigation failed"

@@ -1,0 +1,20 @@
+$ apps/virtual-computer/scripts/e2e.sh   # tanpa STACK / port
+apps/virtual-computer/scripts/e2e.sh: line 162: STACK: set STACK: this script derives every name it touches from it, and a default would let a run reach for a stack the caller never named
+
+$ STACK=vchd apps/virtual-computer/scripts/e2e.sh   # tanpa VCOMPUTER_CONTROL_PORT
+apps/virtual-computer/scripts/e2e.sh: line 178: VCOMPUTER_CONTROL_PORT: set VCOMPUTER_CONTROL_PORT: it is the port the stack publishes, and a default would point this run at whichever control plane already holds it
+
+== checks #244-#247 dari run penuh
+PASS stack-identity
+PASS stack-identity-label
+PASS navigate-fixture-http-status
+PASS navigate-404-502
+PASS navigate-404-body
+PASS teardown-containers
+PASS teardown-volumes
+PASS teardown-networks
+SUMMARY: 61 passed, 0 failed
+
+== container/volume stack lain sebelum vs sesudah run (diff hanya penambahan oleh agent lain, tidak ada yang terhapus)
+(tidak ada container lain yang terhapus)
+(tidak ada volume lain yang terhapus)

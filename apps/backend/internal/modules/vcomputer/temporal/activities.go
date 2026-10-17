@@ -37,6 +37,8 @@ import (
 	"errors"
 	"time"
 
+	// The SDK's own package is aliased because this package is called temporal too:
+	// an unaliased import would read as if the module were calling itself.
 	sdktemporal "go.temporal.io/sdk/temporal"
 	"go.uber.org/zap"
 
@@ -169,9 +171,27 @@ func (a *Activities) Type(ctx context.Context, request TypeRequest) error {
 // the task is reading a page or writing to a third party's
 // (docs/riset-microvm.md §5.1): the control plane refuses a scheme it does not accept,
 // and the approval gate is what decided the call was allowed at all.
+//
+// A navigation the control plane carried out and that did not load is turned into a
+// non-retryable error here. The default retry policy would otherwise spend the activity's
+// whole budget on the same URL: the page is missing, or the sandbox has no route to it,
+// and neither answer changes by asking again — while the cost of asking is a fresh browser
+// navigation each time. The errors that do deserve a retry are the ones where the control
+// plane itself did not answer (ErrUnavailable), and those are left alone; the other
+// non-retryable answer this activity can give is the configuration mistake permanent()
+// catches, which is not about the URL at all.
 func (a *Activities) Navigate(ctx context.Context, request NavigateRequest) error {
-	return permanent(a.client().Navigate(ctx, request.BotID, request.URL))
+	err := a.client().Navigate(ctx, request.BotID, request.URL)
+	if errors.Is(err, domain.ErrNavigationFailed) {
+		return sdktemporal.NewNonRetryableApplicationError(err.Error(), navigationFailedType, err)
+	}
+	return permanent(err)
 }
+
+// navigationFailedType is the error type the failed navigation crosses the activity
+// boundary as. It is a short name rather than the sentence because a Temporal error
+// type is what a workflow branches on, and the sentence is already in the message.
+const navigationFailedType = "NavigationFailed"
 
 // Exec runs one command inside the sandbox and answers what it printed.
 //

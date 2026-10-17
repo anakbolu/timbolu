@@ -1,0 +1,35 @@
+=== BEFORE hardening (main 9b17aad), 2026-10-16 12:08 WIB ===
+## #188 host → sandbox tanpa token (IP sandbox 172.18.0.4)
+$ curl http://172.18.0.4:9223/json/version
+HTTP 200
+$ curl http://172.18.0.4:9223/json/list | head -c 200
+[ {
+   "description": "",
+   "devtoolsFrontendUrl": "https://chrome-devtools-frontend.appspot.com/serve_rev/@3ff7ac5a9224be9156d7f8703a06e22890aafd34/inspector.html?ws=172.18.0.4:9223/devtools/page/E1
+$ curl http://172.18.0.4:6080/vnc.html
+HTTP 200
+
+## #189 navigate ke https://example.com (sandbox tanpa egress)
+{"navigated":true,"url":"https://example.com"}
+ HTTP 200
+
+## #190 DELETE lalu cek container/volume
+DELETE HTTP 200
+container vcomputer-before-stale Exited (0) Less than a second ago
+volume vcomputer-before-stale-home
+
+## #191 e2e.sh hardcoded
+origin/main:apps/virtual-computer/scripts/e2e.sh:40:#   PREBUILT=1 apps/virtual-computer/scripts/e2e.sh           # the images are already tagged
+origin/main:apps/virtual-computer/scripts/e2e.sh:55:#   PREBUILT=1              the two images are already tagged: do not build, do not rebuild
+origin/main:apps/virtual-computer/scripts/e2e.sh:82:CONTROL_IMAGE="vcomputer-control:poc"
+origin/main:apps/virtual-computer/scripts/e2e.sh:83:SANDBOX_IMAGE="vcomputer-sandbox:poc"
+origin/main:apps/virtual-computer/scripts/e2e.sh:121:TOKEN=$(openssl rand -hex 16 2>/dev/null || true)
+origin/main:apps/virtual-computer/scripts/e2e.sh:125:export VCOMPUTER_CONTROL_TOKEN="$TOKEN"
+origin/main:apps/virtual-computer/scripts/e2e.sh:199:PREBUILT=${PREBUILT:-0}
+origin/main:apps/virtual-computer/scripts/e2e.sh:209:    PREBUILT=1
+origin/main:apps/virtual-computer/scripts/e2e.sh:226:if [ "$PREBUILT" = "1" ]; then
+origin/main:apps/virtual-computer/scripts/e2e.sh:232:if $COMPOSE up -d $up_flags vcomputer-control vcomputer-fixture; then
+origin/main:apps/virtual-computer/scripts/e2e.sh:235:    fail "compose-up" "$COMPOSE up -d failed (does the compose file still name the services vcomputer-control and vcomputer-fixture?)"
+origin/main:apps/virtual-computer/scripts/e2e.sh:365:    version=$($DOCKER exec vcomputer-control wget -qO- "${cdp}/json/version" 2>&1)
+origin/main:apps/virtual-computer/scripts/e2e.sh:377:internal=$($DOCKER network inspect vcomputer-internal -f '{{.Internal}}' 2>/dev/null)
+origin/main:apps/virtual-computer/scripts/e2e.sh:378:expect "network-internal" "$internal" "true" "vcomputer-internal must exist with internal: true"
