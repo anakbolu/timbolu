@@ -305,7 +305,7 @@ export class PostgresRepository implements Repository {
     return this.read(scope, async (tx) => {
       const routineID = optionalID(filter.routineID);
       const agentID = optionalID(filter.agentID);
-      const status = filter.status.trim() === "" ? null : filter.status.trim();
+      const status = filter.status === "" ? null : filter.status;
 
       const rows = await tx<RunRow[]>`
         SELECT

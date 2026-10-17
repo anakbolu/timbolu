@@ -28,7 +28,7 @@ import { Counter as QuotaCounter } from "../platform/quota/counter.ts";
 import { Publisher } from "../platform/pubsub/pubsub.ts";
 import { Codec as OAuthStateCodec } from "../platform/oauthstate/state.ts";
 import { Client as GoogleClient, DefaultAuthURL, DefaultTokenURL, DefaultUserInfoURL } from "../platform/oauth/google/google.ts";
-import { Table as CostTable } from "../platform/llm/pricing/table.ts";
+import { Table as CostTable, defaults as defaultPrices, DefaultFallback } from "../platform/llm/pricing/table.ts";
 import { Factory as ProviderFactory } from "../platform/llm/registry.ts";
 
 import {
@@ -91,6 +91,9 @@ export interface Container {
   agent: AgentHandler | null;
   llm: LlmHandler | null;
   admin: AdminHandler | null;
+  /** The guards call these directly; a handler keeps its service private. */
+  authService: AuthService | null;
+  workspaceService: WorkspaceService | null;
   close: () => Promise<void>;
 }
 
@@ -216,6 +219,7 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
   );
 
   let auth: AuthHandler | null = null;
+  let authService: AuthService | null = null;
   if (db && issuer) {
     const service = new AuthService({
       repository: new AuthRepository(db),
@@ -226,30 +230,41 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
       google: authGoogle(google),
       passwords: authPasswords,
       tokens: authTokens,
+      // The service's own Config: lifetimes in milliseconds, the same units the
+      // Go service takes a time.Duration for.
       config: {
-        cookie: {
-          name: "bolu_refresh",
-          domain: config.auth.cookieDomain,
-          secure: config.auth.cookieSecure,
-          sameSite: "lax",
-          path: "/api/auth",
-          maxAge: (config.auth.refreshHours > 0 ? config.auth.refreshHours : 720) * 3600,
-        },
+        refreshTTL: (config.auth.refreshHours > 0 ? config.auth.refreshHours : 720) * 3600 * 1000,
+        verificationTTL: (config.auth.verificationHours > 0 ? config.auth.verificationHours : 24) * 3600 * 1000,
+        resetTTL: (config.auth.resetMinutes > 0 ? config.auth.resetMinutes : 30) * 60 * 1000,
         frontendURL: config.application.frontendUrl,
+        loginThrottleCapacity: config.auth.loginThrottleCapacity,
+        loginThrottleRefill: config.auth.loginThrottleRefill,
+        requireEmailVerification: config.auth.requireEmailVerification,
       },
       logf: (fmt, ...args) => log.warn(formatLog(fmt, args)),
     });
-    auth = new AuthHandler(service, config, log);
+    authService = service;
+    auth = new AuthHandler(service, log, {
+      cookie: {
+        path: "/api/auth",
+        domain: config.auth.cookieDomain,
+        secure: config.auth.cookieSecure,
+        sameSite: "Lax",
+      },
+      frontendURL: config.application.frontendUrl,
+    });
   }
 
   let workspace: WorkspaceHandler | null = null;
+  let workspaceService: WorkspaceService | null = null;
   if (db) {
     const service = new WorkspaceService({
       repository: new WorkspaceRepository(db),
       mailer: workspaceMailer(mailer, config.mail.from),
       tokens: workspaceTokens,
-      limits: workspacePlanLimits(config.plan.maxMembers),
+      limits: workspacePlanLimits(config.plan.maxAgentsPerWorkspace > 0 ? config.plan.maxAgentsPerWorkspace : 50),
     });
+    workspaceService = service;
     workspace = new WorkspaceHandler(service, log);
   }
 
@@ -257,7 +272,7 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
   if (db) {
     const service = new AgentService({
       repository: new AgentRepository(db),
-      limits: agentPlanLimits(config.plan.maxAgents),
+      limits: agentPlanLimits(config.plan.maxAgentsPerWorkspace),
     });
     agent = new AgentHandler(service, log);
   }
@@ -267,7 +282,7 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
     const repo = new LlmRepository(db);
     const service = new LlmService({
       store: repo,
-      agents: new AgentStore(db),
+      agents: new AgentStore(db, box),
       factory: new ProviderFactory(),
       box,
       recorder: repo,
@@ -277,16 +292,33 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
       // gateway runs without a policy, which is the same shape as a deployment
       // whose quota switch is off.
       quota: null,
-      costs: new CostTable(),
+      costs: new CostTable(defaultPrices(), DefaultFallback),
+      // The deployment default is a provider row that exists only in
+      // configuration: it has no workspace and no id until it is persisted, and
+      // it is never the default of a workspace it does not belong to.
       default: {
+        id: "",
+        workspaceId: "",
+        name: "default",
         adapter: config.llm.default.adapter,
         baseUrl: config.llm.default.baseUrl,
         model: config.llm.default.model,
         apiKey: config.llm.default.apiKey,
+        priority: 0,
         maxTokens: config.llm.default.maxTokens,
+        isDefault: true,
         contextTokens: config.llm.default.contextTokens,
-      } as any,
-      embeddingModel: config.llm.embeddingModel,
+        enabled: true,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      },
+      // Empty means a provider's own configured model is used for embeddings,
+      // which is what the Go container passes when the deployment names none.
+      embeddingModel: "",
+      auditor: null,
+      logger: log,
+      tracer: null,
+      metrics: null,
       settings: {
         quotaEnabled: config.llm.quotaEnabled,
         chainLimit: config.llm.chainLimit,
@@ -326,6 +358,8 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
     agent,
     llm,
     admin,
+    authService,
+    workspaceService,
     close,
   };
 }

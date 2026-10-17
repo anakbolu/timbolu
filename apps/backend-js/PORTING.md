@@ -9,8 +9,8 @@ TypeScript counterpart. `ported` means the file exists and `bun run typecheck` a
 
 | | count |
 | --- | --- |
-| ported | 168 |
-| missing | 43 |
+| ported | 198 |
+| missing | 13 |
 | folded | 53 |
 | skipped | 194 |
 | **total** | **458** |
@@ -26,21 +26,21 @@ repository function, so those are absorbed into `repository/postgres.ts`.
 | `cmd` | 0 | 4 | 0 | 1 |
 | `module/admin` | 4 | 0 | 3 | 4 |
 | `module/agent` | 5 | 0 | 3 | 5 |
-| `module/approval` | 0 | 6 | 3 | 3 |
+| `module/approval` | 6 | 0 | 3 | 3 |
 | `module/auth` | 5 | 0 | 3 | 11 |
-| `module/billing` | 0 | 9 | 3 | 11 |
+| `module/billing` | 9 | 0 | 3 | 11 |
 | `module/chat` | 17 | 0 | 3 | 24 |
 | `module/checklist` | 5 | 0 | 3 | 5 |
 | `module/health` | 4 | 0 | 3 | 6 |
 | `module/integration` | 17 | 0 | 3 | 4 |
 | `module/llm` | 12 | 0 | 5 | 19 |
-| `module/memory` | 10 | 3 | 3 | 12 |
-| `module/order` | 0 | 5 | 3 | 6 |
+| `module/memory` | 13 | 0 | 3 | 12 |
+| `module/order` | 5 | 0 | 3 | 6 |
 | `module/retention` | 0 | 6 | 3 | 3 |
 | `module/routine` | 8 | 0 | 3 | 12 |
 | `module/task` | 16 | 0 | 3 | 11 |
 | `module/vcomputer` | 4 | 0 | 0 | 3 |
-| `module/whatsapp` | 0 | 10 | 3 | 5 |
+| `module/whatsapp` | 7 | 3 | 3 | 5 |
 | `module/workspace` | 7 | 0 | 3 | 8 |
 | `platform/attachtext` | 2 | 0 | 0 | 1 |
 | `platform/authn` | 3 | 0 | 0 | 3 |
@@ -101,17 +101,17 @@ repository function, so those are absorbed into `repository/postgres.ts`.
 | `apps/backend/internal/modules/agent/service/limits.go` | `apps/backend-js/src/modules/agent/service/limits.ts` | ported |
 | `apps/backend/internal/modules/agent/service/service.go` | `apps/backend-js/src/modules/agent/service/service.ts` | ported |
 | `apps/backend/internal/modules/agent/service/service_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/modules/approval/domain/approval.go` | `apps/backend-js/src/modules/approval/domain/approval.ts` | missing |
-| `apps/backend/internal/modules/approval/domain/service.go` | `apps/backend-js/src/modules/approval/domain/service.ts` | missing |
-| `apps/backend/internal/modules/approval/handler/handler.go` | `apps/backend-js/src/modules/approval/handler/handler.ts` | missing |
+| `apps/backend/internal/modules/approval/domain/approval.go` | `apps/backend-js/src/modules/approval/domain/approval.ts` | ported |
+| `apps/backend/internal/modules/approval/domain/service.go` | `apps/backend-js/src/modules/approval/domain/service.ts` | ported |
+| `apps/backend/internal/modules/approval/handler/handler.go` | `apps/backend-js/src/modules/approval/handler/handler.ts` | ported |
 | `apps/backend/internal/modules/approval/handler/handler_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/modules/approval/repository/postgres.go` | `apps/backend-js/src/modules/approval/repository/postgres.ts` | missing |
+| `apps/backend/internal/modules/approval/repository/postgres.go` | `apps/backend-js/src/modules/approval/repository/postgres.ts` | ported |
 | `apps/backend/internal/modules/approval/repository/sqlcgen/approval.sql.go` | `—` | folded — sqlc-generated; folded into the repository |
 | `apps/backend/internal/modules/approval/repository/sqlcgen/db.go` | `—` | folded — sqlc-generated; folded into the repository |
 | `apps/backend/internal/modules/approval/repository/sqlcgen/models.go` | `—` | folded — sqlc-generated; folded into the repository |
-| `apps/backend/internal/modules/approval/service/digest.go` | `apps/backend-js/src/modules/approval/service/digest.ts` | missing |
+| `apps/backend/internal/modules/approval/service/digest.go` | `apps/backend-js/src/modules/approval/service/digest.ts` | ported |
 | `apps/backend/internal/modules/approval/service/metrics_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/modules/approval/service/service.go` | `apps/backend-js/src/modules/approval/service/service.ts` | missing |
+| `apps/backend/internal/modules/approval/service/service.go` | `apps/backend-js/src/modules/approval/service/service.ts` | ported |
 | `apps/backend/internal/modules/approval/service/service_test.go` | `—` | skipped — test file |
 | `apps/backend/internal/modules/auth/domain/auth.go` | `apps/backend-js/src/modules/auth/domain/auth.ts` | ported |
 | `apps/backend/internal/modules/auth/domain/mocks/mock_GoogleProvider.go` | `—` | skipped — generated mock |
@@ -132,7 +132,7 @@ repository function, so those are absorbed into `repository/postgres.ts`.
 | `apps/backend/internal/modules/auth/repository/sqlcgen/models.go` | `—` | folded — sqlc-generated; folded into the repository |
 | `apps/backend/internal/modules/auth/service/service.go` | `apps/backend-js/src/modules/auth/service/service.ts` | ported |
 | `apps/backend/internal/modules/auth/service/service_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/modules/billing/domain/billing.go` | `apps/backend-js/src/modules/billing/domain/billing.ts` | missing |
+| `apps/backend/internal/modules/billing/domain/billing.go` | `apps/backend-js/src/modules/billing/domain/billing.ts` | ported |
 | `apps/backend/internal/modules/billing/domain/billing_test.go` | `—` | skipped — test file |
 | `apps/backend/internal/modules/billing/domain/mocks/mock_Activity.go` | `—` | skipped — generated mock |
 | `apps/backend/internal/modules/billing/domain/mocks/mock_Gateway.go` | `—` | skipped — generated mock |
@@ -141,18 +141,18 @@ repository function, so those are absorbed into `repository/postgres.ts`.
 | `apps/backend/internal/modules/billing/domain/mocks/mock_Service.go` | `—` | skipped — generated mock |
 | `apps/backend/internal/modules/billing/domain/mocks/mock_SpendCounter.go` | `—` | skipped — generated mock |
 | `apps/backend/internal/modules/billing/domain/mocks/mock_UsageReader.go` | `—` | skipped — generated mock |
-| `apps/backend/internal/modules/billing/domain/service.go` | `apps/backend-js/src/modules/billing/domain/service.ts` | missing |
-| `apps/backend/internal/modules/billing/handler/handler.go` | `apps/backend-js/src/modules/billing/handler/handler.ts` | missing |
+| `apps/backend/internal/modules/billing/domain/service.go` | `apps/backend-js/src/modules/billing/domain/service.ts` | ported |
+| `apps/backend/internal/modules/billing/handler/handler.go` | `apps/backend-js/src/modules/billing/handler/handler.ts` | ported |
 | `apps/backend/internal/modules/billing/handler/handler_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/modules/billing/repository/convert.go` | `apps/backend-js/src/modules/billing/repository/convert.ts` | missing |
-| `apps/backend/internal/modules/billing/repository/postgres.go` | `apps/backend-js/src/modules/billing/repository/postgres.ts` | missing |
+| `apps/backend/internal/modules/billing/repository/convert.go` | `apps/backend-js/src/modules/billing/repository/convert.ts` | ported |
+| `apps/backend/internal/modules/billing/repository/postgres.go` | `apps/backend-js/src/modules/billing/repository/postgres.ts` | ported |
 | `apps/backend/internal/modules/billing/repository/sqlcgen/billing.sql.go` | `—` | folded — sqlc-generated; folded into the repository |
 | `apps/backend/internal/modules/billing/repository/sqlcgen/db.go` | `—` | folded — sqlc-generated; folded into the repository |
 | `apps/backend/internal/modules/billing/repository/sqlcgen/models.go` | `—` | folded — sqlc-generated; folded into the repository |
-| `apps/backend/internal/modules/billing/service/format.go` | `apps/backend-js/src/modules/billing/service/format.ts` | missing |
-| `apps/backend/internal/modules/billing/service/payment.go` | `apps/backend-js/src/modules/billing/service/payment.ts` | missing |
-| `apps/backend/internal/modules/billing/service/quota.go` | `apps/backend-js/src/modules/billing/service/quota.ts` | missing |
-| `apps/backend/internal/modules/billing/service/service.go` | `apps/backend-js/src/modules/billing/service/service.ts` | missing |
+| `apps/backend/internal/modules/billing/service/format.go` | `apps/backend-js/src/modules/billing/service/format.ts` | ported |
+| `apps/backend/internal/modules/billing/service/payment.go` | `apps/backend-js/src/modules/billing/service/payment.ts` | ported |
+| `apps/backend/internal/modules/billing/service/quota.go` | `apps/backend-js/src/modules/billing/service/quota.ts` | ported |
+| `apps/backend/internal/modules/billing/service/service.go` | `apps/backend-js/src/modules/billing/service/service.ts` | ported |
 | `apps/backend/internal/modules/billing/service/service_test.go` | `—` | skipped — test file |
 | `apps/backend/internal/modules/billing/service/sweep_test.go` | `—` | skipped — test file |
 | `apps/backend/internal/modules/chat/domain/block.go` | `apps/backend-js/src/modules/chat/domain/block.ts` | ported |
@@ -285,7 +285,7 @@ repository function, so those are absorbed into `repository/postgres.ts`.
 | `apps/backend/internal/modules/llm/service/service.go` | `apps/backend-js/src/modules/llm/service/service.ts` | ported |
 | `apps/backend/internal/modules/llm/service/service_test.go` | `—` | skipped — test file |
 | `apps/backend/internal/modules/llm/service/tracing.go` | `apps/backend-js/src/modules/llm/service/tracing.ts` | ported |
-| `apps/backend/internal/modules/memory/activity/activity.go` | `apps/backend-js/src/modules/memory/activity/activity.ts` | missing |
+| `apps/backend/internal/modules/memory/activity/activity.go` | `apps/backend-js/src/modules/memory/activity/activity.ts` | ported |
 | `apps/backend/internal/modules/memory/activity/activity_test.go` | `—` | skipped — test file |
 | `apps/backend/internal/modules/memory/domain/memory.go` | `apps/backend-js/src/modules/memory/domain/memory.ts` | ported |
 | `apps/backend/internal/modules/memory/domain/mocks/mock_Auditor.go` | `—` | skipped — generated mock |
@@ -296,7 +296,7 @@ repository function, so those are absorbed into `repository/postgres.ts`.
 | `apps/backend/internal/modules/memory/domain/mocks/mock_Service.go` | `—` | skipped — generated mock |
 | `apps/backend/internal/modules/memory/domain/service.go` | `apps/backend-js/src/modules/memory/domain/service.ts` | ported |
 | `apps/backend/internal/modules/memory/domain/wire_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/modules/memory/handler/handler.go` | `apps/backend-js/src/modules/memory/handler/handler.ts` | missing |
+| `apps/backend/internal/modules/memory/handler/handler.go` | `apps/backend-js/src/modules/memory/handler/handler.ts` | ported |
 | `apps/backend/internal/modules/memory/handler/handler_test.go` | `—` | skipped — test file |
 | `apps/backend/internal/modules/memory/repository/convert.go` | `apps/backend-js/src/modules/memory/repository/convert.ts` | ported |
 | `apps/backend/internal/modules/memory/repository/postgres.go` | `apps/backend-js/src/modules/memory/repository/postgres.ts` | ported |
@@ -311,21 +311,21 @@ repository function, so those are absorbed into `repository/postgres.ts`.
 | `apps/backend/internal/modules/memory/service/remember.go` | `apps/backend-js/src/modules/memory/service/remember.ts` | ported |
 | `apps/backend/internal/modules/memory/service/service.go` | `apps/backend-js/src/modules/memory/service/service.ts` | ported |
 | `apps/backend/internal/modules/memory/service/service_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/modules/memory/workflow/workflow.go` | `apps/backend-js/src/modules/memory/workflow/workflow.ts` | missing |
+| `apps/backend/internal/modules/memory/workflow/workflow.go` | `apps/backend-js/src/modules/memory/workflow/workflow.ts` | ported |
 | `apps/backend/internal/modules/memory/workflow/workflow_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/modules/order/adapter/adapter.go` | `apps/backend-js/src/modules/order/adapter/adapter.ts` | missing |
+| `apps/backend/internal/modules/order/adapter/adapter.go` | `apps/backend-js/src/modules/order/adapter/adapter.ts` | ported |
 | `apps/backend/internal/modules/order/adapter/adapter_test.go` | `—` | skipped — test file |
 | `apps/backend/internal/modules/order/domain/mocks/mock_Repository.go` | `—` | skipped — generated mock |
 | `apps/backend/internal/modules/order/domain/mocks/mock_Service.go` | `—` | skipped — generated mock |
-| `apps/backend/internal/modules/order/domain/order.go` | `apps/backend-js/src/modules/order/domain/order.ts` | missing |
+| `apps/backend/internal/modules/order/domain/order.go` | `apps/backend-js/src/modules/order/domain/order.ts` | ported |
 | `apps/backend/internal/modules/order/domain/order_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/modules/order/handler/handler.go` | `apps/backend-js/src/modules/order/handler/handler.ts` | missing |
+| `apps/backend/internal/modules/order/handler/handler.go` | `apps/backend-js/src/modules/order/handler/handler.ts` | ported |
 | `apps/backend/internal/modules/order/handler/handler_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/modules/order/repository/postgres.go` | `apps/backend-js/src/modules/order/repository/postgres.ts` | missing |
+| `apps/backend/internal/modules/order/repository/postgres.go` | `apps/backend-js/src/modules/order/repository/postgres.ts` | ported |
 | `apps/backend/internal/modules/order/repository/sqlcgen/db.go` | `—` | folded — sqlc-generated; folded into the repository |
 | `apps/backend/internal/modules/order/repository/sqlcgen/models.go` | `—` | folded — sqlc-generated; folded into the repository |
 | `apps/backend/internal/modules/order/repository/sqlcgen/order.sql.go` | `—` | folded — sqlc-generated; folded into the repository |
-| `apps/backend/internal/modules/order/service/service.go` | `apps/backend-js/src/modules/order/service/service.ts` | missing |
+| `apps/backend/internal/modules/order/service/service.go` | `apps/backend-js/src/modules/order/service/service.ts` | ported |
 | `apps/backend/internal/modules/order/service/service_test.go` | `—` | skipped — test file |
 | `apps/backend/internal/modules/retention/domain/erasure.go` | `apps/backend-js/src/modules/retention/domain/erasure.ts` | missing |
 | `apps/backend/internal/modules/retention/domain/retention.go` | `apps/backend-js/src/modules/retention/domain/retention.ts` | missing |
@@ -403,20 +403,20 @@ repository function, so those are absorbed into `repository/postgres.ts`.
 | `apps/backend/internal/modules/whatsapp/adapter/adapter_test.go` | `—` | skipped — test file |
 | `apps/backend/internal/modules/whatsapp/handler/handler.go` | `apps/backend-js/src/modules/whatsapp/handler/handler.ts` | missing |
 | `apps/backend/internal/modules/whatsapp/handler/handler_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/modules/whatsapp/handler/qr.go` | `apps/backend-js/src/modules/whatsapp/handler/qr.ts` | missing |
+| `apps/backend/internal/modules/whatsapp/handler/qr.go` | `apps/backend-js/src/modules/whatsapp/handler/qr.ts` | ported |
 | `apps/backend/internal/modules/whatsapp/handler/qr_test.go` | `—` | skipped — test file |
 | `apps/backend/internal/modules/whatsapp/handler/stream.go` | `apps/backend-js/src/modules/whatsapp/handler/stream.ts` | missing |
-| `apps/backend/internal/modules/whatsapp/repository/convert.go` | `apps/backend-js/src/modules/whatsapp/repository/convert.ts` | missing |
-| `apps/backend/internal/modules/whatsapp/repository/links.go` | `apps/backend-js/src/modules/whatsapp/repository/links.ts` | missing |
-| `apps/backend/internal/modules/whatsapp/repository/postgres.go` | `apps/backend-js/src/modules/whatsapp/repository/postgres.ts` | missing |
+| `apps/backend/internal/modules/whatsapp/repository/convert.go` | `apps/backend-js/src/modules/whatsapp/repository/convert.ts` | ported |
+| `apps/backend/internal/modules/whatsapp/repository/links.go` | `apps/backend-js/src/modules/whatsapp/repository/links.ts` | ported |
+| `apps/backend/internal/modules/whatsapp/repository/postgres.go` | `apps/backend-js/src/modules/whatsapp/repository/postgres.ts` | ported |
 | `apps/backend/internal/modules/whatsapp/repository/sqlcgen/db.go` | `—` | folded — sqlc-generated; folded into the repository |
 | `apps/backend/internal/modules/whatsapp/repository/sqlcgen/models.go` | `—` | folded — sqlc-generated; folded into the repository |
 | `apps/backend/internal/modules/whatsapp/repository/sqlcgen/whatsapp.sql.go` | `—` | folded — sqlc-generated; folded into the repository |
-| `apps/backend/internal/modules/whatsapp/service/messages.go` | `apps/backend-js/src/modules/whatsapp/service/messages.ts` | missing |
+| `apps/backend/internal/modules/whatsapp/service/messages.go` | `apps/backend-js/src/modules/whatsapp/service/messages.ts` | ported |
 | `apps/backend/internal/modules/whatsapp/service/reads_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/modules/whatsapp/service/service.go` | `apps/backend-js/src/modules/whatsapp/service/service.ts` | missing |
+| `apps/backend/internal/modules/whatsapp/service/service.go` | `apps/backend-js/src/modules/whatsapp/service/service.ts` | ported |
 | `apps/backend/internal/modules/whatsapp/service/service_test.go` | `—` | skipped — test file |
-| `apps/backend/internal/modules/whatsapp/service/transport.go` | `apps/backend-js/src/modules/whatsapp/service/transport.ts` | missing |
+| `apps/backend/internal/modules/whatsapp/service/transport.go` | `apps/backend-js/src/modules/whatsapp/service/transport.ts` | ported |
 | `apps/backend/internal/modules/workspace/domain/mocks/mock_Mailer.go` | `—` | skipped — generated mock |
 | `apps/backend/internal/modules/workspace/domain/mocks/mock_PlanLimits.go` | `—` | skipped — generated mock |
 | `apps/backend/internal/modules/workspace/domain/mocks/mock_Provisioner.go` | `—` | skipped — generated mock |

@@ -10,15 +10,13 @@
  * Ported 1:1 from internal/modules/task/activity/activity.go.
  */
 
-import * as activity from "@temporalio/activity";
 import { ApplicationFailure } from "@temporalio/common";
 import * as attachtext from "../../../platform/attachtext/attachtext.ts";
 import type { ChatRequest, ChatResponse, Message as LLMMessage, Tool as LLMTool } from "../../../platform/llm/registry.ts";
 import { ErrUnsupported, isLLMError, PurposeAgent } from "../../../platform/llm/registry.ts";
 import { ToolChoiceAuto } from "../../llm/domain/provider.ts";
 import type { Logger } from "../../../platform/logger.ts";
-import { nopLogger } from "../../../platform/logger.ts";
-import type { Span, Tracer } from "../../../platform/telemetry/telemetry.ts";
+import type { Tracer } from "../../../platform/telemetry/telemetry.ts";
 import { SpanStatusCode } from "../../../platform/telemetry/telemetry.ts";
 import type {
   AgentDirectory,
@@ -94,7 +92,7 @@ import { TaskEvent } from "../workflow/prompt.ts";
 import { HandoffTool, draftTitle, firstLine as firstLineOf } from "./helpers.ts";
 import { appOfTool, durationOf, retry } from "./metrics.ts";
 import { attachmentTurns, attachMessage, carriedImages, saysNothing } from "./attachments.ts";
-import { end, span, taskLogger, toolSpan, workflowIDOf } from "./tracing.ts";
+import { end, span, taskLogger, toolSpan } from "./tracing.ts";
 
 /** How much of a conversation a task is given. */
 const historyLimit = 30;
@@ -132,6 +130,22 @@ export class Activities {
 
   constructor(private readonly deps: Deps) {
     this.limits = normaliseLimits(deps.limits ?? emptyLimits());
+
+    // The worker reads an implementation set with `Object.entries`, which sees
+    // own properties only: an unbound prototype method would be invisible and
+    // every call would answer "not registered". Binding once here keeps the
+    // class the thing a worker is handed.
+    this.LoadTaskContext = this.LoadTaskContext.bind(this);
+    this.CallModel = this.CallModel.bind(this);
+    this.RunTool = this.RunTool.bind(this);
+    this.RequestDraft = this.RequestDraft.bind(this);
+    this.CarryOutDraft = this.CarryOutDraft.bind(this);
+    this.RecordStep = this.RecordStep.bind(this);
+    this.BeatTask = this.BeatTask.bind(this);
+    this.CompleteTask = this.CompleteTask.bind(this);
+    this.PrepareHandoff = this.PrepareHandoff.bind(this);
+    this.ResumeTask = this.ResumeTask.bind(this);
+    this.MarkHandoffStarted = this.MarkHandoffStarted.bind(this);
   }
 
   /** The activity set's clock, which a test pins. */
@@ -989,5 +1003,3 @@ function truncateContent(content: unknown, limit: number): unknown {
 function nonRetryable(message: string, type: string, cause: unknown): ApplicationFailure {
   return ApplicationFailure.nonRetryable(message, type, undefined, cause);
 }
-
-export { workflowIDOf };

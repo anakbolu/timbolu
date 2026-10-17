@@ -288,6 +288,8 @@ export class Service implements ServicePort {
   }
 }
 
+export type { Service as ServicePort } from "../domain/service.ts";
+
 /** The signal name that stops a running task. */
 export const SignalCancel = "cancel";
 

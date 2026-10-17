@@ -16,8 +16,10 @@
  */
 
 import { ApplicationFailure } from "@temporalio/common";
+import { formatDuration } from "../../../platform/config/config.ts";
 import type { Logger } from "../../../platform/logger.ts";
 import { nopLogger } from "../../../platform/logger.ts";
+import { Client, EffectiveTimeout } from "../service/client.ts";
 import {
   ErrNotConfigured,
   is,
@@ -33,9 +35,90 @@ export interface Deps {
   logger?: Logger | null;
 }
 
+/** The deployment's virtual-computer settings, as the config tree carries them. */
+export interface Config {
+  controlUrl: string;
+  token: string;
+  /** Milliseconds; a non-positive value is replaced by the default. */
+  timeout: number;
+}
+
+/**
+ * Builds the activity set from the deployment's configuration.
+ *
+ * An empty `controlUrl` leaves the set unconfigured rather than absent. That is
+ * deliberate: the activities are still registered, and each of them answers
+ * `ErrNotConfigured` — which is a deployment without a virtual computer, and it
+ * is what every deployment is until one is running. The alternative, registering
+ * nothing when the address is empty, would make "this worker cannot drive a
+ * computer" and "this worker never heard of one" the same state from the outside.
+ *
+ * Whether one is configured is logged once, and never with the token. The timeout
+ * is logged as the one in force rather than as the one configured: a non-positive
+ * value is not a bound at all, so the client replaces it with `DefaultTimeout` —
+ * and a log line that repeated "-5s" while every call waited 30s is how an
+ * operator comes to believe the bound they wrote is being applied (issue #257).
+ */
+export function fromConfig(cfg: Config, log: Logger = nopLogger): Activities {
+  // The one place the rule lives: what the client enforces and what this function
+  // logs are the same value, so neither can drift from the other.
+  const timeout = EffectiveTimeout(cfg.timeout);
+  const url = cfg.controlUrl.trim();
+
+  let computer: ComputerUseClient | null = null;
+  if (url === "") {
+    log.info(
+      "virtual computer is not configured: VCOMPUTER_CONTROL_URL is empty, so every activity answers ErrNotConfigured",
+    );
+  } else if (cfg.token.trim() === "") {
+    // The client is still built: the refusal is the honest answer, and treating
+    // this as unconfigured would hide which of the two variables is missing.
+    computer = new Client(url, cfg.token, timeout);
+    log.warn(
+      {
+        control_url: url,
+        timeout: formatDuration(timeout),
+      },
+      "virtual computer is configured without a token: VCOMPUTER_CONTROL_TOKEN is empty, so every call will be refused with a 401",
+    );
+  } else {
+    computer = new Client(url, cfg.token, timeout);
+    log.info(
+      { control_url: url, timeout: formatDuration(timeout) },
+      "virtual computer is configured",
+    );
+  }
+
+  if (url !== "" && cfg.timeout <= 0) {
+    // Only a configured virtual computer is worth a line: without an address no
+    // call is made, so the bound is inert.
+    log.warn(
+      {
+        configured_timeout: formatDuration(cfg.timeout),
+        timeout: formatDuration(timeout),
+      },
+      "the virtual computer timeout is not a positive duration (VCOMPUTER_CONTROL_TIMEOUT, or the config file's VComputer.Timeout), so it is no bound: the control plane's calls use the default timeout instead",
+    );
+  }
+
+  return new Activities({ computer, logger: log });
+}
+
 /** The set a worker registers. */
 export class Activities {
-  constructor(private readonly deps: Deps) {}
+  constructor(private readonly deps: Deps) {
+    // The worker reads an implementation set with `Object.entries`, which sees
+    // own properties only: an unbound prototype method would be invisible and
+    // every call would answer "not registered". Binding once here keeps the
+    // class the thing a worker is handed.
+    this.EnsureSession = this.EnsureSession.bind(this);
+    this.StopSession = this.StopSession.bind(this);
+    this.Screenshot = this.Screenshot.bind(this);
+    this.Click = this.Click.bind(this);
+    this.Type = this.Type.bind(this);
+    this.Navigate = this.Navigate.bind(this);
+    this.Exec = this.Exec.bind(this);
+  }
 
   /** Makes sure the bot has a computer. */
   async EnsureSession(request: SessionRequest): Promise<Session> {

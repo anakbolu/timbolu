@@ -9,7 +9,6 @@
 import type { Hono } from "hono";
 import type { AppContext, AppEnv } from "../../../platform/context.ts";
 import { currentUserId, isUuid, workspaceUUID } from "../../../platform/context.ts";
-import { AppError } from "../../../platform/errors.ts";
 import type { Logger } from "../../../platform/logger.ts";
 import { error, ok, okWithMeta, created } from "../../../platform/response.ts";
 import {
@@ -47,7 +46,7 @@ export class Handler {
   list = async (c: AppContext): Promise<Response> => {
     const agentID = this.parseOptionalID(c.req.query("agent_id"));
     if (agentID === null) {
-      return error(c, 400, "agent_id is not a uuid", "invalid_input", null);
+      return error(c, 400, "agent_id is not a uuid", "invalid_input");
     }
 
     const rawEnabled = (c.req.query("enabled") ?? "").trim();
@@ -61,7 +60,7 @@ export class Handler {
       const payload = routines.map(wireRoutine);
       return okWithMeta(c, "ok", payload, { count: payload.length });
     } catch (err) {
-      throw this.fail("list routines", err);
+      return this.fail(c, "list routines", err);
     }
   };
 
@@ -69,14 +68,14 @@ export class Handler {
   get = async (c: AppContext): Promise<Response> => {
     const id = this.parseID(c.req.param("routineID"));
     if (id === null) {
-      return error(c, 400, "routine id is not a uuid", "invalid_input", null);
+      return error(c, 400, "routine id is not a uuid", "invalid_input");
     }
 
     try {
       const routine = await this.service.routine(scopeOf(c), id);
       return ok(c, "ok", wireRoutine(routine));
     } catch (err) {
-      throw this.fail("get routine", err);
+      return this.fail(c, "get routine", err);
     }
   };
 
@@ -84,19 +83,19 @@ export class Handler {
   create = async (c: AppContext): Promise<Response> => {
     const body = await readBody(c);
     if (!body) {
-      return error(c, 400, "the body is not valid JSON", "invalid_request", null);
+      return error(c, 400, "the body is not valid JSON", "invalid_request");
     }
 
     const agentID = this.parseID(asString(body.agent_id));
     if (agentID === null) {
-      return error(c, 400, "agent_id is not a uuid", "invalid_input", null);
+      return error(c, 400, "agent_id is not a uuid", "invalid_input");
     }
 
     try {
       const routine = await this.service.create(scopeOf(c), writeRequestOf(body, agentID));
       return created(c, "routine created", wireRoutine(routine));
     } catch (err) {
-      throw this.fail("create routine", err);
+      return this.fail(c, "create routine", err);
     }
   };
 
@@ -104,12 +103,12 @@ export class Handler {
   update = async (c: AppContext): Promise<Response> => {
     const id = this.parseID(c.req.param("routineID"));
     if (id === null) {
-      return error(c, 400, "routine id is not a uuid", "invalid_input", null);
+      return error(c, 400, "routine id is not a uuid", "invalid_input");
     }
 
     const body = await readBody(c);
     if (!body) {
-      return error(c, 400, "the body is not valid JSON", "invalid_request", null);
+      return error(c, 400, "the body is not valid JSON", "invalid_request");
     }
 
     // A body id that does not parse means "leave the Bolu alone", which is what
@@ -120,7 +119,7 @@ export class Handler {
       const routine = await this.service.update(scopeOf(c), id, writeRequestOf(body, agentID));
       return ok(c, "routine updated", wireRoutine(routine));
     } catch (err) {
-      throw this.fail("update routine", err);
+      return this.fail(c, "update routine", err);
     }
   };
 
@@ -128,14 +127,14 @@ export class Handler {
   delete = async (c: AppContext): Promise<Response> => {
     const id = this.parseID(c.req.param("routineID"));
     if (id === null) {
-      return error(c, 400, "routine id is not a uuid", "invalid_input", null);
+      return error(c, 400, "routine id is not a uuid", "invalid_input");
     }
 
     try {
       await this.service.delete(scopeOf(c), id);
       return ok(c, "routine deleted", null);
     } catch (err) {
-      throw this.fail("delete routine", err);
+      return this.fail(c, "delete routine", err);
     }
   };
 
@@ -153,7 +152,7 @@ export class Handler {
   runs = async (c: AppContext): Promise<Response> => {
     const id = this.parseID(c.req.param("routineID"));
     if (id === null) {
-      return error(c, 400, "routine id is not a uuid", "invalid_input", null);
+      return error(c, 400, "routine id is not a uuid", "invalid_input");
     }
 
     // Reading the routine first confirms the caller may see it: another
@@ -161,7 +160,7 @@ export class Handler {
     try {
       await this.service.routine(scopeOf(c), id);
     } catch (err) {
-      throw this.fail("get routine", err);
+      return this.fail(c, "get routine", err);
     }
 
     try {
@@ -173,7 +172,7 @@ export class Handler {
       });
       return okWithMeta(c, "ok", runs.map(wireRun), { count: runs.length });
     } catch (err) {
-      throw this.fail("list runs", err);
+      return this.fail(c, "list runs", err);
     }
   };
 
@@ -181,12 +180,12 @@ export class Handler {
   allRuns = async (c: AppContext): Promise<Response> => {
     const agentID = this.parseOptionalID(c.req.query("agent_id"));
     if (agentID === null) {
-      return error(c, 400, "agent_id is not a uuid", "invalid_input", null);
+      return error(c, 400, "agent_id is not a uuid", "invalid_input");
     }
 
     const routineID = this.parseOptionalID(c.req.query("routine_id"));
     if (routineID === null) {
-      return error(c, 400, "routine_id is not a uuid", "invalid_input", null);
+      return error(c, 400, "routine_id is not a uuid", "invalid_input");
     }
 
     const filter: RunFilter = {
@@ -200,7 +199,7 @@ export class Handler {
       const runs = await this.service.runs(scopeOf(c), filter);
       return okWithMeta(c, "ok", runs.map(wireRun), { count: runs.length });
     } catch (err) {
-      throw this.fail("list runs", err);
+      return this.fail(c, "list runs", err);
     }
   };
 
@@ -208,7 +207,7 @@ export class Handler {
   preview = async (c: AppContext): Promise<Response> => {
     const body = await readBody(c);
     if (!body) {
-      return error(c, 400, "the body is not valid JSON", "invalid_request", null);
+      return error(c, 400, "the body is not valid JSON", "invalid_request");
     }
 
     const request: PreviewRequest = {
@@ -223,21 +222,21 @@ export class Handler {
       const times = await this.service.preview(scopeOf(c), request);
       return ok(c, "ok", { next_runs: times.map(rfc3339) });
     } catch (err) {
-      throw this.fail("preview schedule", err);
+      return this.fail(c, "preview schedule", err);
     }
   };
 
   private async setEnabled(c: AppContext, enabled: boolean): Promise<Response> {
     const id = this.parseID(c.req.param("routineID"));
     if (id === null) {
-      return error(c, 400, "routine id is not a uuid", "invalid_input", null);
+      return error(c, 400, "routine id is not a uuid", "invalid_input");
     }
 
     try {
       const routine = await this.service.setEnabled(scopeOf(c), id, enabled);
       return ok(c, enabled ? "rutinitas dilanjutkan" : "rutinitas dijeda", wireRoutine(routine));
     } catch (err) {
-      throw this.fail("set routine enabled", err);
+      return this.fail(c, "set routine enabled", err);
     }
   }
 
@@ -254,21 +253,21 @@ export class Handler {
   }
 
   /** Maps the module's errors onto the response envelope's status and code. */
-  private fail(operation: string, err: unknown): AppError {
+  private fail(c: AppContext, operation: string, err: unknown): Response {
     if (is(err, ErrNotFound)) {
-      return new AppError(404, "routine not found", "routine_not_found");
+      return error(c, 404, "routine not found", "routine_not_found");
     }
     if (is(err, ErrScheduleUnavailable)) {
       // A deployment whose engine is unreachable cannot schedule anything. That
       // is the platform, not the request, so it is a 503.
-      return new AppError(503, err instanceof Error ? err.message : String(err), "routine_unavailable");
+      return error(c, 503, err instanceof Error ? err.message : String(err), "routine_unavailable");
     }
     if (is(err, ErrInvalidInput)) {
-      return new AppError(400, userMessage(err, ErrInvalidInput), "invalid_input");
+      return error(c, 400, userMessage(err, ErrInvalidInput), "invalid_input");
     }
 
     this.log.error({ operation, err }, "routine request failed");
-    return new AppError(500, "internal server error", "internal_error");
+    return error(c, 500, "internal server error", "internal_error");
   }
 }
 

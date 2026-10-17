@@ -21,7 +21,7 @@ import {
   type ActivityOptions,
   type RetryPolicy,
 } from "@temporalio/workflow";
-import type { Block, Tool } from "../domain/task.ts";
+import type { AgentRef, Block, Tool } from "../domain/task.ts";
 import {
   DraftCanceled,
   LabelRead,
@@ -136,17 +136,7 @@ export interface TaskOutcome {
 
 /** One round's input: the Bolu, the tools it may call, and the conversation so far. */
 export interface Context {
-  Agent: {
-    ID: string;
-    Name: string;
-    Role: string;
-    Persona: string;
-    Tone: string;
-    Stored: string;
-    Display: string;
-    Tools: string[];
-    DefaultModel: Record<string, unknown>;
-  };
+  Agent: AgentRef;
   Tools: Tool[];
   History: {
     ID: string;
@@ -874,14 +864,6 @@ class RunState {
 
   /** Writes the terminal state of the task. */
   async finish(status: string, reason: string): Promise<TaskOutcome> {
-    const outcome: TaskOutcome = {
-      Status: status,
-      Summary: reason,
-      Reason: reason,
-      Steps: this.steps,
-      Tokens: this.inputTokens + this.outputTokens,
-    };
-
     const stored = await completeActivities.CompleteTask({
       TaskID: this.input.TaskID,
       WorkspaceID: this.input.WorkspaceID,
@@ -921,16 +903,17 @@ class RunState {
     for (;;) {
       if (this.canceled) return null;
 
-      const index = this.approvals.findIndex((signal) => signal.DraftID === draftId);
-      if (index >= 0) {
-        const decision = this.approvals[index];
-        this.approvals = [...this.approvals.slice(0, index), ...this.approvals.slice(index + 1)];
-        return decision;
+      // A decision about another draft is not this wait's answer. The Go
+      // selector consumes it and selects again, and the port does the same: the
+      // buffer is drained in arrival order rather than searched for a match.
+      const next = this.approvals[0];
+      if (next !== undefined) {
+        this.approvals = this.approvals.slice(1);
+        if (next.DraftID === draftId) return next;
+        continue;
       }
 
-      await condition(
-        () => this.canceled || this.approvals.some((signal) => signal.DraftID === draftId),
-      );
+      await condition(() => this.canceled || this.approvals.length > 0);
     }
   }
 }

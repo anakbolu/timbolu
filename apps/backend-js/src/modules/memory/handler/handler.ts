@@ -10,7 +10,7 @@
  */
 
 import type { Hono } from "hono";
-import { currentUserId, isUuid, workspaceUUID, type AppContext, type AppEnv } from "../../../platform/context.ts";
+import { currentUserId, workspaceUUID, type AppContext, type AppEnv } from "../../../platform/context.ts";
 import type { Logger } from "../../../platform/logger.ts";
 import { created, error, ok, okWithMeta } from "../../../platform/response.ts";
 import {
@@ -22,6 +22,7 @@ import {
   ErrVectorWidth,
   is,
   knowledgeJSON,
+  parseUUID,
   memoryJSON,
   type KnowledgeFilter,
   type MemoryFilter,
@@ -87,7 +88,7 @@ export class Handler {
       kind?: string;
       agent_id?: string;
       pinned?: boolean;
-    }>(c);
+    }>(c, { content: "string", kind: "string", agent_id: "string", pinned: "bool" });
     if (!body) {
       return error(c, 400, "the body is not valid JSON", "invalid_request");
     }
@@ -114,8 +115,8 @@ export class Handler {
 
   /** Changes one memory: its text, its kind, its pin, or its layer. */
   edit = async (c: AppContext): Promise<Response> => {
-    const id = c.req.param("memoryID");
-    if (!isUuid(id)) {
+    const id = parseUUID(c.req.param("memoryID") ?? "");
+    if (!id) {
       return error(c, 400, "memory id is not a uuid", "invalid_input");
     }
 
@@ -125,7 +126,13 @@ export class Handler {
       pinned?: boolean | null;
       agent_id?: string | null;
       move_to_main?: boolean | null;
-    }>(c);
+    }>(c, {
+      content: "string",
+      kind: "string",
+      pinned: "bool",
+      agent_id: "string",
+      move_to_main: "bool",
+    });
     if (!body) {
       return error(c, 400, "the body is not valid JSON", "invalid_request");
     }
@@ -163,8 +170,8 @@ export class Handler {
 
   /** Deletes one memory and its vector. */
   forget = async (c: AppContext): Promise<Response> => {
-    const id = c.req.param("memoryID");
-    if (!isUuid(id)) {
+    const id = parseUUID(c.req.param("memoryID") ?? "");
+    if (!id) {
       return error(c, 400, "memory id is not a uuid", "invalid_input");
     }
 
@@ -209,7 +216,7 @@ export class Handler {
       source?: string;
       text?: string;
       agent_id?: string;
-    }>(c);
+    }>(c, { source: "string", text: "string", agent_id: "string" });
     if (!body) {
       return error(c, 400, "the body is not valid JSON", "invalid_request");
     }
@@ -235,8 +242,8 @@ export class Handler {
 
   /** Deletes one chunk and its vector. */
   forgetKnowledge = async (c: AppContext): Promise<Response> => {
-    const id = c.req.param("knowledgeID");
-    if (!isUuid(id)) {
+    const id = parseUUID(c.req.param("knowledgeID") ?? "");
+    if (!id) {
       return error(c, 400, "knowledge id is not a uuid", "invalid_input");
     }
 
@@ -299,10 +306,11 @@ function parseOptionalID(value: string): string {
   if (trimmed === "" || trimmed.toLowerCase() === "main") {
     return "";
   }
-  if (!isUuid(trimmed)) {
+  const parsed = parseUUID(trimmed);
+  if (!parsed) {
     throw new Error("not a uuid");
   }
-  return trimmed;
+  return parsed;
 }
 
 /** Reads the layer an add or an ingest names. An empty value and "main" both mean the workspace-wide layer. */
@@ -316,23 +324,53 @@ function parseMove(value: string): [string, boolean] {
   if (trimmed === "" || trimmed.toLowerCase() === "main") {
     return ["", true];
   }
-  if (!isUuid(trimmed)) {
+  const parsed = parseUUID(trimmed);
+  if (!parsed) {
     throw new Error("not a uuid");
   }
-  return [trimmed, false];
+  return [parsed, false];
 }
 
-/** Reads a JSON body, answering null when it is absent or malformed. */
-async function readBody<T>(c: AppContext): Promise<T | null> {
+/**
+ * Reads a JSON body the way Fiber's `BodyParser` does: an empty body and a
+ * `null` body both mean "no fields", an unknown field is ignored, and a known
+ * field of the wrong type is a parse error.
+ */
+async function readBody<T>(c: AppContext, shape: Record<string, "string" | "bool">): Promise<T | null> {
+  let raw: string;
   try {
-    const parsed: unknown = await c.req.json();
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      return null;
-    }
-    return parsed as T;
+    raw = await c.req.text();
   } catch {
     return null;
   }
+  if (raw.trim() === "") {
+    return {} as T;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (parsed === null) {
+    return {} as T;
+  }
+  if (typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+
+  const record = parsed as Record<string, unknown>;
+  for (const [key, kind] of Object.entries(shape)) {
+    const value = record[key];
+    if (value === undefined || value === null) {
+      continue;
+    }
+    if (kind === "string" ? typeof value !== "string" : typeof value !== "boolean") {
+      return null;
+    }
+  }
+  return record as T;
 }
 
 /** Fiber's `c.QueryBool`, whose unparsable value is the default. */
@@ -381,6 +419,10 @@ function messageOf(err: unknown): string {
 
 /** Renders an error for a person: the detail after the sentinel's own text. */
 function userMessage(err: unknown, sentinel: Error): string {
-  const detail = trimSpace(messageOf(err).replace(sentinel.message, ""));
-  return detail.startsWith(":") ? detail.slice(1) : detail;
+  const message = messageOf(err);
+  const stripped = message.startsWith(sentinel.message)
+    ? message.slice(sentinel.message.length)
+    : message;
+  const detail = trimSpace(stripped);
+  return detail.startsWith(":") ? trimSpace(detail.slice(1)) : detail;
 }

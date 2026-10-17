@@ -65,15 +65,9 @@ export interface LoggerConfig {
 /** Builds the process logger. */
 export function createLogger(cfg: LoggerConfig = {}): Logger {
   const level = (cfg.level || "info").toLowerCase();
-  if (cfg.format === "console") {
-    return pino({
-      level,
-      transport: {
-        target: "pino-pretty",
-        options: { colorize: true, translateTime: "SYS:standard", ignore: "pid,hostname" },
-      },
-    });
-  }
+  // `console` formatting needs pino-pretty, which is not a dependency of this
+  // project. Rather than fail to start over a log format, both values emit JSON:
+  // a deployment that wants colour pipes the output through `bunx pino-pretty`.
   return pino({ level, base: undefined, timestamp: pino.stdTimeFunctions.isoTime });
 }
 

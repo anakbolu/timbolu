@@ -18,9 +18,8 @@
  * Ported 1:1 from internal/modules/memory/domain/memory.go.
  */
 
+import type { ChatRequest, ChatResponse } from "../../llm/domain/provider.ts";
 import type {
-  ChatRequest,
-  ChatResponse,
   Embedder as LLMEmbedder,
   Scope as LLMScope,
 } from "../../llm/domain/gateway.ts";
@@ -125,6 +124,28 @@ export function scopeIsZero(s: Scope): boolean {
 /** True for an absent id, which Go expresses as the zero uuid. */
 export function isNilID(id: string | null | undefined): boolean {
   return !id || id === NilUUID;
+}
+
+/**
+ * Parses the forms Go's `uuid.Parse` accepts — canonical, 32 hex digits,
+ * `urn:uuid:` and braces — and returns the canonical lowercase string, which is
+ * what `uuid.UUID.String()` emits. Null when it is not a uuid.
+ */
+export function parseUUID(value: string): string | null {
+  let text = value.trim();
+  if (text.toLowerCase().startsWith("urn:uuid:")) {
+    text = text.slice(9);
+  }
+  if (text.startsWith("{") && text.endsWith("}")) {
+    text = text.slice(1, -1);
+  }
+  if (/^[0-9a-fA-F]{32}$/.test(text)) {
+    text = `${text.slice(0, 8)}-${text.slice(8, 12)}-${text.slice(12, 16)}-${text.slice(16, 20)}-${text.slice(20)}`;
+  }
+  if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(text)) {
+    return null;
+  }
+  return text.toLowerCase();
 }
 
 /**

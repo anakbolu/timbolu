@@ -9,6 +9,7 @@ import type {
   ExtractResult,
   KnowledgeFilter,
   KnowledgeItem,
+  IngestRequest,
   Memory,
   MemoryFilter,
   Recall,
