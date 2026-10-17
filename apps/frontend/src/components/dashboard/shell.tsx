@@ -35,6 +35,7 @@ import type { Agent, ChatConversation } from "@/lib/api";
 import { LOGO } from "@/lib/crew";
 import { countPending, relativeAge } from "@/lib/dashboard-view";
 
+import { ConnectedTiles } from "./apps-pill";
 import { BoluRoster } from "./roster";
 import { useWorkspace } from "./workspace-data";
 
@@ -281,13 +282,19 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           <Link
             href="/dashboard/integrations"
             onClick={() => setNavOpen(false)}
-            className={`flex min-h-[42px] items-center gap-2.5 rounded-md px-3 text-[15px] font-bold no-underline ${
+            className={`flex min-h-[46px] items-center gap-2.5 rounded-full border px-3 text-[15px] font-bold no-underline ${
               onIntegrations
-                ? "bg-bolu-solid text-bolu-solid-ink hover:text-bolu-solid-ink"
-                : "bg-transparent text-bolu-ink hover:text-bolu-ink"
+                ? "border-bolu-ink bg-bolu-solid text-bolu-solid-ink hover:text-bolu-solid-ink"
+                : "border-bolu-border bg-bolu-surface text-bolu-ink hover:text-bolu-ink"
             }`}
           >
-            <Plug size={19} strokeWidth={2} aria-hidden="true" />
+            {/* The marks say what is connected without opening the sheet; the
+                plug keeps the row's shape when nothing is. */}
+            {connected === 0 ? (
+              <Plug size={18} strokeWidth={2} aria-hidden className="flex-none text-bolu-muted" />
+            ) : (
+              <ConnectedTiles apps={hub.connections.map((connection) => connection.app)} size={22} max={3} />
+            )}
             <span className="flex-1 text-left">Integrasi</span>
             <span className={`text-[12px] font-bold ${onIntegrations ? "text-bolu-solid-ink" : "text-bolu-muted"}`}>
               {connected === 0 ? "—" : `${connected} aktif`}
@@ -296,10 +303,10 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           <Link
             href="/settings"
             onClick={() => setNavOpen(false)}
-            className={`flex min-h-[42px] items-center gap-2.5 rounded-md px-3 text-[15px] font-bold no-underline ${
+            className={`flex min-h-[46px] items-center gap-2.5 rounded-full border px-3 text-[15px] font-bold no-underline ${
               onSettings
-                ? "bg-bolu-solid text-bolu-solid-ink hover:text-bolu-solid-ink"
-                : "bg-transparent text-bolu-ink hover:text-bolu-ink"
+                ? "border-bolu-ink bg-bolu-solid text-bolu-solid-ink hover:text-bolu-solid-ink"
+                : "border-bolu-border bg-bolu-surface text-bolu-ink hover:text-bolu-ink"
             }`}
           >
             <Settings size={19} strokeWidth={2} aria-hidden="true" />
