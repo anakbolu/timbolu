@@ -1,0 +1,270 @@
+# Non-local defaults. Every secret and every endpoint must be supplied through
+# the environment: staging and production override the values below.
+Application:
+  Environment: "production"
+  FrontendURL: ""
+  CORSOrigins: []
+
+Http:
+  Address: ":8080"
+  # Where the API serves the gateway's own calls: the effects a WhatsApp connection
+  # has on the product. A second, unpublished listener, because the caller is another
+  # of our processes rather than a person. Empty leaves it off.
+  InternalAddress: ":8091"
+  # Where a process with no HTTP API of its own serves /health, /ready, and /metrics, e.g. ":9101".
+  # The API already answers on its own listener; the workers have none, and an orchestrator needs
+  # something to probe. Empty means the process serves none.
+  OpsAddress: ""
+  ReadTimeout: "30s"
+  WriteTimeout: "30s"
+  ApiPrefix: "/api"
+
+Database:
+  URL: ""
+  MaxOpenConns: 100
+  MaxIdleConns: 10
+  ConnMaxLifetime: 3600
+
+Redis:
+  URL: ""
+
+# Temporal Cloud (Singapore, aws-ap-southeast-1) for staging/production. Left
+# empty on purpose so no endpoint is committed to the repository.
+Temporal:
+  HostPort: ""
+  Namespace: ""
+  TaskQueueAgent: "bolu-agent"
+  TaskQueueIntegration: "bolu-integration"
+  TLS: true
+  APIKey: ""
+  # Where this deployment's Temporal UI is reachable, for the link a stuck task offers. Empty
+  # means no link is shown, which is the honest answer when the UI is not reachable from where
+  # the person reading is.
+  UIBaseURL: ""
+
+JWT:
+  Secret: ""
+  ExpireHours: 24
+
+Auth:
+  AccessTokenMinutes: 15
+  RefreshHours: 720
+  VerificationHours: 24
+  ResetMinutes: 60
+  StateMinutes: 10
+  CookieDomain: ""
+  # The refresh cookie must only travel over HTTPS outside local development.
+  CookieSecure: true
+  LoginThrottleCapacity: 5
+  LoginThrottleRefill: 0.2
+  # A new account must confirm its address before it may use the product. A
+  # deployment that has not finished its mail path turns this off in the
+  # environment (AUTH_REQUIRE_EMAIL_VERIFICATION=false).
+  RequireEmailVerification: true
+
+Google:
+  ClientID: ""
+  ClientSecret: ""
+  RedirectURL: ""
+
+Mail:
+  Driver: "smtp"
+  From: ""
+  Host: ""
+  Port: 587
+  Username: ""
+  Password: ""
+  # One delivery, dial and session together. A mail server that is unreachable
+  # must cost a bounded moment rather than the kernel's own give-up time.
+  TimeoutSeconds: 10
+
+Llm:
+  # Every secret and every endpoint comes from the environment in staging and
+  # production: SECRET_ENCRYPTION_KEY seals the provider API keys at rest, and
+  # LLM_DEFAULT_* describe the provider the platform offers to a workspace that
+  # configured none of its own.
+  SecretEncryptionKey: ""
+  Default:
+    Adapter: ""
+    BaseURL: ""
+    Model: ""
+    APIKey: ""
+    MaxTokens: 0
+    ContextTokens: 0
+  # Production enforces the token allowance; a workspace without a subscription
+  # has an allowance of zero, which means unlimited until EPIC 12 (#97) lands.
+  QuotaEnabled: true
+  TokensPerPeriod: 0
+  # How many providers one request tries before it gives up.
+  ChainLimit: 3
+  # The models of this deployment that cannot read a picture. Matched against the
+  # configured model name case-insensitively and by prefix, so `llama3.1` covers
+  # `llama3.1:8b`. Everything not named is assumed to see; a model that is
+  # text-only but not listed still answers, because the gateway reads the
+  # provider's own refusal and retries without the picture.
+  TextOnlyModels: []
+
+Plan:
+  # The cost ceiling of one day per workspace, in micro-rupiah. Zero means
+  # unlimited. PLAN_DAILY_COST_MICROS overrides it, so a deployment can tighten
+  # the ceiling without a new image.
+  DailyCostMicros: 0
+
+# What one task may spend. Every field is optional; a zero falls back to the
+# product default. TASK_MAX_STEPS and the rest override them from the
+# environment, so a deployment can tighten a bound without a new image.
+Tasks:
+  MaxSteps: 12
+  MaxTokens: 120000
+  MaxHandoffDepth: 2
+  MaxToolResultBytes: 16384
+
+# How much of a message's attachments reaches the model. Every field is
+# optional; a zero falls back to the product default. ATTACHMENT_CONTEXT_*
+# overrides them from the environment, so a deployment can tighten a bound
+# without a new image.
+#
+# A file bigger than MaxFileBytes is named rather than read, and the text of the
+# files of one request is capped at MaxCharsTotal: a conversation with several
+# documents in it answers from the newest one and names the rest.
+AttachmentContext:
+  # 10 MiB, checked before the object is fetched.
+  MaxFileBytes: 10485760
+  MaxCharsPerFile: 20000
+  MaxCharsTotal: 60000
+  # Pictures sent as vision input rather than described.
+  MaxImages: 4
+  MaxImageBytes: 5242880
+
+Memory:
+  # The workspace memory travels in every call, so the cap is in tokens rather
+  # than rows. Pinned memories come first.
+  MainTokens: 1500
+  # How many chunks one round retrieves, and how close a match has to be to
+  # replace an existing memory rather than join it.
+  RecallMemories: 6
+  RecallKnowledge: 4
+  Similarity: 0.90
+  # How long a conversation must not move before it is read. Shorter reads more
+  # and costs more; longer reads a settled thread.
+  QuietSeconds: 300
+  ExtractionMessages: 30
+  # One knowledge chunk, and how much of its end repeats at the start of the next
+  # so a sentence cut in half is still findable.
+  ChunkRunes: 1000
+  ChunkOverlapRunes: 150
+  MaxContentRunes: 2000
+
+Storage:
+  # "s3" for anything deployed: MinIO, Cloudflare R2, Backblaze B2, or AWS S3.
+  # The credentials come from S3_ACCESS_KEY and S3_SECRET_KEY.
+  Driver: "s3"
+  LocalRoot: ""
+  Endpoint: ""
+  Region: ""
+  Bucket: ""
+  AccessKey: ""
+  SecretKey: ""
+  UseSSL: true
+  # MinIO and R2 want bucket-in-path addressing.
+  PathStyle: true
+  # Sandboxed HTML documents are served from this host, which must be a different
+  # origin from the application: the sandbox is what makes agent-written script
+  # safe to run, and a shared origin would undo it.
+  ContentOrigin: ""
+  # The application's own origin, which is the only one allowed to frame a
+  # document. It must be listed: the content origin is a different host.
+  ContentFrameAncestors: []
+  # Which file types a chat upload may be, by extension. It can only narrow the
+  # chat module's default list: an extension the module does not know is ignored
+  # and an executable can never be named. Empty means the default list.
+  AttachmentAllowedExtensions: []
+
+# WhatsApp: the gateway runs as its own process, so the address it is reached at
+# and the address it listens on are both supplied here. The token is a shared
+# secret between two of our own processes; production supplies it through the
+# environment like every other secret.
+WhatsApp:
+  GatewayURL: ""
+  # The backend's internal address, as the gateway reaches it — the other direction
+  # of the same seam. Empty means the gateway cannot record what arrived.
+  APIURL: ""
+  GatewayToken: ""
+  Address: ":8090"
+  # A stable name is required for a fleet: a fresh one each start looks like a new
+  # claimant and delays every takeover.
+  Owner: ""
+  HourlyLimit: 0
+  LeaseTTL: "30s"
+  LeaseRenew: "10s"
+  TypingDelay: "1200ms"
+  MaxMediaBytes: 0
+  LogWhatsmeow: false
+
+# Billing: every secret comes from the environment. The Duitku credentials are the ones
+# that decides whether online payment is taken at all; without it an invoice is
+# written and the screen says how to pay it by hand.
+Billing:
+  Provider: ""
+  GraceDays: 0
+  SyncInterval: "15m"
+  SweepInterval: "15m"
+  SweepLimit: 0
+  Duitku:
+    # Every value comes from the environment in staging and production.
+    MerchantCode: ""
+    APIKey: ""
+    # Explicit rather than derived from the key's shape: a sandbox key against the
+    # production host is a charge on somebody's card.
+    Sandbox: true
+    PaymentMethod: ""
+    ExpiryMinutes: 0
+    # Required: Duitku posts the payment notification to this address, so without it a
+    # payment could be made that nothing ever hears about — and the adapter refuses to
+    # start rather than accept one.
+    CallbackURL: ""
+    ReturnURL: ""
+    BaseURL: ""
+
+# Telemetry: where this deployment's traces go, and how many of them.
+#
+# The default is nowhere, and that is deliberate: a deployment that has not said where telemetry
+# should be sent should not be sending it. The tracer provider is installed either way, so a request
+# still has a trace id its log lines carry — only the spans are dropped.
+Telemetry:
+  # Left empty so each binary names itself: the API and the workers group separately.
+  ServiceName: ""
+  # "none", "console" (a development run) or "otlp" (a collector).
+  Exporter: "none"
+  Endpoint: ""
+  # The share of root traces kept. One keeps everything; zero keeps only what a caller sampled.
+  SampleRatio: 1.0
+  Insecure: false
+
+
+# Retention: every value comes from the environment, so a deployment can tighten a window
+# without a new image. RETENTION_INTERVAL=0 disables the job.
+Retention:
+  StepDays: 0
+  AttachmentDays: 0
+  Interval: "6h"
+  Batch: 0
+  SweepLimit: 0
+
+# Virtual computer: the control plane that drives one sandbox per bot
+# (docs/adr/0003-virtual-computer.md). The address is on the internal network and is never
+# published, so it is supplied through the environment like every other endpoint, and it is
+# empty by default: a deployment without a control plane answers ErrNotConfigured rather than
+# calling an address nobody meant. The token must match the control plane's own
+# VCOMPUTER_CONTROL_TOKEN.
+VComputer:
+  ControlURL: ""
+  Token: ""
+  # One call to the control plane. A screenshot of a cold sandbox includes the container
+  # starting, which is why this is generous rather than tight. Zero or a negative value is
+  # no bound at all, so the client's own 30s default is used instead and startup warns.
+  Timeout: "30s"
+
+Logging:
+  Level: "info"
+  Format: "json"

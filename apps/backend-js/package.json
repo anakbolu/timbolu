@@ -1,0 +1,36 @@
+{
+  "name": "@bolu/backend-js",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Bun/TypeScript rewrite of the Bolu Go backend",
+  "scripts": {
+    "dev": "bun run --watch src/cmd/api.ts",
+    "start": "bun run src/cmd/api.ts",
+    "worker:agent": "bun run src/cmd/agent-worker.ts",
+    "worker:integration": "bun run src/cmd/integration-worker.ts",
+    "migrate": "bun run src/cmd/migrate.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@node-rs/argon2": "^2.0.2",
+    "@temporalio/activity": "^1.15.0",
+    "@temporalio/client": "^1.15.0",
+    "@temporalio/common": "^1.15.0",
+    "@temporalio/worker": "^1.15.0",
+    "@temporalio/workflow": "^1.15.0",
+    "hono": "^4.11.0",
+    "ioredis": "^5.9.2",
+    "jose": "^6.1.0",
+    "minio": "^8.0.6",
+    "pino": "^10.1.0",
+    "postgres": "^3.4.9",
+    "zod": "^4.2.1"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/minio": "^7.0.17",
+    "typescript": "^5.9.3"
+  }
+}
