@@ -50,6 +50,19 @@ func WireAttachment(attachment Attachment) AttachmentPayload {
 	}
 }
 
+// WireStagedAttachment renders a staged upload for the answer to `?staged=true`.
+// It is not WireAttachment with other tags: a staged file is named by the id the
+// send will carry, and the shape a message carries stays what it was.
+func WireStagedAttachment(attachment Attachment) StagedAttachmentPayload {
+	return StagedAttachmentPayload{
+		AttachmentID: attachment.ID.String(),
+		Name:         attachment.Filename,
+		Mime:         attachment.ContentType,
+		Size:         attachment.ByteSize,
+		URL:          "/api/attachments/" + attachment.ID.String(),
+	}
+}
+
 // WireBlocks renders a message body. An empty body is an empty list rather than
 // null, so a client never has to handle both.
 func WireBlocks(blocks []Block) []json.RawMessage {

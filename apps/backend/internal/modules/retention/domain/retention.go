@@ -52,6 +52,13 @@ type Policy struct {
 	// kept as long as the message that carries them, which is a deployment that has no
 	// attachment policy — and a pass that then removes none.
 	AttachmentWindow time.Duration
+	// StagedTTL is how long an upload that was never named in a message is kept.
+	//
+	// It is not a window on what a customer said: nothing was ever sent with this file,
+	// so the deployment that keeps every message forever still has no reason to keep it.
+	// That is why it has a default of its own rather than following AttachmentWindow,
+	// whose zero means "keep".
+	StagedTTL time.Duration
 	// Limit bounds how many steps and how many attachments one workspace's pass
 	// removes, so a deployment with years of history makes progress in slices rather
 	// than in one unbounded statement.
@@ -65,6 +72,14 @@ type Policy struct {
 // somebody is investigating is still fully readable, and short enough that the words of a
 // customer's conversation are not kept indefinitely by a deployment nobody is watching.
 const DefaultStepWindow = 30 * 24 * time.Hour
+
+// DefaultStagedTTL is how long an upload that was never named in a message is kept when the
+// deployment does not say otherwise.
+//
+// A day, and the number is a judgement rather than a law: it is long enough that a client which
+// uploaded a file and then lost its connection can still send the message that names it, and
+// short enough that a file nobody ever sent does not sit in the bucket indefinitely.
+const DefaultStagedTTL = 24 * time.Hour
 
 // DefaultLimit bounds one workspace's pass.
 const DefaultLimit = 500
@@ -102,8 +117,15 @@ type StepPruner interface {
 // It is one port rather than two calls because the two halves must not drift: a row removed
 // without its object leaks storage forever, and an object removed without its row leaves a
 // message pointing at bytes that are gone.
+//
+// The staged sweep is on the same port for the same reason. A staged upload is a different
+// kind of thing — nothing was ever sent with it — but it is removed the same way, and an
+// operator reading this interface should see every way an attachment leaves.
 type AttachmentPruner interface {
 	PruneAttachments(ctx context.Context, scope Scope, olderThan time.Time, limit int) (PrunedAttachments, error)
+	// PruneStagedAttachments removes the uploads that were never named in a message and are
+	// past the staged TTL.
+	PruneStagedAttachments(ctx context.Context, scope Scope, olderThan time.Time, limit int) (PrunedAttachments, error)
 }
 
 // ErasureService is the half of the module the erasure endpoints call: run a request, and read back
@@ -135,6 +157,17 @@ type Service interface {
 	ErasureService
 	// Run makes one pass over every workspace that is due, and reports what it did.
 	Run(ctx context.Context) (RunResult, error)
+	// SweepStaged makes one pass that removes only the uploads nobody ever sent.
+	//
+	// It is a second entry point rather than a flag on Run because the two answer to different
+	// switches: RETENTION_INTERVAL=0 is a deployment stepping through a task, and it still must
+	// not keep the files nobody sent — which is exactly the deployment whose staged uploads
+	// would otherwise accumulate forever, since no message carries them and no reader waits.
+	//
+	// Run carries the staged half itself, so the two are alternatives and not a pair: both walk
+	// the same queue and both write back when a workspace is next due, so a caller that starts
+	// this while Run is on its interval takes the pass's workspaces out from under it.
+	SweepStaged(ctx context.Context) (RunResult, error)
 	// Policy is the window and the batch this deployment applies.
 	Policy() Policy
 }

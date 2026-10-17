@@ -606,6 +606,22 @@ type StorageConfig struct {
 	// know is ignored, and an executable can never be named. Empty means the
 	// module's default list.
 	AttachmentAllowedExtensions []string `mapstructure:"AttachmentAllowedExtensions" validate:"optional"`
+	// AttachmentStagedTTL is how long an upload that was never named in a message is
+	// kept before the retention pass removes it, bytes and row together. Zero means
+	// the retention module's default of a day.
+	//
+	// It is not the attachment policy and is not expressed as one: an attachment lives
+	// as long as the message that carries it, while a staged upload has no message and
+	// no reader — nothing was ever sent with it, so nothing is waiting for it.
+	AttachmentStagedTTL time.Duration `mapstructure:"AttachmentStagedTTL" validate:"optional"`
+	// AttachmentStagedSweepInterval is how often the sweep that removes those uploads
+	// looks. Zero means the retention module's default of an hour.
+	//
+	// It is a schedule of its own rather than RETENTION_INTERVAL, because the two answer
+	// to different switches: a deployment that turned the retention pass off — a stack
+	// somebody is stepping through — still has no reason to keep a file nobody sent, and
+	// it is that deployment whose staged uploads would otherwise accumulate forever.
+	AttachmentStagedSweepInterval time.Duration `mapstructure:"AttachmentStagedSweepInterval" validate:"optional"`
 }
 
 // LoggingConfig holds structured logging settings.

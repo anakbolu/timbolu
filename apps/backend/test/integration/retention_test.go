@@ -100,7 +100,14 @@ func retentionConfig(t *testing.T, dsn string) *config.Config {
 		Logging: config.LoggingConfig{Level: "error", Format: "json"},
 		// The local driver, under a directory the test owns: the attachment half of this
 		// file is about bytes actually leaving storage, which is what a fake would not prove.
-		Storage: config.StorageConfig{Driver: "local", LocalRoot: t.TempDir()},
+		//
+		// The staged window is named here too, so that the tests of the staged sweep age a
+		// file past a number this deployment stated rather than past a default.
+		Storage: config.StorageConfig{
+			Driver:              "local",
+			LocalRoot:           t.TempDir(),
+			AttachmentStagedTTL: 24 * time.Hour,
+		},
 		Retention: config.RetentionConfig{
 			StepDays:       30,
 			AttachmentDays: 90,

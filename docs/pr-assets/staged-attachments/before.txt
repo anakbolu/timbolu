@@ -1,0 +1,5 @@
+BEFORE (origin/main 176bbd2): test staged ditaruh di kode main
+# github.com/robzlabz/employeebot/apps/backend/test/integration
+# [github.com/robzlabz/employeebot/apps/backend/test/integration]
+vet: test/integration/chat_staged_attachments_test.go:189:124: undefined: chatdomain.StagedAttachmentPayload
+=> ?staged=true & StagedAttachmentPayload tidak ada; upload tanpa message_id membuat pesan penampung + message.new (#206)

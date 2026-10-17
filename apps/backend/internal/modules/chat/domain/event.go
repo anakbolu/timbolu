@@ -128,6 +128,20 @@ type AttachmentPayload struct {
 	URL         string `json:"url"`
 }
 
+// StagedAttachmentPayload is the wire shape of a staged upload — the answer to
+// `?staged=true` alone. A staged file has no message and no reader yet, so the
+// answer names it the way the send that will bind it names it (`attachment_id`,
+// `name`, `mime`, `size`), and a client can carry the id straight into
+// `attachment_ids`. The binding path keeps AttachmentPayload: that shape is what
+// a message carries, and the two must not be confused.
+type StagedAttachmentPayload struct {
+	AttachmentID string `json:"attachment_id"`
+	Name         string `json:"name"`
+	Mime         string `json:"mime"`
+	Size         int64  `json:"size"`
+	URL          string `json:"url"`
+}
+
 // StreamChunk is one event of a streaming reply as it is sent to a client. It is
 // separate from Event because a token is not worth a database row: chunks are
 // delivered over the open connection, and the message is written when the answer

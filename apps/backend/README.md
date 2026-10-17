@@ -846,7 +846,13 @@ takes the product default of thirty days), `RETENTION_ATTACHMENT_DAYS` (how long
 attachment is kept; zero keeps it as long as the message that carries it),
 `RETENTION_INTERVAL` (how often the pass runs; zero disables it, which is what local
 development uses), and `RETENTION_BATCH`/`RETENTION_SWEEP_LIMIT` (how much one pass
-removes from one workspace and how many workspaces it looks at). Telemetry is `OTEL_EXPORTER`
+removes from one workspace and how many workspaces it looks at). `ATTACHMENT_STAGED_TTL`
+and `ATTACHMENT_STAGED_SWEEP_INTERVAL` are the clock for a file that was uploaded and
+never named in a message: how long it is kept and how often the sweep that removes it
+looks, empty for a day and an hour. That sweep is not the pass and does not go off with
+it — a deployment with `RETENTION_INTERVAL=0` keeps everything a customer said and still
+removes the files nobody sent, and while the pass is on it carries them itself so the two
+never walk the same queue at once. Telemetry is `OTEL_EXPORTER`
 (`none` drops the spans and keeps the trace ids, `console` prints them for a development
 run, `otlp` sends them to a collector at `OTEL_ENDPOINT`), `OTEL_SERVICE_NAME` (empty, so
 each binary names itself), `OTEL_SAMPLE_RATIO` (the share of root traces kept), and

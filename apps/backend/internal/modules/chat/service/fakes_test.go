@@ -298,6 +298,97 @@ func (s *memoryStore) SaveWithNewMessage(_ context.Context, _ chatdomain.Scope, 
 	return message, attachment, nil
 }
 
+// SaveStaged stands in for the insert that records an upload belonging to no message yet.
+//
+// The schema keeps "bound" and "has a message" in step, so the fake does the same: a staged
+// row is one whose message id is zero, and nothing here publishes anything, because there is
+// no message for a client to render.
+func (s *memoryStore) SaveStaged(_ context.Context, scope chatdomain.Scope, attachment chatdomain.Attachment, content []byte) (chatdomain.Attachment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.failAttachmentWrite {
+		return chatdomain.Attachment{}, fmt.Errorf("chat: create staged attachment: the database is down")
+	}
+
+	attachment.ID = uuid.New()
+	attachment.WorkspaceID = scope.WorkspaceID
+	attachment.MessageID = uuid.Nil
+	attachment.ByteSize = int64(len(content))
+	attachment.CreatedAt = time.Now()
+	s.attachments[attachment.ID] = attachment
+
+	return attachment, nil
+}
+
+// SaveWithAttachments stands in for the one transaction that stores a message and binds the
+// staged uploads it names.
+//
+// The order is the statement's, and it is the point of the whole flow: the message exists
+// first, then each file is checked and moved onto it. A file that is missing, belongs to
+// another thread, or is already bound fails the call with nothing written, which is what a
+// test asserts when it sends a mix of valid and invalid ids.
+func (s *memoryStore) SaveWithAttachments(_ context.Context, scope chatdomain.Scope, message chatdomain.Message, attachmentIDs []uuid.UUID) (chatdomain.Message, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	bound := make([]chatdomain.Attachment, 0, len(attachmentIDs))
+	for _, id := range attachmentIDs {
+		attachment, ok := s.attachments[id]
+		if !ok {
+			return chatdomain.Message{}, fmt.Errorf("%w: %s", chatdomain.ErrAttachmentNotFound, id)
+		}
+		if attachment.ConversationID != message.ConversationID ||
+			attachment.WorkspaceID != scope.WorkspaceID {
+			return chatdomain.Message{}, fmt.Errorf("%w: %s", chatdomain.ErrAttachmentNotFound, id)
+		}
+		if attachment.MessageID != uuid.Nil {
+			return chatdomain.Message{}, fmt.Errorf("%w: %s", chatdomain.ErrAttachmentAlreadyBound, id)
+		}
+		bound = append(bound, attachment)
+	}
+
+	message.ID = uuid.New()
+	message.CreatedAt = time.Now()
+	message.UpdatedAt = message.CreatedAt
+	if message.Status == "" {
+		message.Status = chatdomain.MessageComplete
+	}
+
+	for _, attachment := range bound {
+		attachment.MessageID = message.ID
+		s.attachments[attachment.ID] = attachment
+		message.Attachments = append(message.Attachments, attachment)
+	}
+	s.messages[message.ID] = message
+
+	return message, nil
+}
+
+// ListStagedExpired answers with the same rule the statement does: the uploads that were
+// never named in a message and are older than the moment, oldest first, bounded by the limit.
+func (s *memoryStore) ListStagedExpired(_ context.Context, _ chatdomain.Scope, olderThan time.Time, limit int) ([]chatdomain.Attachment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	expired := make([]chatdomain.Attachment, 0, len(s.attachments))
+	for _, attachment := range s.attachments {
+		if attachment.MessageID == uuid.Nil && attachment.CreatedAt.Before(olderThan) {
+			expired = append(expired, attachment)
+		}
+	}
+
+	sort.Slice(expired, func(i, j int) bool {
+		return expired[i].CreatedAt.Before(expired[j].CreatedAt)
+	})
+
+	if limit > 0 && len(expired) > limit {
+		expired = expired[:limit]
+	}
+
+	return expired, nil
+}
+
 func (s *memoryStore) Open(_ context.Context, scope chatdomain.Scope, id uuid.UUID) (chatdomain.Attachment, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

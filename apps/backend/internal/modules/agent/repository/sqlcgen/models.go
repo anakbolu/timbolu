@@ -355,13 +355,17 @@ type Message struct {
 type MessageAttachment struct {
 	ID             uuid.UUID
 	WorkspaceID    uuid.UUID
-	MessageID      uuid.UUID
+	MessageID      *uuid.UUID
 	StorageKey     string
 	Filename       string
 	ContentType    string
 	ByteSize       int64
 	ChecksumSha256 string
 	CreatedAt      time.Time
+	ConversationID *uuid.UUID
+	UserID         *uuid.UUID
+	Status         string
+	StagedAt       *time.Time
 }
 
 type OauthState struct {

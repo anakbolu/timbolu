@@ -1,0 +1,12 @@
+AFTER (feat/staged-attachments)
+--- PASS: TestTheRoleColumnIsBounded (1.98s)
+--- PASS: TestAStagedUploadIsAFileWithNoMessageAndNoEvent (0.34s)
+--- PASS: TestTheTaskStartsAfterTheFilesAreBound (0.34s)
+--- PASS: TestAFileFromAnotherThreadCannotBeBound (0.75s)
+--- PASS: TestAFileFromAnotherPersonCannotBeBound (0.33s)
+--- PASS: TestAFileAlreadyBoundCannotBeSentTwice (0.36s)
+--- PASS: TestAMixedSendBindsNothing (0.38s)
+--- PASS: TestAMessageMayBeOnlyFiles (0.37s)
+--- PASS: TestTheStagedSweepTakesTheFilesNobodySent (0.38s)
+--- PASS: TestLimiterBurstIsBounded (0.31s)
+ok  	github.com/robzlabz/employeebot/apps/backend/test/integration	6.387s

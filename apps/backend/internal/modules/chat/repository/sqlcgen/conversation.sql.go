@@ -192,6 +192,46 @@ func (q *Queries) AppendMessageAttachment(ctx context.Context, arg AppendMessage
 	return i, err
 }
 
+const bindAttachment = `-- name: BindAttachment :one
+UPDATE message_attachments
+SET message_id = $3, status = 'bound'
+WHERE id = $1 AND workspace_id = $2 AND message_id IS NULL
+RETURNING id, workspace_id, message_id, storage_key, filename, content_type, byte_size, checksum_sha256, created_at, conversation_id, user_id, status, staged_at
+`
+
+type BindAttachmentParams struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	MessageID   *uuid.UUID
+}
+
+// Binds one staged file to the message that named it.
+//
+// The `message_id IS NULL` predicate is the guard that matters: two sends racing over one
+// staged file both pass the read above, and the one that loses finds no row here rather than
+// overwriting the message id the winner wrote. `status` moves with `message_id` because the
+// check constraint ties the two together.
+func (q *Queries) BindAttachment(ctx context.Context, arg BindAttachmentParams) (MessageAttachment, error) {
+	row := q.db.QueryRow(ctx, bindAttachment, arg.ID, arg.WorkspaceID, arg.MessageID)
+	var i MessageAttachment
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.MessageID,
+		&i.StorageKey,
+		&i.Filename,
+		&i.ContentType,
+		&i.ByteSize,
+		&i.ChecksumSha256,
+		&i.CreatedAt,
+		&i.ConversationID,
+		&i.UserID,
+		&i.Status,
+		&i.StagedAt,
+	)
+	return i, err
+}
+
 const countConversations = `-- name: CountConversations :one
 SELECT count(*)::bigint FROM conversations WHERE workspace_id = $1
 `
@@ -206,15 +246,18 @@ func (q *Queries) CountConversations(ctx context.Context, workspaceID uuid.UUID)
 const createAttachment = `-- name: CreateAttachment :one
 
 INSERT INTO message_attachments (
-    workspace_id, message_id, storage_key, filename, content_type, byte_size, checksum_sha256
+    workspace_id, message_id, conversation_id, user_id, storage_key, filename,
+    content_type, byte_size, checksum_sha256
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, workspace_id, message_id, storage_key, filename, content_type, byte_size, checksum_sha256, created_at
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, workspace_id, message_id, storage_key, filename, content_type, byte_size, checksum_sha256, created_at, conversation_id, user_id, status, staged_at
 `
 
 type CreateAttachmentParams struct {
 	WorkspaceID    uuid.UUID
-	MessageID      uuid.UUID
+	MessageID      *uuid.UUID
+	ConversationID *uuid.UUID
+	UserID         *uuid.UUID
 	StorageKey     string
 	Filename       string
 	ContentType    string
@@ -223,10 +266,19 @@ type CreateAttachmentParams struct {
 }
 
 // ------------------------------------------------------------- attachments
+// A file that already belongs to a message, which is the shape both older upload paths write:
+// with `message_id` the client names the message, and without it the service opens one first.
+// The row is bound from the moment it exists, which is why `status` is left to its default of
+// 'bound': the check constraint ties that to the message id being present.
+//
+// `conversation_id` and `user_id` are recorded here too, not only on the staged path, so one
+// rule reads the same for every row — a file belongs to a thread and to whoever uploaded it.
 func (q *Queries) CreateAttachment(ctx context.Context, arg CreateAttachmentParams) (MessageAttachment, error) {
 	row := q.db.QueryRow(ctx, createAttachment,
 		arg.WorkspaceID,
 		arg.MessageID,
+		arg.ConversationID,
+		arg.UserID,
 		arg.StorageKey,
 		arg.Filename,
 		arg.ContentType,
@@ -244,6 +296,10 @@ func (q *Queries) CreateAttachment(ctx context.Context, arg CreateAttachmentPara
 		&i.ByteSize,
 		&i.ChecksumSha256,
 		&i.CreatedAt,
+		&i.ConversationID,
+		&i.UserID,
+		&i.Status,
+		&i.StagedAt,
 	)
 	return i, err
 }
@@ -274,6 +330,63 @@ func (q *Queries) CreateConversation(ctx context.Context, arg CreateConversation
 	return i, err
 }
 
+const createStagedAttachment = `-- name: CreateStagedAttachment :one
+INSERT INTO message_attachments (
+    workspace_id, conversation_id, user_id, storage_key, filename, content_type,
+    byte_size, checksum_sha256, status, staged_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'staged', now())
+RETURNING id, workspace_id, message_id, storage_key, filename, content_type, byte_size, checksum_sha256, created_at, conversation_id, user_id, status, staged_at
+`
+
+type CreateStagedAttachmentParams struct {
+	WorkspaceID    uuid.UUID
+	ConversationID *uuid.UUID
+	UserID         *uuid.UUID
+	StorageKey     string
+	Filename       string
+	ContentType    string
+	ByteSize       int64
+	ChecksumSha256 string
+}
+
+// An upload that is not part of a message yet: the client sends the file first and names it in
+// the message that follows, so one transaction can bind the two and hand the model the file on
+// the turn it was sent with.
+//
+// `message_id` stays NULL, which is what the nullable column is for, and the row says who
+// uploaded the file and where, so a bind can refuse one that came from another thread, another
+// workspace, or another person. `staged_at` is the age the staged sweep reads.
+func (q *Queries) CreateStagedAttachment(ctx context.Context, arg CreateStagedAttachmentParams) (MessageAttachment, error) {
+	row := q.db.QueryRow(ctx, createStagedAttachment,
+		arg.WorkspaceID,
+		arg.ConversationID,
+		arg.UserID,
+		arg.StorageKey,
+		arg.Filename,
+		arg.ContentType,
+		arg.ByteSize,
+		arg.ChecksumSha256,
+	)
+	var i MessageAttachment
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.MessageID,
+		&i.StorageKey,
+		&i.Filename,
+		&i.ContentType,
+		&i.ByteSize,
+		&i.ChecksumSha256,
+		&i.CreatedAt,
+		&i.ConversationID,
+		&i.UserID,
+		&i.Status,
+		&i.StagedAt,
+	)
+	return i, err
+}
+
 const deleteAttachment = `-- name: DeleteAttachment :one
 DELETE FROM message_attachments
 WHERE id = $1 AND workspace_id = $2
@@ -286,11 +399,13 @@ type DeleteAttachmentParams struct {
 }
 
 // The row is the storage record, and it answers the message it belonged to so
-// the read model can be fixed in the same transaction. A row that is not there
-// is not an error: a retry after a partial failure has to converge.
-func (q *Queries) DeleteAttachment(ctx context.Context, arg DeleteAttachmentParams) (uuid.UUID, error) {
+// the read model can be fixed in the same transaction. That answer is empty for
+// a staged upload, which no message lists and which the sweep removes on its own
+// clock. A row that is not there is not an error: a retry after a partial
+// failure has to converge.
+func (q *Queries) DeleteAttachment(ctx context.Context, arg DeleteAttachmentParams) (*uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, deleteAttachment, arg.ID, arg.WorkspaceID)
-	var message_id uuid.UUID
+	var message_id *uuid.UUID
 	err := row.Scan(&message_id)
 	return message_id, err
 }
@@ -375,7 +490,7 @@ func (q *Queries) FindDirectConversation(ctx context.Context, arg FindDirectConv
 }
 
 const getAttachment = `-- name: GetAttachment :one
-SELECT id, workspace_id, message_id, storage_key, filename, content_type, byte_size, checksum_sha256, created_at FROM message_attachments WHERE id = $1 AND workspace_id = $2
+SELECT id, workspace_id, message_id, storage_key, filename, content_type, byte_size, checksum_sha256, created_at, conversation_id, user_id, status, staged_at FROM message_attachments WHERE id = $1 AND workspace_id = $2
 `
 
 type GetAttachmentParams struct {
@@ -396,6 +511,10 @@ func (q *Queries) GetAttachment(ctx context.Context, arg GetAttachmentParams) (M
 		&i.ByteSize,
 		&i.ChecksumSha256,
 		&i.CreatedAt,
+		&i.ConversationID,
+		&i.UserID,
+		&i.Status,
+		&i.StagedAt,
 	)
 	return i, err
 }
@@ -516,14 +635,14 @@ func (q *Queries) LatestEvents(ctx context.Context, arg LatestEventsParams) ([]A
 }
 
 const listAttachmentsForMessage = `-- name: ListAttachmentsForMessage :many
-SELECT id, workspace_id, message_id, storage_key, filename, content_type, byte_size, checksum_sha256, created_at FROM message_attachments
+SELECT id, workspace_id, message_id, storage_key, filename, content_type, byte_size, checksum_sha256, created_at, conversation_id, user_id, status, staged_at FROM message_attachments
 WHERE workspace_id = $1 AND message_id = $2
 ORDER BY created_at
 `
 
 type ListAttachmentsForMessageParams struct {
 	WorkspaceID uuid.UUID
-	MessageID   uuid.UUID
+	MessageID   *uuid.UUID
 }
 
 func (q *Queries) ListAttachmentsForMessage(ctx context.Context, arg ListAttachmentsForMessageParams) ([]MessageAttachment, error) {
@@ -545,6 +664,10 @@ func (q *Queries) ListAttachmentsForMessage(ctx context.Context, arg ListAttachm
 			&i.ByteSize,
 			&i.ChecksumSha256,
 			&i.CreatedAt,
+			&i.ConversationID,
+			&i.UserID,
+			&i.Status,
+			&i.StagedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -619,7 +742,7 @@ func (q *Queries) ListConversations(ctx context.Context, workspaceID uuid.UUID) 
 }
 
 const listExpiredAttachments = `-- name: ListExpiredAttachments :many
-SELECT id, workspace_id, message_id, storage_key, filename, content_type, byte_size, checksum_sha256, created_at FROM message_attachments
+SELECT id, workspace_id, message_id, storage_key, filename, content_type, byte_size, checksum_sha256, created_at, conversation_id, user_id, status, staged_at FROM message_attachments
 WHERE workspace_id = $1 AND created_at < $2
 ORDER BY created_at
 LIMIT $3
@@ -657,6 +780,10 @@ func (q *Queries) ListExpiredAttachments(ctx context.Context, arg ListExpiredAtt
 			&i.ByteSize,
 			&i.ChecksumSha256,
 			&i.CreatedAt,
+			&i.ConversationID,
+			&i.UserID,
+			&i.Status,
+			&i.StagedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -884,6 +1011,100 @@ func (q *Queries) ListParticipants(ctx context.Context, arg ListParticipantsPara
 		return nil, err
 	}
 	return items, nil
+}
+
+const listStagedExpiredAttachments = `-- name: ListStagedExpiredAttachments :many
+SELECT id, workspace_id, message_id, storage_key, filename, content_type, byte_size, checksum_sha256, created_at, conversation_id, user_id, status, staged_at FROM message_attachments
+WHERE workspace_id = $1 AND status = 'staged' AND staged_at < $2
+ORDER BY staged_at
+LIMIT $3
+`
+
+type ListStagedExpiredAttachmentsParams struct {
+	WorkspaceID uuid.UUID
+	StagedAt    *time.Time
+	Limit       int32
+}
+
+// The staged sweep's read: uploads nobody ever named in a message, older than the staged
+// window, oldest first.
+//
+// It is a separate read from the retention sweep's above because the two windows mean
+// different things. An attachment past its policy window leaves because the deployment said
+// how long it keeps what a customer sent; a staged one is a file that was uploaded and then
+// never sent at all, so it goes on its own clock whatever the policy is — and a row bound to
+// a message is never a candidate here.
+func (q *Queries) ListStagedExpiredAttachments(ctx context.Context, arg ListStagedExpiredAttachmentsParams) ([]MessageAttachment, error) {
+	rows, err := q.db.Query(ctx, listStagedExpiredAttachments, arg.WorkspaceID, arg.StagedAt, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MessageAttachment{}
+	for rows.Next() {
+		var i MessageAttachment
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.MessageID,
+			&i.StorageKey,
+			&i.Filename,
+			&i.ContentType,
+			&i.ByteSize,
+			&i.ChecksumSha256,
+			&i.CreatedAt,
+			&i.ConversationID,
+			&i.UserID,
+			&i.Status,
+			&i.StagedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockAttachment = `-- name: LockAttachment :one
+SELECT id, workspace_id, message_id, storage_key, filename, content_type, byte_size, checksum_sha256, created_at, conversation_id, user_id, status, staged_at FROM message_attachments
+WHERE id = $1 AND workspace_id = $2
+FOR UPDATE
+`
+
+type LockAttachmentParams struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+}
+
+// One attachment of this workspace, locked for the rest of the transaction.
+//
+// The row is read rather than assumed because the answers a bind can give are not one failure:
+// a file that is not here is not found, one that is already bound is a conflict, and one that
+// belongs to another thread or another person must not be distinguishable from a file that does
+// not exist. The lock is what keeps a concurrent send from binding the same file twice between
+// this read and the update below.
+func (q *Queries) LockAttachment(ctx context.Context, arg LockAttachmentParams) (MessageAttachment, error) {
+	row := q.db.QueryRow(ctx, lockAttachment, arg.ID, arg.WorkspaceID)
+	var i MessageAttachment
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.MessageID,
+		&i.StorageKey,
+		&i.Filename,
+		&i.ContentType,
+		&i.ByteSize,
+		&i.ChecksumSha256,
+		&i.CreatedAt,
+		&i.ConversationID,
+		&i.UserID,
+		&i.Status,
+		&i.StagedAt,
+	)
+	return i, err
 }
 
 const removeMessageAttachment = `-- name: RemoveMessageAttachment :one

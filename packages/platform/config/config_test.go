@@ -31,6 +31,7 @@ func clearOverrides(t *testing.T) {
 		"MAIL_DRIVER", "MAIL_TIMEOUT_SECONDS",
 		"VCOMPUTER_CONTROL_URL", "VCOMPUTER_CONTROL_TOKEN", "VCOMPUTER_CONTROL_TIMEOUT",
 		"CONTENT_FRAME_ANCESTORS", "ATTACHMENT_ALLOWED_EXTENSIONS",
+		"ATTACHMENT_STAGED_TTL", "ATTACHMENT_STAGED_SWEEP_INTERVAL",
 	} {
 		t.Setenv(key, "")
 	}
@@ -399,6 +400,32 @@ func TestAttachmentAllowedExtensionsComeFromTheEnvironment(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"png", "pdf", "txt"}, cfg.Storage.AttachmentAllowedExtensions,
 		"the dot is stripped, the case is lowered, and blanks are dropped")
+}
+
+// TestTheStagedClockComesFromTheEnvironment: the staged window and its schedule are deployment
+// settings, and they are separate from RETENTION_* on purpose — a deployment that switched the
+// retention pass off still wants the files nobody sent removed, and it names that clock here. A
+// duration that is not one is refused rather than read as "no window".
+func TestTheStagedClockComesFromTheEnvironment(t *testing.T) {
+	clearOverrides(t)
+	t.Setenv("ENVIRONMENT", "local")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Zero(t, cfg.Storage.AttachmentStagedTTL, "empty means the retention module's day")
+	require.Zero(t, cfg.Storage.AttachmentStagedSweepInterval, "empty means the retention module's hour")
+
+	t.Setenv("ATTACHMENT_STAGED_TTL", "6h")
+	t.Setenv("ATTACHMENT_STAGED_SWEEP_INTERVAL", "15m")
+
+	cfg, err = Load()
+	require.NoError(t, err)
+	require.Equal(t, 6*time.Hour, cfg.Storage.AttachmentStagedTTL)
+	require.Equal(t, 15*time.Minute, cfg.Storage.AttachmentStagedSweepInterval)
+
+	t.Setenv("ATTACHMENT_STAGED_SWEEP_INTERVAL", "sebentar")
+	_, err = Load()
+	require.Error(t, err)
 }
 
 // TestAnUnknownEnvironmentStillLoadsTheBase: a deployment that mistypes its environment name gets the

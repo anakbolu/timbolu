@@ -79,6 +79,10 @@ func run() error {
 	// The retention pass shares the process for the reason the billing sweep does: it is a
 	// loop with nothing to wait for. A deployment sets RETENTION_INTERVAL=0 to switch it off.
 	go c.RunRetention(ctx)
+	// The staged sweep is the one clock that keeps running with the pass off: a file nobody
+	// sent has no message to be kept with, so a deployment that keeps everything a customer
+	// said still has no reason to keep it. It stands down on its own while the pass is on.
+	go c.RunStagedSweep(ctx)
 	// The internal listener is the half of the WhatsApp seam the gateway calls:
 	// it records what arrived, hands out what is due, and takes back what left. It
 	// is off unless the deployment names an address, so an API with no gateway is
