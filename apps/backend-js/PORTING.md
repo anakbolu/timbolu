@@ -21,6 +21,14 @@ live Postgres, Redis and Temporal:
 - routines: create/pause/resume/delete, each mirrored onto a real Temporal Schedule
   with the same `routine-<id>` format the Go deployment uses
 - memory: a message starts `memory-<conversationId>` as MemoryExtractionWorkflow
+- the agent loop: a task loads the Bolu, its tools, the thread history and the
+  recalled memory, and reaches the model call. It stops there only because this
+  checkout has no LLM credential:
+
+  ```
+  before wiring: gagal menyiapkan tugas: task: load agent: the agent registry is not configured
+  after wiring:  model gagal menjawab: llm: no provider is configured: atur penyedia di Pengaturan → Model
+  ```
 
 ## Summary
 
