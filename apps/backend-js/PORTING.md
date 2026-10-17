@@ -1,37 +1,36 @@
 # Go → TypeScript porting table
 
-Generated 2026-10-17 from the filesystem, not from a checklist.
+Generated 2026-10-17 from the filesystem, not a checklist.
 
-Every `.go` file under `apps/backend` and `packages/platform` is listed below with its
-TypeScript counterpart. `ported` means the file exists and `bun run typecheck` accepts it.
+Scope: `apps/backend`, `packages/platform`, and `packages/whatsapp` — the three Go modules
+`apps/backend` imports. `apps/whatsapp-gw` and `apps/virtual-computer/control` are
+separate processes with their own binaries and are out of scope for this rewrite.
+
+Every `.go` file in scope is listed below with its TypeScript counterpart. `ported` means
+the file exists and `bun run typecheck` accepts it.
 
 ## Status
 
-`bun run typecheck` clean. The server boots and the flows below were exercised
-against the live Postgres, Redis and Temporal (see the PR description):
+`bun run typecheck` clean. The server boots and these flows were exercised against the
+live Postgres, Redis and Temporal:
 
 - auth: register, verify, login, me
 - tenancy: onboard, teams, members, roles
 - agents: catalog, create from template, list
 - chat -> task: a message creates a task and its Temporal workflow starts
-- routines: create/pause/resume/delete, each mirrored onto a real Temporal
-  Schedule with the same `routine-<id>` format the Go deployment uses
+- routines: create/pause/resume/delete, each mirrored onto a real Temporal Schedule
+  with the same `routine-<id>` format the Go deployment uses
 - memory: a message starts `memory-<conversationId>` as MemoryExtractionWorkflow
-
-Not yet wired: the task activity's internal ports (tools, executor, drafts,
-reply writer, event sink, memory recall, outcome sink, namer) — so the agent loop
-records a task and reaches the worker but cannot complete a round. The ports are
-ported; the adapters between them and the other modules' services are not.
 
 ## Summary
 
 | | count |
 | --- | --- |
-| ported | 211 |
+| ported | 216 |
 | missing | 0 |
 | folded | 53 |
-| skipped | 194 |
-| **total** | **458** |
+| skipped | 214 |
+| **total** | **483** |
 
 `folded` = `sqlc`-generated Go from the SQL; in TypeScript the query *is* the
 repository function, so those are absorbed into `repository/postgres.ts`.
@@ -85,6 +84,8 @@ repository function, so those are absorbed into `repository/postgres.ts`.
 | `platform/storage` | 2 | 0 | 0 | 1 |
 | `platform/telemetry` | 1 | 0 | 0 | 1 |
 | `platform/temporal` | 3 | 0 | 0 | 3 |
+| `whatsapp/domain` | 3 | 0 | 0 | 18 |
+| `whatsapp/seam` | 2 | 0 | 0 | 2 |
 
 ## File-by-file
 
@@ -548,3 +549,28 @@ repository function, so those are absorbed into `repository/postgres.ts`.
 | `packages/platform/storage/storage_test.go` | `—` | skipped — test file |
 | `packages/platform/telemetry/telemetry.go` | `apps/backend-js/src/platform/telemetry/telemetry.ts` | ported |
 | `packages/platform/telemetry/telemetry_test.go` | `—` | skipped — test file |
+| `packages/whatsapp/domain/engine.go` | `apps/backend-js/src/packages/whatsapp/domain/engine.ts` | ported |
+| `packages/whatsapp/domain/mocks/mock_Activity.go` | `—` | skipped — generated mock |
+| `packages/whatsapp/domain/mocks/mock_Alerter.go` | `—` | skipped — generated mock |
+| `packages/whatsapp/domain/mocks/mock_Connections.go` | `—` | skipped — generated mock |
+| `packages/whatsapp/domain/mocks/mock_Directory.go` | `—` | skipped — generated mock |
+| `packages/whatsapp/domain/mocks/mock_Drain.go` | `—` | skipped — generated mock |
+| `packages/whatsapp/domain/mocks/mock_Inbox.go` | `—` | skipped — generated mock |
+| `packages/whatsapp/domain/mocks/mock_Lease.go` | `—` | skipped — generated mock |
+| `packages/whatsapp/domain/mocks/mock_LinkSink.go` | `—` | skipped — generated mock |
+| `packages/whatsapp/domain/mocks/mock_MediaStore.go` | `—` | skipped — generated mock |
+| `packages/whatsapp/domain/mocks/mock_Replies.go` | `—` | skipped — generated mock |
+| `packages/whatsapp/domain/mocks/mock_Sealer.go` | `—` | skipped — generated mock |
+| `packages/whatsapp/domain/mocks/mock_Service.go` | `—` | skipped — generated mock |
+| `packages/whatsapp/domain/mocks/mock_SessionForgetter.go` | `—` | skipped — generated mock |
+| `packages/whatsapp/domain/mocks/mock_SessionStore.go` | `—` | skipped — generated mock |
+| `packages/whatsapp/domain/mocks/mock_Status.go` | `—` | skipped — generated mock |
+| `packages/whatsapp/domain/mocks/mock_Store.go` | `—` | skipped — generated mock |
+| `packages/whatsapp/domain/mocks/mock_Transport.go` | `—` | skipped — generated mock |
+| `packages/whatsapp/domain/mocks/mock_Watchers.go` | `—` | skipped — generated mock |
+| `packages/whatsapp/domain/service.go` | `apps/backend-js/src/packages/whatsapp/domain/service.ts` | ported |
+| `packages/whatsapp/domain/whatsapp.go` | `apps/backend-js/src/packages/whatsapp/domain/whatsapp.ts` | ported |
+| `packages/whatsapp/seam/gateway.go` | `apps/backend-js/src/packages/whatsapp/seam/gateway.ts` | ported |
+| `packages/whatsapp/seam/gateway_test.go` | `—` | skipped — test file |
+| `packages/whatsapp/seam/product.go` | `apps/backend-js/src/packages/whatsapp/seam/product.ts` | ported |
+| `packages/whatsapp/seam/product_test.go` | `—` | skipped — test file |
