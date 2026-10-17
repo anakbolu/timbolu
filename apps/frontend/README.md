@@ -58,7 +58,7 @@ Three things do **not** follow the theme, and each is deliberate:
 | Stays fixed | Why |
 | --- | --- |
 | `lib/crew.ts` colours and tints, `characters.tsx`, `bolu.tsx`, `bot-svg.tsx` | A Bolu's colour is who it is, not a surface. Text on a tint uses `--color-bolu-on-tint`, because a tint is always light. |
-| The application tiles in `integrations-view.tsx`, the Google mark, the auth scene's mock room | Third-party brand colours and an illustration. |
+| The application tiles in `components/dashboard/apps-pill.tsx`, the Google mark, the auth scene's mock room | Third-party brand colours and an illustration. |
 | The QR code in `whatsapp-panel.tsx` | A scanner needs dark modules on a light field. |
 
 Two renderers paint outside the cascade and cannot read a token, so each reads the

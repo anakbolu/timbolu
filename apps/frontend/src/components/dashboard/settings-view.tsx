@@ -11,10 +11,17 @@
  *
  * The notification switches have nowhere to go: the backend has no notification
  * preferences, so they are absent rather than drawn as switches that forget.
+ *
+ * The screen holds only what is set here. Everything that leads somewhere else —
+ * the connected applications, the team, memory, data, usage and billing — is one
+ * pill at the bottom: the applications open the integrations sheet, the rest are
+ * links, so the settings themselves stay the whole of this page. Below those, set
+ * apart by a rule, is the way out of the session.
  */
 
 import { useCallback, useEffect, useState } from "react";
 
+import { SignOutButton } from "@/components/auth/sign-out-button";
 import { Bolu } from "@/components/bolu/bolu";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import {
@@ -26,6 +33,8 @@ import {
 } from "@/lib/api";
 import { TIMEZONES, crewFor, expressionOf, stateOf } from "@/lib/dashboard-view";
 
+import { AppsPill, PillLink } from "./apps-pill";
+import { IntegrationsSheet } from "./integrations-sheet";
 import { useWorkspace } from "./workspace-data";
 
 const CARD = "rounded-md border border-bolu-border bg-bolu-surface";
@@ -96,6 +105,7 @@ export function SettingsView() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tone, setTone] = useState(TONES[1].value);
+  const [appsOpen, setAppsOpen] = useState(false);
 
   const profile = loaded ?? fetched;
 
@@ -381,97 +391,33 @@ export function SettingsView() {
         <ThemeToggle />
       </section>
 
-      <section className={`${CARD} flex flex-wrap items-center justify-between gap-3.5 p-[22px]`}>
-        <div>
-          <h2 className={HEADING}>Aplikasi terhubung</h2>
-          <div className="text-bolu-muted">
-            {store.hub.connections.length === 0
-              ? "Belum ada aplikasi terhubung"
-              : `${store.hub.connections.length} aplikasi terhubung`}
-          </div>
-        </div>
-        <a
-          href="/dashboard/integrations"
-          className="flex min-h-11 items-center rounded-full bg-bolu-solid px-5 font-bold text-bolu-solid-ink no-underline hover:text-bolu-solid-ink"
-        >
-          Kelola integrasi
-        </a>
-      </section>
+      {/* The way out of this screen, in one stack: the applications carry their own
+          marks on the pill, and the rest are plain links. */}
+      <div className="flex flex-col gap-2">
+        <AppsPill
+          label="Hubungkan aplikasi"
+          apps={store.hub.connections.map((connection) => connection.app)}
+          expanded={appsOpen}
+          onClick={() => setAppsOpen(true)}
+          className="w-full"
+        />
+        <PillLink href="/settings/team" label="Anggota ruang kerja" className="w-full" />
+        <PillLink href="/settings/memory" label="Memori" className="w-full" />
+        <PillLink href="/settings/data" label="Data dan penghapusan" className="w-full" />
+        <PillLink href="/settings/usage" label="Pemakaian" className="w-full" />
+        <PillLink href="/settings/subscription" label="Paket dan tagihan" className="w-full" />
+      </div>
 
-      <section className={`${CARD} flex flex-wrap items-center justify-between gap-3.5 p-[22px]`}>
-        <div>
-          <h2 className={HEADING}>Anggota ruang kerja</h2>
-          <div className="text-bolu-muted">
-            {store.members.length} orang · {agents.length} Bolu
-          </div>
-        </div>
-        <a
-          href="/settings/team"
-          className="flex min-h-11 items-center rounded-full border-2 border-bolu-ink px-5 font-bold text-bolu-ink no-underline hover:text-bolu-ink"
-        >
-          Kelola tim
-        </a>
-      </section>
+      {/* The way out is set apart from the destinations above, and is the last
+          thing on the page: it ends the session rather than opening another
+          screen. It carries the destructive fill the rest of the product uses for
+          an action that cannot be taken back, so it does not read as one more
+          link in the list above it. */}
+      <div className="mt-1 flex flex-col border-t border-bolu-line pt-5">
+        <SignOutButton className="flex min-h-[46px] w-full cursor-pointer items-center gap-2.5 rounded-full border-0 bg-bolu-belum px-4 text-[15px] font-bold text-bolu-solid-ink hover:opacity-90 disabled:opacity-50" />
+      </div>
 
-      <section className={`${CARD} flex flex-wrap items-center justify-between gap-3.5 p-[22px]`}>
-        <div>
-          <h2 className={HEADING}>Memori</h2>
-          <div className="text-bolu-muted">
-            Apa yang diingat seluruh ruang kerja dan apa yang diingat satu Bolu saja.
-          </div>
-        </div>
-        <a
-          href="/settings/memory"
-          className="flex min-h-11 items-center rounded-full border-2 border-bolu-ink px-5 font-bold text-bolu-ink no-underline hover:text-bolu-ink"
-        >
-          Buka memori
-        </a>
-      </section>
-
-      <section className={`${CARD} flex flex-wrap items-center justify-between gap-3.5 p-[22px]`}>
-        <div>
-          <h2 className={HEADING}>Data dan penghapusan</h2>
-          <div className="text-bolu-muted">
-            Apa yang kami simpan dan berapa lama, serta cara meminta seluruh data workspace dihapus.
-          </div>
-        </div>
-        <a
-          href="/settings/data"
-          className="flex min-h-11 items-center rounded-full border-2 border-bolu-ink px-5 font-bold text-bolu-ink no-underline hover:text-bolu-ink"
-        >
-          Buka kebijakan data
-        </a>
-      </section>
-
-      <section className={`${CARD} flex flex-wrap items-center justify-between gap-3.5 p-[22px]`}>
-        <div>
-          <h2 className={HEADING}>Pemakaian</h2>
-          <div className="text-bolu-muted">
-            Token dan biaya ruang kerja ini, per periode, per Bolu, dan per tugas.
-          </div>
-        </div>
-        <a
-          href="/settings/usage"
-          className="flex min-h-11 items-center rounded-full border-2 border-bolu-ink px-5 font-bold text-bolu-ink no-underline hover:text-bolu-ink"
-        >
-          Buka pemakaian
-        </a>
-      </section>
-
-      <section className={`${CARD} flex flex-wrap items-center justify-between gap-3.5 p-[22px]`}>
-        <div>
-          <h2 className={HEADING}>Paket dan tagihan</h2>
-          <div className="text-bolu-muted">
-            Paket workspace, pemakaian token periode ini, paket tambahan, dan tagihan yang harus dibayar.
-          </div>
-        </div>
-        <a
-          href="/settings/subscription"
-          className="flex min-h-11 items-center rounded-full bg-bolu-solid px-5 font-bold text-bolu-solid-ink no-underline hover:text-bolu-solid-ink"
-        >
-          Buka langganan
-        </a>
-      </section>
+      <IntegrationsSheet open={appsOpen} onOpenChange={setAppsOpen} />
     </div>
   );
 }

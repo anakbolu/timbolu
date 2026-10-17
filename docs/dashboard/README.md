@@ -1,20 +1,20 @@
 # Dasbor — screenshots
 
 Tampilan setiap layar diambil dari build produksi (`docker compose up`, image
-`timbolu-frontend`) dengan workspace yang punya kru dan riwayat tugas sungguhan,
-bukan data contoh.
+`timbolu-frontend`), bukan dari `next dev`, dan bukan dari data contoh: workspace
+di layar-layar ini benar-benar melewati alur yang digambarkannya lewat API.
 
 | Berkas | Layar |
 | --- | --- |
 | `01-dasbor.png` | Dasbor: sambutan, "Suruh Bolu", statistik, aktivitas langsung, tugas terakhir |
 | `02-rutinitas.png` | Rutinitas: form cadence, jadwal tiap Bolu dengan waktu berikutnya, dan riwayat eksekusi |
 | `03-kantor.png` | Kantor: posisi tiap Bolu dari `display_status` |
-| `04-integrasi.png` | Integrasi: kartu WhatsApp dengan peringatan ToS sebelum penautan, lalu pencarian, kategori, kartu aplikasi, izin per Bolu |
-| `05-pengaturan.png` | Pengaturan: profil, jam kerja, kebijakan persetujuan, gaya bahasa |
+| `04-integrasi.png` | Integrasi: pil "Hubungkan aplikasi" beserta tanda aplikasi yang tersambung, dan panel yang dibukanya — kartu WhatsApp dengan peringatan ToS sebelum penautan, pencarian, kategori, kartu aplikasi, izin per Bolu |
+| `05-pengaturan.png` | Pengaturan, digulir ke bawah: blok pil — aplikasi, anggota ruang kerja, memori, data, pemakaian, paket — beserta gaya bahasa dan tampilan di atasnya, dan tombol Keluar di kakinya |
 | `06-obrolan.png` | Obrolan: thread terbuka, balasan tersimpan |
 | `07-grup.png` | Grup: daftar grup dan pembuatannya |
 | `08-mobile.png` | Mobile: bilah atas menggantikan sidebar di bawah 760px |
-| `09-mobile-menu.png` | Mobile: drawer terbuka |
+| `09-mobile-menu.png` | Mobile: drawer terbuka, dengan baris Integrasi sebagai pil bertanda aplikasi |
 | `10-memori.png` | Memori: memori utama, memori pribadi tiap Bolu, dan basis pengetahuan |
 | `11-langganan.png` | Langganan: paket dan periodenya, pemakaian token, batas paket, tagihan yang menunggu dengan cara bayarnya, paket tambahan, paket yang tersedia, dan riwayat tagihan |
 | `12-pemakaian.png` | Pemakaian: ringkasan token dan biaya, pemakaian per Bolu dan per tugas, dan daftar yang perlu perhatian dengan tautan ke Temporal |
@@ -23,10 +23,37 @@ bukan data contoh.
 Diambil 2026-10-12. Angka di layar adalah isi workspace uji, jadi nol di tempat
 yang belum punya pekerjaan — itu memang perilakunya, bukan tampilan kosong.
 
-`04-integrasi.png` diambil ulang setelah EPIC 9 mendarat, dengan kartu WhatsApp di
-atas daftar aplikasi: peringatan jalur tidak resmi dengan tombol terimanya, pemilih
-nomor dan Bolu yang menjawab, serta status tiap nomor. Yang belum ada di layar
-adalah QR-nya, karena penautan butuh HP sungguhan untuk dipindai.
+Tiga di antaranya diambil ulang pada 2026-10-17 dari build yang sama
+(`docker compose up`, image `timbolu-frontend` yang dibangun ulang dari branch
+ini): `04-integrasi.png`, `05-pengaturan.png`, dan `09-mobile-menu.png` — yaitu
+ketiga gambar yang pokoknya memang berubah saat Integrasi dan Pengaturan menjadi
+pil. Sisanya masih dari 2026-10-12 dan **sidebar-nya memperlihatkan baris
+Integrasi dan Pengaturan yang lama** (kotak bersudut, bukan pil), karena tidak ada
+yang berubah di layar-layar itu sendiri; `03-kantor.png` lebih tua lagi: rutenya
+sudah tidak ada di aplikasi. `05-pengaturan.png` digulir ke bawah, karena blok
+pilnya ada di kaki halaman dan itulah yang jadi pokok gambar ini.
+
+`04-integrasi.png` versi 2026-10-12 diambil setelah EPIC 9 mendarat, dengan kartu
+WhatsApp di atas daftar aplikasi: peringatan jalur tidak resmi dengan tombol
+terimanya, pemilih nomor dan Bolu yang menjawab, serta status tiap nomor. Susunan
+itu yang sekarang pindah ke dalam panel; yang belum ada di layar mana pun adalah
+QR-nya, karena penautan butuh HP sungguhan untuk dipindai.
+
+Sejak 2026-10-16, Integrasi dan Pengaturan berbentuk pil: layarnya satu pil
+("Hubungkan aplikasi") yang membawa tanda aplikasi yang tersambung, dan seluruh
+isinya — pencarian, kategori, kartu WhatsApp, izin per Bolu, server MCP — pindah
+ke panel yang dibuka pil itu; sidebar memakai pil yang sama untuk baris Integrasi.
+Itulah yang diperlihatkan ketiga gambar 2026-10-17: `04-integrasi.png` pilnya
+sekaligus panelnya terbuka, `05-pengaturan.png` blok pil di kaki pengaturan, dan
+`09-mobile-menu.png` baris Integrasi di drawer.
+
+Ketiganya dari workspace `demo@bolu.local` (`scripts/demo.sh`), jadi isinya lebih
+tipis daripada gambar 2026-10-12: satu koneksi (`gmail`, `toko@example.com`),
+tiga adapter yang memang dikonfigurasi deployment ini (`checklist`, `order`,
+`whatsapp`), belum ada nomor WhatsApp tertaut, dan belum ada server MCP. Yang
+tidak diperlihatkannya karena itu: kartu izin per Bolu yang terisi dan daftar
+server MCP — keduanya hanya muncul kalau datanya ada, dan bentuknya tidak berubah
+oleh pekerjaan ini.
 
 `11-langganan.png` diambil setelah EPIC 12 mendarat: paket Keluarga aktif dengan
 periode dan batasnya, pemakaian 800 ribu dari 3,4 juta token (termasuk 1,4 juta

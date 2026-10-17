@@ -43,6 +43,7 @@ import {
 import { ALL_BOTS } from "@/lib/crew";
 import { crewFor, expressionOf, relativeAge, stateOf } from "@/lib/dashboard-view";
 
+import { AppTile } from "./apps-pill";
 import { useWorkspace } from "./workspace-data";
 
 const CARD = "rounded-md border border-bolu-border bg-bolu-surface";
@@ -383,13 +384,7 @@ export function WhatsAppPanel() {
     <section className={`${CARD} flex flex-col gap-4 p-[20px]`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <span
-            aria-hidden
-            className="flex size-10 flex-none items-center justify-center rounded-md font-display text-[15px] font-bold text-white"
-            style={{ backgroundColor: "#1E7D4A" }}
-          >
-            WA
-          </span>
+          <AppTile app="whatsapp" size={40} />
           <div>
             <div className="font-display text-[17px] font-semibold">WhatsApp</div>
             <div className="text-[13px] text-bolu-muted">

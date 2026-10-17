@@ -180,9 +180,12 @@ from the navigation, which it was not before). The signed-in workspace lives und
 `/dashboard` (the front door — the roster, the live activity feed, the drafts waiting,
 and the week's finished work), `/routines` (the routines screen: the form
 that sets a cadence, the routines per Bolu with their next run in the workspace's own
-zone, the pause switch, and the run history), `/dashboard/integrations` (the hub: connected
-accounts, grants per Bolu, MCP servers), `/settings` (workspace profile, working
-hours, approval policies), `/settings/team`, `/settings/model`, `/chat` (one thread
+zone, the pause switch, and the run history), `/dashboard/integrations` (the hub behind one
+pill: the pill carries the marks of the connected applications, and the panel it opens holds
+the search, the category chips, the WhatsApp card, the connected accounts with their grants
+per Bolu, and the MCP servers), `/settings` (workspace profile, working
+hours, approval policies, and one pill per screen that has its own route),
+`/settings/team`, `/settings/model`, `/chat` (one thread
 rather than a thread list — the sidebar's roster and groups are the way in, and a
 link carries the Bolu or the group in the query), `/bolu/new` (the one screen that
 makes a Bolu: the body it is drawn as, its name, and its job), `/groups`, `/dashboard/usage` (what the
