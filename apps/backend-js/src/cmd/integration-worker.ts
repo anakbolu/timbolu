@@ -25,7 +25,7 @@ async function run(): Promise<void> {
   defaultServiceName(config.telemetry, "bolu-integration-worker");
 
   const taskQueue = config.temporal.taskQueueIntegration || "integration";
-  const worker = await newWorker({ config, log, db: container.db }, taskQueue, WORKFLOWS_PATH);
+  const worker = await newWorker({ config, log, db: container.db, container }, taskQueue, WORKFLOWS_PATH);
 
   log.info({ taskQueue, temporal: config.temporal.hostPort }, "integration worker running");
 

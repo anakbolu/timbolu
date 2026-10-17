@@ -49,6 +49,15 @@ import {
   spendCounter,
   memoryConversations,
   memoryScheduler,
+  agentDirectoryForTask,
+  memoryRecallForTask,
+  taskBudget,
+  taskDraftGate,
+  taskEventSink,
+  taskOutcomeSink,
+  taskReplyWriter,
+  taskToolExecutor,
+  taskToolRegistry,
 } from "./adapters.ts";
 import { newTemporalStarter } from "../worker/starter.ts";
 import { Scheduler } from "../platform/routine/temporal/scheduler.ts";
@@ -163,6 +172,17 @@ export interface Container {
   /** The guards call these directly; a handler keeps its service private. */
   authService: AuthService | null;
   workspaceService: WorkspaceService | null;
+  /** The services the task runtime's ports read. The worker assembles its activities from them. */
+  chatService: ChatService | null;
+  chatRepo: ChatRepository | null;
+  llmService: LlmService | null;
+  agentService: AgentService | null;
+  memoryService: MemoryService | null;
+  approvalService: ApprovalService | null;
+  integrationService: IntegrationService | null;
+  routineService: RoutineService | null;
+  taskService: TaskService | null;
+  costs: CostTable;
   /** The two loops `cmd/api.ts` runs in-process. */
   retentionService: RetentionService | null;
   billingService: BillingService | null;
@@ -351,6 +371,10 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
     agent = new AgentHandler(service, log);
   }
 
+  // One price table for the gateway and for the task runtime: a task's own
+  // total and the invoice must price a call the same way.
+  const costs = new CostTable(defaultPrices(), DefaultFallback);
+
   let llm: LlmHandler | null = null;
   let llmService: LlmService | null = null;
   if (db) {
@@ -367,7 +391,7 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
       // gateway runs without a policy, which is the same shape as a deployment
       // whose quota switch is off.
       quota: null,
-      costs: new CostTable(defaultPrices(), DefaultFallback),
+      costs,
       // The deployment default is a provider row that exists only in
       // configuration: it has no workspace and no id until it is persisted, and
       // it is never the default of a workspace it does not belong to.
@@ -411,17 +435,22 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
 
   // --- the rest of the modules ---------------------------------------------
   let chat: ChatHandler | null = null;
+  let chatService: ChatService | null = null;
+  let chatRepo: ChatRepository | null = null;
   let integration: IntegrationHandler | null = null;
+  let integrationService: IntegrationService | null = null;
   let checklist: ChecklistHandler | null = null;
   let order: OrderHandler | null = null;
   let billing: BillingHandler | null = null;
   let billingService: BillingService | null = null;
   let approval: ApprovalHandler | null = null;
+  let approvalService: ApprovalService | null = null;
   let retention: RetentionHandler | null = null;
   let retentionService: RetentionService | null = null;
   let memory: MemoryHandler | null = null;
   let memoryService: MemoryService | null = null;
   let routine: RoutineHandler | null = null;
+  let routineService: RoutineService | null = null;
   let whatsapp: WhatsAppHandler | null = null;
   let task: TaskHandler | null = null;
   let taskService: TaskService | null = null;
@@ -434,7 +463,7 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
     // Each service takes the ports it declares and nothing more; the optional ones
     // stay null, which is the same shape as a deployment that has not connected
     // that dependency yet.
-    const chatRepo = new ChatRepository(db);
+    chatRepo = new ChatRepository(db);
     const directory = agentService ? agentDirectory(agentService as any) : null;
 
     // A message is answered in process by the model gateway, and becomes a
@@ -459,8 +488,7 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
       log.warn("chat replies are disabled: the model gateway or the agent registry is not configured");
     }
 
-    chat = new ChatHandler(
-      new ChatService({
+    chatService = new ChatService({
         conversations: chatRepo,
         messages: chatRepo,
         attachments: chatRepo,
@@ -490,13 +518,13 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
         storage,
         logger: log,
         config: { attachmentAllowedExtensions: config.storage.attachmentAllowedExtensions },
-      } as any),
-      log,
-    );
+      } as any);
+    chat = new ChatHandler(chatService, log);
 
     const integrationRepo = new IntegrationRepository(db);
+    integrationService = new IntegrationService({ repository: integrationRepo, box, kms, logger: log } as any);
     integration = new IntegrationHandler(
-      new IntegrationService({ repository: integrationRepo, box, kms, logger: log } as any),
+      integrationService,
       log,
       {
         frontendUrl: config.application.frontendUrl,
@@ -521,10 +549,11 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
     } as any);
     billing = new BillingHandler(billingService, log);
 
-    approval = new ApprovalHandler(
-      new ApprovalService({ drafts: new ApprovalRepository(db), logger: log } as any),
-      log,
-    );
+    approvalService = new ApprovalService({
+      drafts: new ApprovalRepository(db),
+      logger: log,
+    } as any);
+    approval = new ApprovalHandler(approvalService, log);
 
     const retentionRepo = new RetentionRepository(db);
     retentionService = new RetentionService({ repository: retentionRepo, logger: log } as any);
@@ -554,8 +583,7 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
     } as any);
     memory = new MemoryHandler(memoryService, log);
 
-    routine = new RoutineHandler(
-      new RoutineService({
+    routineService = new RoutineService({
         repository: new RoutineRepository(db),
         tasks: {
           start: async (scope: any, req: any) => {
@@ -572,14 +600,31 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
           ? Scheduler.create(clientHandleOver(runtime.client, config.temporal.taskQueueAgent || "agent"), config.temporal.taskQueueAgent || "agent", RoutineWorkflowName)
           : null,
         logger: log,
-      } as any),
-      log,
-    );
+      } as any);
+    routine = new RoutineHandler(routineService, log);
 
     const taskRepo = new TaskRepository(db);
     // The starter is the Temporal seam: without it a task is recorded and stays
     // queued, which is the documented behaviour of a deployment with no runtime.
-    taskService = new TaskService({ tasks: taskRepo, steps: taskRepo, starter: runtime?.starter ?? null, logger: log } as any);
+    // The other ports are the ones the service asks before it opens a task: the
+    // registry it validates the Bolu against, the stream it announces the task
+    // on, and the quota check that refuses work a workspace cannot afford.
+    taskService = new TaskService({
+      tasks: taskRepo,
+      steps: taskRepo,
+      starter: runtime?.starter ?? null,
+      agents: agentDirectoryForTask(agentService),
+      events: chatService ? taskEventSink(chatService) : null,
+      budget: taskBudget(llmService),
+      limits: {
+        MaxSteps: config.tasks.maxSteps,
+        MaxTokens: config.tasks.maxTokens,
+        MaxHandoffDepth: config.tasks.maxHandoffDepth,
+        MaxToolResultBytes: config.tasks.maxToolResultBytes,
+        MaxRevisions: 0,
+      },
+      logger: log,
+    });
     task = new TaskHandler(taskService, log);
 
     whatsapp = new WhatsAppHandler(
@@ -633,6 +678,16 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
     task,
     authService,
     workspaceService,
+    chatService,
+    chatRepo,
+    llmService,
+    agentService,
+    memoryService,
+    approvalService,
+    integrationService,
+    routineService,
+    taskService,
+    costs,
     retentionService,
     billingService,
     close,
