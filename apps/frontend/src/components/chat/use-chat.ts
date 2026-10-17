@@ -474,35 +474,6 @@ function readString(value: unknown): string | undefined {
 }
 
 /**
- * mergeAttachments folds files into the ones already shown.
- *
- * Keyed by id, because the same file is seen twice: once from the request that
- * stored it and once from the message event that followed, and the two must be
- * one row. The order already on screen is kept so a file does not move while it
- * is being read, and the server's copy of a row replaces the local one.
- */
-function mergeAttachments(known: Attachment[], incoming: Attachment[]): Attachment[] {
-  if (incoming.length === 0) {
-    return known;
-  }
-
-  const merged = [...known];
-  const at = new Map(merged.map((item, index) => [item.id, index]));
-
-  for (const item of incoming) {
-    const index = at.get(item.id);
-    if (index === undefined) {
-      at.set(item.id, merged.length);
-      merged.push(item);
-      continue;
-    }
-    merged[index] = item;
-  }
-
-  return merged;
-}
-
-/**
  * replaceAttachments takes the server's list as the whole truth.
  *
  * The order is the server's, so a file keeps the place the backend gave it, and
