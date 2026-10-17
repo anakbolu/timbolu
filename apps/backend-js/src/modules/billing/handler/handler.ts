@@ -309,7 +309,7 @@ function wirePlan(plan: Plan): PlanPayload {
   return {
     key: plan.key,
     name: plan.name,
-    monthly_price_idr: plan.monthlyPriceIdr,
+    monthly_price_idr: plan.monthlyPriceIDR,
     token_quota: plan.tokenQuota,
     daily_cost_micros: plan.dailyCostMicros,
     period_days: plan.periodDays,
@@ -325,7 +325,7 @@ function wireInvoice(invoice: Invoice): InvoicePayload {
     id: invoice.id,
     kind: invoice.kind,
     status: invoice.status,
-    amount_idr: invoice.amountIdr,
+    amount_idr: invoice.amountIDR,
     period_start: timestamp(invoice.periodStart),
     period_end: timestamp(invoice.periodEnd),
     attempts: invoice.attempts,
@@ -395,7 +395,7 @@ function wireTopUp(pack: TopUpPackage): {
     key: pack.key,
     name: pack.name,
     token_amount: pack.tokenAmount,
-    price_idr: pack.priceIdr,
+    price_idr: pack.priceIDR,
   };
 }
 
@@ -403,7 +403,7 @@ function wireTopUp(pack: TopUpPackage): {
 function owedIdr(invoices: Invoice[]): number {
   let total = 0;
   for (const invoice of invoices) {
-    total += invoice.amountIdr;
+    total += invoice.amountIDR;
   }
   return total;
 }

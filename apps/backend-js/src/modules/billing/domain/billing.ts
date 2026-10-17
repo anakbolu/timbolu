@@ -165,7 +165,7 @@ export interface Plan {
   key: string;
   name: string;
   /** What one period costs, in rupiah. */
-  monthlyPriceIdr: number;
+  monthlyPriceIDR: number;
   /** The tokens one period grants. Zero means unlimited. */
   tokenQuota: number;
   /** One day's spend ceiling, in micro-rupiah. Zero means the package does not bound a day. */
@@ -245,7 +245,7 @@ export interface Invoice {
   provider: string;
   /** The provider's own id for the payment, which is what the webhook names. */
   providerReference: string;
-  amountIdr: number;
+  amountIDR: number;
   /** What a top-up buys. Zero on a month. */
   tokenAmount: number;
   status: string;
@@ -318,7 +318,7 @@ export interface TopUpPackage {
   key: string;
   name: string;
   tokenAmount: number;
-  priceIdr: number;
+  priceIDR: number;
   sortOrder: number;
   active: boolean;
 }

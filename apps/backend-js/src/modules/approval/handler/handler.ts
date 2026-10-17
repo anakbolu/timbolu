@@ -173,6 +173,17 @@ export class Handler {
       return error(c, 400, "the body is not valid JSON", "invalid_request");
     }
 
+    // BodyParser refuses a field of the wrong type, so a `max_amount` that is
+    // not a number is a bad body rather than a policy with no ceiling.
+    if (
+      (body.action_kind !== undefined && typeof body.action_kind !== "string") ||
+      (body.mode !== undefined && typeof body.mode !== "string") ||
+      (body.max_amount !== undefined && body.max_amount !== null && typeof body.max_amount !== "number") ||
+      (typeof body.max_amount === "number" && !Number.isInteger(body.max_amount))
+    ) {
+      return error(c, 400, "the body is not valid JSON", "invalid_request");
+    }
+
     let policy: Policy;
     try {
       policy = await this.service.setPolicy(undefined, requestScope(c), {
@@ -264,7 +275,10 @@ export class Handler {
         return error(c, 400, "the body is not valid JSON", "invalid_request");
       }
       const value = (body as { note?: unknown }).note;
-      note = typeof value === "string" ? value : "";
+      if (value !== undefined && typeof value !== "string") {
+        return error(c, 400, "the body is not valid JSON", "invalid_request");
+      }
+      note = value ?? "";
     }
 
     const actor = requestScope(c);
@@ -554,8 +568,9 @@ function parseOptionalTime(value: string | undefined): Date | null | undefined {
 function queryInt(c: AppContext, key: string, fallback: number): number {
   const raw = c.req.query(key);
   if (raw === undefined || raw === "") return fallback;
+  if (!/^[+-]?\d+$/.test(raw)) return fallback;
   const parsed = Number.parseInt(raw, 10);
-  return Number.isNaN(parsed) ? fallback : parsed;
+  return Number.isSafeInteger(parsed) ? parsed : fallback;
 }
 
 /** Reads a JSON body, answering null for one that is not an object, as BodyParser refuses it. */

@@ -33,7 +33,6 @@ import {
   type Scope,
   type Snapshot,
   type Subscription,
-  type Usage,
 } from "../domain/billing.ts";
 import {
   type ChangeRequest,
@@ -419,5 +418,3 @@ export const NoticePlanChanged = "billing.plan_changed";
 
 /** The answer when the module was built without its store. */
 export const errNoRepository = new Error("billing: the repository is not configured");
-
-export type { Usage };

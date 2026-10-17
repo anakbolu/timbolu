@@ -16,6 +16,7 @@ import {
   ErrInvoiceSettled,
   ErrNoGateway,
   ErrUnverifiable,
+  KindSubscription,
   KindTopup,
   NilUUID,
   StatusActive,
@@ -150,7 +151,7 @@ export async function buyTopUp(
     kind: KindTopup,
     provider: s.gatewayName(),
     providerReference: "",
-    amountIdr: pack.priceIdr,
+    amountIDR: pack.priceIDR,
     tokenAmount: pack.tokenAmount,
     status: StatusPending,
     periodStart: period.periodStart,
@@ -221,16 +222,16 @@ async function applyPayment(
   invoice: Invoice,
   payment: Payment,
 ): Promise<void> {
-  if (payment.amountIdr > 0 && payment.amountIdr < invoice.amountIdr) {
+  if (payment.amountIDR > 0 && payment.amountIDR < invoice.amountIDR) {
     // Paying less than the invoice asks for is not a payment of it. The invoice
     // is left outstanding and the reason is recorded.
     s.deps.logger.warn(
-      { invoice: invoice.id, paid: payment.amountIdr, expected: invoice.amountIdr },
+      { invoice: invoice.id, paid: payment.amountIDR, expected: invoice.amountIDR },
       "a payment was smaller than its invoice",
     );
     throw wrap(
       ErrInvalidInput,
-      `pembayaran ${formatIdr(payment.amountIdr)} lebih kecil dari tagihan ${formatIdr(invoice.amountIdr)}`,
+      `pembayaran ${formatIdr(payment.amountIDR)} lebih kecil dari tagihan ${formatIdr(invoice.amountIDR)}`,
     );
   }
 
@@ -354,7 +355,7 @@ async function withdrawStaleInvoices(
   }
 
   for (const invoice of outstanding) {
-    if (invoice.id === paidId || invoice.kind !== "subscription") {
+    if (invoice.id === paidId || invoice.kind !== KindSubscription) {
       continue;
     }
     try {

@@ -12,6 +12,7 @@
  * its SQL text unchanged.
  */
 
+import type { JSONValue } from "postgres";
 import type { Database, Tx } from "../../../platform/database/index.ts";
 import {
   DefaultListLimit,
@@ -132,7 +133,7 @@ export class Repository implements RepositoryPort {
             t.id,
             t.agent_id,
             ${draft.actionKind},
-            ${JSON.stringify(draft.payload ?? {})},
+            ${this.db.sql.json((draft.payload ?? {}) as JSONValue)},
             'pending',
             ${draft.title},
             ${draft.summary},
@@ -306,7 +307,7 @@ export class Repository implements RepositoryPort {
         tx<DraftRevisionRow[]>`
           INSERT INTO draft_revisions (workspace_id, draft_id, revision, note, payload, decided_by)
           VALUES (${scope.workspaceId}, ${revision.draftId}, ${revision.revision},
-                  ${revision.note}, ${JSON.stringify(revision.payload ?? {})}, ${optionalId(revision.decidedBy)})
+                  ${revision.note}, ${this.db.sql.json((revision.payload ?? {}) as JSONValue)}, ${optionalId(revision.decidedBy)})
           RETURNING *
         `,
       );
@@ -426,7 +427,7 @@ export class Repository implements RepositoryPort {
           )
           VALUES (${scope.workspaceId}, ${optionalId(entry.actorUserId)},
                   ${optionalId(entry.actorAgentId)}, ${entry.action}, ${entry.objectType},
-                  ${entry.objectId}, ${JSON.stringify(entry.metadata ?? {})})
+                  ${entry.objectId}, ${this.db.sql.json((entry.metadata ?? {}) as JSONValue)})
         `,
       );
     });

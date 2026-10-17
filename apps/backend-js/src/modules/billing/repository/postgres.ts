@@ -464,7 +464,7 @@ export class PostgresRepository implements Repository {
             ${uuidOrNull(invoice.subscriptionId)},
             ${invoice.provider},
             ${invoice.providerReference},
-            ${invoice.amountIdr},
+            ${invoice.amountIDR},
             ${invoice.tokenAmount},
             ${invoice.status},
             ${invoice.kind},

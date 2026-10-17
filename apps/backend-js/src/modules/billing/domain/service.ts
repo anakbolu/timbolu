@@ -181,7 +181,7 @@ export interface Delivery {
 /** What a verified delivery says happened. */
 export interface Payment {
   reference: string;
-  amountIdr: number;
+  amountIDR: number;
   paid: boolean;
   /** A link that ran out rather than a payment that failed. */
   expired: boolean;

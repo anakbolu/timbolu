@@ -398,7 +398,7 @@ export function openWindow(hours: WorkingHours, now: Date): Window {
   }
 
   const local = partsInZone(now, zone);
-  const today = fromZoned({ ...local, hour: 0, minute: 0, second: 0 }, 0, zone);
+  const today = fromZoned({ ...local, hour: 0, minute: 0, second: 0 }, zone);
 
   // Go adds a `time.Duration` to the instant, not to the wall clock, so on a
   // DST transition day these are absolute offsets from local midnight. The port
@@ -516,10 +516,8 @@ function zoneOffset(at: Date, zone: string): number {
 }
 
 /** The instant a local wall-clock time in a zone names. */
-function fromZoned(parts: ZonedParts, minutes: number, zone: string): Date {
-  const hour = Math.floor(minutes / 60);
-  const minute = minutes % 60;
-  const naive = Date.UTC(parts.year, parts.month - 1, parts.day, hour, minute, 0);
+function fromZoned(parts: ZonedParts, zone: string): Date {
+  const naive = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
   let instant = naive - zoneOffset(new Date(naive), zone);
   // A DST boundary can make the first guess land in the other offset; one more
   // pass settles it the way Go's time.Date normalises an ambiguous wall time.
@@ -540,7 +538,6 @@ function addDaysToInstant(at: Date, zone: string): Date {
       minute: parts.minute,
       second: parts.second,
     },
-    0,
     zone,
   );
 }

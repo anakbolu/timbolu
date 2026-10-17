@@ -192,14 +192,29 @@ export async function SmokeWorkflow(input: SmokeInput): Promise<SmokeResult> {
   return result;
 }
 
-/** Joins the two failures the way Go's `errors.Join` does, keeping both messages. */
+/**
+ * Joins the two failures the way Go's `errors.Join` does, keeping both messages.
+ *
+ * The result is one plain `Error` rather than an `AggregateError`: the SDK
+ * converts an error thrown by a workflow into a failure, and a message that
+ * carries both answers is what an operator reads — the step that failed first,
+ * and the sandbox that was left behind.
+ */
 function joinedFailure(botId: string, failure: unknown, stopFailure: unknown): Error {
-  const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+  const messageOf = (err: unknown): string => {
+    // The SDK's `ActivityFailure` keeps the activity's own sentence in `cause`,
+    // which is the part an operator needs.
+    let current: unknown = err;
+    for (let guard = 0; guard < 16 && current instanceof Error && current.cause instanceof Error; guard++) {
+      current = current.cause;
+    }
+    return current instanceof Error ? current.message : String(current);
+  };
 
   if (stopFailure !== null) {
-    const stop = new Error(`stop the session for ${botId}: ${messageOf(stopFailure)}`);
-    if (failure === null) return stop;
-    return new AggregateError([failure, stop], `${messageOf(failure)}\n${stop.message}`);
+    const stop = `stop the session for ${botId}: ${messageOf(stopFailure)}`;
+    if (failure === null) return new Error(stop);
+    return new Error(`${messageOf(failure)}\n${stop}`, { cause: failure });
   }
 
   return failure instanceof Error ? failure : new Error(messageOf(failure));

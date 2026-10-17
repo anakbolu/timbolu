@@ -11,6 +11,7 @@
  */
 
 import {
+  EntitlementGrace,
   EntitlementReadOnly,
   ErrQuotaExceeded,
   ErrReadOnly,
@@ -386,7 +387,7 @@ async function reportTransitions(
   const state = entitlement(subscription, now, s.grace);
   let changed = false;
 
-  if (state === "grace") {
+  if (state === EntitlementGrace) {
     if (subscription.pastDueSince === null) {
       subscription.pastDueSince = subscription.currentPeriodEnd;
       subscription.status = StatusPastDue;
@@ -461,7 +462,7 @@ async function ensureUpcomingInvoice(
     // No invoice stands for the period, so one is issued below.
   }
 
-  if (next.isTrial || next.monthlyPriceIdr <= 0) {
+  if (next.isTrial || next.monthlyPriceIDR <= 0) {
     // Nothing to sell yet. The subscription still moves past due — the period
     // did end — and the notice above says what to do about it.
     return null;
@@ -478,7 +479,7 @@ async function ensureUpcomingInvoice(
     kind: KindSubscription,
     provider: s.gatewayName(),
     providerReference: "",
-    amountIdr: next.monthlyPriceIdr,
+    amountIDR: next.monthlyPriceIDR,
     tokenAmount: 0,
     status: StatusPending,
     periodStart: start,
@@ -495,7 +496,7 @@ async function ensureUpcomingInvoice(
   await s.notify(scope, {
     kind: NoticePastDue,
     planName: next.name,
-    reason: `Tagihan ${next.name} untuk periode berikutnya sudah terbit: ${formatIdr(next.monthlyPriceIdr)}.`,
+    reason: `Tagihan ${next.name} untuk periode berikutnya sudah terbit: ${formatIdr(next.monthlyPriceIDR)}.`,
     threshold: 0,
     used: 0,
     allowance: 0,

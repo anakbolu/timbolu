@@ -944,6 +944,20 @@ function draftAnswer(draft: DraftOutcome | null, sent: DraftCarryOutcome): strin
   return "";
 }
 
+/**
+ * The message an operator reads.
+ *
+ * The SDK's `ActivityFailure` says only "Activity task failed" and keeps the
+ * activity's own sentence in `cause`; Go's error carried that sentence in its
+ * text, and the user-facing stop reasons are built from it. The chain is walked
+ * to the deepest error for that reason.
+ */
 function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  let current: unknown = err;
+  for (let guard = 0; guard < 16; guard++) {
+    if (!(current instanceof Error)) return String(current);
+    if (!(current.cause instanceof Error)) return current.message;
+    current = current.cause;
+  }
+  return current instanceof Error ? current.message : String(current);
 }
