@@ -1,0 +1,32 @@
+# The build context is the repository root, so everything not needed by a build
+# is excluded here. Without this the context carries 321 MB of local
+# node_modules plus every .git object, on every deploy.
+**/node_modules
+**/.next
+**/dist
+**/build
+**/.turbo
+**/coverage
+
+.git
+.github
+**/.env
+**/.env.*
+
+# Local runtime state, not source. Scoped to the repository root on purpose: a
+# bare `**/storage` also matches `apps/backend-js/src/platform/storage/`, which
+# the image needs — that omission produced
+# "Cannot find module '../platform/storage/storage.ts'" at container start.
+**/*.log
+/data
+/storage
+
+# Design and documentation assets are not part of any image.
+design
+docs
+**/*.md
+!apps/backend-js/src/**/*.md
+
+# The other apps build from their own Dockerfiles with their own paths.
+apps/whatsapp-gw
+apps/virtual-computer

@@ -1,0 +1,53 @@
+# Staging overrides.
+#
+# Only what differs from `config.yaml` is here: the base supplies every default and this file wins
+# where it names a key. Secrets are never in this file — they arrive from the environment, which is
+# what keeps a checkout usable and a leaked YAML harmless.
+#
+# Staging exists to be *tested against*. It runs the real product with the real integrations and the
+# test accounts described in `docs/e2e-mvp.md`, so the values below are the production values with
+# two differences: everything is louder, and the approval gate is left at its conservative default.
+
+Application:
+  Environment: "staging"
+
+# A staging deployment answers on one port and is reached by whoever is testing, so the browser
+# origin is named explicitly rather than reflected. Replace with the staging frontend's own host.
+Http:
+  ApiPrefix: "/api"
+
+# Staging runs beside production, so its database and Redis are their own instances. Both endpoints
+# come from the environment; this comment is the reminder that they must not be production's.
+Database:
+  MaxOpenConns: 20
+  MaxIdleConns: 5
+
+Logging:
+  # The whole point of a staging environment is that a person reads what it did.
+  Level: "debug"
+  Format: "console"
+
+# Traces and metrics to a local collector when one is running, nothing otherwise. A deployment that
+# has not said where telemetry goes should not be sending it: see `docs/deployment.md`.
+Telemetry:
+  Exporter: "none"
+  MetricsExporter: "none"
+  SampleRatio: 1.0
+
+# The retention job runs here so its behaviour is exercised before production, but with the smaller
+# batch a small staging database needs.
+Retention:
+  Interval: "24h"
+  Batch: 200
+  SweepLimit: 50
+
+# Quota enforcement is off in staging: a test run must not be refused by an allowance, and the
+# numbers it produces are compared against `usage_ledger` rather than against a ceiling.
+Llm:
+  QuotaEnabled: false
+
+# Billing runs with no payment provider, which is the mode the first customers are served in: an
+# invoice is written and the screen says to transfer and confirm.
+Billing:
+  SyncInterval: "1h"
+  SweepInterval: "1h"
