@@ -6,13 +6,24 @@
 # tree has no per-binary compile step, which is the whole reason the Go
 # Dockerfile needed three builds and this one does not.
 #
+# **Debian slim, not Alpine.** `@temporalio/worker` loads a native core-bridge
+# (`releases/x86_64-unknown-linux-gnu/index.node`) that is linked against glibc.
+# On Alpine's musl the worker dies at import with
+#
+#   ERR_DLOPEN_FAILED ... linked against glibc (DT_NEEDED libdl.so.2),
+#   but this Bun build uses musl
+#
+# The API never loads that module, so an Alpine API image works and an Alpine
+# worker image cannot start — which is exactly how this was found: the api
+# container came up healthy and both workers never appeared.
+#
 # **The build context is the repository root**, not this directory: that is what
 # the deploy platform passes (and what the Go Dockerfile assumes too), so every
 # COPY is prefixed with `apps/backend-js/`. Build it locally with:
 #
 #   docker build -f apps/backend-js/Dockerfile -t bolu-js:api .
 
-FROM oven/bun:1.4-alpine AS deps
+FROM oven/bun:1.4-slim AS deps
 
 WORKDIR /app
 
@@ -22,7 +33,7 @@ COPY apps/backend-js/package.json apps/backend-js/bun.lock ./
 # tsc, because Bun runs the TypeScript directly.
 RUN bun install --frozen-lockfile --production
 
-FROM oven/bun:1.4-alpine
+FROM oven/bun:1.4-slim
 
 ARG APP=api
 
@@ -30,12 +41,14 @@ WORKDIR /app
 
 # ca-certificates for the provider and OAuth calls; tzdata because the product
 # reasons about Asia/Jakarta work hours.
-RUN apk add --no-cache ca-certificates tzdata && \
-    addgroup -S bolu && adduser -S -G bolu bolu && \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates tzdata && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd --system bolu && useradd --system --gid bolu --create-home bolu && \
     # The local storage driver writes here. Created and owned by the runtime
     # user so a mounted volume inherits the ownership instead of arriving
     # root-owned and unwritable.
-    install -d -o bolu -g bolu /data/storage
+    mkdir -p /data/storage && chown -R bolu:bolu /data
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY apps/backend-js/package.json apps/backend-js/tsconfig.json apps/backend-js/bun.lock ./
