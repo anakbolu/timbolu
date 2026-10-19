@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { loadDotEnv } from "../platform/config/dotenv.ts";
 import { defaultServiceName } from "../platform/config/config.ts";
 import { newContainer } from "../container/container.ts";
+import { startOpsServer } from "../container/ops-server.ts";
 import { newWorker } from "../worker/worker.ts";
 
 const WORKFLOWS_PATH = fileURLToPath(new URL("../worker/workflows.ts", import.meta.url));
@@ -27,10 +28,16 @@ async function run(): Promise<void> {
   const taskQueue = config.temporal.taskQueueIntegration || "integration";
   const worker = await newWorker({ config, log, db: container.db, container }, taskQueue, WORKFLOWS_PATH);
 
+  // This process has no HTTP API, so the operations listener is the only surface
+  // it serves: /health and /ready. It is off unless the deployment named an
+  // address for it, which is what an orchestrator probes.
+  const ops = startOpsServer(config.http.opsAddress, container.health, log);
+
   log.info({ taskQueue, temporal: config.temporal.hostPort }, "integration worker running");
 
   const shutdown = async (signal: string): Promise<void> => {
     log.info({ signal }, "shutting down integration worker");
+    ops?.stop();
     await worker.shutdown();
     await container.close();
     process.exit(0);

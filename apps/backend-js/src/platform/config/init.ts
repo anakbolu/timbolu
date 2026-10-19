@@ -658,6 +658,12 @@ export function loadFromEnv(cfg: Config, warnings: string[] = []): void {
     ["REDIS_URL", (v) => (cfg.redis.url = v)],
     ["TEMPORAL_HOST_PORT", (v) => (cfg.temporal.hostPort = v)],
     ["TEMPORAL_NAMESPACE", (v) => (cfg.temporal.namespace = v)],
+    // The YAML default is TLS on, because the hosted deployment targets Temporal
+    // Cloud. A compose-network server speaks plaintext, so this override is the
+    // only thing that makes the local and staging workers able to connect at all
+    // — without it they attempt a TLS handshake against a plaintext port and the
+    // worker dies on startup.
+    ["TEMPORAL_TLS", (v) => (cfg.temporal.tls = parseBool(v))],
     ["TEMPORAL_TASK_QUEUE_AGENT", (v) => (cfg.temporal.taskQueueAgent = v)],
     ["TEMPORAL_TASK_QUEUE_INTEGRATION", (v) => (cfg.temporal.taskQueueIntegration = v)],
     ["TEMPORAL_API_KEY", (v) => (cfg.temporal.apiKey = v)],
