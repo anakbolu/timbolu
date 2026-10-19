@@ -14,6 +14,7 @@
  */
 
 import { Hono } from "hono";
+import type { MiddlewareHandler } from "hono";
 import type { AppEnv } from "../platform/context.ts";
 import { error as errorEnvelope } from "../platform/response.ts";
 import type { Container } from "./container.ts";
@@ -63,6 +64,36 @@ function guards(c: Container): GuardDeps {
   };
 }
 
+
+/**
+ * Builds a route group whose middleware is attached to the paths it registers,
+ * not to the whole prefix.
+ *
+ * `group.use("*", mw)` on a sub-app mounted at "/" runs for every request that
+ * reaches the sub-app — including one that matches no route at all — so a typo'd
+ * URL answered 401 "access token is required" instead of 404, which a client reads
+ * as an expired session. Fiber's empty-path groups do not behave that way, so this
+ * reproduces the original contract.
+ *
+ * The routes are registered twice: once on a throwaway app to learn their paths,
+ * then on the real one with a guard per path. Registration is pure, so doing it
+ * twice is safe.
+ */
+function withGuards(
+  register: (g: Hono<AppEnv>) => void,
+  ...middleware: MiddlewareHandler<AppEnv>[]
+): Hono<AppEnv> {
+  const probe = new Hono<AppEnv>();
+  register(probe);
+
+  const group = new Hono<AppEnv>();
+  for (const path of new Set(probe.routes.map((r) => r.path))) {
+    group.use(path, ...middleware);
+  }
+  register(group);
+  return group;
+}
+
 /** Mounts every module router. */
 export function registerRoutes(app: Hono<AppEnv>, c: Container): void {
   const api = new Hono<AppEnv>();
@@ -91,9 +122,13 @@ export function registerRoutes(app: Hono<AppEnv>, c: Container): void {
   if (c.billing) billingWebhook(api, c.billing);
 
   // --- authenticated, no active workspace -----------------------------------
-  const user = new Hono<AppEnv>();
-  user.use("*", requireUser(deps));
-  if (c.auth) authProtected(user, c.auth);
+  const user = withGuards((g) => {
+    if (c.auth) authProtected(g, c.auth);
+    // The reads that describe the deployment rather than a workspace.
+    if (c.agent) agentCatalog(g, c.agent);
+    if (c.workspace) workspaceUser(g, c.workspace);
+    else g.all("/workspaces*", unavailable("workspaces are not configured", "workspace_not_configured"));
+  }, requireUser(deps));
 
   // The operator surface: an authenticated account and nothing else. It is
   // registered before the tenant groups because those are empty-path groups, and
@@ -103,15 +138,6 @@ export function registerRoutes(app: Hono<AppEnv>, c: Container): void {
     adminRoutes(api, c.admin);
   } else {
     api.all("/admin*", unavailable("the operator surface is not configured", "admin_not_configured"));
-  }
-
-  // The reads that describe the deployment rather than a workspace.
-  if (c.agent) agentCatalog(user, c.agent);
-
-  if (c.workspace) {
-    workspaceUser(user, c.workspace);
-  } else {
-    user.all("/workspaces*", unavailable("workspaces are not configured", "workspace_not_configured"));
   }
 
   // Verified accounts only: onboarding and accepting an invitation create or join
@@ -127,26 +153,6 @@ export function registerRoutes(app: Hono<AppEnv>, c: Container): void {
   if (c.workspace) workspaceVerified(api, c.workspace);
 
   // --- active workspace required --------------------------------------------
-  const tenant = new Hono<AppEnv>();
-  tenant.use("*", requireUser(deps), requireTenant(deps));
-
-  if (c.workspace) workspaceTenant(tenant, c.workspace);
-  if (c.agent) agentRoutes(tenant, c.agent);
-  if (c.llm) llmRoutes(tenant, c.llm);
-  if (c.chat) chatRoutes(tenant, c.chat);
-  if (c.task) taskRoutes(tenant, c.task);
-  if (c.memory) memoryRoutes(tenant, c.memory);
-  if (c.routine) routineRoutes(tenant, c.routine);
-  if (c.whatsapp) whatsappRoutes(tenant, c.whatsapp);
-  if (c.billing) billingRoutes(tenant, c.billing);
-  if (c.approval) approvalRoutes(tenant, c.approval);
-  if (c.integration) integrationRoutes(tenant, c.integration);
-  if (c.order) orderRoutes(tenant, c.order);
-  if (c.checklist) checklistRoutes(tenant, c.checklist);
-
-  // Modules not yet wired answer 503 on their documented paths rather than 404,
-  // so a screen that asks for one says "not configured" instead of looking like a
-  // typo. Kept in the same order as the Go container's registerUnavailableModules.
   const pending: Array<[string, string, string]> = [];
   if (!c.chat) pending.push(["/conversations*", "chat is not configured", "chat_not_configured"], ["/events*", "chat is not configured", "chat_not_configured"]);
   if (!c.task) pending.push(["/tasks*", "tasks are not configured", "task_not_configured"]);
@@ -158,22 +164,40 @@ export function registerRoutes(app: Hono<AppEnv>, c: Container): void {
   if (!c.integration) pending.push(["/integrations*", "integrations are not configured", "integration_not_configured"]);
   if (!c.order) pending.push(["/orders*", "orders are not configured", "order_not_configured"]);
   if (!c.checklist) pending.push(["/checklists*", "checklists are not configured", "checklist_not_configured"]);
-  for (const [path, message, code] of pending) tenant.all(path, unavailable(message, code));
+
+  const tenant = withGuards((g) => {
+    if (c.workspace) workspaceTenant(g, c.workspace);
+    if (c.agent) agentRoutes(g, c.agent);
+    if (c.llm) llmRoutes(g, c.llm);
+    if (c.chat) chatRoutes(g, c.chat);
+    if (c.task) taskRoutes(g, c.task);
+    if (c.memory) memoryRoutes(g, c.memory);
+    if (c.routine) routineRoutes(g, c.routine);
+    if (c.whatsapp) whatsappRoutes(g, c.whatsapp);
+    if (c.billing) billingRoutes(g, c.billing);
+    if (c.approval) approvalRoutes(g, c.approval);
+    if (c.integration) integrationRoutes(g, c.integration);
+    if (c.order) orderRoutes(g, c.order);
+    if (c.checklist) checklistRoutes(g, c.checklist);
+    // Modules not wired answer 503 on their documented paths rather than 404, so a
+    // screen that asks for one says "not configured" instead of looking like a typo.
+    for (const [path, message, code] of pending) g.all(path, unavailable(message, code));
+  }, requireUser(deps), requireTenant(deps));
 
   // --- role groups, registered last -----------------------------------------
-  const managers = new Hono<AppEnv>();
-  managers.use("*", requireUser(deps), requireTenant(deps), requireRole("owner", "admin"));
-  if (c.workspace) workspaceManager(managers, c.workspace);
-  if (c.agent) agentManager(managers, c.agent);
-  if (c.llm) llmManager(managers, c.llm);
-  if (c.chat) chatManager(managers, c.chat);
-  if (c.order) orderManager(managers, c.order);
-  if (c.approval) approvalManager(managers, c.approval);
+  const managers = withGuards((g) => {
+    if (c.workspace) workspaceManager(g, c.workspace);
+    if (c.agent) agentManager(g, c.agent);
+    if (c.llm) llmManager(g, c.llm);
+    if (c.chat) chatManager(g, c.chat);
+    if (c.order) orderManager(g, c.order);
+    if (c.approval) approvalManager(g, c.approval);
+  }, requireUser(deps), requireTenant(deps), requireRole("owner", "admin"));
 
-  const owners = new Hono<AppEnv>();
-  owners.use("*", requireUser(deps), requireTenant(deps), requireRole("owner"));
-  if (c.workspace) workspaceOwner(owners, c.workspace);
-  if (c.retention) retentionOwner(owners, c.retention);
+  const owners = withGuards((g) => {
+    if (c.workspace) workspaceOwner(g, c.workspace);
+    if (c.retention) retentionOwner(g, c.retention);
+  }, requireUser(deps), requireTenant(deps), requireRole("owner"));
 
   // The live stream carries its own authentication because a browser cannot set
   // a header on a WebSocket or an EventSource: the token and the workspace travel
