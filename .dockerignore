@@ -13,10 +13,13 @@
 **/.env
 **/.env.*
 
-# Local runtime state, not source.
+# Local runtime state, not source. Scoped to the repository root on purpose: a
+# bare `**/storage` also matches `apps/backend-js/src/platform/storage/`, which
+# the image needs — that omission produced
+# "Cannot find module '../platform/storage/storage.ts'" at container start.
 **/*.log
-**/data
-**/storage
+/data
+/storage
 
 # Design and documentation assets are not part of any image.
 design
