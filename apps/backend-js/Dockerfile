@@ -6,14 +6,18 @@
 # tree has no per-binary compile step, which is the whole reason the Go
 # Dockerfile needed three builds and this one does not.
 #
-# The build context is `apps/backend-js`.
+# **The build context is the repository root**, not this directory: that is what
+# the deploy platform passes (and what the Go Dockerfile assumes too), so every
+# COPY is prefixed with `apps/backend-js/`. Build it locally with:
+#
+#   docker build -f apps/backend-js/Dockerfile -t bolu-js:api .
 
 FROM oven/bun:1.4-alpine AS deps
 
 WORKDIR /app
 
 # Dependency layer: only re-downloaded when the manifests change.
-COPY package.json bun.lock ./
+COPY apps/backend-js/package.json apps/backend-js/bun.lock ./
 # --production leaves the dev types out of the image; the runtime never needs
 # tsc, because Bun runs the TypeScript directly.
 RUN bun install --frozen-lockfile --production
@@ -34,8 +38,8 @@ RUN apk add --no-cache ca-certificates tzdata && \
     install -d -o bolu -g bolu /data/storage
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY package.json tsconfig.json bun.lock ./
-COPY src ./src
+COPY apps/backend-js/package.json apps/backend-js/tsconfig.json apps/backend-js/bun.lock ./
+COPY apps/backend-js/src ./src
 
 # The YAML defaults ship with the image; every secret and endpoint is supplied
 # through the environment. The loader reads them from src/platform/config.
