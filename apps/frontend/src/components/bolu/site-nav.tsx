@@ -14,6 +14,9 @@ const LINKS = [
   // typing its URL, which is a page nobody reads.
   { href: "/pricing", label: "Harga" },
   { href: "/#tanya", label: "Tanya jawab" },
+  { href: "/privacy", label: "Privasi" },
+  { href: "/terms", label: "Syarat" },
+  { href: "/contact", label: "Kontak" },
 ];
 
 export function SiteNav() {
