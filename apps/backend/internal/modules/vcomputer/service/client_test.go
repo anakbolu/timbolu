@@ -10,6 +10,7 @@ import (
 	"image/png"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +20,14 @@ import (
 // fakeToken is the shared secret the fake accepts, standing in for the value of
 // VCOMPUTER_CONTROL_TOKEN on the control plane's side.
 const fakeToken = "test-token"
+
+// The two URLs the fake's navigate route treats as failures: the first is the fixture's
+// missing path, which the real control plane answers 502 for because the browser got a
+// 404, and the second stands for any other runtime failure under the same status.
+const (
+	missingPagePath   = "/tidak-ada-404"
+	brokenRuntimePath = "/runtime-error"
+)
 
 // fakeControl is the control plane as this client sees it: a few routes that record
 // what arrived and answer what the real one answers. It is a fake of the *contract*,
@@ -79,6 +88,23 @@ func newFakeControl(t *testing.T) *fakeControl {
 		target, _ := body["url"].(string)
 		if target == "" {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a url is required"})
+			return
+		}
+		// The two 502s the control plane produces, as it produces them: a navigation
+		// that did not load answers with its own sentence and both URLs, and a runtime
+		// that failed answers with the generic one. They are different failures under
+		// the same status, and the client has to tell them apart.
+		if strings.HasSuffix(target, missingPagePath) {
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error":       "navigation failed",
+				"url":         target,
+				"final_url":   target,
+				"http_status": http.StatusNotFound,
+			})
+			return
+		}
+		if strings.HasSuffix(target, brokenRuntimePath) {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "the sandbox runtime failed"})
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"url": target})
@@ -350,6 +376,49 @@ func TestStatusCodesBecomeSentinels(t *testing.T) {
 	// needs the sentence to show a person.
 	if !bytes.Contains([]byte(err.Error()), []byte("unauthorized")) {
 		t.Fatalf("err = %v, want the control plane's message", err)
+	}
+}
+
+// TestFailedNavigationIsNotRetryable is the difference the 502's own sentence buys. A
+// navigation the control plane carried out and that did not load is a state, not a
+// hiccup: the fixture's missing path answers 404 to the browser every time, so a caller
+// that retried would spend its budget reaching the same page and leave the browser on
+// it. ErrNavigationFailed is what says "this URL did not work" rather than "not now".
+func TestFailedNavigationIsNotRetryable(t *testing.T) {
+	fake := newFakeControl(t)
+	client := New(fake.URL, fakeToken, time.Second)
+
+	target := "http://vcomputer-fixture:8080" + missingPagePath
+	err := client.Navigate(context.Background(), "bot-a", target)
+	if !errors.Is(err, domain.ErrNavigationFailed) {
+		t.Fatalf("err = %v, want ErrNavigationFailed", err)
+	}
+	if errors.Is(err, domain.ErrUnavailable) {
+		t.Fatalf("err = %v, want it not to be ErrUnavailable: retrying a missing page is the bug", err)
+	}
+	// The control plane's sentence travels with it, status and all: a task summary that
+	// only said "navigation failed" would hide the 404 that explains it.
+	for _, want := range []string{"navigation failed", "404"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("err = %v, want it to carry %q", err, want)
+		}
+	}
+}
+
+// TestOtherBadGatewayAnswersStayRetryable is the other half of that mapping: a 502 the
+// control plane produced for its own reasons — a runtime that failed to do something —
+// may well pass, and flattening it into the same sentinel as a missing page would turn
+// a transient failure into a permanent one.
+func TestOtherBadGatewayAnswersStayRetryable(t *testing.T) {
+	fake := newFakeControl(t)
+	client := New(fake.URL, fakeToken, time.Second)
+
+	err := client.Navigate(context.Background(), "bot-a", "http://vcomputer-fixture:8080"+brokenRuntimePath)
+	if !errors.Is(err, domain.ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable", err)
+	}
+	if errors.Is(err, domain.ErrNavigationFailed) {
+		t.Fatalf("err = %v, want it not to be ErrNavigationFailed", err)
 	}
 }
 

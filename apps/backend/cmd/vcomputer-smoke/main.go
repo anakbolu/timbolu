@@ -12,7 +12,13 @@
 // all yet (docs/adr/0003-virtual-computer.md).
 //
 //	VCOMPUTER_CONTROL_URL=http://localhost:8090 VCOMPUTER_CONTROL_TOKEN=... \
-//	  go run ./cmd/vcomputer-smoke -bot bot-1 -url https://example.com
+//	  go run ./cmd/vcomputer-smoke -bot bot-1 -url http://vcomputer-fixture:8080/ -keep-session -out /tmp/smoke
+//
+// The example URL is the stack's own fixture, and that is not an arbitrary choice: a
+// sandbox has no egress (docs/adr/0003-virtual-computer.md §3.6), so any address outside
+// its network — the `https://example.com` this line used to name — is a navigation that
+// cannot load, which since #246 is a 502 the run stops on rather than a page it reports
+// as loaded.
 //
 // The run exits non-zero on the first failure and prints what the workflow observed as JSON,
 // so it can be read by a person and diffed by a script. It leaves no sandbox behind: the
