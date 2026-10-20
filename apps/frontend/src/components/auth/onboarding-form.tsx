@@ -213,12 +213,12 @@ export function OnboardingForm() {
               {boluName.trim() || "Bolu baru"}
             </p>
             <p className="text-center text-[13px] text-bolu-muted">
-              Wujud ini yang muncul di sidebar dan di obrolan.
+              Bentuk ini yang muncul di sidebar dan di obrolan.
             </p>
           </div>
 
           <fieldset className="mb-5">
-            <legend className="mb-1.5 block text-sm font-medium text-bolu-body">Wujudnya</legend>
+            <legend className="mb-1.5 block text-sm font-medium text-bolu-body">Bentuknya</legend>
             <div className="flex flex-wrap gap-2">
               {BOLU_SHAPE_NAMES.map((candidate) => (
                 <button

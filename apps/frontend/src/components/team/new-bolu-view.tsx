@@ -98,119 +98,16 @@ export function NewBoluView() {
           Tambah Bolu
         </h1>
         <div className="text-bolu-muted">
-          Pilih wujudnya, beri nama, dan sebutkan tugasnya. Persona, gaya bahasa, dan alat bisa
+          Pilih bentuknya, beri nama, dan sebutkan tugasnya. Persona, gaya bahasa, dan alat bisa
           diatur kemudian di halaman Tim.
         </div>
       </div>
 
       {error ? <Alert tone="error">{error}</Alert> : null}
 
-      <div className="grid gap-[18px] lg:grid-cols-[1fr_320px]">
-        <section className={`${CARD} p-[22px]`}>
-          <form onSubmit={submit} className="flex flex-col gap-5">
-            <fieldset>
-              <legend className={LABEL}>Ikon Bolu</legend>
-              <div className="mt-1.5 flex flex-wrap gap-2">
-                {BOLU_SHAPE_NAMES.map((candidate) => (
-                  <button
-                    key={candidate}
-                    type="button"
-                    aria-pressed={candidate === shape}
-                    aria-label={BOLU_SHAPES[candidate].label}
-                    title={BOLU_SHAPES[candidate].label}
-                    onClick={() => setShape(candidate)}
-                    className={`flex size-[54px] cursor-pointer items-center justify-center rounded-md border-2 ${
-                      candidate === shape
-                        ? "border-bolu-ink bg-bolu-panel"
-                        : "border-bolu-line bg-bolu-surface hover:border-bolu-track"
-                    }`}
-                  >
-                    <Bolu shape={candidate} color={color} size={40} still />
-                  </button>
-                ))}
-              </div>
-
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                {BOLU_SWATCHES.map((swatch) => (
-                  <button
-                    key={swatch}
-                    type="button"
-                    aria-pressed={swatch === color}
-                    aria-label={`Warna ${swatch}`}
-                    title={swatch}
-                    onClick={() => setColor(swatch)}
-                    style={{ backgroundColor: swatch }}
-                    className={`size-8 cursor-pointer rounded-full border-2 ${
-                      swatch === color ? "border-bolu-ink" : "border-bolu-line"
-                    }`}
-                  />
-                ))}
-                <label className="flex min-h-8 cursor-pointer items-center gap-2 rounded-md border border-bolu-border px-2.5 text-[14px] font-normal">
-                  <input
-                    type="color"
-                    value={color}
-                    onChange={(event) => setColor(event.target.value)}
-                    aria-label="Warna lain"
-                    className="size-5 cursor-pointer border-0 bg-transparent p-0"
-                  />
-                  Warna lain
-                </label>
-              </div>
-            </fieldset>
-
-            <label className={LABEL}>
-              Nama Bolu
-              <input
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                required
-                maxLength={80}
-                placeholder="mis. Oren"
-                className={FIELD}
-              />
-            </label>
-
-            <label className={LABEL}>
-              Tugas Bolu
-              <input
-                value={role}
-                onChange={(event) => setRole(event.target.value)}
-                placeholder="mis. Menjawab WhatsApp dan mencatat pesanan"
-                className={FIELD}
-              />
-            </label>
-
-            {teams.length > 1 ? (
-              <label className={LABEL}>
-                Tim
-                <select
-                  value={team}
-                  onChange={(event) => setTeamID(event.target.value)}
-                  className={FIELD}
-                >
-                  {teams.map((candidate) => (
-                    <option key={candidate.id} value={candidate.id}>
-                      {candidate.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-
-            <div>
-              <button
-                type="submit"
-                disabled={!canSubmit}
-                className="min-h-11 cursor-pointer rounded-full bg-bolu-solid px-6 font-bold text-bolu-solid-ink disabled:opacity-50"
-              >
-                {busy ? "Membuat…" : "Buat Bolu"}
-              </button>
-            </div>
-          </form>
-        </section>
-
-        <aside className={`${CARD} flex flex-col items-center gap-3 p-[22px]`}>
-          <h2 className={HEADING}>Wujudnya</h2>
+      <section className={`${CARD} max-w-[760px] p-[22px]`}>
+        <div className="flex flex-col items-center gap-3 border-b border-bolu-line pb-[22px]">
+          <h2 className={HEADING}>Bentuknya</h2>
           <Bolu shape={shape} color={color} size={132} />
           <p className="text-center font-display text-[20px] font-semibold">
             {name.trim() || "Bolu baru"}
@@ -219,10 +116,111 @@ export function NewBoluView() {
             {role.trim() || "Tugasnya belum ditulis."}
           </p>
           <p className="text-center text-[13px] text-bolu-muted">
-            Wujud ini yang muncul di sidebar dan di obrolan.
+            Bentuk ini yang muncul di sidebar dan di obrolan.
           </p>
-        </aside>
-      </div>
+        </div>
+
+        <form onSubmit={submit} className="mt-[22px] flex flex-col gap-5">
+          <fieldset>
+            <legend className={LABEL}>Ikon Bolu</legend>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              {BOLU_SHAPE_NAMES.map((candidate) => (
+                <button
+                  key={candidate}
+                  type="button"
+                  aria-pressed={candidate === shape}
+                  aria-label={BOLU_SHAPES[candidate].label}
+                  title={BOLU_SHAPES[candidate].label}
+                  onClick={() => setShape(candidate)}
+                  className={`flex size-[54px] cursor-pointer items-center justify-center rounded-md border-2 ${
+                    candidate === shape
+                      ? "border-bolu-ink bg-bolu-panel"
+                      : "border-bolu-line bg-bolu-surface hover:border-bolu-track"
+                  }`}
+                >
+                  <Bolu shape={candidate} color={color} size={40} still />
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {BOLU_SWATCHES.map((swatch) => (
+                <button
+                  key={swatch}
+                  type="button"
+                  aria-pressed={swatch === color}
+                  aria-label={`Warna ${swatch}`}
+                  title={swatch}
+                  onClick={() => setColor(swatch)}
+                  style={{ backgroundColor: swatch }}
+                  className={`size-8 cursor-pointer rounded-full border-2 ${
+                    swatch === color ? "border-bolu-ink" : "border-bolu-line"
+                  }`}
+                />
+              ))}
+              <label className="flex min-h-8 cursor-pointer items-center gap-2 rounded-md border border-bolu-border px-2.5 text-[14px] font-normal">
+                <input
+                  type="color"
+                  value={color}
+                  onChange={(event) => setColor(event.target.value)}
+                  aria-label="Warna lain"
+                  className="size-5 cursor-pointer border-0 bg-transparent p-0"
+                />
+                Warna lain
+              </label>
+            </div>
+          </fieldset>
+
+          <label className={LABEL}>
+            Nama Bolu
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              required
+              maxLength={80}
+              placeholder="mis. Oren"
+              className={FIELD}
+            />
+          </label>
+
+          <label className={LABEL}>
+            Tugas Bolu
+            <input
+              value={role}
+              onChange={(event) => setRole(event.target.value)}
+              placeholder="mis. Menjawab WhatsApp dan mencatat pesanan"
+              className={FIELD}
+            />
+          </label>
+
+          {teams.length > 1 ? (
+            <label className={LABEL}>
+              Tim
+              <select
+                value={team}
+                onChange={(event) => setTeamID(event.target.value)}
+                className={FIELD}
+              >
+                {teams.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
+          <div>
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className="min-h-11 cursor-pointer rounded-full bg-bolu-solid px-6 font-bold text-bolu-solid-ink disabled:opacity-50"
+            >
+              {busy ? "Membuat…" : "Buat Bolu"}
+            </button>
+          </div>
+        </form>
+      </section>
     </div>
   );
 }

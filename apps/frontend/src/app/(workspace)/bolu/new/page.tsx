@@ -4,7 +4,7 @@ import { NewBoluView } from "@/components/team/new-bolu-view";
 
 export const metadata: Metadata = {
   title: "Tambah Bolu",
-  description: "Buat Bolu baru: pilih wujudnya, beri nama, dan sebutkan tugasnya.",
+  description: "Buat Bolu baru: pilih bentuknya, beri nama, dan sebutkan tugasnya.",
   robots: { index: false },
 };
 
