@@ -1,9 +1,8 @@
 import Link from "next/link";
-import { BotSvg } from "@/components/bolu/bot-svg";
+import { KeluargaBoluMark } from "@/components/bolu/keluarga-bolu-mark";
 import { StartLink } from "@/components/bolu/start-link";
 import { SiteNavMenu } from "@/components/bolu/site-nav-menu";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
-import { LOGO } from "@/lib/crew";
 
 const LINKS = [
   { href: "/#tim", label: "Timnya" },
@@ -22,9 +21,13 @@ const LINKS = [
 export function SiteNav() {
   return (
     <div className="mx-auto flex w-full max-w-[1248px] flex-wrap items-center justify-between gap-4 px-6 py-5">
-      <Link href="/#atas" className="flex items-center gap-2.5 text-bolu-ink no-underline">
-        <BotSvg bot={LOGO} className="size-10" />
-        <span className="font-display text-[26px] font-bold">bolu</span>
+      <Link href="/#atas" className="flex items-center text-bolu-ink no-underline">
+        <KeluargaBoluMark
+          layout="inline"
+          size={34}
+          wordmark="keluarga bolu"
+          wordmarkClassName="text-[19px] min-[380px]:text-[22px] sm:text-[26px]"
+        />
       </Link>
 
       <nav
