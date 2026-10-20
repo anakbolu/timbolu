@@ -6,7 +6,7 @@
  * Pengaturan and Integrasi name a connected application by its own mark rather
  * than by a paragraph about it: one pill carries the label and the marks of what
  * is connected, and the panel behind it is where the detail lives. The tile table
- * is the artboard's own (`APPS` in design/keluarga-bolu-dashboard.html), so an
+ * is the artboard's own (`APPS` in design/timbolu-dashboard.html), so an
  * application the design did not carry still gets a tile derived from its name
  * instead of a blank square.
  */

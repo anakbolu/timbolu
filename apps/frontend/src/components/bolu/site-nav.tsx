@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { KeluargaBoluMark } from "@/components/bolu/keluarga-bolu-mark";
+import { TimboluMark } from "@/components/bolu/timbolu-mark";
 import { StartLink } from "@/components/bolu/start-link";
 import { SiteNavMenu } from "@/components/bolu/site-nav-menu";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -22,10 +22,10 @@ export function SiteNav() {
   return (
     <div className="mx-auto flex w-full max-w-[1248px] flex-wrap items-center justify-between gap-4 px-6 py-5">
       <Link href="/#atas" className="flex items-center text-bolu-ink no-underline">
-        <KeluargaBoluMark
+        <TimboluMark
           layout="inline"
           size={34}
-          wordmark="keluarga bolu"
+          wordmark="Timbolu"
           wordmarkClassName="text-[19px] min-[380px]:text-[22px] sm:text-[26px]"
         />
       </Link>

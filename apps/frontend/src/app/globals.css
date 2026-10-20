@@ -10,7 +10,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  /* Keluarga Bolu palette. */
+  /* Timbolu palette. */
   --color-bolu-bg: #f5f6fb;
   --color-bolu-ink: #1e1b2e;
   /* `ink` is the text colour, and text has to invert — so the solid fill the
@@ -63,7 +63,7 @@
   /* shadcn/ui tokens. The components under components/ui are written against
      these names — bg-primary, text-muted-foreground, border-border, bg-sidebar —
      so this block is the bridge between the registry's vocabulary and this
-     project's palette. Every value is a Keluarga Bolu colour or a step away from
+     project's palette. Every value is a Timbolu colour or a step away from
      one, which is what makes a registry component look like the rest of the
      product instead of like a default theme dropped into it. */
   --color-background: var(--color-bolu-surface);

@@ -6,7 +6,7 @@ import { DashView } from "@/components/dashboard/dash-view";
 export const metadata: Metadata = {
   title: "Dasbor",
   description:
-    "Dasbor Keluarga Bolu: tim Bolu-mu, obrolan yang berjalan, dan keputusan yang menunggu.",
+    "Dasbor Timbolu: tim Bolu-mu, obrolan yang berjalan, dan keputusan yang menunggu.",
   robots: { index: false },
 };
 

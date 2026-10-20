@@ -11,7 +11,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { KeluargaBoluMark } from "@/components/bolu/keluarga-bolu-mark";
+import { TimboluMark } from "@/components/bolu/timbolu-mark";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 type AuthShellProps = {
@@ -33,7 +33,7 @@ export function AuthShell({ title, subtitle, children, footer, scene }: AuthShel
       </div>
       <div className="mx-auto flex w-full max-w-[460px] flex-col lg:mx-0 lg:flex-none">
         <Link href="/" className="mx-auto mb-8 block w-fit text-bolu-ink no-underline">
-          <KeluargaBoluMark />
+          <TimboluMark />
         </Link>
 
         <div className="rounded-md border border-bolu-border bg-bolu-surface p-7 shadow-[0_1px_2px_rgb(30_27_46_/_0.04)]">

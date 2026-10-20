@@ -220,7 +220,7 @@ the conversations, the drafts and the tasks and keeps them current from the even
 stream. The sidebar's roster is arranged by hand: a Bolu is dragged up, down, or into
 the other team, the layout is sent whole and stored per team (`agents.sort_order`), and
 each team's header folds it away — remembered per browser, because which sections are
-open is about the screen rather than about the team. The Dashboard artboard is `design/keluarga-bolu-dashboard.html`; when a
+open is about the screen rather than about the team. The Dashboard artboard is `design/timbolu-dashboard.html`; when a
 port and the reference disagree, the reference wins. Rutinitas reads and writes the
 routine module's own endpoints: a cadence is registered in the workspace's timezone,
 the next times come from the same translation the engine uses, and the history shows

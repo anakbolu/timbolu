@@ -15,7 +15,7 @@ type BotSvgProps = {
 };
 
 /**
- * The Keluarga Bolu character: body path + feet + face (cheeks, blinking eyes,
+ * The Timbolu character: body path + feet + face (cheeks, blinking eyes,
  * glancing pupils, mouth). Ported 1:1 from the design's `mk()` renderer.
  * Decorative by default — the surrounding copy carries the meaning.
  */

@@ -5,7 +5,7 @@ export const metadata: Metadata = { title: "Syarat dan Ketentuan" };
 
 export default function TermsPage() {
   return (
-    <ContentPage title="Syarat dan Ketentuan" intro="Draf aturan penggunaan Keluarga Bolu. Dengan membuat akun atau menggunakan layanan, kamu menyetujui ketentuan yang berlaku setelah dokumen ini ditinjau dan diterbitkan secara resmi.">
+    <ContentPage title="Syarat dan Ketentuan" intro="Draf aturan penggunaan Timbolu. Dengan membuat akun atau menggunakan layanan, kamu menyetujui ketentuan yang berlaku setelah dokumen ini ditinjau dan diterbitkan secara resmi.">
       <section><h2>1. Layanan</h2><p>Bolu membantu menyiapkan dan mengatur pekerjaan berdasarkan instruksi pengguna. Fitur, integrasi, paket, serta ketersediaan dapat berubah. Keterangan di situs tidak menjamin hasil tertentu atau ketersediaan tanpa gangguan.</p></section>
       <section><h2>2. Akun dan penggunaan yang wajar</h2><p>Kamu wajib memberikan informasi akun yang benar, menjaga keamanan akses akun, dan bertanggung jawab atas aktivitas yang dilakukan melalui akunmu. Jangan menggunakan layanan untuk melanggar hukum, mengganggu sistem, mengirim spam, atau melanggar hak orang lain.</p></section>
       <section><h2>3. Data, token, dan integrasi</h2><p>Kamu tetap bertanggung jawab atas data yang dimasukkan dan izin yang diberikan kepada integrasi. Jangan memberikan token API atau rahasia lebih luas dari yang diperlukan. Hindari memasukkan data sangat sensitif sebelum keamanan, pemrosesan, dan retensinya dijelaskan secara resmi. Pengguna harus memiliki hak untuk memproses dan membagikan data yang diberikan.</p></section>

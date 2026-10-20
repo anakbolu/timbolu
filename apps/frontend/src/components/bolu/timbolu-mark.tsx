@@ -1,5 +1,5 @@
 /**
- * The Keluarga Bolu brand mark: the crew crowded together in front of the
+ * The Timbolu brand mark: the crew crowded together in front of the
  * wordmark. The auth screens stack it above the card; the landing header sets it
  * inline beside the nav. Both draw the same five characters, in the same poses
  * and the same order, so the brand reads the same wherever it appears.
@@ -21,25 +21,25 @@ const CREW: { name: string; expression: BoluExpressionName; scale: number }[] = 
   { name: "Biru", expression: "cinta", scale: 0.625 },
 ];
 
-type KeluargaBoluMarkProps = {
+type TimboluMarkProps = {
   /** Height in px of the tallest character; the others keep their ratio. */
   size?: number;
   /** `stacked` centres the crew above the wordmark; `inline` sets it beside. */
   layout?: "stacked" | "inline";
-  /** The visible wordmark. The landing header writes it lower-case. */
+  /** The visible wordmark. */
   wordmark?: string;
   /** Type scale for the wordmark, e.g. `text-[26px]`. */
   wordmarkClassName?: string;
   className?: string;
 };
 
-export function KeluargaBoluMark({
+export function TimboluMark({
   size = 48,
   layout = "stacked",
-  wordmark = "Keluarga Bolu",
+  wordmark = "Timbolu",
   wordmarkClassName = "text-[26px]",
   className,
-}: KeluargaBoluMarkProps) {
+}: TimboluMarkProps) {
   return (
     <span
       className={`flex ${

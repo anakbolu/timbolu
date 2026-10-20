@@ -61,7 +61,7 @@ const TIERS: Tier[] = [
 export const metadata: Metadata = {
   title: "Harga",
   description:
-    "Harga Keluarga Bolu: mulai gratis dengan 200 ribu token, naikkan paket saat bisnismu siap. Bayar lewat transfer bank atau virtual account Indonesia.",
+    "Harga Timbolu: mulai gratis dengan 200 ribu token, naikkan paket saat bisnismu siap. Bayar lewat transfer bank atau virtual account Indonesia.",
 };
 
 export default function PricingPage() {
