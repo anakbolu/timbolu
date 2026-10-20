@@ -34,6 +34,7 @@ import {
   listMCPServers,
   listMembers,
   listTasks,
+  openDirectConversation,
   sendMessage,
   setAccessToken,
   type ActivityEvent,
@@ -396,28 +397,35 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, message: "Belum ada Bolu yang bisa disuruh. Buat satu dulu di halaman Tim." };
       }
 
-      // The team thread is reused when it exists, so repeated instructions land in
-      // one conversation rather than making a new group each time.
-      const existing = conversations.find(
-        (conversation) =>
-          conversation.kind === "group" &&
-          workers.every((agent) =>
-            conversation.participants.some((participant) => participant.agent_id === agent.id),
-          ),
-      );
+      let conversationID: string;
+      if (workers.length === 1) {
+        const direct = await openDirectConversation(id, workers[0].id);
+        if (!direct.ok) return { ok: false, message: "Tugas belum bisa dikirim. Coba lagi sebentar." };
+        conversationID = direct.data.id;
+      } else {
+        // The team thread is reused when it exists, so repeated instructions land
+        // in one conversation rather than making a new group each time.
+        const existing = conversations.find(
+          (conversation) =>
+            conversation.kind === "group" &&
+            workers.every((agent) =>
+              conversation.participants.some((participant) => participant.agent_id === agent.id),
+            ),
+        );
 
-      let conversationID = existing?.id;
-      if (!conversationID) {
-        const created = await createGroup(id, {
-          title: "Tim Bolu",
-          agent_ids: workers.map((agent) => agent.id),
-        });
-        if (!created.ok) return { ok: false, message: created.message };
-        conversationID = created.data.id;
+        conversationID = existing?.id ?? "";
+        if (!conversationID) {
+          const created = await createGroup(id, {
+            title: "Tim Bolu",
+            agent_ids: workers.map((agent) => agent.id),
+          });
+          if (!created.ok) return { ok: false, message: "Tugas belum bisa dikirim. Coba lagi sebentar." };
+          conversationID = created.data.id;
+        }
       }
 
       const sent = await sendMessage(id, conversationID, { text, reply: true });
-      if (!sent.ok) return { ok: false, message: sent.message };
+      if (!sent.ok) return { ok: false, message: "Tugas belum bisa dikirim. Coba lagi sebentar." };
 
       await loadConversations(id);
       const names = (sent.data.responders ?? []).map((responder) => responder.name);
