@@ -13,12 +13,12 @@ export function Hero() {
           id="hero-title"
           className="font-display text-[clamp(42px,6.4vw,76px)] font-bold leading-[1.02] tracking-[-0.02em]"
         >
-          Kerjaan yang itu-itu lagi? Serahkan ke Timbolu.
+          Delegasikan satu proses kerja. Timbolu yang menuntaskannya.
         </h1>
         <p className="max-w-[620px] text-[20px] text-bolu-muted">
-          Enam asisten kecil yang kerja bareng untukmu: bikin invoice, balas WhatsApp,
-          rekap pesanan, sampai merapikan file. Mereka siapkan semuanya, kamu tinggal
-          cek dan setujui.
+          Timbolu menjalankan pekerjaan berulang dari awal sampai selesai di komputer
+          virtualnya—dari membalas pesanan WhatsApp, mencatatnya, sampai menyiapkan
+          invoice. Kamu meninjau dan menyetujui sebelum apa pun dikirim.
         </p>
         <div className="mt-1 flex flex-wrap gap-3">
           <StartLink className="inline-flex min-h-12 items-center rounded-full bg-bolu-accent px-[26px] py-3.5 text-[18px] font-bold text-bolu-solid-ink no-underline hover:text-bolu-solid-ink">
@@ -28,7 +28,7 @@ export function Hero() {
             href="#cara-kerja"
             className="inline-flex min-h-12 items-center rounded-full border-2 border-bolu-ink px-6 py-3 text-[18px] font-semibold text-bolu-ink no-underline hover:text-bolu-ink"
           >
-            Lihat cara kerjanya
+            Lihat satu alur kerja
           </a>
         </div>
       </div>
