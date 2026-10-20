@@ -1,5 +1,5 @@
 /**
- * Keluarga Bolu crew data — ported 1:1 from design/refs/data.js.
+ * Timbolu crew data — ported 1:1 from design/refs/data.js.
  * Shapes, mouths, feet, colours and copy must stay identical to the design.
  */
 
@@ -369,7 +369,7 @@ const HORE_SEEDS = [
 ] satisfies BotSeed[];
 
 /**
- * The second crew of the design mock (`design/keluarga-bolu-dashboard.html`),
+ * The second crew of the design mock (`design/timbolu-dashboard.html`),
  * where a "Tim lain" section shows these three. Nothing in the product renders
  * them: a workspace has the one team onboarding creates, and its Bolu are the
  * rows the registry holds. They are kept because the landing and dashboard art

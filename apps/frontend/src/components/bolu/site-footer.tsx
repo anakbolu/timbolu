@@ -1,9 +1,9 @@
 import Link from "next/link";
 
 const LINKS = [
-  { href: "/#atas", label: "Privasi" },
-  { href: "/#atas", label: "Syarat" },
-  { href: "/#atas", label: "Kontak" },
+  { href: "/privacy", label: "Privasi" },
+  { href: "/terms", label: "Syarat" },
+  { href: "/contact", label: "Kontak" },
 ];
 
 export function SiteFooter() {

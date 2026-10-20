@@ -9,11 +9,11 @@ markup. When a port and a reference disagree, the reference wins.
 
 | File | What it is | Ported into |
 | --- | --- | --- |
-| `keluarga-bolu-landing.html` | Landing page | `apps/frontend/src/components/bolu/*` |
-| `keluarga-bolu-dashboard.html` | Dashboard: five views (Dasbor, Rutinitas, Kantor Tim Bolu, Integrasi, Pengaturan) plus the chat thread | `apps/frontend/src/components/dashboard/*`, `components/chat/*` |
+| `timbolu-landing.html` | Landing page | `apps/frontend/src/components/bolu/*` |
+| `timbolu-dashboard.html` | Dashboard: five views (Dasbor, Rutinitas, Kantor Tim Bolu, Integrasi, Pengaturan) plus the chat thread | `apps/frontend/src/components/dashboard/*`, `components/chat/*` |
 | `dashboard-README.md` | Notes on the dashboard export | — |
 
-`keluarga-bolu-dashboard.html` is a Design Component: an `<x-dc>` template plus a
+`timbolu-dashboard.html` is a Design Component: an `<x-dc>` template plus a
 small logic class, rendered by `support.js` with React from `vendor/`. Serve the
 folder (`python3 -m http.server`) and open it; some browsers block the scripts over
 `file://`. Its inline `style="…"` attributes and its `<helmet><style>` block are

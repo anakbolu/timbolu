@@ -13,7 +13,7 @@ export function Hero() {
           id="hero-title"
           className="font-display text-[clamp(42px,6.4vw,76px)] font-bold leading-[1.02] tracking-[-0.02em]"
         >
-          Kerjaan yang itu-itu lagi? Serahkan ke keluarga Bolu.
+          Kerjaan yang itu-itu lagi? Serahkan ke Timbolu.
         </h1>
         <p className="max-w-[620px] text-[20px] text-bolu-muted">
           Enam asisten kecil yang kerja bareng untukmu: bikin invoice, balas WhatsApp,

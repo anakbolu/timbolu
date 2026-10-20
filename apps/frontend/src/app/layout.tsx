@@ -17,16 +17,16 @@ const fredoka = Fredoka({
 
 export const metadata: Metadata = {
   title: {
-    default: "Keluarga Bolu — asisten kerja kantor",
-    template: "%s · Keluarga Bolu",
+    default: "Timbolu — asisten kerja kantor",
+    template: "%s · Timbolu",
   },
   description:
     "Enam asisten kecil yang kerja bareng untukmu: bikin invoice, balas WhatsApp, rekap pesanan, sampai merapikan file. Mereka siapkan semuanya, kamu tinggal cek dan setujui.",
   openGraph: {
-    title: "Keluarga Bolu — asisten kerja kantor",
+    title: "Timbolu — asisten kerja kantor",
     description:
       "Enam asisten kecil yang kerja bareng untukmu: bikin invoice, balas WhatsApp, rekap pesanan, sampai merapikan file.",
-    siteName: "Keluarga Bolu",
+    siteName: "Timbolu",
     locale: "id_ID",
     type: "website",
   },

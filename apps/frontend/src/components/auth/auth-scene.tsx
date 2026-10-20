@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The room beside the login and register cards: the Keluarga Bolu crew at work.
+ * The room beside the login and register cards: the Timbolu crew at work.
  *
  * The room, the desks, the sign and the status colours are the "Kantor Tim Bolu"
  * view of `design/Dashboard.dc.html`, scaled to the auth column. Each bot rotates
