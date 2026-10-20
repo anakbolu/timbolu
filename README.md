@@ -1,228 +1,131 @@
-# Bolu (Employee Bot)
+# Bolu
 
-Bots that do human tasks. Setiap bot punya **komputer virtual** dan **sesi persisten** — bukan sekadar chat.
+**AI teammates for everyday business work.** Each Bolu has a role, a persistent workspace, and access to the tools it needs. People stay in control of work that reaches customers: outbound actions can be reviewed and approved before they are sent.
 
-## Product vision
+> Bolu is under active development. The local demo provides a ready-to-use workspace backed by scripted responses; production use requires configuring your own model provider and deployment services.
 
-Bolu adalah platform bot yang mengerjakan pekerjaan manusia. Setiap Bolu adalah satu karakter bulat yang lucu — dua mata dan satu mulut — dengan komputer sendiri.
+## Product preview
 
-**Core**
+The screenshots below show the workspace and operator console. More screens and capture notes are available in the [dashboard gallery](docs/dashboard/README.md) and [admin gallery](docs/admin/README.md).
 
-- Login owner perusahaan + onboarding (tujuan bisnis, siapa mereka).
-- Satu user bisa punya banyak perusahaan (1 user → many companies).
-- Satu perusahaan bisa punya banyak bot (1 company → many bots), dan **setiap bot = satu komputer**.
-- Bot berkolaborasi dalam grup dan berbagi satu workspace.
-- Manusia memegang pintu keluar: semua aksi ke pihak luar lewat persetujuan (default draf).
+| Workspace dashboard | Chat | Integrations |
+| --- | --- | --- |
+| ![Workspace dashboard](docs/dashboard/01-dasbor.png) | ![Workspace chat](docs/dashboard/06-obrolan.png) | ![Integrations panel](docs/dashboard/04-integrasi.png) |
 
-**Bot traits**
+| Usage | Admin overview | Mobile workspace |
+| --- | --- | --- |
+| ![Workspace usage](docs/dashboard/12-pemakaian.png) | ![Admin overview](docs/admin/01-ringkasan.png) | ![Mobile workspace](docs/dashboard/08-mobile.png) |
 
-- Karakter bulat lucu: 2 mata + mulut.
-- Catatan personal dan catatan global.
-- Auto-learn perilaku user.
-- Akses secrets / environment.
-- Komputer, terminal, dan browser — dengan persistence.
+## What it includes
 
-**Billing**
+- **Workspace and team management:** organize companies, members, Bolu teammates, and groups.
+- **Task-oriented work:** chat, routines, task history, and hand-offs provide visibility into ongoing work.
+- **Human review:** drafts, approval policies, and an audit trail help govern outbound actions.
+- **Connected tools:** integrations include Gmail and WhatsApp, with access grants managed per Bolu.
+- **Memory and usage:** workspace knowledge, per-Bolu memory, and model usage reporting.
+- **Operator console:** platform-level account administration under `/admin`.
 
-Indonesia dulu: transfer bank / virtual account. **Tidak ada Stripe.**
+## Architecture
 
-## Monorepo map
+This repository is a Go and Next.js monorepo. The backend owns product APIs and durable agent work; the separate WhatsApp gateway owns WhatsApp sessions and media. Shared contracts and platform libraries live in `packages/`.
 
-```
-.
-├── apps/
-│   ├── backend/       # Go modular monolith — Fiber, pgx + sqlc, Temporal, Zap
-│   ├── whatsapp-gw/   # Go — the WhatsApp gateway: whatsmeow, sessions, media
-│   └── frontend/      # Next.js (App Router) + TypeScript + Tailwind v4
-├── packages/          # the shared module both Go processes import
-├── docs/
-│   ├── adr/           # architecture decision records
-│   ├── testing.md     # test layers and CI gates
-│   ├── deployment.md  # the images, the migration step, and the environments
-│   ├── e2e-mvp.md     # the MVP flow's end-to-end scenario and its measured cost per task
-│   ├── riset-tool-kantor.md # the office tools offices actually use, and which to connect next
-│   └── riset-heartbeat.md   # the five heartbeats Bolu already has, and where they lie
-├── go.work            # the three-module dev workspace
-├── docker-compose.yml
-├── docker-compose.vcomputer.yml # optional: points the agent worker at the virtual computer PoC
-├── Makefile
-└── .env.example
+```text
+apps/
+  backend/       Go API and Temporal workers
+  whatsapp-gw/   WhatsApp connection gateway
+  frontend/      Next.js web application
+  virtual-computer/  Virtual-computer proof of concept
+packages/        Shared Go libraries and service contracts
+docs/            Architecture, deployment, product flows, and screenshots
 ```
 
-The Go code is three modules. `apps/backend` is the product: workspaces, agents, tasks,
-approvals, and the WhatsApp *records* — who is linked, who answers, what was sent. `apps/whatsapp-gw`
-is the gateway: it owns the WhatsApp socket (whatsmeow), the sealed device state, the fleet
-directory, and the media bytes. They are separate processes that talk over two internal HTTP seams —
-the API tells the gateway to send or link, and the gateway tells the API what arrived and what left —
-and neither imports the other. `packages/` is the code they share: the WhatsApp contract, the two
-seams, and the platform libraries (config, database, redis, kms, crypto, storage, logger, telemetry).
+| Component | Main technologies |
+| --- | --- |
+| Backend | Go, Fiber, PostgreSQL + pgvector, Redis, Temporal |
+| WhatsApp gateway | Go, whatsmeow, Redis, PostgreSQL, object storage |
+| Frontend | Next.js App Router, TypeScript, Tailwind CSS v4 |
+| Local infrastructure | Docker Compose |
 
-Backend layout, dependency rules, and commands: [`apps/backend/README.md`](apps/backend/README.md).
-Gateway layout: [`apps/whatsapp-gw/README.md`](apps/whatsapp-gw/README.md).
+## Quick start
 
-## How to run
+Requirements: Docker with Compose, Git, and Make.
 
 ```bash
+git clone <repository-url>
+cd timbolu
 cp .env.example .env
 make up
 ```
 
-### Trying it by hand
+The stack builds and starts PostgreSQL, Redis, Temporal, database migrations, the API, workers, WhatsApp gateway, and frontend.
 
-`make up` starts the product but gives it no model provider, so the first task fails with "no provider
-is configured" — and the catalogue has to be filled in through the API, because maintaining it is a
-screen the product does not have yet. `make demo` closes both gaps:
+| Service | Local URL |
+| --- | --- |
+| Web application | http://localhost:3000 |
+| API health | http://localhost:8080/health |
+| API readiness | http://localhost:8080/ready |
+| WhatsApp gateway health | http://localhost:8090/health |
+| Temporal UI | http://localhost:8233 |
 
-```bash
-make demo        # a stack you can click through
-```
+### Clickable demo
 
-It starts a model stub and a mailbox stub on the host, points the backend at them, and seeds a
-workspace you can use immediately — `demo@bolu.local` / `Rahasia123!`, with a sales Bolu, five
-catalogue products, the workspace memory, and Gmail connected through its own consent flow. It prints
-what to try and what each step should show. `make demo-stop` stops what it started.
-
-The answers come from a scripted stub rather than a model, so what you are trying is the product —
-catalogue prices, the draft, the approval, the audit trail, the usage screen — and not the model's
-judgement. For a real model, fill in `LLM_DEFAULT_*` in `.env` and run `make up` as usual.
-
-### The end-to-end checks
-
-They run against the same stack, each one stopping the compose workers first so the run's task is not
-executed by another process's model configuration:
+For a seeded local workspace and scripted model/mailbox providers, run:
 
 ```bash
-docker stop bolu-api bolu-agent-worker bolu-integration-worker
-make smoke-task && make smoke-approval && make smoke-order
-make measure-orders   # what one order costs, measured twenty times from usage_ledger
-make gate-report      # the numbers Gerbang 1 is decided on, read from the database
-docker start bolu-api bolu-agent-worker bolu-integration-worker
+make demo
 ```
 
-`make smoke-order` is the MVP flow: a customer's message becomes an order priced from the
-workspace's own catalogue, and the invoice that follows is a draft a person approves.
-`make measure-orders` runs that flow twenty times and reads the cost back from `usage_ledger`, which
-is where the numbers in [`docs/e2e-mvp.md`](docs/e2e-mvp.md) come from.
+Sign in with `demo@bolu.local` / `Rahasia123!`. The demo script prints suggested flows. Responses come from a scripted stub, so this is useful for exploring product flows, not evaluating model quality. Stop the demo services with `make demo-stop`.
 
-`make up` starts Postgres (with pgvector), Redis, Temporal and its UI, runs the
-migrations, then starts the API, both Temporal workers, the WhatsApp gateway, and the frontend.
+To use a real model, configure the appropriate `LLM_DEFAULT_*` values in `.env` and start the regular stack with `make up`.
 
-| Service      | URL                              |
-| ------------ | -------------------------------- |
-| Frontend     | http://localhost:3000            |
-| Backend      | http://localhost:8080/health     |
-| Readiness    | http://localhost:8080/ready      |
-| Gateway      | http://localhost:8090/health     |
-| Temporal UI  | http://localhost:8233            |
-| Postgres     | `localhost:5432` (`employeebot` / `employeebot_secret` / `employeebot`) |
+## Development
 
-The API's internal seam listener — the one the gateway calls — is on `:8091` and is never published.
-
-### Running without Docker
+Run a single process locally when the required services and environment variables are available:
 
 ```bash
-make frontend   # cd apps/frontend && npm run dev
-make backend    # cd apps/backend && go run ./cmd/api
-make wa-gateway # cd apps/whatsapp-gw && go run ./cmd/wa-gateway
+make frontend
+make backend
+make wa-gateway
 ```
 
-Install frontend dependencies inside `apps/frontend` (`npm ci`) — there is no
-root `package.json`, so `npm install` at the repo root does nothing.
+Install frontend dependencies from its own directory; this repository has no root `package.json`:
 
-## Make targets
+```bash
+cd apps/frontend
+npm ci
+npm run dev
+npm run lint
+npm run build
+```
 
-| Target                        | Description                                          |
-| ----------------------------- | ---------------------------------------------------- |
-| `up` / `down` / `logs`        | Manage the local stack                               |
-| `frontend` / `backend` / `wa-gateway` | Run one process on the host                   |
-| `test` / `cover`              | Every module's suite, and the tests plus each 80% coverage gate |
-| `test-backend` / `test-gateway` / `test-packages` | One module's suite        |
-| `lint` / `archcheck`          | golangci-lint per module, and the backend's dependency rules |
-| `sqlc` / `mocks`              | Regenerate the query code and the domain mocks, per module |
-| `migrate-up` / `-down`        | Apply or revert migrations against `$DATABASE_URL`   |
-| `ci`                          | Run the same gates as CI locally                     |
-| `help`                        | List every target                                    |
+Useful Make targets:
 
-## Roadmap
+| Target | Purpose |
+| --- | --- |
+| `make up` / `make down` / `make logs` | Start, stop, or inspect the local stack |
+| `make test` | Run Go test suites across shared packages and services |
+| `make cover` | Run Go coverage gates |
+| `make lint` / `make archcheck` | Run Go linting and backend dependency checks |
+| `make smoke-task` / `make smoke-approval` / `make smoke-order` | Exercise product flows against a running stack |
+| `make help` | List available targets |
 
-The backlog is tracked as epics and their tasks in GitHub issues: **EPIC 1–14**,
-each epic being a sub-issue tree whose tasks are worked in order. The legacy
-issue set (#1–#11) is mapped onto those epics in comments on each issue.
+## Documentation
 
-The MVP flow's end-to-end scenario — what it proves, the test data, and the steps with their
-expected results — is [`docs/e2e-mvp.md`](docs/e2e-mvp.md); `make smoke-order` runs the first eight
-steps of it against the compose stack.
+- [Deployment guide](docs/deployment.md)
+- [End-to-end MVP flow](docs/e2e-mvp.md)
+- [Data policy](docs/kebijakan-data.md)
+- [Architecture decision records](docs/adr/)
+- [Frontend documentation](apps/frontend/README.md)
+- [Backend documentation](apps/backend/README.md)
+- [WhatsApp gateway documentation](apps/whatsapp-gw/README.md)
+- [Dashboard screenshots and capture notes](docs/dashboard/README.md)
+- [Admin screenshots and capture notes](docs/admin/README.md)
 
-Decisions that shape the infrastructure live in [`docs/adr`](docs/adr):
-Temporal Cloud vs self-host and the data region are recorded in
-[ADR 0001](docs/adr/0001-temporal-dan-region.md), and the UU PDP decisions —
-where data is stored, who processes it, and how a deletion request is executed —
-in [ADR 0002](docs/adr/0002-kepatuhan-uu-pdp.md). What customers are shown is
-[`docs/kebijakan-data.md`](docs/kebijakan-data.md): retention in plain words and the
-erasure flow, which is also a screen at `/settings/data`.
+## Project status
 
-## Stack
+Bolu is actively developed. Current product routes and capabilities evolve with the codebase; consult the component READMEs and deployment guide for implementation details. The MVP order flow and its measurement approach are documented in [docs/e2e-mvp.md](docs/e2e-mvp.md).
 
-- **Backend:** Go 1.26, Fiber v2, pgx + sqlc, golang-migrate, Temporal,
-  Redis, Zap, PostgreSQL 16 + pgvector.
-- **Frontend:** Next.js 16 (App Router) + TypeScript, Tailwind CSS v4, animasi
-  murni CSS/SVG — tanpa file gambar, tanpa library animasi.
-- **Gateway:** Go 1.26, whatsmeow, Redis lease, object storage for media,
-  PostgreSQL for the sealed sessions.
-- **Local infra:** Docker Compose (`postgres`, `redis`, `temporal`, `migrate`,
-  `api`, `agent-worker`, `integration-worker`, `wa-gateway`, `frontend`).
+## License
 
-Frontend routes today: `/` (the marketing page — a hero, the crew, how it works, a
-look at the workspace, the FAQ, and the closing call to action) and `/pricing` (the
-three packages, with the same prices and member caps the `plans` table holds, plus the
-note that payment is by bank transfer or virtual account rather than Stripe — reached
-from the navigation, which it was not before). The signed-in workspace lives under
-`apps/frontend/src/app/(workspace)`:
-`/dashboard` (the front door — the roster, the live activity feed, the drafts waiting,
-and the week's finished work), `/routines` (the routines screen: the form
-that sets a cadence, the routines per Bolu with their next run in the workspace's own
-zone, the pause switch, and the run history), `/dashboard/integrations` (the hub behind one
-pill: the pill carries the marks of the connected applications, and the panel it opens holds
-the search, the category chips, the WhatsApp card, the connected accounts with their grants
-per Bolu, and the MCP servers), `/settings` (workspace profile, working
-hours, approval policies, and one pill per screen that has its own route),
-`/settings/team`, `/settings/model`, `/chat` (one thread
-rather than a thread list — the sidebar's roster and groups are the way in, and a
-link carries the Bolu or the group in the query), `/bolu/new` (the one screen that
-makes a Bolu: the body it is drawn as, its name, and its job), `/groups`, `/dashboard/usage` (what the
-workspace spent, read three ways over one window, with the tasks that need a person),
-and `/tasks` with `/tasks/[taskID]` (the task history, and one task's rounds and
-hand-offs). The operator surface lives outside that group, under `/admin`, because it
-belongs to the deployment rather than to a workspace: `/admin/dashboard` (the account
-counts) and `/admin/users` (every account, its platform role, and the one button that
-changes it) — no roster, no drafts, and no `X-Workspace-Id`, since an account that
-belongs to no workspace still has to be administrable. Its frame is shadcn's sidebar
-(`components/ui/*`, the registry's own source, retuned in `globals.css` to this
-palette), and its gate reads the platform role from `/auth/me` — the API checks it
-again on every request, so the gate is a door rather than the lock.
-The frontend has three themes — light, dark, and follow-the-system — and the choice
-is a class on `<html>` rather than the media query alone, so a person who wants the
-dark theme on a machine that reports light can have it. The control sits in the
-workspace sidebar, the admin header, the landing navigation, the auth screens, and
-on Pengaturan; `apps/frontend/src/lib/theme.ts` owns the choice and the inline script
-in `layout.tsx` applies it before the first paint. Every colour is a token that
-`.dark` re-derives in `globals.css`, so no screen knows which theme it is drawn in —
-see [`apps/frontend/README.md`](apps/frontend/README.md) for the two rules that keep
-it that way.
-`/tasks/[taskID]` is the app's first dynamic route: the layout above it
-reads the workspace from client hooks, so the route file carries `export const
-instant = false` — this repo builds with `cacheComponents`, which calls an unbounded
-segment a blocking route. Integrasi also carries the WhatsApp card: the number is linked by scanning
-a code, the warning is read before the code exists, and what customers wrote and what
-the workspace asked to send are shown side by side. Every one of them reads the workspace through
-`components/dashboard/workspace-data.tsx`, which holds one copy of the roster,
-the conversations, the drafts and the tasks and keeps them current from the event
-stream. The sidebar's roster is arranged by hand: a Bolu is dragged up, down, or into
-the other team, the layout is sent whole and stored per team (`agents.sort_order`), and
-each team's header folds it away — remembered per browser, because which sections are
-open is about the screen rather than about the team. The Dashboard artboard is `design/timbolu-dashboard.html`; when a
-port and the reference disagree, the reference wins. Rutinitas reads and writes the
-routine module's own endpoints: a cadence is registered in the workspace's timezone,
-the next times come from the same translation the engine uses, and the history shows
-the task's own one-line summary. Belum ada integrasi pembayaran; auth, workspace,
-agent, approval, LLM, memori, rutinitas dan WhatsApp sudah tersambung ke backend.
+No license file is currently included. Contact the maintainers before redistributing this project.
