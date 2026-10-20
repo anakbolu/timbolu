@@ -13,11 +13,11 @@ export function Flow() {
           id="cara-kerja-title"
           className="font-display text-[clamp(34px,4.6vw,52px)] font-bold leading-[1.08]"
         >
-          Satu pesanan, dioper dari tangan ke tangan
+          Satu pesanan masuk. Pekerjaan beres sampai invoice.
         </h2>
         <p className="text-[19px] text-bolu-muted">
-          Contoh alurnya: pelanggan pesan lewat WhatsApp, dan sampai bukti bayarnya
-          tersimpan rapi, kamu cuma muncul sekali, yaitu saat menyetujui invoice.
+          Timbolu menyambungkan beberapa langkah kerja dalam satu alur. Kamu tetap
+          memegang kendali: periksa draf invoice, lalu setujui sebelum dikirim.
         </p>
       </div>
 

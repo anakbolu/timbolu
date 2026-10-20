@@ -14,10 +14,10 @@ export default function Home() {
       <SiteNav />
       <main className="flex-1">
         <Hero />
-        <Team />
         <Flow />
         <WorkspaceTabs />
         <Features />
+        <Team />
         <Faq />
         <FinalCta />
       </main>

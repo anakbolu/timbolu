@@ -17,15 +17,15 @@ const fredoka = Fredoka({
 
 export const metadata: Metadata = {
   title: {
-    default: "Timbolu — asisten kerja kantor",
+    default: "Timbolu — pekerjaan berulang, beres sampai tuntas",
     template: "%s · Timbolu",
   },
   description:
-    "Enam asisten kecil yang kerja bareng untukmu: bikin invoice, balas WhatsApp, rekap pesanan, sampai merapikan file. Mereka siapkan semuanya, kamu tinggal cek dan setujui.",
+    "Delegasikan pekerjaan berulang ke Timbolu. Bot bekerja dalam alur lintas langkah di komputer virtual dan menunggu persetujuanmu sebelum mengirim apa pun.",
   openGraph: {
-    title: "Timbolu — asisten kerja kantor",
+    title: "Timbolu — pekerjaan berulang, beres sampai tuntas",
     description:
-      "Enam asisten kecil yang kerja bareng untukmu: bikin invoice, balas WhatsApp, rekap pesanan, sampai merapikan file.",
+      "Bot Timbolu menyelesaikan pekerjaan lintas langkah di komputer virtual, dengan persetujuanmu sebelum aksi eksternal.",
     siteName: "Timbolu",
     locale: "id_ID",
     type: "website",
