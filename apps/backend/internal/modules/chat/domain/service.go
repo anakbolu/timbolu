@@ -25,6 +25,10 @@ type Service interface {
 	// the message is stored: the answer arrives on the event stream, so closing
 	// the tab does not lose it.
 	Send(ctx context.Context, scope Scope, req SendRequest) (SendResult, error)
+	// OpenThread opens a work thread from a conversation and starts the Bolu on
+	// it. It returns as soon as the work is started: the answer arrives on the
+	// event stream, in the thread.
+	OpenThread(ctx context.Context, scope Scope, req OpenThreadRequest) (ThreadResult, error)
 	// Events returns the workspace stream after an ID, which is how a
 	// reconnecting client fills the gap it missed.
 	Events(ctx context.Context, scope Scope, afterID int64, limit int) ([]Event, error)
@@ -108,6 +112,32 @@ type SendResult struct {
 	// Routed says the group router chose, rather than the caller pinning a Bolu or
 	// the message naming one.
 	Routed bool
+}
+
+// OpenThreadRequest is one work thread a Bolu opens from a conversation.
+type OpenThreadRequest struct {
+	// ParentConversationID is the conversation the work was asked for in.
+	ParentConversationID uuid.UUID
+	// AgentID is the Bolu that carries the thread. It must be in the parent.
+	AgentID uuid.UUID
+	// Title names the thread in the panel and in the link back from the chat.
+	Title string
+	// Brief is what the thread is to do, in the Bolu's words. It is the thread's
+	// first message.
+	Brief string
+	// ParentTaskID is the task that opened the thread, when a task did.
+	ParentTaskID uuid.UUID
+}
+
+// ThreadResult is what opening a thread produced.
+type ThreadResult struct {
+	Conversation Conversation
+	// Brief is the thread's first message.
+	Brief Message
+	// ReplyMessageID is the placeholder the work's answer fills.
+	ReplyMessageID uuid.UUID
+	// TaskID is the task that does the work, when the durable runtime runs it.
+	TaskID uuid.UUID
 }
 
 // AttachRequest is one file to store.

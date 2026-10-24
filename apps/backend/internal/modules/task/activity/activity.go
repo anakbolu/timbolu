@@ -67,9 +67,12 @@ type Deps struct {
 	Outcomes domain.OutcomeSink
 	// Namer resolves a Bolu by the name the model knows, which is what a handoff
 	// names.
-	Namer  domain.AgentNamer
-	Limits domain.Limits
-	Logger *zap.Logger
+	Namer domain.AgentNamer
+	// Threads opens a work thread from the chat a task answers. Optional: without
+	// it the tool is not offered, and a Bolu answers in the chat it was asked in.
+	Threads domain.ThreadOpener
+	Limits  domain.Limits
+	Logger  *zap.Logger
 	// Tracer starts the spans of one task's steps: its model calls and its tool calls, which
 	// are drawn under the activity span the Temporal interceptor opened. Optional: without it
 	// the task runs untraced, which is what a deployment with telemetry off does.
@@ -130,6 +133,12 @@ func (a *Activities) LoadTaskContext(ctx context.Context, input workflow.TaskInp
 	// Handing work to another Bolu is part of the product rather than an
 	// integration, so the tool is offered alongside them.
 	tools = append(tools, HandoffTool())
+	// A thread is opened from a chat, by a task a person asked for: a task with no
+	// conversation has nowhere to open one from, and a task another Bolu handed
+	// over is part of someone else's work rather than a request of its own.
+	if a.deps.Threads != nil && task.ConversationID != uuid.Nil && task.Depth == 0 {
+		tools = append(tools, StartThreadTool())
+	}
 
 	loaded := workflow.Context{
 		Agent:  agent,
@@ -725,6 +734,50 @@ func (a *Activities) PrepareHandoff(ctx context.Context, request workflow.Handof
 		Prompt:         instructions,
 		Depth:          child.Depth,
 	}}, nil
+}
+
+// StartThread opens a work thread from the conversation a task answers, carried
+// by the same Bolu.
+//
+// A refusal is returned as a message rather than an error, because the model is
+// the one that has to react to it — and so is a failure: the workflow does not
+// retry this activity, since a retry after a lost answer would open the work twice.
+func (a *Activities) StartThread(ctx context.Context, request workflow.ThreadRequest) (workflow.ThreadResult, error) {
+	task, err := a.load(ctx, workflow.TaskInput{TaskID: request.TaskID, WorkspaceID: request.WorkspaceID})
+	if err != nil {
+		return workflow.ThreadResult{}, err
+	}
+
+	refuse := func(reason string) (workflow.ThreadResult, error) {
+		return workflow.ThreadResult{Refusal: reason}, nil
+	}
+
+	if a.deps.Threads == nil {
+		return refuse("thread tidak bisa dibuka di deployment ini")
+	}
+	if task.ConversationID == uuid.Nil {
+		return refuse("thread hanya bisa dibuka dari obrolan")
+	}
+	if strings.TrimSpace(request.Title) == "" || strings.TrimSpace(request.Brief) == "" {
+		return refuse("thread butuh judul dan brief")
+	}
+
+	thread, err := a.deps.Threads.OpenThread(ctx, scopeOf(task), domain.ThreadRequest{
+		ConversationID: task.ConversationID,
+		AgentID:        task.AgentID,
+		ParentTaskID:   task.ID,
+		Title:          request.Title,
+		Brief:          request.Brief,
+	})
+	if err != nil {
+		return refuse("thread gagal dibuka: " + err.Error())
+	}
+
+	return workflow.ThreadResult{
+		ConversationID: domain.WireID(thread.ConversationID),
+		TaskID:         domain.WireID(thread.TaskID),
+		Title:          thread.Title,
+	}, nil
 }
 
 // ResumeTask clears a parked task's waiting state once the decision is in.

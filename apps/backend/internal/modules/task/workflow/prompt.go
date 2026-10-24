@@ -40,6 +40,10 @@ func SystemPrompt(loaded Context, input TaskInput) string {
 			"Alat yang butuh persetujuan manusia akan berhenti menunggu keputusan; jangan mengulanginya.",
 			"Kalau butuh pekerjaan yang bukan keahlianmu, pakai alat handoff ke Bolu lain.")
 	}
+	if hasTool(loaded.Tools, domain.ToolStartThread) {
+		parts = append(parts,
+			"Kalau pengguna minta pekerjaan yang butuh beberapa langkah, buka thread kerja dengan alat start_thread, lalu jawab singkat bahwa pekerjaannya sudah diteruskan ke thread itu.")
+	}
 	if loaded.Depth > 0 {
 		parts = append(parts, "Tugas ini bagian dari tugas lain; serahkan hasilnya sebagai data yang bisa dipakai.")
 	}
@@ -53,6 +57,16 @@ func SystemPrompt(loaded Context, input TaskInput) string {
 	}
 
 	return strings.Join(parts, "\n")
+}
+
+// hasTool reports whether a tool is on offer this round.
+func hasTool(tools []domain.Tool, name string) bool {
+	for _, tool := range tools {
+		if tool.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // Turns renders the conversation the task answers, as the model reads it.
@@ -167,6 +181,19 @@ func handoffTarget(arguments []byte) string {
 		return ""
 	}
 	return strings.TrimSpace(payload.Agent)
+}
+
+// threadArguments reads the title and the brief a start_thread call names. An
+// unreadable call reads as empty, which the activity refuses with a reason.
+func threadArguments(arguments []byte) (title, brief string) {
+	var payload struct {
+		Title string `json:"title"`
+		Brief string `json:"brief"`
+	}
+	if err := json.Unmarshal(arguments, &payload); err != nil {
+		return "", ""
+	}
+	return strings.TrimSpace(payload.Title), strings.TrimSpace(payload.Brief)
 }
 
 // handoffInstructions reads what the handoff asks for.

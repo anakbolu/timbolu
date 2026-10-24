@@ -36,6 +36,7 @@ const (
 	ActivityComplete           = "CompleteTask"
 	ActivityPrepareHandoff     = "PrepareHandoff"
 	ActivityMarkHandoffStarted = "MarkHandoffStarted"
+	ActivityStartThread        = "StartThread"
 	ActivityResume             = "ResumeTask"
 	ActivityCarryOutDraft      = "CarryOutDraft"
 )
@@ -334,6 +335,24 @@ type HandoffResult struct {
 	Refusal string
 }
 
+// ThreadRequest asks for a work thread opened from the chat a task answers.
+type ThreadRequest struct {
+	TaskID      string
+	WorkspaceID string
+	Title       string
+	Brief       string
+}
+
+// ThreadResult is the thread that was opened, or the reason it was refused.
+type ThreadResult struct {
+	ConversationID string
+	TaskID         string
+	Title          string
+	// Refusal is set when no thread was opened, which the model reads as a failed
+	// tool result.
+	Refusal string
+}
+
 // AgentTaskWorkflow runs one task to its end.
 //
 // The shape is the document's: a Bolu may think and read as freely as it likes,
@@ -588,6 +607,14 @@ func (s *runState) runTool(ctx workflow.Context, loaded Context, call ToolCall) 
 	if call.Name == domain.ToolHandoff {
 		return s.handoffTool(ctx, loaded, call)
 	}
+	// A thread is the runtime's too: it opens a conversation and a task of its own,
+	// which no integration owns. It is only run when it was offered, so a task that
+	// may not open one is told so like any other unknown tool.
+	if call.Name == domain.ToolStartThread {
+		if _, offered := findTool(loaded.Tools, call.Name); offered {
+			return s.threadTool(ctx, call)
+		}
+	}
 
 	tool, known := findTool(loaded.Tools, call.Name)
 	if !known {
@@ -769,6 +796,50 @@ func (s *runState) handoffTool(ctx workflow.Context, loaded Context, call ToolCa
 			"summary":       result.Summary,
 		}),
 		IsError: result.Status == domain.StatusFailed,
+	}, nil
+}
+
+// threadTool opens a work thread and answers with where the work went.
+//
+// It is one activity and it is not retried: opening a thread writes a
+// conversation and starts a task, and a retry after a lost answer would open the
+// same work twice. A failure is the model's to read, like a refusal.
+func (s *runState) threadTool(ctx workflow.Context, call ToolCall) (ToolOutcome, error) {
+	threadCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: handoffTimeout,
+		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+	})
+
+	title, brief := threadArguments(call.Arguments)
+	var result ThreadResult
+	err := workflow.ExecuteActivity(threadCtx, ActivityStartThread, ThreadRequest{
+		TaskID:      s.input.TaskID,
+		WorkspaceID: s.input.WorkspaceID,
+		Title:       title,
+		Brief:       brief,
+	}).Get(threadCtx, &result)
+	if err != nil {
+		result.Refusal = "thread gagal dibuka: " + err.Error()
+	}
+
+	if result.Refusal != "" {
+		return ToolOutcome{
+			Name:    call.Name,
+			Label:   domain.LabelRead,
+			Content: marshalQuiet(map[string]any{"error": result.Refusal}),
+			IsError: true,
+		}, nil
+	}
+
+	return ToolOutcome{
+		Name:  call.Name,
+		Label: domain.LabelRead,
+		Content: marshalQuiet(map[string]any{
+			"thread_conversation_id": result.ConversationID,
+			"thread_task_id":         result.TaskID,
+			"title":                  result.Title,
+			"status":                 "started",
+		}),
 	}, nil
 }
 

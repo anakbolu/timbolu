@@ -404,6 +404,29 @@ type AgentNamer interface {
 	ByName(ctx context.Context, scope Scope, name string) (AgentRef, error)
 }
 
+// ThreadOpener opens a work thread from the conversation a task answers. The
+// thread is the chat module's — a conversation, its brief, and the reply that does
+// the work — so the task runtime asks for one rather than writing it.
+type ThreadOpener interface {
+	OpenThread(ctx context.Context, scope Scope, req ThreadRequest) (Thread, error)
+}
+
+// ThreadRequest is one thread a task asked for.
+type ThreadRequest struct {
+	ConversationID uuid.UUID
+	AgentID        uuid.UUID
+	ParentTaskID   uuid.UUID
+	Title          string
+	Brief          string
+}
+
+// Thread is the thread that was opened.
+type Thread struct {
+	ConversationID uuid.UUID
+	TaskID         uuid.UUID
+	Title          string
+}
+
 // Message is one turn of the conversation a task answers. It mirrors the chat
 // module's message so this package depends on the shape it needs rather than on
 // another module's internals.
@@ -562,6 +585,13 @@ type Tool struct {
 // part of the runtime rather than an integration, so the workflow performs it
 // itself instead of an executor.
 const ToolHandoff = "handoff"
+
+// ToolStartThread is the tool that opens a work thread from the chat a task
+// answers: a conversation of its own where the Bolu carries a piece of work and a
+// person steers it. Like the handoff it belongs to the runtime, so the workflow
+// performs it rather than an executor; unlike the handoff it does not wait for
+// the work, because the work is reported in the thread.
+const ToolStartThread = "start_thread"
 
 // Tool labels, matching the check constraint on `tool_catalog.label`.
 const (

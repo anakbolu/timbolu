@@ -85,8 +85,12 @@ func (c *Container) openTask(_ context.Context, cfg *config.Config) error {
 		AttachmentLimits: attachmentLimits(cfg),
 		Outcomes:         taskOutcomeSink{container: c},
 		Namer:            c.taskAgentNamer(),
-		Limits:           taskLimits(cfg),
-		Logger:           c.Logger,
+		// A thread is the chat module's conversation, so the activity asks the chat
+		// service for one. The service is read when the tool runs rather than now,
+		// because the chat module is assembled after this one.
+		Threads: taskThreadOpener{container: c},
+		Limits:  taskLimits(cfg),
+		Logger:  c.Logger,
 		// The activity set starts the spans of a task's rounds and tool calls, under the
 		// activity span the Temporal interceptor opens.
 		Tracer:  c.telemetryTracer(),
@@ -594,6 +598,42 @@ func toChatBlocks(blocks []taskdomain.Block) []chatdomain.Block {
 	return out
 }
 
+// -------------------------------------------------------------- task → chat
+
+// taskThreadOpener adapts the chat service to the port the task runtime declares
+// for a work thread: the thread is a conversation, so the module that owns
+// conversations writes it.
+type taskThreadOpener struct {
+	container *Container
+}
+
+// OpenThread implements taskdomain.ThreadOpener.
+func (o taskThreadOpener) OpenThread(ctx context.Context, scope taskdomain.Scope, req taskdomain.ThreadRequest) (taskdomain.Thread, error) {
+	if o.container == nil || o.container.Services == nil || o.container.Services.Chat == nil {
+		return taskdomain.Thread{}, errors.New("the chat module is not configured")
+	}
+
+	result, err := o.container.Services.Chat.OpenThread(ctx, chatdomain.Scope{
+		UserID:      scope.UserID,
+		WorkspaceID: scope.WorkspaceID,
+	}, chatdomain.OpenThreadRequest{
+		ParentConversationID: req.ConversationID,
+		AgentID:              req.AgentID,
+		Title:                req.Title,
+		Brief:                req.Brief,
+		ParentTaskID:         req.ParentTaskID,
+	})
+	if err != nil {
+		return taskdomain.Thread{}, err
+	}
+
+	return taskdomain.Thread{
+		ConversationID: result.Conversation.ID,
+		TaskID:         result.TaskID,
+		Title:          result.Conversation.Title,
+	}, nil
+}
+
 // -------------------------------------------------------------- chat → task
 
 // chatTaskStarter adapts the task runtime to the port the chat module declares,
@@ -613,7 +653,8 @@ func (s chatTaskStarter) Start(ctx context.Context, scope chatdomain.Scope, req 
 		ReplyMessageID: req.MessageID,
 		Trigger:        req.Trigger,
 		Title:          req.Title,
-		Prompt:         req.Title,
+		Prompt:         promptOr(req.Prompt, req.Title),
+		ParentTaskID:   req.ParentTaskID,
 	})
 	if err != nil {
 		// The container is where the two modules meet, so it is where one module's
@@ -626,6 +667,15 @@ func (s chatTaskStarter) Start(ctx context.Context, scope chatdomain.Scope, req 
 		return uuid.Nil, err
 	}
 	return task.ID, nil
+}
+
+// promptOr is the task's instruction: the one the caller wrote, or the title when
+// the title is the whole of what was asked.
+func promptOr(prompt, title string) string {
+	if strings.TrimSpace(prompt) != "" {
+		return prompt
+	}
+	return title
 }
 
 // budgetRefusal reports whether an error is the workspace's package refusing to pay, and
@@ -674,5 +724,6 @@ var (
 	_ taskdomain.ReplyWriter    = taskReplyWriter{}
 	_ taskdomain.Starter        = taskStarter{}
 	_ chatdomain.TaskStarter    = chatTaskStarter{}
+	_ taskdomain.ThreadOpener   = taskThreadOpener{}
 	_ taskdomain.Budget         = quotaBudget{}
 )

@@ -158,6 +158,25 @@ func (a *Adapter) Tools() []domain.ToolSpec {
 				"additionalProperties": false
 			}`),
 		},
+		{
+			Name:        domain.ToolName(App, "create_pull_request"),
+			Label:       domain.LabelWriteExternal,
+			Description: "Buka pull request dari sebuah branch di repositori GitHub. Membutuhkan persetujuan manusia.",
+			Schema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"owner": {"type": "string", "description": "Pemilik repositori, mis. robzlabz"},
+					"repo":  {"type": "string", "description": "Nama repositori"},
+					"title": {"type": "string"},
+					"head":  {"type": "string", "description": "Branch yang berisi perubahan"},
+					"base":  {"type": "string", "description": "Branch tujuan, mis. main"},
+					"body":  {"type": "string", "description": "Deskripsi pull request, dalam Markdown. Sebut issue-nya, mis. Closes #12"},
+					"draft": {"type": "boolean"}
+				},
+				"required": ["owner", "repo", "title", "head", "base"],
+				"additionalProperties": false
+			}`),
+		},
 	}
 }
 
@@ -322,6 +341,8 @@ func (a *Adapter) Execute(ctx context.Context, call domain.Call) (domain.Result,
 		return a.listRepos(ctx, call)
 	case domain.ToolName(App, "create_issue"):
 		return a.createIssue(ctx, call)
+	case domain.ToolName(App, "create_pull_request"):
+		return a.createPullRequest(ctx, call)
 	default:
 		return domain.Result{}, fmt.Errorf("%w: %q", domain.ErrUnknownTool, call.Tool)
 	}
@@ -454,6 +475,74 @@ func (a *Adapter) createIssue(ctx context.Context, call domain.Call) (domain.Res
 	return domain.Result{
 		Content: content,
 		Summary: fmt.Sprintf("issue %s#%d dibuat", input.Owner+"/"+input.Repo, created.Number),
+	}, nil
+}
+
+// createPullRequestInput is the arguments of `github.create_pull_request`.
+type createPullRequestInput struct {
+	Owner string `json:"owner"`
+	Repo  string `json:"repo"`
+	Title string `json:"title"`
+	Head  string `json:"head"`
+	Base  string `json:"base"`
+	Body  string `json:"body"`
+	Draft bool   `json:"draft"`
+}
+
+// createPullRequest opens a pull request from a branch that already holds the
+// change.
+//
+// Like an issue it is only reached after a person approved it. It does not write
+// the change: the branch is the work, and opening the pull request is asking
+// people to read it.
+func (a *Adapter) createPullRequest(ctx context.Context, call domain.Call) (domain.Result, error) {
+	var input createPullRequestInput
+	if err := json.Unmarshal(call.Arguments, &input); err != nil {
+		return domain.Result{}, fmt.Errorf("github: read create_pull_request arguments: %w", err)
+	}
+	if strings.TrimSpace(input.Owner) == "" || strings.TrimSpace(input.Repo) == "" {
+		return domain.Result{}, fmt.Errorf("%w: an owner and a repository are required", domain.ErrInvalidInput)
+	}
+	if strings.TrimSpace(input.Title) == "" {
+		return domain.Result{}, fmt.Errorf("%w: a pull request title is required", domain.ErrInvalidInput)
+	}
+	if strings.TrimSpace(input.Head) == "" || strings.TrimSpace(input.Base) == "" {
+		return domain.Result{}, fmt.Errorf("%w: a head and a base branch are required", domain.ErrInvalidInput)
+	}
+
+	path := "/repos/" + url.PathEscape(input.Owner) + "/" + url.PathEscape(input.Repo) + "/pulls"
+
+	var created struct {
+		Number  int    `json:"number"`
+		HTMLURL string `json:"html_url"`
+		State   string `json:"state"`
+		Title   string `json:"title"`
+		Draft   bool   `json:"draft"`
+	}
+	if err := a.post(ctx, call.Token.AccessToken, path, map[string]any{
+		"title": input.Title,
+		"head":  input.Head,
+		"base":  input.Base,
+		"body":  input.Body,
+		"draft": input.Draft,
+	}, &created); err != nil {
+		return domain.Result{}, err
+	}
+
+	content, err := json.Marshal(map[string]any{
+		"number":   created.Number,
+		"html_url": created.HTMLURL,
+		"state":    created.State,
+		"title":    created.Title,
+		"draft":    created.Draft,
+	})
+	if err != nil {
+		return domain.Result{}, fmt.Errorf("github: encode create_pull_request answer: %w", err)
+	}
+
+	return domain.Result{
+		Content: content,
+		Summary: fmt.Sprintf("pull request %s#%d dibuka", input.Owner+"/"+input.Repo, created.Number),
 	}, nil
 }
 

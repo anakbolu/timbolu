@@ -67,6 +67,9 @@ var (
 	ErrMessageNotFound = errors.New("chat: message not found")
 	// ErrAgentNotInConversation means the Bolu was not asked to answer here.
 	ErrAgentNotInConversation = errors.New("chat: agent is not a participant")
+	// ErrThreadInThread means a thread was asked to open another thread. The
+	// work belongs to the room a person asked in, so a thread opens from there.
+	ErrThreadInThread = errors.New("chat: a thread cannot open another thread")
 	// ErrNoResponder means the group router could not pick a Bolu.
 	ErrNoResponder = errors.New("chat: no Bolu can answer this message")
 	// ErrInvalidInput means the request is malformed.
@@ -116,15 +119,22 @@ const (
 const (
 	KindDirect = "direct"
 	KindGroup  = "group"
+	// KindThread is a work thread a Bolu opened from another conversation. It is
+	// answered like a direct conversation — by the one Bolu it is with — and the
+	// person steers the work by writing in it.
+	KindThread = "thread"
 )
 
 // Conversation is one chat thread: one Bolu and one user, or a group.
 type Conversation struct {
-	ID           uuid.UUID
-	WorkspaceID  uuid.UUID
-	Kind         string
-	Title        string
-	Participants []Participant
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	Kind        string
+	Title       string
+	// ParentConversationID is the conversation a thread was opened from. It is
+	// nil for every other kind.
+	ParentConversationID uuid.UUID
+	Participants         []Participant
 	// MessageCount and LastActivityAt let the list render without a second
 	// query. Last activity falls back to the creation time, so the sidebar order
 	// needs no null handling.

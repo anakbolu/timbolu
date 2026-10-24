@@ -31,6 +31,32 @@ func HandoffTool() domain.Tool {
 	}
 }
 
+// StartThreadTool is the tool that opens a work thread from the chat a task
+// answers.
+//
+// It is offered only where a thread can be opened — a task that answers a chat,
+// on a deployment that can write one — and the workflow performs it itself. The
+// task does not wait for the thread: it tells the person where the work went, and
+// the work is reported there.
+func StartThreadTool() domain.Tool {
+	return domain.Tool{
+		Name: domain.ToolStartThread,
+		Description: "Buka thread kerja baru dari obrolan ini untuk pekerjaan yang butuh beberapa langkah " +
+			"(mis. riset, menyiapkan konten, membuat issue atau pull request GitHub). " +
+			"Thread berjalan sendiri dan pengguna bisa mengarahkannya di sana; " +
+			"setelah membukanya, beri tahu pengguna judul thread-nya, jangan kerjakan ulang di sini.",
+		Schema: json.RawMessage(`{
+			"type": "object",
+			"required": ["title", "brief"],
+			"properties": {
+				"title": {"type": "string", "description": "Judul singkat thread, mis. Publish carousel IG @robzlabz"},
+				"brief": {"type": "string", "description": "Apa yang harus dikerjakan di thread, lengkap dengan konteks dan hasil yang diharapkan"}
+			}
+		}`),
+		Label: domain.LabelRead,
+	}
+}
+
 // draftTitle names a draft from the arguments the tool was called with.
 func draftTitle(request workflow.ToolRequest) string {
 	var payload map[string]any

@@ -29,6 +29,7 @@ func TestEveryActivityNameHasAMethod(t *testing.T) {
 		workflow.ActivityMarkHandoffStarted,
 		workflow.ActivityResume,
 		workflow.ActivityCarryOutDraft,
+		workflow.ActivityStartThread,
 	}
 
 	methods := map[string]bool{}
@@ -48,6 +49,6 @@ func TestEveryActivityNameHasAMethod(t *testing.T) {
 // the worker does not register is a stall.
 func TestRegisteredActivityCountMatchesTheWorkflow(t *testing.T) {
 	activities := reflect.TypeOf(&Activities{})
-	require.Equal(t, 11, activities.NumMethod(),
+	require.Equal(t, 12, activities.NumMethod(),
 		"a new activity method must be registered in the workflow's name list too")
 }

@@ -261,7 +261,9 @@ func (s *Service) pickResponders(ctx context.Context, scope chatdomain.Scope, co
 		return nil, chatdomain.ErrAgentNotInConversation
 	}
 
-	if conversation.Kind == chatdomain.KindDirect {
+	// A thread is answered like a direct conversation: it carries one Bolu's work,
+	// and whatever a person writes in it is for that Bolu.
+	if conversation.Kind == chatdomain.KindDirect || conversation.Kind == chatdomain.KindThread {
 		agent := agents[0]
 		if !s.deps.Agents.Active(agent) {
 			// A resting Bolu is left alone rather than woken: the switch is the

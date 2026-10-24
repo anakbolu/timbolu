@@ -738,6 +738,64 @@ func (_c *Service_History_Call) RunAndReturn(run func(context.Context, domain.Sc
 	return _c
 }
 
+// OpenThread provides a mock function with given fields: ctx, scope, req
+func (_m *Service) OpenThread(ctx context.Context, scope domain.Scope, req domain.OpenThreadRequest) (domain.ThreadResult, error) {
+	ret := _m.Called(ctx, scope, req)
+
+	if len(ret) == 0 {
+		panic("no return value specified for OpenThread")
+	}
+
+	var r0 domain.ThreadResult
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, domain.OpenThreadRequest) (domain.ThreadResult, error)); ok {
+		return rf(ctx, scope, req)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, domain.OpenThreadRequest) domain.ThreadResult); ok {
+		r0 = rf(ctx, scope, req)
+	} else {
+		r0 = ret.Get(0).(domain.ThreadResult)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, domain.Scope, domain.OpenThreadRequest) error); ok {
+		r1 = rf(ctx, scope, req)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// Service_OpenThread_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'OpenThread'
+type Service_OpenThread_Call struct {
+	*mock.Call
+}
+
+// OpenThread is a helper method to define mock.On call
+//   - ctx context.Context
+//   - scope domain.Scope
+//   - req domain.OpenThreadRequest
+func (_e *Service_Expecter) OpenThread(ctx interface{}, scope interface{}, req interface{}) *Service_OpenThread_Call {
+	return &Service_OpenThread_Call{Call: _e.mock.On("OpenThread", ctx, scope, req)}
+}
+
+func (_c *Service_OpenThread_Call) Run(run func(ctx context.Context, scope domain.Scope, req domain.OpenThreadRequest)) *Service_OpenThread_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(domain.Scope), args[2].(domain.OpenThreadRequest))
+	})
+	return _c
+}
+
+func (_c *Service_OpenThread_Call) Return(_a0 domain.ThreadResult, _a1 error) *Service_OpenThread_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *Service_OpenThread_Call) RunAndReturn(run func(context.Context, domain.Scope, domain.OpenThreadRequest) (domain.ThreadResult, error)) *Service_OpenThread_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // PruneAttachments provides a mock function with given fields: ctx, scope, olderThan, limit
 func (_m *Service) PruneAttachments(ctx context.Context, scope domain.Scope, olderThan time.Time, limit int) (domain.AttachmentPrune, error) {
 	ret := _m.Called(ctx, scope, olderThan, limit)

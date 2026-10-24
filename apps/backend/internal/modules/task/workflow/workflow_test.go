@@ -56,6 +56,9 @@ func (stub) CarryOutDraft(context.Context, DraftCarryRequest) (DraftCarryOutcome
 	return DraftCarryOutcome{}, nil
 }
 func (stub) ResumeTask(context.Context, ResumeRequest) error { return nil }
+func (stub) StartThread(context.Context, ThreadRequest) (ThreadResult, error) {
+	return ThreadResult{}, nil
+}
 
 // harness is one test environment with the activity set scripted.
 type harness struct {
@@ -262,6 +265,7 @@ func registerStubs(env *testsuite.TestWorkflowEnvironment) {
 		ActivityMarkHandoffStarted: s.MarkHandoffStarted,
 		ActivityResume:             s.ResumeTask,
 		ActivityCarryOutDraft:      s.CarryOutDraft,
+		ActivityStartThread:        s.StartThread,
 	} {
 		env.RegisterActivityWithOptions(fn, activity.RegisterOptions{Name: name})
 	}
@@ -1055,4 +1059,97 @@ func TestWorkflowExecutesAnAutoApprovedActionWithoutWaiting(t *testing.T) {
 	require.Zero(t, h.resumed, "nothing was parked, so nothing had to be un-parked")
 	require.Zero(t, h.carried, "the gate already carried it out, so the workflow does not send again")
 	require.Equal(t, 2, h.calls[parentTask], "an auto-approved action continues the loop")
+}
+
+// TestWorkflowOpensAThreadWithoutWaitingForIt: start_thread is performed by the
+// workflow, not by an executor, and the model reads where the work went on its
+// next round instead of waiting for the work itself.
+func TestWorkflowOpensAThreadWithoutWaitingForIt(t *testing.T) {
+	thread := domain.Tool{Name: domain.ToolStartThread, Label: domain.LabelRead, Schema: json.RawMessage(`{}`)}
+	h := newHarness(t, domain.DefaultLimits, []domain.Tool{thread})
+
+	var asked ThreadRequest
+	h.env.OnActivity(ActivityStartThread, mock.Anything, mock.Anything).Return(func(_ context.Context, request ThreadRequest) (ThreadResult, error) {
+		asked = request
+		return ThreadResult{ConversationID: childTask, TaskID: draftID, Title: request.Title}, nil
+	})
+
+	h.models[parentTask] = []ModelReply{
+		{ToolCalls: []ToolCall{{CallID: "c1", Name: domain.ToolStartThread, Arguments: []byte(`{"title":"Publish carousel","brief":"Siapkan No 43"}`)}}},
+		{Text: "Sudah saya teruskan ke thread Publish carousel."},
+	}
+
+	outcome := h.run(t, h.input(parentTask))
+
+	require.Equal(t, domain.StatusSucceeded, outcome.Status)
+	require.Zero(t, h.ranTool, "a thread is opened by the workflow, not by a tool executor")
+	require.Equal(t, "Publish carousel", asked.Title)
+	require.Equal(t, "Siapkan No 43", asked.Brief)
+	require.Equal(t, parentTask, asked.TaskID)
+
+	require.Len(t, h.modelRequests, 2)
+	last := h.modelRequests[1].Messages[len(h.modelRequests[1].Messages)-1]
+	require.Len(t, last.ToolResults, 1)
+	require.Contains(t, last.ToolResults[0].Content, childTask, "the model is told which thread carries the work")
+	require.False(t, last.ToolResults[0].IsError)
+}
+
+// TestWorkflowDoesNotOpenAThreadItWasNotOffered: a task that may not open a thread
+// — a handed-over one, or one with no chat — is told the tool is unavailable.
+func TestWorkflowDoesNotOpenAThreadItWasNotOffered(t *testing.T) {
+	h := newHarness(t, domain.DefaultLimits, nil)
+
+	opened := 0
+	h.env.OnActivity(ActivityStartThread, mock.Anything, mock.Anything).Return(func(context.Context, ThreadRequest) (ThreadResult, error) {
+		opened++
+		return ThreadResult{}, nil
+	})
+
+	h.models[parentTask] = []ModelReply{
+		{ToolCalls: []ToolCall{{CallID: "c1", Name: domain.ToolStartThread, Arguments: []byte(`{"title":"x","brief":"y"}`)}}},
+		{Text: "Saya kerjakan di sini saja."},
+	}
+
+	outcome := h.run(t, h.input(parentTask))
+
+	require.Equal(t, domain.StatusSucceeded, outcome.Status)
+	require.Zero(t, opened)
+	last := h.modelRequests[1].Messages[len(h.modelRequests[1].Messages)-1]
+	require.True(t, last.ToolResults[0].IsError)
+}
+
+// TestWorkflowReportsARefusedThreadToTheModel: a refusal is a failed tool result,
+// so the model can answer in the chat instead.
+func TestWorkflowReportsARefusedThreadToTheModel(t *testing.T) {
+	thread := domain.Tool{Name: domain.ToolStartThread, Label: domain.LabelRead, Schema: json.RawMessage(`{}`)}
+	h := newHarness(t, domain.DefaultLimits, []domain.Tool{thread})
+
+	h.env.OnActivity(ActivityStartThread, mock.Anything, mock.Anything).Return(ThreadResult{
+		Refusal: "thread gagal dibuka: chat: a thread cannot open another thread",
+	}, nil)
+
+	h.models[parentTask] = []ModelReply{
+		{ToolCalls: []ToolCall{{CallID: "c1", Name: domain.ToolStartThread, Arguments: []byte(`{"title":"x","brief":"y"}`)}}},
+		{Text: "Saya kerjakan di sini saja."},
+	}
+
+	outcome := h.run(t, h.input(parentTask))
+
+	require.Equal(t, domain.StatusSucceeded, outcome.Status)
+	last := h.modelRequests[1].Messages[len(h.modelRequests[1].Messages)-1]
+	require.True(t, last.ToolResults[0].IsError)
+	require.Contains(t, last.ToolResults[0].Content, "another thread")
+}
+
+// TestSystemPromptMentionsThreadsOnlyWhenOffered: the instruction to open a thread
+// is given to a Bolu that can, and to no other.
+func TestSystemPromptMentionsThreadsOnlyWhenOffered(t *testing.T) {
+	without := SystemPrompt(Context{Agent: domain.AgentRef{Name: "Oren", Role: "Penjualan"}}, TaskInput{})
+	require.NotContains(t, without, "start_thread")
+
+	with := SystemPrompt(Context{
+		Agent: domain.AgentRef{Name: "Oren", Role: "Penjualan"},
+		Tools: []domain.Tool{{Name: domain.ToolStartThread}},
+	}, TaskInput{})
+	require.Contains(t, with, "start_thread")
 }
