@@ -135,13 +135,16 @@ type participantsRequest struct {
 }
 
 type conversationPayload struct {
-	ID           string               `json:"id"`
-	Kind         string               `json:"kind"`
-	Title        string               `json:"title"`
-	Participants []participantPayload `json:"participants"`
-	MessageCount int                  `json:"message_count"`
-	LastActivity string               `json:"last_activity_at"`
-	CreatedAt    string               `json:"created_at"`
+	ID    string `json:"id"`
+	Kind  string `json:"kind"`
+	Title string `json:"title"`
+	// ParentConversationID is the conversation a thread was opened from; it is
+	// absent for every other kind.
+	ParentConversationID string               `json:"parent_conversation_id,omitempty"`
+	Participants         []participantPayload `json:"participants"`
+	MessageCount         int                  `json:"message_count"`
+	LastActivity         string               `json:"last_activity_at"`
+	CreatedAt            string               `json:"created_at"`
 }
 
 type participantPayload struct {
@@ -930,13 +933,14 @@ func toConversationPayload(conversation chatdomain.Conversation) conversationPay
 	}
 
 	return conversationPayload{
-		ID:           conversation.ID.String(),
-		Kind:         conversation.Kind,
-		Title:        conversation.Title,
-		Participants: participants,
-		MessageCount: conversation.MessageCount,
-		LastActivity: conversation.LastActivityAt.Format(time.RFC3339),
-		CreatedAt:    conversation.CreatedAt.Format(time.RFC3339),
+		ID:                   conversation.ID.String(),
+		Kind:                 conversation.Kind,
+		Title:                conversation.Title,
+		ParentConversationID: idString(conversation.ParentConversationID),
+		Participants:         participants,
+		MessageCount:         conversation.MessageCount,
+		LastActivity:         conversation.LastActivityAt.Format(time.RFC3339),
+		CreatedAt:            conversation.CreatedAt.Format(time.RFC3339),
 	}
 }
 

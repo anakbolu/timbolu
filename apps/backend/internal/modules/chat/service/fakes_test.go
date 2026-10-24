@@ -103,6 +103,19 @@ func (s *memoryStore) Create(_ context.Context, scope chatdomain.Scope, kind, ti
 	return conversation, nil
 }
 
+func (s *memoryStore) CreateThread(ctx context.Context, scope chatdomain.Scope, parentID uuid.UUID, title string, agentIDs, userIDs []uuid.UUID) (chatdomain.Conversation, error) {
+	conversation, err := s.Create(ctx, scope, chatdomain.KindThread, title, agentIDs, userIDs)
+	if err != nil {
+		return chatdomain.Conversation{}, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	conversation.ParentConversationID = parentID
+	s.conversations[conversation.ID] = conversation
+	return conversation, nil
+}
+
 func (s *memoryStore) AddParticipants(context.Context, chatdomain.Scope, uuid.UUID, []uuid.UUID, []uuid.UUID) error {
 	return nil
 }

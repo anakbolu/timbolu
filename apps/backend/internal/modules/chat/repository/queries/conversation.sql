@@ -9,7 +9,7 @@
 -- Last activity falls back to the creation time rather than being nullable: a
 -- thread nobody has written in yet sorts by when it was opened, which is exactly
 -- the order the sidebar wants and one fewer null to handle everywhere.
-SELECT c.id, c.workspace_id, c.kind, c.title, c.created_at, c.updated_at,
+SELECT c.id, c.workspace_id, c.kind, c.title, c.parent_conversation_id, c.created_at, c.updated_at,
        (SELECT count(*) FROM messages m WHERE m.conversation_id = c.id)::bigint AS message_count,
        COALESCE(
            (SELECT max(m.created_at) FROM messages m WHERE m.conversation_id = c.id),
@@ -20,7 +20,7 @@ WHERE c.workspace_id = $1
 ORDER BY last_activity_at DESC;
 
 -- name: GetConversation :one
-SELECT c.id, c.workspace_id, c.kind, c.title, c.created_at, c.updated_at,
+SELECT c.id, c.workspace_id, c.kind, c.title, c.parent_conversation_id, c.created_at, c.updated_at,
        (SELECT count(*) FROM messages m WHERE m.conversation_id = c.id)::bigint AS message_count,
        COALESCE(
            (SELECT max(m.created_at) FROM messages m WHERE m.conversation_id = c.id),
@@ -30,9 +30,11 @@ FROM conversations c
 WHERE c.id = $1 AND c.workspace_id = $2;
 
 -- name: CreateConversation :one
-INSERT INTO conversations (workspace_id, kind, title)
-VALUES ($1, $2, $3)
-RETURNING id, workspace_id, kind, title, created_at, updated_at;
+-- A thread names the conversation it was opened from; every other kind leaves the
+-- parent null, which the schema checks.
+INSERT INTO conversations (workspace_id, kind, title, parent_conversation_id)
+VALUES ($1, $2, $3, sqlc.narg('parent_conversation_id'))
+RETURNING id, workspace_id, kind, title, parent_conversation_id, created_at, updated_at;
 
 -- name: RenameConversation :one
 UPDATE conversations

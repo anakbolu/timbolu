@@ -156,12 +156,13 @@ type ChecklistItem struct {
 }
 
 type Conversation struct {
-	ID          uuid.UUID
-	WorkspaceID uuid.UUID
-	Kind        string
-	Title       string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID                   uuid.UUID
+	WorkspaceID          uuid.UUID
+	Kind                 string
+	Title                string
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	ParentConversationID *uuid.UUID
 }
 
 type ConversationParticipant struct {

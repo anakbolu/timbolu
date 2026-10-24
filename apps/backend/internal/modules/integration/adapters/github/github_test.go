@@ -235,6 +235,7 @@ func TestToolsAreNamedAndLabelled(t *testing.T) {
 
 	require.Equal(t, integrationdomain.LabelRead, byName["github.list_repos"].Label)
 	require.Equal(t, integrationdomain.LabelWriteExternal, byName["github.create_issue"].Label)
+	require.Equal(t, integrationdomain.LabelWriteExternal, byName["github.create_pull_request"].Label)
 }
 
 // TestNoTriggerIsDeclared: a webhook here would need an app installation, which is a
@@ -356,6 +357,63 @@ func TestCreateIssueRefusesAnIncompleteCall(t *testing.T) {
 
 	_, err := adapter.Execute(context.Background(), call(t, "github.create_issue",
 		`{"owner": "robzlabz", "repo": "timbolu", "title": "  "}`))
+	require.ErrorIs(t, err, integrationdomain.ErrInvalidInput)
+}
+
+// TestCreatePullRequestPostsTheBranches: the pull request is opened from the
+// named head into the named base, and its number and link come back.
+func TestCreatePullRequestPostsTheBranches(t *testing.T) {
+	adapter, server := newAdapter(t)
+
+	var (
+		method string
+		path   string
+		body   map[string]any
+	)
+	server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method, path = r.Method, r.URL.Path
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{
+			"number": 290,
+			"html_url": "https://github.com/robzlabz/timbolu/pull/290",
+			"state": "open",
+			"title": "Panel thread",
+			"draft": true
+		}`))
+	})
+
+	result, err := adapter.Execute(context.Background(), call(t, "github.create_pull_request",
+		`{"owner": "robzlabz", "repo": "timbolu", "title": "Panel thread", "head": "fitur/thread", "base": "main", "body": "Closes #289", "draft": true}`))
+	require.NoError(t, err)
+
+	require.Equal(t, http.MethodPost, method)
+	require.Equal(t, "/repos/robzlabz/timbolu/pulls", path)
+	require.Equal(t, map[string]any{
+		"title": "Panel thread", "head": "fitur/thread", "base": "main", "body": "Closes #289", "draft": true,
+	}, body)
+	require.Contains(t, result.Summary, "robzlabz/timbolu#290")
+
+	var decoded struct {
+		Number  int    `json:"number"`
+		HTMLURL string `json:"html_url"`
+		Draft   bool   `json:"draft"`
+	}
+	require.NoError(t, json.Unmarshal(result.Content, &decoded))
+	require.Equal(t, 290, decoded.Number)
+	require.Equal(t, "https://github.com/robzlabz/timbolu/pull/290", decoded.HTMLURL)
+	require.True(t, decoded.Draft)
+}
+
+// TestCreatePullRequestNeedsBothBranches: a pull request with no head or base
+// would ask GitHub to guess, so it is refused before it is sent.
+func TestCreatePullRequestNeedsBothBranches(t *testing.T) {
+	adapter, _ := newAdapter(t)
+
+	_, err := adapter.Execute(context.Background(), call(t, "github.create_pull_request",
+		`{"owner": "robzlabz", "repo": "timbolu", "title": "Panel thread", "head": "fitur/thread"}`))
 	require.ErrorIs(t, err, integrationdomain.ErrInvalidInput)
 }
 

@@ -305,25 +305,44 @@ func (q *Queries) CreateAttachment(ctx context.Context, arg CreateAttachmentPara
 }
 
 const createConversation = `-- name: CreateConversation :one
-INSERT INTO conversations (workspace_id, kind, title)
-VALUES ($1, $2, $3)
-RETURNING id, workspace_id, kind, title, created_at, updated_at
+INSERT INTO conversations (workspace_id, kind, title, parent_conversation_id)
+VALUES ($1, $2, $3, $4)
+RETURNING id, workspace_id, kind, title, parent_conversation_id, created_at, updated_at
 `
 
 type CreateConversationParams struct {
-	WorkspaceID uuid.UUID
-	Kind        string
-	Title       string
+	WorkspaceID          uuid.UUID
+	Kind                 string
+	Title                string
+	ParentConversationID *uuid.UUID
 }
 
-func (q *Queries) CreateConversation(ctx context.Context, arg CreateConversationParams) (Conversation, error) {
-	row := q.db.QueryRow(ctx, createConversation, arg.WorkspaceID, arg.Kind, arg.Title)
-	var i Conversation
+type CreateConversationRow struct {
+	ID                   uuid.UUID
+	WorkspaceID          uuid.UUID
+	Kind                 string
+	Title                string
+	ParentConversationID *uuid.UUID
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+}
+
+// A thread names the conversation it was opened from; every other kind leaves the
+// parent null, which the schema checks.
+func (q *Queries) CreateConversation(ctx context.Context, arg CreateConversationParams) (CreateConversationRow, error) {
+	row := q.db.QueryRow(ctx, createConversation,
+		arg.WorkspaceID,
+		arg.Kind,
+		arg.Title,
+		arg.ParentConversationID,
+	)
+	var i CreateConversationRow
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
 		&i.Kind,
 		&i.Title,
+		&i.ParentConversationID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -472,12 +491,21 @@ type FindDirectConversationParams struct {
 	AgentID     *uuid.UUID
 }
 
+type FindDirectConversationRow struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	Kind        string
+	Title       string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
 // The 1:1 thread with one Bolu. A direct conversation has exactly two
 // participants, so this matches the one whose agent is the asked-for Bolu and
 // which has no third participant.
-func (q *Queries) FindDirectConversation(ctx context.Context, arg FindDirectConversationParams) (Conversation, error) {
+func (q *Queries) FindDirectConversation(ctx context.Context, arg FindDirectConversationParams) (FindDirectConversationRow, error) {
 	row := q.db.QueryRow(ctx, findDirectConversation, arg.WorkspaceID, arg.AgentID)
-	var i Conversation
+	var i FindDirectConversationRow
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
@@ -520,7 +548,7 @@ func (q *Queries) GetAttachment(ctx context.Context, arg GetAttachmentParams) (M
 }
 
 const getConversation = `-- name: GetConversation :one
-SELECT c.id, c.workspace_id, c.kind, c.title, c.created_at, c.updated_at,
+SELECT c.id, c.workspace_id, c.kind, c.title, c.parent_conversation_id, c.created_at, c.updated_at,
        (SELECT count(*) FROM messages m WHERE m.conversation_id = c.id)::bigint AS message_count,
        COALESCE(
            (SELECT max(m.created_at) FROM messages m WHERE m.conversation_id = c.id),
@@ -536,14 +564,15 @@ type GetConversationParams struct {
 }
 
 type GetConversationRow struct {
-	ID             uuid.UUID
-	WorkspaceID    uuid.UUID
-	Kind           string
-	Title          string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	MessageCount   int64
-	LastActivityAt time.Time
+	ID                   uuid.UUID
+	WorkspaceID          uuid.UUID
+	Kind                 string
+	Title                string
+	ParentConversationID *uuid.UUID
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	MessageCount         int64
+	LastActivityAt       time.Time
 }
 
 func (q *Queries) GetConversation(ctx context.Context, arg GetConversationParams) (GetConversationRow, error) {
@@ -554,6 +583,7 @@ func (q *Queries) GetConversation(ctx context.Context, arg GetConversationParams
 		&i.WorkspaceID,
 		&i.Kind,
 		&i.Title,
+		&i.ParentConversationID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.MessageCount,
@@ -681,7 +711,7 @@ func (q *Queries) ListAttachmentsForMessage(ctx context.Context, arg ListAttachm
 
 const listConversations = `-- name: ListConversations :many
 
-SELECT c.id, c.workspace_id, c.kind, c.title, c.created_at, c.updated_at,
+SELECT c.id, c.workspace_id, c.kind, c.title, c.parent_conversation_id, c.created_at, c.updated_at,
        (SELECT count(*) FROM messages m WHERE m.conversation_id = c.id)::bigint AS message_count,
        COALESCE(
            (SELECT max(m.created_at) FROM messages m WHERE m.conversation_id = c.id),
@@ -693,14 +723,15 @@ ORDER BY last_activity_at DESC
 `
 
 type ListConversationsRow struct {
-	ID             uuid.UUID
-	WorkspaceID    uuid.UUID
-	Kind           string
-	Title          string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	MessageCount   int64
-	LastActivityAt time.Time
+	ID                   uuid.UUID
+	WorkspaceID          uuid.UUID
+	Kind                 string
+	Title                string
+	ParentConversationID *uuid.UUID
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	MessageCount         int64
+	LastActivityAt       time.Time
 }
 
 // Conversation queries. Every statement carries workspace_id as well as the
@@ -726,6 +757,7 @@ func (q *Queries) ListConversations(ctx context.Context, workspaceID uuid.UUID) 
 			&i.WorkspaceID,
 			&i.Kind,
 			&i.Title,
+			&i.ParentConversationID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.MessageCount,
@@ -1162,9 +1194,18 @@ type RenameConversationParams struct {
 	Title       string
 }
 
-func (q *Queries) RenameConversation(ctx context.Context, arg RenameConversationParams) (Conversation, error) {
+type RenameConversationRow struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	Kind        string
+	Title       string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func (q *Queries) RenameConversation(ctx context.Context, arg RenameConversationParams) (RenameConversationRow, error) {
 	row := q.db.QueryRow(ctx, renameConversation, arg.ID, arg.WorkspaceID, arg.Title)
-	var i Conversation
+	var i RenameConversationRow
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,

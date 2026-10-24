@@ -76,6 +76,9 @@ type ConversationRepository interface {
 	GetConversation(ctx context.Context, scope Scope, id uuid.UUID) (Conversation, error)
 	// Create makes a conversation with its participants in one transaction.
 	Create(ctx context.Context, scope Scope, kind, title string, agentIDs, userIDs []uuid.UUID) (Conversation, error)
+	// CreateThread makes a work thread under the conversation it was opened
+	// from, with its participants, in one transaction.
+	CreateThread(ctx context.Context, scope Scope, parentID uuid.UUID, title string, agentIDs, userIDs []uuid.UUID) (Conversation, error)
 	// AddParticipants adds Bolu and members to an existing conversation.
 	AddParticipants(ctx context.Context, scope Scope, id uuid.UUID, agentIDs, userIDs []uuid.UUID) error
 	// Rename changes a group's title.
@@ -305,6 +308,13 @@ type StartRequest struct {
 	// Trigger is what caused the task: chat, routine, webhook, or handoff.
 	Trigger string
 	Title   string
+	// Prompt is the instruction the task acts on when it is not the last thing a
+	// person wrote — a thread's brief, which the Bolu wrote rather than the user.
+	// Empty means the title is the prompt.
+	Prompt string
+	// ParentTaskID is the task that opened this one, which is set for a thread so
+	// the work it carries is traceable from the chat that asked for it.
+	ParentTaskID uuid.UUID
 }
 
 // Task triggers, matching the schema's check constraint.

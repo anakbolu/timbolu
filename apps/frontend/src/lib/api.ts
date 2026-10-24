@@ -1027,8 +1027,10 @@ export type ChatParticipant = {
 
 export type ChatConversation = {
   id: string;
-  kind: "direct" | "group";
+  /** A thread is work a Bolu opened from another conversation; it names that one. */
+  kind: "direct" | "group" | "thread";
   title: string;
+  parent_conversation_id?: string;
   participants: ChatParticipant[];
   message_count: number;
   last_activity_at: string;

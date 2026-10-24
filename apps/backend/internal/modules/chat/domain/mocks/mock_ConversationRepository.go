@@ -135,6 +135,67 @@ func (_c *ConversationRepository_Create_Call) RunAndReturn(run func(context.Cont
 	return _c
 }
 
+// CreateThread provides a mock function with given fields: ctx, scope, parentID, title, agentIDs, userIDs
+func (_m *ConversationRepository) CreateThread(ctx context.Context, scope domain.Scope, parentID uuid.UUID, title string, agentIDs []uuid.UUID, userIDs []uuid.UUID) (domain.Conversation, error) {
+	ret := _m.Called(ctx, scope, parentID, title, agentIDs, userIDs)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CreateThread")
+	}
+
+	var r0 domain.Conversation
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, uuid.UUID, string, []uuid.UUID, []uuid.UUID) (domain.Conversation, error)); ok {
+		return rf(ctx, scope, parentID, title, agentIDs, userIDs)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, domain.Scope, uuid.UUID, string, []uuid.UUID, []uuid.UUID) domain.Conversation); ok {
+		r0 = rf(ctx, scope, parentID, title, agentIDs, userIDs)
+	} else {
+		r0 = ret.Get(0).(domain.Conversation)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, domain.Scope, uuid.UUID, string, []uuid.UUID, []uuid.UUID) error); ok {
+		r1 = rf(ctx, scope, parentID, title, agentIDs, userIDs)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// ConversationRepository_CreateThread_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CreateThread'
+type ConversationRepository_CreateThread_Call struct {
+	*mock.Call
+}
+
+// CreateThread is a helper method to define mock.On call
+//   - ctx context.Context
+//   - scope domain.Scope
+//   - parentID uuid.UUID
+//   - title string
+//   - agentIDs []uuid.UUID
+//   - userIDs []uuid.UUID
+func (_e *ConversationRepository_Expecter) CreateThread(ctx interface{}, scope interface{}, parentID interface{}, title interface{}, agentIDs interface{}, userIDs interface{}) *ConversationRepository_CreateThread_Call {
+	return &ConversationRepository_CreateThread_Call{Call: _e.mock.On("CreateThread", ctx, scope, parentID, title, agentIDs, userIDs)}
+}
+
+func (_c *ConversationRepository_CreateThread_Call) Run(run func(ctx context.Context, scope domain.Scope, parentID uuid.UUID, title string, agentIDs []uuid.UUID, userIDs []uuid.UUID)) *ConversationRepository_CreateThread_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(domain.Scope), args[2].(uuid.UUID), args[3].(string), args[4].([]uuid.UUID), args[5].([]uuid.UUID))
+	})
+	return _c
+}
+
+func (_c *ConversationRepository_CreateThread_Call) Return(_a0 domain.Conversation, _a1 error) *ConversationRepository_CreateThread_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *ConversationRepository_CreateThread_Call) RunAndReturn(run func(context.Context, domain.Scope, uuid.UUID, string, []uuid.UUID, []uuid.UUID) (domain.Conversation, error)) *ConversationRepository_CreateThread_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Direct provides a mock function with given fields: ctx, scope, agentID
 func (_m *ConversationRepository) Direct(ctx context.Context, scope domain.Scope, agentID uuid.UUID) (domain.Conversation, error) {
 	ret := _m.Called(ctx, scope, agentID)

@@ -44,7 +44,7 @@ func (r *Repository) List(ctx context.Context, scope domain.Scope) ([]domain.Con
 
 		conversations = make([]domain.Conversation, 0, len(rows))
 		for _, row := range rows {
-			conversations = append(conversations, toConversation(row.ID, row.WorkspaceID, row.Kind, row.Title, row.MessageCount, row.LastActivityAt, row.CreatedAt, row.UpdatedAt))
+			conversations = append(conversations, toConversation(row.ID, row.WorkspaceID, row.Kind, row.Title, deref(row.ParentConversationID), row.MessageCount, row.LastActivityAt, row.CreatedAt, row.UpdatedAt))
 		}
 		return nil
 	})
@@ -73,7 +73,7 @@ func (r *Repository) GetConversation(ctx context.Context, scope domain.Scope, id
 			return fmt.Errorf("chat: get conversation: %w", err)
 		}
 
-		conversation = toConversation(row.ID, row.WorkspaceID, row.Kind, row.Title, row.MessageCount, row.LastActivityAt, row.CreatedAt, row.UpdatedAt)
+		conversation = toConversation(row.ID, row.WorkspaceID, row.Kind, row.Title, deref(row.ParentConversationID), row.MessageCount, row.LastActivityAt, row.CreatedAt, row.UpdatedAt)
 		return nil
 	})
 	if err != nil {
@@ -92,13 +92,29 @@ func (r *Repository) GetConversation(ctx context.Context, scope domain.Scope, id
 // Create makes a conversation with its participants in one transaction, so a
 // thread never exists without the people it is between.
 func (r *Repository) Create(ctx context.Context, scope domain.Scope, kind, title string, agentIDs, userIDs []uuid.UUID) (domain.Conversation, error) {
+	return r.create(ctx, scope, kind, title, uuid.Nil, agentIDs, userIDs)
+}
+
+// CreateThread makes a work thread under the conversation it was opened from,
+// with its participants, in one transaction.
+func (r *Repository) CreateThread(ctx context.Context, scope domain.Scope, parentID uuid.UUID, title string, agentIDs, userIDs []uuid.UUID) (domain.Conversation, error) {
+	if parentID == uuid.Nil {
+		return domain.Conversation{}, fmt.Errorf("%w: a thread needs the conversation it was opened from", domain.ErrInvalidInput)
+	}
+	return r.create(ctx, scope, domain.KindThread, title, parentID, agentIDs, userIDs)
+}
+
+// create is the one insert both kinds of conversation go through. The parent is
+// nil for everything that is not a thread, which the schema checks as well.
+func (r *Repository) create(ctx context.Context, scope domain.Scope, kind, title string, parentID uuid.UUID, agentIDs, userIDs []uuid.UUID) (domain.Conversation, error) {
 	var conversation domain.Conversation
 
 	err := r.write(ctx, scope, func(queries *sqlcgen.Queries) error {
 		row, err := queries.CreateConversation(ctx, sqlcgen.CreateConversationParams{
-			WorkspaceID: scope.WorkspaceID,
-			Kind:        kind,
-			Title:       title,
+			WorkspaceID:          scope.WorkspaceID,
+			Kind:                 kind,
+			Title:                title,
+			ParentConversationID: optionalUUID(parentID),
 		})
 		if err != nil {
 			return fmt.Errorf("chat: create conversation: %w", err)
@@ -1035,18 +1051,20 @@ func addParticipants(ctx context.Context, queries *sqlcgen.Queries, workspaceID,
 func toConversation(
 	id, workspaceID uuid.UUID,
 	kind, title string,
+	parentID uuid.UUID,
 	messageCount int64,
 	lastActivityAt, createdAt, updatedAt time.Time,
 ) domain.Conversation {
 	return domain.Conversation{
-		ID:             id,
-		WorkspaceID:    workspaceID,
-		Kind:           kind,
-		Title:          title,
-		MessageCount:   int(messageCount),
-		LastActivityAt: lastActivityAt,
-		CreatedAt:      createdAt,
-		UpdatedAt:      updatedAt,
+		ID:                   id,
+		WorkspaceID:          workspaceID,
+		Kind:                 kind,
+		Title:                title,
+		ParentConversationID: parentID,
+		MessageCount:         int(messageCount),
+		LastActivityAt:       lastActivityAt,
+		CreatedAt:            createdAt,
+		UpdatedAt:            updatedAt,
 	}
 }
 
