@@ -1,27 +1,30 @@
 "use client";
 
 /**
- * The chat view: the thread, the composer, and the live state of the answer.
+ * The chat view: the conversation, the composer, the live state of the answer,
+ * and the panel of work threads its Bolu opened.
  *
  * A reply is rendered from what the server stored, not from tokens the client
  * assembled, so a message that is still arriving shows the text it has and the
  * final event replaces it with the canonical body.
  */
 
-import { ArrowUp, Check, History, Paperclip, X } from "lucide-react";
+import { ArrowRight, Check, FileText, MessageSquare, MessagesSquare, PanelRight, Paperclip, X } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Bolu } from "@/components/bolu/bolu";
+import type { BoluExpressionName } from "@/components/bolu/characters";
 import { useWorkspace } from "@/components/dashboard/workspace-data";
+import { useIsWide } from "@/hooks/use-wide";
 import { uploadStagedAttachment, type Agent, type ApiError, type ChatConversation, type ChatMessage } from "@/lib/api";
 import { allBot, type CrewMember } from "@/lib/crew";
 import { crewFor, expressionOf, stateOf } from "@/lib/dashboard-view";
 
 import { Block } from "./blocks";
-import { ConversationList } from "./conversation-list";
-import { describeResult, isBusy, useChat } from "./use-chat";
+import { ThreadPanel } from "./thread-panel";
+import { describeResult, isBusy, useChat, type ChatState } from "./use-chat";
 
 const STATUS_LABEL: Record<string, string> = {
   connecting: "menyambung…",
@@ -77,11 +80,11 @@ function blamedAttachments(error: ApiError): string[] {
   return quoted ? [quoted[1]] : [];
 }
 
-const STATUS_CLASS: Record<string, string> = {
-  connecting: "bg-bolu-panel text-bolu-muted",
-  live: "bg-bolu-live/12 text-bolu-lunas",
-  reconnecting: "bg-bolu-flag/12 text-bolu-flag",
-  closed: "bg-bolu-belum/12 text-bolu-belum",
+const STATUS_DOT: Record<string, string> = {
+  connecting: "bg-bolu-rest",
+  live: "bg-bolu-live",
+  reconnecting: "bg-bolu-flag",
+  closed: "bg-bolu-belum",
 };
 
 /**
@@ -101,7 +104,14 @@ export function ChatScreen() {
   );
 }
 
-/** ChatView is the whole screen: one thread and its composer. */
+/**
+ * ChatView is the whole screen, laid out as the internal panel design: the
+ * conversation in the middle and, beside it, the work threads its Bolu opened.
+ *
+ * A thread is a conversation of its own whose parent is this one, so the panel
+ * reads the same store the sidebar does: a thread a Bolu opened a moment ago
+ * appears here as soon as the stream says the workspace moved.
+ */
 export function ChatView({
   agentId,
   conversationId,
@@ -110,15 +120,9 @@ export function ChatView({
   conversationId?: string;
 }) {
   const chat = useChat();
-  const { agents, user } = useWorkspace();
-  const [draft, setDraft] = useState("");
-  const [queued, setQueued] = useState<QueuedFile[]>([]);
-  const [sendError, setSendError] = useState<string | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const { agents } = useWorkspace();
+  const wide = useIsWide();
   const opened = useRef<string | null>(null);
-  const picker = useRef<HTMLInputElement | null>(null);
-  // The uploads in flight, by chip, so removing one drops its request too.
-  const uploads = useRef(new Map<string, AbortController>());
 
   // The newest message is what a person came to read, so the thread is kept at the
   // bottom instead of the browser: on open, as a reply streams in, and when a block
@@ -151,38 +155,231 @@ export function ChatView({
     opened.current = conversationId;
   }, [conversationId, chat]);
 
-  const title = useMemo(() => {
-    if (!chat.active) {
-      return "Pilih obrolan";
-    }
-    if (chat.active.title) {
-      return chat.active.title;
-    }
-    const agent = chat.active.participants.find((participant) => participant.is_agent);
-    return agent?.name ?? "Obrolan";
-  }, [chat.active]);
+  const title = useMemo(() => titleOf(chat.active), [chat.active]);
 
-  // The header shows the one Bolu a direct thread is with: its face, its role, and
-  // what it is doing right now. A group has no single partner, so it names its
-  // members instead of borrowing the first one's face.
+  // The header shows the one Bolu a direct thread is with. A group has no single
+  // partner, so it names its members instead of borrowing the first one's face.
   const partner = useMemo(() => {
-    if (!chat.active || chat.active.kind !== "direct") return null;
+    if (!chat.active || chat.active.kind === "group") return null;
     const participant = chat.active.participants.find((item) => item.is_agent);
     if (!participant) return null;
     return agents.find((agent) => agent.id === participant.agent_id) ?? null;
   }, [chat.active, agents]);
 
+  // The work threads opened from this conversation, newest first.
+  const threads = useMemo(
+    () =>
+      chat.active
+        ? chat.conversations
+            .filter((conversation) => conversation.parent_conversation_id === chat.active?.id)
+            .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
+        : [],
+    [chat.active, chat.conversations],
+  );
+
   /**
-   * waiting are the lines that stand for the answers being prepared.
-   *
-   * A group message can be answered by more than one Bolu, so each one that is
-   * still working gets its own line: one row for the whole group would hide the
-   * second answer behind the first. The router may name the Bolu before its
-   * message exists, and that message carries no text until the first block lands,
-   * so both are the same wait and are drawn once. A message that already has
-   * content is its own bubble, and its row is over.
+   * Which thread the panel shows. A person's own choice wins for the conversation
+   * it was made in; until they make one, a wide screen shows the newest thread
+   * beside the chat — which is the design's resting state — and a narrow one keeps
+   * the chat to itself.
    */
-  const waiting = useMemo(() => {
+  const [choice, setChoice] = useState<{ conversation: string; thread: string | null } | null>(null);
+  const activeId = chat.active?.id ?? null;
+  const shown =
+    choice && choice.conversation === activeId
+      ? choice.thread
+      : wide
+        ? (threads[0]?.id ?? null)
+        : null;
+  const selected = threads.find((item) => item.id === shown) ?? null;
+  const panelOpen = shown !== null && (selected !== null || shown === LIST);
+  const showThread = (id: string | null) => activeId && setChoice({ conversation: activeId, thread: id });
+
+  /**
+   * The timeline: every message, and a marker where each thread was opened, so the
+   * place a piece of work left the chat is where a person finds the way into it.
+   */
+  const timeline = useMemo(() => {
+    const items: ({ kind: "message"; at: number; message: ChatMessage } | { kind: "thread"; at: number; thread: ChatConversation })[] =
+      chat.messages.map((message) => ({ kind: "message", at: Date.parse(message.created_at), message }));
+    for (const item of threads) {
+      items.push({ kind: "thread", at: Date.parse(item.created_at), thread: item });
+    }
+    // A message without a parsable time keeps its place: the server's order is the
+    // truth, and only a thread is slotted in by its own moment.
+    return items.sort((left, right) =>
+      Number.isFinite(left.at) && Number.isFinite(right.at) ? left.at - right.at : 0,
+    );
+  }, [chat.messages, threads]);
+
+  const waiting = useWaiting(chat, agents);
+
+  return (
+    <div className="flex h-full min-h-0 flex-1">
+      <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col bg-bolu-surface shadow-[-4px_0_15px_-3px_rgba(0,0,0,0.03)]">
+        <header className="flex h-14 flex-none items-center justify-between gap-3 border-b border-bolu-line px-6 max-[760px]:px-3">
+          <div className="flex min-w-0 items-center gap-2">
+            {partner ? (
+              <Bolu
+                member={crewFor(partner)}
+                expression={expressionOf(stateOf(partner))}
+                color={partner.color || undefined}
+                size={24}
+                className="flex-none"
+              />
+            ) : chat.active ? (
+              <span className="flex size-6 flex-none items-center justify-center rounded-md bg-bolu-amber-soft text-bolu-ink">
+                <MessageSquare size={13} strokeWidth={2} aria-hidden="true" />
+              </span>
+            ) : null}
+            <div className="min-w-0">
+              <h1 className="truncate text-[15px] font-semibold text-bolu-ink">{title}</h1>
+              <p className="truncate text-[12px] text-bolu-muted">
+                {partner
+                  ? `${partner.role || "Bolu"} · ${partner.display_status === "working" ? "sedang bekerja" : partner.display_status === "waiting" ? "menunggu kamu" : "santai"}`
+                  : chat.active
+                    ? chat.active.participants
+                        .filter((participant) => participant.is_agent)
+                        .map((participant) => participant.name)
+                        .join(", ")
+                    : "Pilih Bolu di kiri untuk mulai."}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-none items-center gap-3 text-bolu-muted">
+            <span
+              className="flex items-center gap-1.5 text-[12px]"
+              title={STATUS_LABEL[chat.status] ?? chat.status}
+            >
+              <span className={`size-2 rounded-full ${STATUS_DOT[chat.status] ?? STATUS_DOT.closed}`} />
+              <span className="max-[760px]:sr-only">{STATUS_LABEL[chat.status] ?? chat.status}</span>
+            </span>
+            {chat.active ? (
+              <button
+                type="button"
+                aria-label="Thread kerja"
+                aria-expanded={panelOpen}
+                onClick={() => showThread(panelOpen ? null : (threads[0]?.id ?? LIST))}
+                className="relative flex size-8 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent text-bolu-muted hover:bg-bolu-hover hover:text-bolu-ink"
+              >
+                <PanelRight size={18} strokeWidth={2} aria-hidden="true" />
+                {threads.length > 0 ? (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-bolu-amber px-1 text-[10px] font-bold text-bolu-on-tint">
+                    {threads.length}
+                  </span>
+                ) : null}
+              </button>
+            ) : null}
+          </div>
+        </header>
+
+        {chat.error ? (
+          <p role="alert" className="mx-6 mt-3 rounded-md border border-bolu-belum/30 bg-bolu-belum/8 px-3 py-2 text-sm text-bolu-belum">
+            {chat.error}
+          </p>
+        ) : null}
+
+        <div ref={thread} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6 max-[760px]:px-3">
+          {chat.hasMore ? (
+            <button
+              type="button"
+              onClick={() => void chat.loadOlder()}
+              disabled={chat.loadingOlder}
+              className="mx-auto mb-3 block cursor-pointer rounded-full border border-bolu-border bg-transparent px-3 py-1 text-sm text-bolu-muted transition hover:bg-bolu-hover/60 disabled:opacity-50"
+            >
+              {chat.loadingOlder ? "Memuat…" : "Muat pesan lama"}
+            </button>
+          ) : null}
+
+          {chat.messages.length === 0 && !chat.loading ? (
+            <p className="mt-8 text-center text-[15px] text-bolu-muted">
+              {chat.active
+                ? `Belum ada pesan dengan ${title}. Tulis sesuatu untuk mulai.`
+                : "Pilih Bolu di kiri untuk mulai."}
+            </p>
+          ) : null}
+
+          <div ref={content} className="mx-auto mt-auto flex w-full max-w-3xl flex-col gap-6">
+            {timeline.map((item) =>
+              item.kind === "message" ? (
+                <MessageRow
+                  key={item.message.message_id}
+                  message={item.message}
+                  name={nameOf(chat.active, item.message)}
+                  face={authorFace(chat.active, item.message, agents)}
+                  color={colorOf(item.message, agents)}
+                />
+              ) : (
+                <ThreadMarker
+                  key={item.thread.id}
+                  thread={item.thread}
+                  open={selected?.id === item.thread.id}
+                  onOpen={() => showThread(item.thread.id)}
+                />
+              ),
+            )}
+
+            {waiting.map((row) => (
+              <TypingRow key={row.key} name={row.name} face={row.face} text={row.text} />
+            ))}
+
+            {chat.routerNotice ? (
+              <p className="text-xs text-bolu-muted">
+                Router memilih {chat.routerNotice.reason}
+                {chat.routerNotice.source === "model" ? " (model kecil)" : " (cadangan)"}.
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        <Composer
+          chat={chat}
+          onSent={pin}
+          placeholder={chat.active ? "Tanya Bolu atau mulai sebuah tugas…" : "Pilih obrolan dulu"}
+          footer="Bolu bisa keliru. Periksa lagi informasi yang penting."
+        />
+      </div>
+
+      {panelOpen && chat.active ? (
+        <ThreadPanel
+          threads={threads}
+          selected={selected}
+          wide={wide}
+          onSelect={(id) => showThread(id)}
+          onClose={() => showThread(null)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/** LIST is the panel showing every thread rather than one of them. */
+const LIST = "__list__";
+
+/** titleOf names a conversation for its header. */
+function titleOf(conversation: ChatConversation | null): string {
+  if (!conversation) {
+    return "Pilih obrolan";
+  }
+  if (conversation.title) {
+    return conversation.title;
+  }
+  const agent = conversation.participants.find((participant) => participant.is_agent);
+  return agent?.name ?? "Obrolan";
+}
+
+/**
+ * useWaiting is the lines that stand for the answers being prepared.
+ *
+ * A group message can be answered by more than one Bolu, so each one that is
+ * still working gets its own line: one row for the whole group would hide the
+ * second answer behind the first. The router may name the Bolu before its
+ * message exists, and that message carries no text until the first block lands,
+ * so both are the same wait and are drawn once. A message that already has
+ * content is its own bubble, and its row is over.
+ */
+function useWaiting(chat: ChatState, agents: Agent[]) {
+  return useMemo(() => {
     const rows: { key: string; name: string; face: CrewMember; text: string }[] = [];
 
     for (const message of chat.messages) {
@@ -225,10 +422,38 @@ export function ChatView({
 
     return rows;
   }, [agents, chat.active, chat.activity, chat.messages, chat.responders]);
+}
 
-  // The circle beside a user message carries the account's initial: the store has
-  // no display name, and the email is what a person recognises as their own.
-  const userInitial = user?.email ? user.email.charAt(0).toUpperCase() : "?";
+/**
+ * Composer is the input at the foot of a conversation, in the main chat and in a
+ * thread alike: a card with the text, the files it carries, and the send.
+ *
+ * Files are uploaded as soon as they are picked, so the send that names them is
+ * the same call that stores the message: the file travels with the words rather
+ * than after them, and the reply sees it on the turn it was sent with.
+ */
+export function Composer({
+  chat,
+  onSent,
+  placeholder,
+  footer,
+  compact = false,
+}: {
+  chat: ChatState;
+  /** Called when a send starts, which is a person looking for the answer. */
+  onSent?: () => void;
+  placeholder: string;
+  /** The line under the card, when the composer has one. */
+  footer?: string;
+  /** The thread panel's smaller composer. */
+  compact?: boolean;
+}) {
+  const [draft, setDraft] = useState("");
+  const [queued, setQueued] = useState<QueuedFile[]>([]);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const picker = useRef<HTMLInputElement | null>(null);
+  // The uploads in flight, by chip, so removing one drops its request too.
+  const uploads = useRef(new Map<string, AbortController>());
 
   const hasFiles = queued.length > 0;
   const activeId = chat.active?.id ?? null;
@@ -362,7 +587,7 @@ export function ChatView({
 
     // Sending is a person looking for the answer, so the thread returns to its
     // newest message even if they had scrolled up to read something older.
-    pin();
+    onSent?.();
 
     const attachmentIds = uploaded.flatMap((item) => (item.attachmentId ? [item.attachmentId] : []));
     const result = await chat.send(text, attachmentIds);
@@ -388,266 +613,226 @@ export function ChatView({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-1 min-[761px]:flex-row">
-      <ConversationList
-        conversations={chat.conversations}
-        agents={agents}
-        activeId={chat.active?.id}
-        open={historyOpen}
-        onClose={() => setHistoryOpen(false)}
-        onNavigate={() => setHistoryOpen(false)}
-      />
-
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center gap-3 border-b border-bolu-border bg-bolu-surface px-6 py-3 max-[760px]:px-3">
-          {/* Below 760px the panel is a drawer, so the thread needs its way in. From
-              761px up the list is always there and this button would be noise. */}
-          <button
-            type="button"
-            aria-label="Riwayat obrolan"
-            aria-expanded={historyOpen}
-            onClick={() => setHistoryOpen((open) => !open)}
-            className="hidden size-10 flex-none cursor-pointer items-center justify-center rounded-md border-0 bg-bolu-bg max-[760px]:flex"
-          >
-            <History size={19} strokeWidth={2.2} aria-hidden="true" />
-          </button>
-          {partner ? (
-            <Bolu
-              member={crewFor(partner)}
-              expression={expressionOf(stateOf(partner))}
-              color={partner.color || undefined}
-              size={44}
-              className="flex-none"
-            />
-          ) : null}
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate font-display text-[22px] font-semibold">{title}</h1>
-            <p className="truncate text-[14px] text-bolu-muted">
-              {partner
-                ? `${partner.role || "Bolu"} · ${partner.display_status === "working" ? "sedang bekerja" : partner.display_status === "waiting" ? "menunggu kamu" : "santai"}`
-                : chat.active
-                  ? chat.active.participants
-                      .map((participant) => `${participant.name} · ${participant.role}`)
-                      .join("  ·  ")
-                  : "Pilih Bolu di kiri untuk mulai."}
-            </p>
-          </div>
-          <span
-            className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${
-              STATUS_CLASS[chat.status] ?? STATUS_CLASS.closed
-            }`}
-          >
-            {STATUS_LABEL[chat.status] ?? chat.status}
-          </span>
-        </header>
-
-        <section className="flex min-h-0 flex-1 flex-col">
-          {chat.error ? (
-            <p role="alert" className="mx-4 mt-3 rounded-md border border-bolu-belum/30 bg-bolu-belum/8 px-3 py-2 text-sm text-bolu-belum">
-              {chat.error}
-            </p>
-          ) : null}
-
-          <div
-            ref={thread}
-            className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4"
-          >
-            {chat.hasMore ? (
-              <button
-                type="button"
-                onClick={() => void chat.loadOlder()}
-                disabled={chat.loadingOlder}
-                className="mx-auto mb-3 block cursor-pointer rounded-full border border-bolu-border px-3 py-1 text-sm text-bolu-muted transition hover:bg-bolu-hover/60 disabled:opacity-50"
-              >
-                {chat.loadingOlder ? "Memuat…" : "Muat pesan lama"}
-              </button>
-            ) : null}
-
-            {chat.messages.length === 0 && !chat.loading ? (
-              <p className="mt-8 text-center text-[15px] text-bolu-muted">
-                {chat.active
-                  ? `Belum ada pesan dengan ${title}. Tulis sesuatu untuk mulai.`
-                  : "Pilih Bolu di kiri untuk mulai."}
-              </p>
-            ) : null}
-
-            <div ref={content} className="mx-auto mt-auto flex w-full max-w-[760px] flex-col gap-3">
-              {chat.messages.map((message) => (
-                <MessageRow
-                  key={message.message_id}
-                  message={message}
-                  name={nameOf(chat.active, message)}
-                  face={authorFace(chat.active, message, agents)}
-                  initial={userInitial}
-                />
-              ))}
-
-              {waiting.map((row) => (
-                <div
-                  key={row.key}
-                  role="status"
-                  aria-live="polite"
-                  className="flex items-center gap-2.5 text-sm text-bolu-muted"
+    <form
+      onSubmit={submit}
+      className={`flex-none bg-gradient-to-t from-bolu-surface via-bolu-surface to-transparent ${
+        compact ? "p-3" : "p-4 max-[760px]:px-3"
+      }`}
+    >
+      <div className={compact ? "flex flex-col gap-2" : "mx-auto flex max-w-4xl flex-col gap-2"}>
+        <div className="flex flex-col rounded-xl border border-bolu-border bg-bolu-surface shadow-sm transition-shadow focus-within:border-bolu-amber focus-within:ring-1 focus-within:ring-bolu-amber">
+          {hasFiles ? (
+            <ul className="flex flex-wrap gap-1.5 px-3 pt-3">
+              {queued.map((item) => (
+                <li
+                  key={item.id}
+                  className={`flex items-center gap-1.5 rounded-full border py-1 pl-3 pr-1 text-[13px] ${
+                    item.status === "failed"
+                      ? "border-bolu-belum/40 bg-bolu-belum/8 text-bolu-belum"
+                      : "border-bolu-border bg-bolu-surface text-bolu-body"
+                  }`}
                 >
-                  <Bolu member={row.face} expression="mikir" size={22} className="flex-none" />
-                  {/* The name is inside the pulsing text rather than a separate
-                      line: one row is the whole state, and it is read once. */}
-                  <span className="motion-safe:animate-soft-pulse">
-                    {row.name} · {row.text}
-                  </span>
-                </div>
-              ))}
-
-              {chat.routerNotice ? (
-                <p className="text-xs text-bolu-muted">
-                  Router memilih {chat.routerNotice.reason}
-                  {chat.routerNotice.source === "model" ? " (model kecil)" : " (cadangan)"}.
-                </p>
-              ) : null}
-            </div>
-          </div>
-
-          <form onSubmit={submit} className="bg-bolu-bg px-4 py-3 max-[760px]:px-3">
-            <div className="mx-auto flex max-w-[760px] flex-col gap-2">
-              {hasFiles ? (
-                <ul className="flex flex-wrap gap-1.5">
-                  {queued.map((item) => (
-                    <li
-                      key={item.id}
-                      className={`flex items-center gap-1.5 rounded-full border py-1 pl-3 pr-1 text-[13px] ${
-                        item.status === "failed"
-                          ? "border-bolu-belum/40 bg-bolu-belum/8 text-bolu-belum"
-                          : "border-bolu-border bg-bolu-surface text-bolu-body"
-                      }`}
-                    >
-                      <span className="max-w-[180px] truncate">{item.file.name}</span>
-                      <span className="text-[11px] text-bolu-muted">{formatBytes(item.file.size)}</span>
-                      {item.status === "uploading" ? (
+                  <span className="max-w-[180px] truncate">{item.file.name}</span>
+                  <span className="text-[11px] text-bolu-muted">{formatBytes(item.file.size)}</span>
+                  {item.status === "uploading" ? (
+                    <span role="status" className="flex items-center gap-1.5" aria-label={`Mengunggah ${item.file.name}`}>
+                      <span className="h-1 w-14 overflow-hidden rounded-full bg-bolu-track">
                         <span
-                          role="status"
-                          className="flex items-center gap-1.5"
-                          aria-label={`Mengunggah ${item.file.name}`}
-                        >
-                          <span className="h-1 w-14 overflow-hidden rounded-full bg-bolu-track">
-                            <span
-                              className="block h-full rounded-full bg-bolu-accent"
-                              style={{ width: `${Math.round(item.progress * 100)}%` }}
-                            />
-                          </span>
-                          <span className="text-[11px] text-bolu-muted">
-                            {Math.round(item.progress * 100)}%
-                          </span>
-                        </span>
-                      ) : null}
-                      {item.status === "uploaded" ? (
-                        <span className="flex items-center gap-0.5 text-[11px] text-bolu-lunas">
-                          <Check size={13} strokeWidth={2.6} aria-hidden="true" />
-                          siap
-                        </span>
-                      ) : null}
-                      {/* The reason is on the chip rather than in one banner: two
-                          files can fail for two different reasons. */}
-                      {item.status === "failed" && item.error ? (
-                        <span className="max-w-[200px] truncate text-[11px]">{item.error}</span>
-                      ) : null}
-                      {item.status === "failed" ? (
-                        <button
-                          type="button"
-                          aria-label={`Coba lagi ${item.file.name}`}
-                          onClick={() => void upload(item.id, item.file)}
-                          className="shrink-0 cursor-pointer rounded-full border border-bolu-belum/40 bg-transparent px-2 py-0.5 text-[11px] font-medium text-bolu-belum"
-                        >
-                          Coba lagi
-                        </button>
-                      ) : null}
-                      {/* A chip can be dropped at any time: the file belongs to no
-                          message yet, so removing it is local — and it takes the
-                          upload with it when one is still running. */}
-                      <button
-                        type="button"
-                        aria-label={`Buang ${item.file.name}`}
-                        onClick={() => removeQueued(item.id)}
-                        className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-bolu-muted"
-                      >
-                        <X size={13} strokeWidth={2.5} aria-hidden="true" />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
+                          className="block h-full rounded-full bg-bolu-accent"
+                          style={{ width: `${Math.round(item.progress * 100)}%` }}
+                        />
+                      </span>
+                      <span className="text-[11px] text-bolu-muted">{Math.round(item.progress * 100)}%</span>
+                    </span>
+                  ) : null}
+                  {item.status === "uploaded" ? (
+                    <span className="flex items-center gap-0.5 text-[11px] text-bolu-lunas">
+                      <Check size={13} strokeWidth={2.6} aria-hidden="true" />
+                      siap
+                    </span>
+                  ) : null}
+                  {/* The reason is on the chip rather than in one banner: two
+                      files can fail for two different reasons. */}
+                  {item.status === "failed" && item.error ? (
+                    <span className="max-w-[200px] truncate text-[11px]">{item.error}</span>
+                  ) : null}
+                  {item.status === "failed" ? (
+                    <button
+                      type="button"
+                      aria-label={`Coba lagi ${item.file.name}`}
+                      onClick={() => void upload(item.id, item.file)}
+                      className="shrink-0 cursor-pointer rounded-full border border-bolu-belum/40 bg-transparent px-2 py-0.5 text-[11px] font-medium text-bolu-belum"
+                    >
+                      Coba lagi
+                    </button>
+                  ) : null}
+                  {/* A chip can be dropped at any time: the file belongs to no
+                      message yet, so removing it is local — and it takes the
+                      upload with it when one is still running. */}
+                  <button
+                    type="button"
+                    aria-label={`Buang ${item.file.name}`}
+                    onClick={() => removeQueued(item.id)}
+                    className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-bolu-muted"
+                  >
+                    <X size={13} strokeWidth={2.5} aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
 
-              <div className="flex items-center gap-2 rounded-full border border-bolu-border bg-bolu-surface py-1.5 pl-1.5 pr-1.5">
-                <input
-                  ref={picker}
-                  type="file"
-                  multiple
-                  hidden
-                  onChange={(event) => queueFiles(event.target.files)}
-                />
-                <button
-                  type="button"
-                  aria-label="Lampirkan berkas"
-                  disabled={!chat.active}
-                  onClick={() => picker.current?.click()}
-                  className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-bolu-muted hover:text-bolu-ink disabled:opacity-40"
-                >
-                  <Paperclip size={18} strokeWidth={2.2} aria-hidden="true" />
-                </button>
-                <input
-                  value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault();
-                      event.currentTarget.form?.requestSubmit();
-                    }
-                  }}
-                  placeholder={
-                    uploaded.length > 0 && draft.trim() === ""
-                      ? "Kirim lampiran saja, atau tulis pesan"
-                      : chat.active
-                        ? "Suruh atau tanya apa saja…"
-                        : "Pilih obrolan dulu"
-                  }
-                  disabled={!chat.active}
-                  className="min-h-9 min-w-0 flex-1 border-0 bg-transparent text-[15px] outline-none disabled:opacity-60"
-                />
-                <button
-                  type="submit"
-                  aria-label="Kirim"
-                  disabled={!canSend}
-                  className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-bolu-accent text-bolu-solid-ink disabled:opacity-50"
-                >
-                  {chat.sending || uploading ? (
-                    "…"
-                  ) : (
-                    <ArrowUp size={18} strokeWidth={2.5} aria-hidden="true" />
-                  )}
-                </button>
-              </div>
+          <textarea
+            value={draft}
+            rows={1}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              // The box grows with what is written, up to the cap its class sets.
+              event.target.style.height = "";
+              event.target.style.height = `${event.target.scrollHeight}px`;
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+              }
+            }}
+            placeholder={uploaded.length > 0 && draft.trim() === "" ? "Kirim lampiran saja, atau tulis pesan" : placeholder}
+            disabled={!chat.active}
+            className={`w-full resize-none border-0 bg-transparent text-bolu-ink outline-none placeholder:text-bolu-muted disabled:opacity-60 ${
+              compact ? "max-h-24 px-3 py-2.5 text-[14px]" : "max-h-32 px-4 py-3 text-[15px]"
+            }`}
+          />
 
-              {/* A disabled control says nothing about why it is disabled, so the
-                  composer says it: a refused send, or a file still uploading. */}
-              {sendError ? (
-                <p role="alert" className="px-3 text-[12px] text-bolu-belum">
-                  {sendError}
-                </p>
-              ) : null}
-              {failed ? (
-                <p className="px-3 text-[12px] text-bolu-muted">
-                  Hapus atau unggah ulang lampiran yang gagal untuk mengirim.
-                </p>
-              ) : null}
-              {uploading ? (
-                <p role="status" className="px-3 text-[12px] text-bolu-muted">
-                  Menunggu lampiran selesai diunggah…
-                </p>
-              ) : null}
-            </div>
-          </form>
-        </section>
+          <div className={`flex items-center justify-between ${compact ? "px-2 pb-2" : "px-3 pb-2 pt-1"}`}>
+            <input ref={picker} type="file" multiple hidden onChange={(event) => queueFiles(event.target.files)} />
+            <button
+              type="button"
+              aria-label="Lampirkan berkas"
+              disabled={!chat.active}
+              onClick={() => picker.current?.click()}
+              className="flex size-8 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent text-bolu-muted hover:bg-bolu-hover hover:text-bolu-ink disabled:opacity-40"
+            >
+              <Paperclip size={compact ? 16 : 18} strokeWidth={2} aria-hidden="true" />
+            </button>
+            <button
+              type="submit"
+              aria-label="Kirim"
+              disabled={!canSend}
+              className={`flex cursor-pointer items-center justify-center rounded-md border border-bolu-border bg-bolu-bubble text-bolu-body transition-colors hover:bg-bolu-amber-soft hover:text-bolu-ink disabled:cursor-default disabled:opacity-50 ${
+                compact ? "size-7" : "size-8"
+              }`}
+            >
+              {chat.sending || uploading ? "…" : <ArrowRight size={compact ? 14 : 16} strokeWidth={2} aria-hidden="true" />}
+            </button>
+          </div>
+        </div>
+
+        {/* A disabled control says nothing about why it is disabled, so the
+            composer says it: a refused send, or a file still uploading. */}
+        {sendError ? (
+          <p role="alert" className="px-3 text-[12px] text-bolu-belum">
+            {sendError}
+          </p>
+        ) : null}
+        {failed ? (
+          <p className="px-3 text-[12px] text-bolu-muted">Hapus atau unggah ulang lampiran yang gagal untuk mengirim.</p>
+        ) : null}
+        {uploading ? (
+          <p role="status" className="px-3 text-[12px] text-bolu-muted">
+            Menunggu lampiran selesai diunggah…
+          </p>
+        ) : null}
+        {footer ? <p className="text-center text-[10px] text-bolu-muted">{footer}</p> : null}
+      </div>
+    </form>
+  );
+}
+
+/**
+ * ThreadMarker is where a work thread left the chat: a chip that opens it in the
+ * panel. The dot is lit while the thread is the one the panel shows.
+ */
+function ThreadMarker({
+  thread,
+  open,
+  onOpen,
+}: {
+  thread: ChatConversation;
+  open: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <div className="flex justify-start pl-12 max-[760px]:pl-0">
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-pressed={open}
+        className="flex max-w-full cursor-pointer items-center gap-1.5 rounded-md border border-bolu-border bg-bolu-surface px-2.5 py-1.5 text-[12px] text-bolu-muted shadow-sm transition-colors hover:bg-bolu-hover/60 hover:text-bolu-ink"
+      >
+        <MessagesSquare size={14} strokeWidth={2} aria-hidden="true" />
+        <span>Diteruskan ke thread</span>
+        <span className={`size-1.5 flex-none rounded-full ${open ? "bg-bolu-amber" : "bg-bolu-accent"}`} />
+        <span className="truncate font-medium text-bolu-link">{thread.title || "Thread"}</span>
+      </button>
+    </div>
+  );
+}
+
+/** TypingRow is a Bolu preparing an answer: its thinking face and three dots. */
+export function TypingRow({
+  name,
+  face,
+  text,
+  compact = false,
+}: {
+  name: string;
+  face: CrewMember;
+  text: string;
+  compact?: boolean;
+}) {
+  return (
+    <div role="status" aria-live="polite" className={`flex items-center ${compact ? "gap-3" : "gap-4"}`}>
+      <Avatar face={face} expression="mikir" compact={compact} />
+      <div className="flex items-center gap-2">
+        <span className="inline-flex items-center gap-1 rounded-2xl rounded-bl-sm border border-bolu-border bg-bolu-bubble px-3 py-2">
+          {[0, 1, 2].map((dot) => (
+            <span
+              key={dot}
+              className="block size-1.5 rounded-full bg-bolu-muted motion-safe:animate-typing-dot"
+              style={{ animationDelay: `${(dot - 2) * 0.16}s` }}
+            />
+          ))}
+        </span>
+        {/* The name and the activity are the whole state, read once. */}
+        <span className="text-[12px] text-bolu-muted">
+          {name} · {text}
+        </span>
       </div>
     </div>
+  );
+}
+
+/** Avatar is a Bolu's face in the round tile the panel design gives a speaker. */
+export function Avatar({
+  face,
+  color,
+  expression = "senang",
+  compact = false,
+}: {
+  face: CrewMember;
+  color?: string;
+  expression?: BoluExpressionName;
+  compact?: boolean;
+}) {
+  return (
+    <span
+      className={`flex flex-none items-center justify-center overflow-hidden rounded-full border border-bolu-border bg-bolu-amber-soft shadow-sm ${
+        compact ? "mt-0.5 size-6" : "size-8"
+      }`}
+    >
+      <Bolu member={face} color={color} expression={expression} size={compact ? 20 : 28} />
+    </span>
   );
 }
 
@@ -664,7 +849,7 @@ export function ChatView({
  * taken from them — which is why the pin follows them only while they are near the
  * bottom.
  */
-function useStickToBottom(conversationId?: string) {
+export function useStickToBottom(conversationId?: string) {
   const thread = useRef<HTMLDivElement | null>(null);
   const content = useRef<HTMLDivElement | null>(null);
   const sticky = useRef(true);
@@ -754,7 +939,7 @@ function useStickToBottom(conversationId?: string) {
  * named by the same record the header lists, which is what keeps the two from
  * disagreeing.
  */
-function nameOf(conversation: ChatConversation | null, message: ChatMessage): string {
+export function nameOf(conversation: ChatConversation | null, message: ChatMessage): string {
   if (!message.agent_id) {
     return "Kamu";
   }
@@ -770,7 +955,7 @@ function nameOf(conversation: ChatConversation | null, message: ChatMessage): st
  * The face comes from the registry row — the shape and colour the workspace gave
  * that Bolu — so a Bolu created here looks the same in the thread and the sidebar,
  */
-function authorFace(
+export function authorFace(
   conversation: ChatConversation | null,
   message: ChatMessage,
   agents: Agent[],
@@ -788,32 +973,41 @@ function authorFace(
   return allBot("Oren");
 }
 
+/** colorOf is the colour the workspace gave the Bolu that wrote a message. */
+export function colorOf(message: ChatMessage, agents: Agent[]): string | undefined {
+  if (!message.agent_id) return undefined;
+  return agents.find((candidate) => candidate.id === message.agent_id)?.color || undefined;
+}
+
 /**
- * MessageRow renders one message, from the user or from a Bolu.
- * A reply that is still arriving with nothing to show yet draws no bubble at
- * all: the waiting row above the composer's end of the thread is the one line
- * that says a Bolu is working, and a bubble would be a second one. The moment
- * the first block lands the bubble is the answer, and it streams into place.
+ * MessageRow renders one message, as the panel design draws it: a Bolu speaks
+ * beside its face in plain text, and a person's message is a soft bubble on the
+ * right.
+ *
+ * A reply that is still arriving with nothing to show yet draws nothing at all:
+ * the typing row is the one line that says a Bolu is working, and a bubble would
+ * be a second one. The moment the first block lands the row is the answer, and it
+ * streams into place.
  */
-function MessageRow({
+export function MessageRow({
   message,
   name,
   face,
-  initial,
+  color,
+  compact = false,
 }: {
   message: ChatMessage;
   name: string;
   face: CrewMember | null;
-  /** The account's initial, drawn in the circle beside a user's message. */
-  initial: string;
+  color?: string;
+  /** The thread panel's smaller row. */
+  compact?: boolean;
 }) {
   const fromAgent = Boolean(message.agent_id);
   const notice = describeResult(message);
   // A message with nothing in it is not drawn: the server opens an empty message
   // for an upload that named none and publishes it before the file is stored,
-  // and a reply that is still being prepared has no blocks yet either. The
-  // waiting row stands for both, and an empty box with padding stands for
-  // neither.
+  // and a reply that is still being prepared has no blocks yet either.
   const empty =
     message.blocks.length === 0 &&
     message.attachments.length === 0 &&
@@ -823,85 +1017,88 @@ function MessageRow({
     return null;
   }
 
-  // What the attachment list hangs from inside the bubble. It is the first thing
-  // in it for a message that is only files, and an `mt-2` there is a gap above
-  // nothing.
+  // What the attachment list hangs from. It is the first thing in the row for a
+  // message that is only files, and a gap above it would be a gap above nothing.
   const stacked = message.blocks.length > 0 || notice !== null;
+  const time = clockOf(message.created_at);
+
+  const body = (
+    <>
+      {message.blocks.map((block, index) => (
+        <Block key={`${message.message_id}-${index}`} block={block} />
+      ))}
+
+      {notice ? (
+        <p className="mt-2 rounded-md border border-bolu-flag/30 bg-bolu-flag/8 px-2.5 py-1.5 text-xs text-bolu-flag">
+          {notice}
+        </p>
+      ) : null}
+
+      {message.attachments.length > 0 ? (
+        <ul className={stacked ? "mt-2 space-y-1" : "space-y-1"}>
+          {message.attachments.map((attachment) => (
+            <li key={attachment.id} className="flex items-center gap-2">
+              <FileText size={14} strokeWidth={2} aria-hidden="true" className="flex-none text-bolu-muted" />
+              <a href={attachment.url} target="_blank" rel="noreferrer noopener" className="text-sm underline">
+                {attachment.filename}
+              </a>
+              <span className="text-xs text-bolu-muted">{formatBytes(attachment.byte_size)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </>
+  );
+
+  if (!fromAgent) {
+    return (
+      <article className="ml-auto flex max-w-[85%] flex-col items-end gap-1">
+        <span className="sr-only">Kamu</span>
+        <div
+          className={`inline-block rounded-2xl rounded-tr-sm bg-bolu-bubble text-bolu-ink shadow-sm ${
+            compact ? "px-4 py-2.5 text-[14px]" : "px-5 py-3 text-[15px]"
+          }`}
+        >
+          {body}
+        </div>
+        {message.task_id ? <TaskLink taskId={message.task_id} align="end" /> : null}
+      </article>
+    );
+  }
 
   return (
-    <article className={fromAgent ? "flex items-start gap-2.5" : "flex justify-end gap-2.5"}>
-      {fromAgent && face ? (
-        <span className="mt-0.5 flex-none">
-          <Bolu member={face} expression="senang" size={36} />
-        </span>
-      ) : null}
-
-      <div className={fromAgent ? "min-w-0 max-w-[560px]" : "max-w-[78%]"}>
-        <p className={fromAgent ? "mb-1 text-[13px] font-semibold text-bolu-body" : "mb-1 text-right text-[13px] font-semibold text-bolu-body"}>
-          {fromAgent ? name : "Kamu"}
-        </p>
-
-        <div
-          className={
-            fromAgent
-              ? "rounded-[6px_20px_20px_20px] border border-bolu-border bg-bolu-surface px-4 py-2.5"
-              : "rounded-[20px_20px_6px_20px] bg-bolu-solid px-4 py-2.5 text-[15px] text-bolu-solid-ink"
-          }
-        >
-          {message.blocks.map((block, index) => (
-            <Block key={`${message.message_id}-${index}`} block={block} />
-          ))}
-
-          {notice ? (
-            <p className="mt-2 rounded-md border border-bolu-flag/30 bg-bolu-flag/8 px-2.5 py-1.5 text-xs text-bolu-flag">
-              {notice}
-            </p>
-          ) : null}
-
-          {message.attachments.length > 0 ? (
-            <ul className={stacked ? "mt-2 space-y-1" : "space-y-1"}>
-              {message.attachments.map((attachment) => (
-                <li key={attachment.id}>
-                  <a
-                    href={attachment.url}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    className="text-sm underline"
-                  >
-                    {attachment.filename}
-                  </a>
-                  <span className="ml-2 text-xs text-bolu-muted">
-                    {formatBytes(attachment.byte_size)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
+    <article className={`group flex ${compact ? "gap-3" : "gap-4"}`}>
+      <Avatar face={face ?? allBot("Oren")} color={color} compact={compact} />
+      <div className={`min-w-0 flex-1 leading-relaxed text-bolu-body ${compact ? "text-[14px]" : "text-[15px]"}`}>
+        <p className="sr-only">{name}</p>
+        {body}
+        <div className="mt-1.5 flex items-center gap-3 text-xs text-bolu-muted">
+          {time ? <span>{time}</span> : null}
+          {/* A message that opened a task says so, and the way in is the task itself: the work
+              behind an answer is the reason the answer can be trusted. */}
+          {message.task_id ? <TaskLink taskId={message.task_id} /> : null}
         </div>
-
-        {/* A message that opened a task says so, and the way in is the task itself: the work behind
-            an answer is the reason the answer can be trusted, and until this link existed the only
-            way to see it was to guess from the dashboard. */}
-        {message.task_id ? (
-          <p className={fromAgent ? "mt-1 text-[13px]" : "mt-1 text-right text-[13px]"}>
-            <Link
-              href={`/tasks/${message.task_id}`}
-              className="text-bolu-muted no-underline hover:underline"
-            >
-              Lihat tugasnya →
-            </Link>
-          </p>
-        ) : null}
       </div>
-      {/* mt-6 clears the name line above the bubble, so the circle sits beside the
-          message rather than beside the label. */}
-      {!fromAgent ? (
-        <span className="mt-6 flex size-9 flex-none items-center justify-center rounded-full bg-bolu-accent text-[15px] font-bold text-bolu-solid-ink">
-          {initial}
-        </span>
-      ) : null}
     </article>
   );
+}
+
+function TaskLink({ taskId, align = "start" }: { taskId: string; align?: "start" | "end" }) {
+  return (
+    <Link
+      href={`/tasks/${taskId}`}
+      className={`text-xs text-bolu-muted no-underline hover:underline ${align === "end" ? "text-right" : ""}`}
+    >
+      Lihat tugasnya →
+    </Link>
+  );
+}
+
+/** clockOf is a message's time of day, as the design stamps it under a reply. */
+function clockOf(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
 }
 
 function formatBytes(bytes: number): string {

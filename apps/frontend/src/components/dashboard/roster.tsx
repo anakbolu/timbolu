@@ -241,7 +241,7 @@ function RosterRow({
       // sidebar instead of reordering it — the grip, which has no pan, is where a
       // touch drag begins. `select-none` is what keeps a drag from selecting the
       // name it crosses on the way to another team.
-      className={`group flex min-h-[46px] min-w-0 items-center gap-1 rounded-md border-2 ${edge} p-[5px_8px] text-bolu-ink ${
+      className={`group flex min-h-[32px] min-w-0 items-center gap-1 rounded-md border-2 ${edge} px-1.5 text-bolu-ink hover:bg-bolu-hover/70 ${
         dragging ? "opacity-40" : ""
       } ${draggable ? "touch-pan-y select-none" : ""}`}
     >
@@ -252,26 +252,24 @@ function RosterRow({
         // gesture — so the link follows the pointer only when nothing was dragged.
         onClick={onFollow}
         draggable={false}
-        className="flex min-w-0 flex-1 items-center gap-2.5 text-left text-bolu-ink no-underline hover:text-bolu-ink"
+        // The status line is the row's title rather than a second line: the panel
+        // design keeps a Bolu to one compact row, and the dot already says it.
+        title={item.line}
+        className="flex min-w-0 flex-1 items-center gap-2.5 text-left text-[14px] text-bolu-body no-underline hover:text-bolu-ink"
       >
-        <div className="relative size-9 flex-none">
+        <div className="relative size-6 flex-none">
           <Bolu
             member={crewFor(item.agent)}
             expression={expressionOf(stateOf(item.agent))}
             color={item.agent.color || undefined}
-            size={36}
+            size={24}
           />
           <span
-            className="absolute -right-px bottom-px size-[10px] rounded-full border-2 border-bolu-surface"
+            className="absolute -right-0.5 bottom-0 size-2 rounded-full border-[1.5px] border-bolu-sidebar"
             style={{ backgroundColor: item.dot }}
           />
         </div>
-        <div className="flex min-w-0 flex-1 flex-col text-left">
-          <span className="truncate font-display text-[15px] font-semibold leading-[1.2]">
-            {item.agent.name}
-          </span>
-          <span className="truncate text-[12px] text-bolu-muted">{item.line}</span>
-        </div>
+        <span className="min-w-0 flex-1 truncate">{item.agent.name}</span>
         {item.waiting > 0 ? (
           <span className="box-border inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-bolu-solid px-1.5 text-[11px] font-extrabold text-bolu-solid-ink">
             {item.waiting}
@@ -531,20 +529,20 @@ export function BoluRoster() {
               if (node) sections.current.set(team.id, node);
               else sections.current.delete(team.id);
             }}
-            className="flex flex-col"
+            className="mb-3 flex flex-col last:mb-0"
           >
             <button
               type="button"
               aria-expanded={!folded}
               onClick={() => toggle(team.id)}
-              className={`flex cursor-pointer items-center gap-1 rounded border-2 px-2 pb-0.5 pt-3 text-[12px] font-bold text-bolu-muted hover:text-bolu-ink ${
+              className={`mb-1 flex cursor-pointer items-center gap-1 rounded border-2 bg-transparent px-1.5 text-[12px] font-semibold text-bolu-muted hover:text-bolu-body ${
                 folded && onTarget ? "border-dashed border-bolu-ink" : "border-transparent"
               }`}
             >
               <span className="flex-1 text-left">{team.name}</span>
-              <span className="font-medium">{roster.length} aktif</span>
+              <span className="font-normal">{roster.length}</span>
               <ChevronDown
-                size={14}
+                size={12}
                 strokeWidth={2.5}
                 aria-hidden="true"
                 className={`transition-transform ${folded ? "-rotate-90" : ""}`}
@@ -557,7 +555,7 @@ export function BoluRoster() {
                   if (node) lists.current.set(team.id, node);
                   else lists.current.delete(team.id);
                 }}
-                className="flex flex-col gap-1"
+                className="flex flex-col gap-0.5"
               >
                 {roster.length === 0 ? (
                   <p
