@@ -71,7 +71,9 @@ export function PasswordResetForm() {
         {error ? <Alert tone="error">{error}</Alert> : null}
         {message ? <Alert tone="success">{message}</Alert> : null}
 
-        <form onSubmit={onReset}>
+        {/* Lihat catatan di form minta tautan: method mencegah kata sandi
+            dikirim sebagai query string sebelum hidrasi. */}
+        <form method="post" action="/forgot-password" onSubmit={onReset}>
           <Field
             id="password"
             label="Kata sandi baru"
@@ -106,7 +108,9 @@ export function PasswordResetForm() {
       {error ? <Alert tone="error">{error}</Alert> : null}
       {message ? <Alert tone="success">{message}</Alert> : null}
 
-      <form onSubmit={onRequest}>
+      {/* Submit native tanpa method memakai GET, jadi alamat email (dan kata
+          sandi di form lain) akan tercatat di URL sebelum React hydrate. */}
+      <form method="post" action="/forgot-password" onSubmit={onRequest}>
         <Field
           id="email"
           label="Email"
