@@ -1,6 +1,8 @@
 package service
 
 import (
+	"archive/zip"
+	"bytes"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -29,8 +31,10 @@ type attachmentType struct {
 //
 // The office formats are the interesting entries: `docx` and its two siblings
 // are zip containers, and the legacy `doc`/`xls`/`ppt` are OLE compound files,
-// which Go's sniffer reports as a bare octet stream. Accepting the container is
-// the most a sniffer can say about them without parsing the archive.
+// which Go's sniffer reports as a bare octet stream. A sniffer can only say that
+// the bytes are one of those containers, so the table stops there and the checks
+// that need the inside — an OOXML package's entries, a compound file's signature
+// — live in validateContainer, which runs after the sniff agrees.
 var knownAttachmentTypes = map[string]attachmentType{
 	"png":  {contentType: "image/png", sniffed: []string{"image/png"}},
 	"jpg":  {contentType: "image/jpeg", sniffed: []string{"image/jpeg"}},
@@ -62,6 +66,22 @@ var knownAttachmentTypes = map[string]attachmentType{
 // bare octet stream for it; the other two are what other sniffers name the same
 // container, so a file that came from one of them is not refused for the label.
 var legacyOffice = []string{"application/octet-stream", "application/x-ole-storage", "application/vnd.ms-office"}
+
+// oleHeader is the signature every OLE compound file opens with, which is what a
+// legacy Office document is. The sniffed label above says "some container"; this
+// says "the container Word, Excel, and PowerPoint write", and it is the one thing
+// that tells a real `doc` from 512 bytes of anything renamed to it.
+var oleHeader = []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}
+
+// ooxmlContentTypes is the entry that makes a zip an OOXML package: Word, Excel,
+// and PowerPoint all declare their parts in it, so a zip without it is a renamed
+// archive and not the document the extension promises.
+const ooxmlContentTypes = "[Content_Types].xml"
+
+// maxOOXMLEntries caps how many central-directory entries an OOXML upload may
+// have. An office file holds tens; a cap keeps a walk of the names cheap and turns
+// an archive built to have a hundred thousand of them into a refusal instead.
+const maxOOXMLEntries = 1024
 
 // defaultAttachmentExtensions is the allowlist of a deployment that configured
 // none: the images, documents, and text files a chat is actually used for.
@@ -146,7 +166,78 @@ func validateAttachment(filename string, content []byte, allowed []string) (stri
 			chatdomain.ErrFileTypeNotAllowed, extension, known.contentType)
 	}
 
+	if err := validateContainer(extension, content); err != nil {
+		return "", err
+	}
+
 	return known.contentType, nil
+}
+
+// validateContainer is the check a sniffer cannot make for a container format.
+//
+// `application/zip` is what a spreadsheet and a program zipped together both look
+// like, and `application/octet-stream` is what anything unknown looks like, so
+// the sniff alone accepts an archive of executables named `docx` and 512 random
+// bytes named `doc`. This opens the container far enough to tell.
+//
+// It reads the central directory and the first eight bytes — no entry is
+// decompressed — so neither check can be turned into a zip bomb.
+func validateContainer(extension string, content []byte) error {
+	switch extension {
+	case "docx", "xlsx", "pptx":
+		return validateOOXML(extension, content)
+	case "doc", "xls", "ppt":
+		if !bytes.HasPrefix(content, oleHeader) {
+			return fmt.Errorf("%w: the content of .%s is not a compound Office file",
+				chatdomain.ErrFileTypeNotAllowed, extension)
+		}
+	}
+	return nil
+}
+
+// validateOOXML walks the central directory of the zip an OOXML upload is and
+// refuses it unless it is the package the extension claims.
+//
+// `[Content_Types].xml` is the difference between a document and a renamed zip:
+// every Word, Excel, and PowerPoint file carries it. An executable entry is
+// refused too — Office does not run one out of its own package, but whatever
+// unpacks the upload next might, and the allowlist promises the chat holds no
+// program. A name that ends in `.` is refused for the same reason a file name is
+// checked: it is not a part any reader opens.
+//
+// The entries are counted before they are read, because a zip can declare more
+// names than an office file would ever have; refusing it costs one comparison.
+func validateOOXML(extension string, content []byte) error {
+	archive, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		return fmt.Errorf("%w: the zip inside .%s cannot be read",
+			chatdomain.ErrFileTypeNotAllowed, extension)
+	}
+	if len(archive.File) > maxOOXMLEntries {
+		return fmt.Errorf("%w: the zip inside .%s holds %d entries, more than the %d an office file has",
+			chatdomain.ErrFileTypeNotAllowed, extension, len(archive.File), maxOOXMLEntries)
+	}
+
+	declaresParts := false
+	for _, entry := range archive.File {
+		name := entry.Name
+		switch {
+		case name == ooxmlContentTypes:
+			declaresParts = true
+		case name == "" || strings.HasSuffix(name, "."):
+			return fmt.Errorf("%w: the zip inside .%s holds an entry with no usable name, %q",
+				chatdomain.ErrFileTypeNotAllowed, extension, name)
+		case forbiddenExtensions[normalizeExtension(filepath.Ext(name))]:
+			return fmt.Errorf("%w: the zip inside .%s holds an executable entry %q",
+				chatdomain.ErrFileTypeNotAllowed, extension, name)
+		}
+	}
+	if !declaresParts {
+		return fmt.Errorf("%w: the zip inside .%s is not an Office package: it has no %s",
+			chatdomain.ErrFileTypeNotAllowed, extension, ooxmlContentTypes)
+	}
+
+	return nil
 }
 
 // executableContent reports whether content opens with the bytes of a program.
