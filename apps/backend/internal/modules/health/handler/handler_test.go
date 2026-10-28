@@ -38,6 +38,34 @@ func TestLive(t *testing.T) {
 		if resp.StatusCode != fiber.StatusOK {
 			t.Fatalf("%s: expected 200, got %d", path, resp.StatusCode)
 		}
+
+		// Decoded rather than string-matched: the point is that the caller can
+		// read the build identity, which is how a deploy is verified from
+		// outside.
+		var body struct {
+			Success bool `json:"success"`
+			Data    struct {
+				Status  string  `json:"status"`
+				Commit  *string `json:"commit"`
+				BuiltAt *string `json:"built_at"`
+				Build   *string `json:"build"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("%s: decode body: %v", path, err)
+		}
+		if !body.Success || body.Data.Status != domain.StatusOK {
+			t.Fatalf("%s: expected a live envelope, got %+v", path, body)
+		}
+		for name, value := range map[string]*string{
+			"commit":   body.Data.Commit,
+			"built_at": body.Data.BuiltAt,
+			"build":    body.Data.Build,
+		} {
+			if value == nil || *value == "" {
+				t.Fatalf("%s: expected data.%s in the payload, got %+v", path, name, body.Data)
+			}
+		}
 	}
 }
 

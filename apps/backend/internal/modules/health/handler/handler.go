@@ -9,8 +9,18 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/modules/health/domain"
+	"github.com/robzlabz/employeebot/apps/backend/internal/platform/buildinfo"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/response"
 )
+
+// liveReport is the liveness answer. It embeds the domain's report instead of
+// copying its fields, so the service stays the only source of `status`, and
+// adds the build identity so one request answers both "is this process alive"
+// and "which build is it".
+type liveReport struct {
+	domain.Report
+	buildinfo.Info
+}
 
 // Handler serves the probes.
 type Handler struct {
@@ -24,9 +34,14 @@ func New(service domain.Service, log *zap.Logger) *Handler {
 }
 
 // Live answers "is the process alive". It never touches a dependency, so a
-// database outage does not restart the container.
+// database outage does not restart the container. It also reports the build
+// identity, which is how a deploy is verified from outside: the workflow's
+// green only means the deploy hook was accepted.
 func (h *Handler) Live(c *fiber.Ctx) error {
-	return response.OK(c, "alive", h.service.Liveness())
+	return response.OK(c, "alive", liveReport{
+		Report: h.service.Liveness(),
+		Info:   buildinfo.Snapshot(),
+	})
 }
 
 // Ready answers "can this process serve traffic". Every configured dependency
