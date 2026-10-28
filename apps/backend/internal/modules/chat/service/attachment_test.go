@@ -224,13 +224,45 @@ func TestTheAllowlistCanOnlyNarrow(t *testing.T) {
 	require.ErrorIs(t, err, chatdomain.ErrFileTypeNotAllowed, "a type outside the list is refused")
 }
 
-// TestAnUnusableAllowlistFallsBackToTheDefault: a typo in a deployment's list must not
-// take the chat down, so a list with nothing usable in it is the default list.
-func TestAnUnusableAllowlistFallsBackToTheDefault(t *testing.T) {
-	require.Equal(t, defaultAttachmentExtensions, allowedExtensions(nil, zap.NewNop()))
-	require.Equal(t, defaultAttachmentExtensions, allowedExtensions([]string{"", "."}, zap.NewNop()))
-	require.Equal(t, defaultAttachmentExtensions, allowedExtensions([]string{"exe", "parquet"}, zap.NewNop()))
-	require.Equal(t, []string{"png", "pdf"}, allowedExtensions([]string{"png", "pdf", "dll"}, zap.NewNop()))
+// TestAnUnusableAllowlistRefusesEveryUpload: a list that names nothing usable is the
+// narrowest policy a deployment can ask for, so it must not widen to the default list
+// instead — the answer is an empty list, and every upload is refused until it is fixed.
+func TestAnUnusableAllowlistRefusesEveryUpload(t *testing.T) {
+	require.Equal(t, defaultAttachmentExtensions, allowedExtensions(nil, zap.NewNop()),
+		"no configuration is the default list")
+
+	for name, configured := range map[string][]string{
+		"only an executable and an unknown type": {"exe", "parquet"},
+		"only blanks":                            {"", "."},
+	} {
+		t.Run(name, func(t *testing.T) {
+			allowed := allowedExtensions(configured, zap.NewNop())
+			require.NotNil(t, allowed, "an empty list is explicit; nil would read as nothing configured")
+			require.Empty(t, allowed)
+		})
+	}
+
+	require.Equal(t, []string{"png", "pdf"}, allowedExtensions([]string{"png", "pdf", "dll"}, zap.NewNop()),
+		"one usable extension is enough for the rest to narrow the list")
+}
+
+// TestAnUnusableAllowlistRefusesTheUploadAtTheService: the empty list is what the
+// service keeps, so a real png is refused before it reaches storage.
+func TestAnUnusableAllowlistRefusesTheUploadAtTheService(t *testing.T) {
+	h := newHarness(t, func(deps *Deps) {
+		deps.Config.AttachmentAllowedExtensions = []string{"exe"}
+	})
+	conversation := h.directConversation(t)
+
+	require.Empty(t, h.service.settings.AttachmentAllowedExtensions)
+
+	_, err := h.service.Attach(context.Background(), h.scope, chatdomain.AttachRequest{
+		ConversationID: conversation.ID, Filename: "foto.png",
+	}, pngOf("foto"))
+	require.ErrorIs(t, err, chatdomain.ErrFileTypeNotAllowed, "nothing is enabled, so nothing is accepted")
+	require.Empty(t, h.storage.objects)
+	require.Empty(t, h.store.messagesOf(conversation.ID))
+	require.Empty(t, h.store.events)
 }
 
 // TestPrunePublishesTheMessageItEmptied: the sweep removes the row and the element the

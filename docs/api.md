@@ -384,7 +384,9 @@ direct thread always answers with its own Bolu, whatever the text says.
 An upload is checked before anything is written, and the check is on both halves
 of the file: the extension must be one the deployment allows
 (`ATTACHMENT_ALLOWED_EXTENSIONS`, which can only narrow the module's own list of
-images, PDFs, office documents, and text) and the first bytes must be that type,
+images, PDFs, office documents, and text; a configured list with nothing usable in
+it enables no type and refuses every upload instead of falling back to that list) and
+the first bytes must be that type,
 so an executable is refused whatever it is named. A refused file is `415
 file_type_not_allowed` and nothing is created. An upload sent without
 `message_id` opens the message it belongs to in the same transaction that stores

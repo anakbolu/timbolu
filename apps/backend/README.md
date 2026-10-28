@@ -836,7 +836,8 @@ are served from — a different origin from the app in every deployment.
 `ATTACHMENT_ALLOWED_EXTENSIONS` narrows which file types a chat upload may be, by
 extension; it can only narrow, because an extension the chat module has no content rule
 for is ignored and an executable can never be named, and empty means the module's own
-list of images, documents, and text. Memory is
+list of images, documents, and text. A list with nothing usable in it is not the default
+list: it enables no type at all, and every upload is refused until it is fixed. Memory is
 bounded by `MEMORY_MAIN_TOKENS` (what travels in every call),
 `MEMORY_RECALL_MEMORIES` and `MEMORY_RECALL_KNOWLEDGE` (what one round retrieves),
 `MEMORY_SIMILARITY` (when a new memory replaces an old one), and

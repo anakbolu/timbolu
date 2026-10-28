@@ -114,6 +114,11 @@ func validateAttachment(filename string, content []byte, allowed []string) (stri
 			chatdomain.ErrFileTypeNotAllowed)
 	}
 
+	if len(allowed) == 0 {
+		return "", fmt.Errorf("%w: no attachment type is enabled for this deployment, so nothing can be uploaded",
+			chatdomain.ErrFileTypeNotAllowed)
+	}
+
 	extension := normalizeExtension(filepath.Ext(filename))
 	if extension == "" {
 		return "", fmt.Errorf("%w: the file needs an extension; allowed: %s",
@@ -196,8 +201,13 @@ func containsExtension(allowed []string, extension string) bool {
 // the table above has no content check to apply, so naming one would be a way to
 // accept any bytes at all, and naming an executable is refused outright. Both are
 // ignored with a warning rather than failing the start-up — a typo in a
-// deployment's list must not take the chat down, and the default list is a safe
-// thing to fall back to.
+// deployment's list must not take the chat down.
+//
+// A list that names nothing usable is the one case that does not fall back: the
+// deployment that asked for the narrowest policy would otherwise get the widest
+// one, and an allowlist that silently widens is a policy that does nothing. The
+// answer is an empty list — not nil, so the intent reads as a list — and every
+// upload is refused until the configuration is fixed.
 func allowedExtensions(configured []string, log *zap.Logger) []string {
 	if len(configured) == 0 {
 		return defaultAttachmentExtensions
@@ -223,10 +233,10 @@ func allowedExtensions(configured []string, log *zap.Logger) []string {
 
 	if len(allowed) == 0 {
 		if log != nil {
-			log.Warn("no configured attachment extension is usable: using the default list",
+			log.Error("no configured attachment extension is usable: every upload is refused until the list is fixed",
 				zap.Strings("configured", configured))
 		}
-		return defaultAttachmentExtensions
+		return []string{}
 	}
 
 	return allowed
