@@ -245,6 +245,16 @@ type RequestOptions = {
    * background reads are not on anybody's clock.
    */
   timeoutMs?: number;
+  /**
+   * What a call that runs past `timeoutMs` reports, when the default wording
+   * would be wrong for this call.
+   *
+   * An abandoned request is not a request that did not happen, so what the
+   * person should do next depends on what the call was doing: a sign-up may
+   * have left an account behind, a sign-in left nothing but a retry. Every
+   * caller that sets `timeoutMs` owns that choice.
+   */
+  timeoutMessage?: string;
 };
 
 /**
@@ -346,14 +356,19 @@ async function authorizedFetch(
 }
 
 /**
- * What a call that ran past its deadline reports.
+ * What a call that ran past its deadline reports by default.
  *
  * An abandoned request is not a request that did not happen: the server may have
  * finished the work and lost only the answer, which for sign-up means the account
  * exists. So the wording tells the person what to do about that rather than
  * inviting a second attempt that would be refused as a duplicate.
+ *
+ * That reasoning holds for sign-up and for nothing else, which is why it is only
+ * the default: a call whose next step differs passes its own `timeoutMessage`,
+ * because inheriting this one would send the person looking for an account that
+ * was never created.
  */
-const TIMEOUT_MESSAGE = "Server terlalu lama menjawab. Akunmu mungkin sudah terbuat — coba masuk.";
+const DEFAULT_TIMEOUT_MESSAGE = "Server terlalu lama menjawab. Akunmu mungkin sudah terbuat — coba masuk.";
 
 /** request performs one API call and normalises the envelope. */
 async function request<T>(path: string, options: RequestOptions = {}): Promise<ApiResult<T>> {
@@ -421,7 +436,12 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<A
     // refused: both arrive here as a rejected fetch, and only the first has a
     // deadline behind it.
     if (controller?.signal.aborted) {
-      return { ok: false, status: 0, code: "timeout", message: TIMEOUT_MESSAGE };
+      return {
+        ok: false,
+        status: 0,
+        code: "timeout",
+        message: options.timeoutMessage ?? DEFAULT_TIMEOUT_MESSAGE,
+      };
     }
     return {
       ok: false,
@@ -443,6 +463,10 @@ export function register(email: string, password: string): Promise<ApiResult<Use
     body: { email, password },
     authenticated: false,
     timeoutMs: 20_000,
+    // Named rather than inherited: sign-up is the call whose abandoned attempt
+    // may have left an account behind, and the call site is where that is worth
+    // saying out loud.
+    timeoutMessage: DEFAULT_TIMEOUT_MESSAGE,
   });
 }
 
@@ -463,6 +487,9 @@ export async function login(email: string, password: string): Promise<ApiResult<
     body: { email, password },
     authenticated: false,
     timeoutMs: 20_000,
+    // A sign-in that ran out of time created nothing, so there is no account to
+    // go looking for — the only next step is trying again.
+    timeoutMessage: "Server terlalu lama menjawab. Coba lagi.",
   });
   if (result.ok) {
     setAccessToken(result.data.access_token, result.data.access_expires_at);

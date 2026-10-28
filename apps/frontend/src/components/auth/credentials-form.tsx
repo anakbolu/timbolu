@@ -134,10 +134,12 @@ export function CredentialsForm({ mode }: { mode: "signup" | "login" }) {
       {error ? (
         <Alert tone="error">
           {error}
-          {/* The deadline is the one failure whose next step is not "try again":
-              the account may have been created, so the link goes to signing in
-              with the address already filled in. */}
-          {timedOut ? (
+          {/* Sign-up only, because only sign-up can leave an account behind: the
+              deadline may have cut off a call that still created one, and the
+              link is the way to reach it with the address already filled in. A
+              login that ran out of time created nothing, so a link to the page
+              the person is already on would be noise — that failure is a retry. */}
+          {timedOut && isRegister ? (
             <>
               {" "}
               <Link className="underline" href={`/login?email=${encodeURIComponent(email)}`}>
