@@ -151,7 +151,9 @@ export function CredentialsForm({ mode }: { mode: "signup" | "login" }) {
       ) : null}
       {notice ? <Alert tone="info">{notice}</Alert> : null}
 
-      <form onSubmit={onSubmit}>
+      {/* Tanpa method, submit native memakai GET dan kata sandi berakhir di URL
+          (history, log akses, Referer) saat React belum sempat hydrate. */}
+      <form method="post" action={isRegister ? "/signup" : "/login"} onSubmit={onSubmit}>
         <Field
           id="email"
           label="Email"
