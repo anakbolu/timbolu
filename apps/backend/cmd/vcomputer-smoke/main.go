@@ -39,8 +39,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/robzlabz/employeebot/apps/backend/internal/container"
-	vcomputerservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/service"
-	vcomputerworkflow "github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/workflow"
 	"github.com/robzlabz/employeebot/apps/backend/internal/platform/temporal"
 	"github.com/robzlabz/employeebot/packages/platform/config"
 )
@@ -141,7 +139,7 @@ func run() error {
 	}
 	defer worker.Stop()
 
-	in := vcomputerworkflow.SmokeInput{
+	in := container.VComputerSmokeInput{
 		BotID:       *botID,
 		URL:         *pageURL,
 		ClickX:      *clickX,
@@ -155,14 +153,14 @@ func run() error {
 		// run rather than a conflict with the last one.
 		ID:        fmt.Sprintf("vcomputer-smoke-%d", time.Now().Unix()),
 		TaskQueue: *queue,
-	}, vcomputerworkflow.SmokeWorkflow, in)
+	}, container.VComputerSmokeWorkflow(), in)
 	if err != nil {
 		return fmt.Errorf("start smoke workflow: %w", err)
 	}
 
 	fmt.Printf("workflow %s run %s\n", run.GetID(), run.GetRunID())
 
-	var result vcomputerworkflow.SmokeResult
+	var result container.VComputerSmokeResult
 	if err := run.Get(ctx, &result); err != nil {
 		return fmt.Errorf("smoke workflow %s: %w", run.GetID(), err)
 	}
@@ -197,12 +195,13 @@ func run() error {
 //   - a value that will not parse is reported and the default is used rather than the run
 //     refused, which is what the loader does with it (issue #219);
 //   - a zero or a negative value is carried through as given, because the rule that it is not a
-//     bound lives in vcomputerservice.EffectiveTimeout, applied where the client is built — so a
-//     smoke run logs and enforces the same timeout a deployment does (issue #257).
+//     bound lives where the client is built — container.NewVComputerTasks and
+//     container.NewVComputerClient — so a smoke run logs and enforces the same timeout a
+//     deployment does (issue #257).
 func controlTimeout() time.Duration {
 	raw := strings.TrimSpace(os.Getenv("VCOMPUTER_CONTROL_TIMEOUT"))
 	if raw == "" {
-		return vcomputerservice.DefaultTimeout
+		return container.VComputerDefaultTimeout
 	}
 
 	timeout, err := time.ParseDuration(raw)
@@ -210,9 +209,9 @@ func controlTimeout() time.Duration {
 		// On stderr, so the JSON a caller reads and diffs stays the only thing on stdout.
 		fmt.Fprintf(os.Stderr,
 			"vcomputer-smoke: VCOMPUTER_CONTROL_TIMEOUT=%q is not a duration, using %s: %v\n",
-			raw, vcomputerservice.DefaultTimeout, err)
+			raw, container.VComputerDefaultTimeout, err)
 
-		return vcomputerservice.DefaultTimeout
+		return container.VComputerDefaultTimeout
 	}
 	return timeout
 }
@@ -226,7 +225,7 @@ func saveFinalCapture(ctx context.Context, cfg config.VComputerConfig, botID, ou
 		return "", fmt.Errorf("create %s: %w", outDir, err)
 	}
 
-	computer := vcomputerservice.New(cfg.ControlURL, cfg.Token, cfg.Timeout)
+	computer := container.NewVComputerClient(cfg)
 	png, err := computer.Screenshot(ctx, botID)
 	if err != nil {
 		return "", fmt.Errorf("capture after the run: %w", err)
