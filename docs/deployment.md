@@ -248,6 +248,45 @@ What this workflow needs, once — six repository secrets, one per service:
 Each URL is the service's own, from its Easypanel page (Deploy Webhook), and it is a credential:
 whoever holds it can trigger a deployment.
 
+### Proving which backend build is live
+
+A green Deployment workflow says the deploy hook was *accepted*, not that the build finished: the hook
+answers when the build is queued. The API answers the remaining question itself, because
+`GET /api/health` (`GET /health` too) carries the build identity alongside the liveness status:
+
+```console
+$ curl -s https://timbolu.com/api/health | jq .data
+{
+  "status": "ok",
+  "commit": "unknown",
+  "built_at": "unknown",
+  "build": "8c258b2de0c32616"
+}
+```
+
+`build` is the first 16 hex characters of the SHA-256 over every Go file of the backend and the shared
+module, in sorted order — computed inside the image at build time, not passed in:
+
+```console
+$ find apps/backend packages -name '*.go' -type f | LC_ALL=C sort | xargs cat | shasum -a 256 | cut -c1-16
+8c258b2de0c32616
+```
+
+Run that from the tree you merged. Equal values mean that tree is the one serving; a different value
+means the previous image is still up, so the deploy is not done. The hash is over content only, so the
+same source always yields the same value, and any change to a `.go` file changes it.
+
+`commit` and `built_at` stay `"unknown"` on Easypanel for a structural reason: build arguments in
+Easypanel come from a service's environment, which is static per service, so nothing can name a commit
+that only exists after a push; and `.git` is excluded from the build context, so the Dockerfile cannot
+read it. `built_at` has the same problem for a different reason — an Easypanel build has no
+per-build variable to fill it. The Dockerfile already accepts `GIT_COMMIT` and `BUILD_TIME` build
+arguments, so once the panel is reachable those two can be filled in (a build pipeline that passes
+`--build-arg GIT_COMMIT=$(git rev-parse --short HEAD) --build-arg BUILD_TIME=$(date -u +%FT%TZ)` sets
+both); until then `build` is the deploy identity, and `"unknown"` in the other two is the honest
+answer rather than a broken probe. A local `go run` answers `"unknown"` for all three, which is why
+the probes are only evidence of a *container* deploy.
+
 ## Releasing
 
 `.github/workflows/release.yml` runs on a tag (`v*`) or on demand, in this order:

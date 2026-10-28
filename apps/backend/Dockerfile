@@ -17,6 +17,13 @@
 FROM golang:1.26-alpine AS builder
 
 ARG BINARY=api
+# The deploy identity the build is told it has. Both default to "unknown" and
+# currently always stay "unknown" in Easypanel: it has no separate build-argument
+# field, so a build argument can only come from a service environment, which is
+# static per service and cannot name a commit that appears at push time. They are
+# declared so a build that does know them can pass them.
+ARG GIT_COMMIT=unknown
+ARG BUILD_TIME=unknown
 
 WORKDIR /src
 
@@ -32,8 +39,20 @@ RUN cd apps/backend && go mod download
 COPY packages ./packages
 COPY apps/backend ./apps/backend
 
+# The deploy identity the build can compute by itself: a hash of every Go file
+# it compiles. `.git` is excluded from the build context, so a commit SHA is not
+# readable here, but the tree is: the same source always yields the same value,
+# and any source change yields a different one. Computed after both COPYs (the
+# file set is the image's own) and before the build, then read back by the next
+# step. `sha256sum`, `sort`, `xargs`, and `cut` are busybox applets in this
+# image, so no extra package is needed.
+RUN find apps/backend packages -name '*.go' -type f | LC_ALL=C sort | xargs cat | sha256sum | cut -c1-16 > /tmp/fingerprint
+
 # CGO is disabled so the binary is static and runs on the slim runtime image.
-RUN cd apps/backend && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/app ./cmd/${BINARY}
+# The -X values are what GET /api/health reports: a caller compares the build
+# fingerprint with the one computed from the merged tree, which is the only way
+# to prove from outside that this image — not the previous one — is serving.
+RUN cd apps/backend && FINGERPRINT="$(cat /tmp/fingerprint)" && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X github.com/robzlabz/employeebot/apps/backend/internal/platform/buildinfo.Fingerprint=$FINGERPRINT -X github.com/robzlabz/employeebot/apps/backend/internal/platform/buildinfo.Commit=$GIT_COMMIT -X github.com/robzlabz/employeebot/apps/backend/internal/platform/buildinfo.BuiltAt=$BUILD_TIME" -o /out/app ./cmd/${BINARY}
 
 FROM alpine:3.22
 
