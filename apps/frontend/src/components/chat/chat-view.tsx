@@ -242,7 +242,12 @@ export function ChatView({
                         .filter((participant) => participant.is_agent)
                         .map((participant) => participant.name)
                         .join(", ")
-                    : "Pilih Bolu di kiri untuk mulai."}
+                    : (
+                        <>
+                          <span className="max-[760px]:hidden">Pilih Bolu di kiri untuk mulai.</span>
+                          <span className="hidden max-[760px]:inline">Buka menu ☰ untuk memilih Bolu atau obrolan.</span>
+                        </>
+                      )}
               </p>
             </div>
           </div>
@@ -295,7 +300,12 @@ export function ChatView({
             <p className="mt-8 text-center text-[15px] text-bolu-muted">
               {chat.active
                 ? `Belum ada pesan dengan ${title}. Tulis sesuatu untuk mulai.`
-                : "Pilih Bolu di kiri untuk mulai."}
+                : (
+                    <>
+                      <span className="max-[760px]:hidden">Pilih Bolu di kiri untuk mulai.</span>
+                      <span className="hidden max-[760px]:inline">Buka menu ☰ untuk memilih Bolu atau obrolan.</span>
+                    </>
+                  )}
             </p>
           ) : null}
 
