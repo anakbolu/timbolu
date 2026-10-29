@@ -12,7 +12,11 @@
  * - the connection opens first and the backlog follows it — the server sends
  *   everything after `last_event_id` on the connection itself — so "live" is
  *   reached as soon as the transport proves itself and a slow HTTP replay can
- *   no longer delay it.
+ *   no longer delay it;
+ * - when the transport cannot stay open, the status says so and the backlog
+ *   keeps moving over plain HTTP anyway: `slow` starts a poll, so a message
+ *   sent from another tab arrives in seconds instead of waiting out a retry
+ *   that is deliberately half a minute away.
  */
 
 import { getAccessToken, listEvents, type ActivityEvent } from "./api";
@@ -160,8 +164,33 @@ const SLOW_RETRY_MS = 30_000;
 /** Extra wait per slow retry, so many tabs do not return to a sick server together. */
 const SLOW_RETRY_JITTER_MS = 15_000;
 
+/**
+ * How often a slow client asks the backlog over plain HTTP.
+ *
+ * The retry above is spaced out on purpose, so without this a message sent from
+ * another tab could take half a minute to appear. A poll is cheap next to a
+ * stream that keeps dying, and it is the only path left for new data.
+ */
+const SLOW_POLL_MS = 5000;
+
+/** Consecutive failed polls before the poll itself backs off. */
+const SLOW_POLL_FAILURES_BEFORE_BACKOFF = 2;
+
+/** The slower poll cadence, so a sick endpoint is not hit every five seconds. */
+const SLOW_POLL_BACKOFF_MS = 15_000;
+
 /** How long a replay that moved the cursor not at all is skipped before retrying. */
 const REPLAY_STALL_MS = 60_000;
+
+/**
+ * How long one backlog request may keep the next one waiting.
+ *
+ * `listEvents` has no deadline of its own, so a request the network never
+ * answers would otherwise hold the replay open — and the poll with it — for the
+ * rest of the session. Past this the request is treated as abandoned; a late
+ * answer is still applied, because `deliver` drops ids it has already seen.
+ */
+const BACKLOG_REQUEST_GUARD_MS = 15_000;
 
 /**
  * How many socket handshakes may fail before the client stops asking for one.
@@ -231,6 +260,16 @@ export function connect(
   // asked again over a backlog that did not move.
   let replayStalledFrom = 0;
   let replayStalledAt = 0;
+  // The slow path's poll: its timer, whether a request is still in flight (and
+  // when it went out), and how many polls in a row came back without an answer.
+  let pollTimer: number | undefined;
+  let polling = false;
+  let pollStartedAt = 0;
+  let pollFailures = 0;
+  // A replay and a poll both ask the backlog; one at a time keeps them from
+  // racing over the same cursor. The start time bounds that: see REPLAY_GUARD_MS.
+  let replaying = false;
+  let replayStartedAt = 0;
   // Consecutive failed socket handshakes. A socket that proves itself resets
   // it, so a working transport is never abandoned over an old failure.
   let socketFailures = 0;
@@ -255,6 +294,9 @@ export function connect(
     failures = 0;
     attempts = 0;
     socketFailures = 0;
+    // A transport that stays up carries the backlog itself, and polling beside
+    // a live stream would only ask the same cursor twice.
+    stopPoll();
     setStatus("live");
   }
 
@@ -301,20 +343,26 @@ export function connect(
     }
 
     const from = lastId;
-    for (let page = 0; page < REPLAY_MAX_PAGES; page++) {
-      if (stopped) {
-        break;
+    replaying = true;
+    replayStartedAt = Date.now();
+    try {
+      for (let page = 0; page < REPLAY_MAX_PAGES; page++) {
+        if (stopped) {
+          break;
+        }
+        const result = await listEvents(workspaceId, lastId, REPLAY_LIMIT);
+        if (!result.ok || result.data.length === 0) {
+          break;
+        }
+        for (const event of result.data) {
+          deliver(event);
+        }
+        if (result.data.length < REPLAY_LIMIT) {
+          break;
+        }
       }
-      const result = await listEvents(workspaceId, lastId, REPLAY_LIMIT);
-      if (!result.ok || result.data.length === 0) {
-        break;
-      }
-      for (const event of result.data) {
-        deliver(event);
-      }
-      if (result.data.length < REPLAY_LIMIT) {
-        break;
-      }
+    } finally {
+      replaying = false;
     }
     if (lastId === from) {
       replayStalledFrom = from;
@@ -322,6 +370,88 @@ export function connect(
     } else {
       replayStalledAt = 0;
     }
+  }
+
+  /**
+   * stopPoll ends the slow path's poll. Called where a transport proves itself
+   * and where the connection closes, so no timer outlives the reason for it.
+   */
+  function stopPoll() {
+    clearTimeout(pollTimer);
+    pollTimer = undefined;
+    pollFailures = 0;
+  }
+
+  /**
+   * schedulePoll queues the next poll, at the fast cadence until two polls in a
+   * row fail and at the slow one after that. A timer already queued is left
+   * alone: a retry and a finished poll must not stack two of them.
+   */
+  function schedulePoll() {
+    if (stopped || pollTimer !== undefined) {
+      return;
+    }
+    const delay =
+      pollFailures >= SLOW_POLL_FAILURES_BEFORE_BACKOFF ? SLOW_POLL_BACKOFF_MS : SLOW_POLL_MS;
+    pollTimer = window.setTimeout(() => {
+      pollTimer = undefined;
+      void pollOnce();
+    }, delay);
+  }
+
+  /**
+   * pollOnce reads one page of the backlog over plain HTTP.
+   *
+   * It deliberately does not go through `replay`: that one refuses to ask the
+   * same cursor again until it moves, which is right for a reconnect and wrong
+   * for a poll, where asking the same cursor every few seconds is the point.
+   * `deliver` drops ids it has already seen, so a page the stream also carried
+   * is applied once, in order.
+   */
+  async function pollOnce() {
+    if (stopped || status !== "slow") {
+      stopPoll();
+      return;
+    }
+    const requestOpen = polling && Date.now() - pollStartedAt < BACKLOG_REQUEST_GUARD_MS;
+    const replayOpen = replaying && Date.now() - replayStartedAt < BACKLOG_REQUEST_GUARD_MS;
+    if (requestOpen || replayOpen) {
+      // Never overlap a poll with itself, a replay, or the connection a slow
+      // retry is still bringing up; try again on the next tick. A request past
+      // its guard is not waited on: it may be one that never answers, and the
+      // poll is the path that has to keep working.
+      schedulePoll();
+      return;
+    }
+
+    polling = true;
+    pollStartedAt = Date.now();
+    try {
+      const result = await listEvents(workspaceId, lastId, REPLAY_LIMIT);
+      if (!result.ok) {
+        pollFailures++;
+      } else {
+        for (const event of result.data) {
+          deliver(event);
+        }
+        // A 200 is the endpoint answering, with or without new events, so the
+        // fast cadence resumes rather than waiting out a backoff.
+        pollFailures = 0;
+      }
+    } catch {
+      // A failed poll changes nothing: `slow` already says the feed is late, and
+      // the next tick asks again. It must not reach the console as an unhandled
+      // rejection either.
+      pollFailures++;
+    } finally {
+      polling = false;
+    }
+
+    if (stopped || status !== "slow") {
+      stopPoll();
+      return;
+    }
+    schedulePoll();
   }
 
   function scheduleReconnect() {
@@ -333,6 +463,9 @@ export function connect(
       // Past a few failures a fast retry promises a stream the client cannot
       // deliver: say the updates are late and back off instead of spinning.
       setStatus("slow");
+      // The retry can wait half a minute, the feed cannot: poll the backlog in
+      // the meantime.
+      schedulePoll();
       timer = window.setTimeout(
         () => start(true),
         SLOW_RETRY_MS + Math.random() * SLOW_RETRY_JITTER_MS,
@@ -512,6 +645,7 @@ export function connect(
       stopped = true;
       clearTimeout(timer);
       clearTimeout(handshake);
+      stopPoll();
       lost();
       socket?.close();
       source?.close();
