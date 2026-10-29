@@ -662,6 +662,61 @@ code — `tools/` and `migrations/`.
 Override the threshold when you need to check a smaller change:
 `MIN_COVERAGE=0 make cover`.
 
+## Bukti visual di PR
+
+Screenshot dan rekaman layar adalah bagian dari jawaban sebuah PR: apa yang berubah di layar lebih
+cepat dibaca dari satu gambar daripada dari diff. Yang tidak boleh adalah bukti itu ikut menjadi isi
+repository. Berkas visual dilampirkan langsung ke PR atau issue lewat kotak komentar GitHub — seret
+dan lepas berkasnya ke kolom **Test Evidence** di templat PR — sehingga GitHub yang menyimpannya dan
+riwayat git tidak ikut bertambah.
+
+Dua hal yang mendorong aturan ini, dan keduanya sudah terjadi di repository ini:
+
+- **Tautan mati setelah merge.** Deskripsi PR selama ini menautkan berkas di `docs/pr-assets/` lewat
+  URL yang menyebut nama branch. Branch dihapus ketika PR di-merge, jadi tautan itu mati justru pada
+  saat orang mau memeriksa buktinya, dan yang tersisa adalah gambar rusak di PR yang sudah selesai.
+- **Biner menetap di riwayat.** Berkas biner tidak bisa di-diff, jadi tidak ada yang bisa ditinjau di
+  dalamnya, tetapi setiap versinya menambah berat clone untuk semua orang — selamanya, karena
+  menghapus berkasnya di commit berikutnya tidak menghapusnya dari riwayat.
+
+Kalau sebuah aset memang harus permanen di repository, tautkan lewat **SHA commit**, bukan nama
+branch:
+
+```
+https://github.com/anakbolu/timbolu/blob/<sha-commit>/docs/dashboard/01-dasbor.png
+```
+
+SHA commit menunjuk satu isi berkas yang tidak pernah berubah, jadi tautannya tetap hidup setelah
+branch dihapus, setelah berkasnya disunting, dan setelah repository ini berumur lima tahun. Tautan
+yang dibuat GitHub saat menekan "Copy link" pada sebuah berkas di branch (`.../blob/<nama-branch>/...`)
+tidak punya sifat itu, dan itulah bentuk tautan yang harus diganti sebelum PR dibuka. Di dalam dokumen
+repository sendiri, tautan **relatif** (seperti `README.md` ke `docs/dashboard/01-dasbor.png`) aman:
+ia diselesaikan terhadap branch tempat dokumennya dirender, jadi dokumen dan gambarnya berpindah
+bersama.
+
+Batas untuk berkas yang boleh masuk repository:
+
+| Berkas | Batas | Kalau lebih besar |
+| --- | --- | --- |
+| Screenshot (PNG/JPEG) | satu berkas **≤ 300 KB** | kecilkan; kalau tetap harus terbaca penuh, lampirkan ke PR |
+| Video (MP4, GIF) | **tidak masuk repository** | lampirkan ke PR, tempat GitHub memutar dan menyimpannya |
+| Teks (log, keluaran perintah) | tidak dibatasi ukuran | tetap boleh di-commit: teks bisa di-diff |
+
+Angka 300 KB ada karena satu screenshot penuh layar desktop biasanya melewatinya tanpa menambah
+informasi yang berguna di PR, sementara pembaca PR jarang memperbesar gambar di dalam diff; kalau
+sebuah gambar memang perlu dibaca sampai detail terkecil, lampiran adalah tempat yang benar untuknya.
+Video tidak masuk repository karena tidak ada yang bisa ditinjau di dalamnya dan ia menambah berat
+clone paling cepat. Bila sebuah berkas melewati batas itu, jawabannya bukan mengecilkannya sampai
+tidak terbaca dan bukan menaruhnya di subfolder baru: lampirkan ke PR-nya.
+
+`docs/pr-assets/` adalah sisa dari cara lama: 8,5 MB di 135 berkas, 106 di antaranya PNG dan 11 MP4.
+Folder itu **dipertahankan sebagai arsip apa adanya** — tidak dihapus, karena menghapusnya sekarang
+pun tidak mengecilkan riwayat yang sudah memuatnya — dan **tidak ditambah lagi**: aset baru untuk
+sebuah PR dilampirkan ke PR itu, bukan di-commit ke sana. Tidak ada gate yang memeriksa batas di atas,
+jadi tidak ada yang menolak berkas 2 MB saat di-commit; yang menjaganya adalah review PR, dan alasan
+yang perlu disebut saat menolak adalah dua hal di atas — tautan yang akan mati dan riwayat yang tidak
+bisa dikecilkan lagi.
+
 ## Adding a module
 
 1. `internal/modules/<name>/{domain,repository,service,handler}`.
