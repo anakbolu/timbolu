@@ -7,6 +7,7 @@
  */
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 import { Menu, X } from "lucide-react";
@@ -20,6 +21,7 @@ export function SiteNavMenu({
   links: readonly { href: string; label: string }[];
 }) {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
 
   return (
     <>
@@ -59,11 +61,22 @@ export function SiteNavMenu({
         </div>
 
         <div className="flex flex-col gap-1">
+          {/* Same rule as the desktop row: the front page does not link to itself. */}
+          {pathname === "/" ? null : (
+            <Link
+              href="/"
+              onClick={() => setOpen(false)}
+              className="min-h-[52px] rounded-xl px-3.5 text-[17px] font-bold text-bolu-ink no-underline hover:bg-bolu-hover/60"
+            >
+              Home
+            </Link>
+          )}
           {links.map((link) => (
             <Link
               key={link.href}
               href={link.href}
               onClick={() => setOpen(false)}
+              aria-current={pathname === link.href ? "page" : undefined}
               className="min-h-[52px] rounded-xl px-3.5 text-[17px] font-bold text-bolu-ink no-underline hover:bg-bolu-hover/60"
             >
               {link.label}
