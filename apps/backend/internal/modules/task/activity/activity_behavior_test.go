@@ -197,6 +197,39 @@ func (s stubAgents) ByName(_ context.Context, _ domain.Scope, name string) (doma
 	return agent, nil
 }
 
+// derivingAgents answers the registry's status the way the registry does: a Bolu
+// with a task in flight is working, a Bolu whose only work is parked is waiting,
+// and otherwise it is idle.
+//
+// It derives rather than repeats an answer on purpose. The activity publishes
+// whatever the registry says, so a double with a fixed answer would let a task
+// that never left `running` still pass as idle — exactly the failure these tests
+// exist to catch.
+type derivingAgents struct{ tasks *memoryTasks }
+
+func (d derivingAgents) Agent(_ context.Context, scope domain.Scope, id uuid.UUID) (domain.AgentRef, error) {
+	ref := domain.AgentRef{ID: id, Name: "Oren", Role: "Penjualan", Stored: "active", Display: "idle"}
+
+	for _, task := range d.tasks.tasks {
+		if task.AgentID != id || task.WorkspaceID != scope.WorkspaceID {
+			continue
+		}
+		switch task.Status {
+		case domain.StatusQueued, domain.StatusRunning:
+			ref.Display = "working"
+			return ref, nil
+		case domain.StatusWaitingApproval:
+			// A parked task is parked on a draft, and a pending draft is what the
+			// registry derives "waiting" from.
+			ref.Display = "waiting"
+		}
+	}
+
+	return ref, nil
+}
+
+func (d derivingAgents) Active(ref domain.AgentRef) bool { return ref.Active() }
+
 // stubDrafts records the proposals it was asked to open and the drafts it was
 // asked to carry out.
 type stubDrafts struct {
@@ -239,10 +272,14 @@ func (s *stubExecutor) Execute(_ context.Context, _ domain.Scope, call domain.To
 }
 
 // countingEvents records the events an activity published.
-type countingEvents struct{ types []string }
+type countingEvents struct {
+	types  []string
+	events []domain.Event
+}
 
 func (c *countingEvents) Emit(_ context.Context, event domain.Event) error {
 	c.types = append(c.types, event.Type)
+	c.events = append(c.events, event)
 	return nil
 }
 
@@ -904,6 +941,82 @@ func TestCompleteMarksAFailedTaskFailedInTheConversation(t *testing.T) {
 	require.Len(t, h.reply.written, 1)
 	require.Equal(t, workflow.MessageFailed, h.reply.written[0].Status)
 	require.Contains(t, h.reply.written[0].FinishReason, "batas token")
+}
+
+// TestAFinalAnswerStopsTheBoluFromWorking is #315: a reply that ends by asking the
+// user something finishes the task, and the stream has to say so.
+//
+// An open chat refreshes its roster on `agent.state` alone — `task.finished`
+// reloads tasks and drafts — so a run that published only the task event left the
+// header saying "sedang bekerja" after the answer had arrived, until the tab was
+// reloaded.
+func TestAFinalAnswerStopsTheBoluFromWorking(t *testing.T) {
+	h := newHarness(t, domain.DefaultLimits, func(deps *Deps) {
+		deps.Agents = derivingAgents{tasks: deps.Tasks.(*memoryTasks)}
+	})
+
+	_, err := h.tasks.Start(context.Background(), h.scope, h.task.ID, "task-1", "run-1")
+	require.NoError(t, err)
+
+	_, err = h.activities.CompleteTask(context.Background(), workflow.CompleteRequest{
+		TaskID:      h.task.ID.String(),
+		WorkspaceID: h.scope.WorkspaceID.String(),
+		Status:      domain.StatusSucceeded,
+		Blocks: []domain.Block{{
+			Type: "text",
+			Body: []byte(`{"type":"text","markdown":"Mau saya lanjutkan begitu katalog bisa diakses?"}`),
+		}},
+	})
+	require.NoError(t, err)
+
+	// The row is terminal, which is what makes the derived status stop counting it
+	// as work in flight.
+	stored, err := h.tasks.Get(context.Background(), h.scope, h.task.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusSucceeded, stored.Status)
+
+	require.Equal(t, "idle", lastAgentState(t, h.events.events),
+		"a Bolu that answered and is waiting for the user is not working")
+}
+
+// TestAParkedTaskStopsTheBoluFromWorking is the same promise for the other way a
+// run stops: waiting for a human is waiting, not working.
+func TestAParkedTaskStopsTheBoluFromWorking(t *testing.T) {
+	h := newHarness(t, domain.DefaultLimits, func(deps *Deps) {
+		deps.Agents = derivingAgents{tasks: deps.Tasks.(*memoryTasks)}
+	})
+
+	_, err := h.activities.RequestDraft(context.Background(), workflow.ToolRequest{
+		TaskID:      h.task.ID.String(),
+		WorkspaceID: h.scope.WorkspaceID.String(),
+		Name:        "gmail.send",
+		Arguments:   json.RawMessage(`{"subject":"Tagihan Maret","to":"a@b.c"}`),
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, "waiting", lastAgentState(t, h.events.events))
+}
+
+// lastAgentState is the state of the newest `agent.state` event, which is what a
+// client applies to its roster. The payload is decoded rather than read from the
+// event's type so the test checks what a screen would actually render.
+func lastAgentState(t *testing.T, events []domain.Event) string {
+	t.Helper()
+
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].Type != domain.EventAgentState {
+			continue
+		}
+
+		var payload struct {
+			State string `json:"state"`
+		}
+		require.NoError(t, json.Unmarshal(events[i].Payload, &payload))
+		return payload.State
+	}
+
+	t.Fatalf("no %s event was published", domain.EventAgentState)
+	return ""
 }
 
 // TestBeatStopsOnEveryBound is the single place a bound is decided, so each one

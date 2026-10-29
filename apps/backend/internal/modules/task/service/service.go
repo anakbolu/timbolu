@@ -245,6 +245,10 @@ func (s *Service) Cancel(ctx context.Context, scope domain.Scope, id uuid.UUID) 
 	}
 
 	s.emitTask(ctx, scope, canceled, EventTaskFinished)
+	// Canceling is the other way a run stops, and it stops from the API process
+	// rather than from the worker: the roster is told here so a Bolu whose
+	// workflow is already gone does not read as busy forever.
+	s.emitAgentState(ctx, scope, canceled)
 	return canceled, nil
 }
 
@@ -274,6 +278,9 @@ func (s *Service) fail(ctx context.Context, scope domain.Scope, task domain.Task
 	}
 
 	s.emitTask(ctx, scope, failed, EventTaskFinished)
+	// The row was queued for a moment, which the derived status counts as work in
+	// flight: the roster is told it is not.
+	s.emitAgentState(ctx, scope, failed)
 }
 
 // emitTask publishes a task's state, which is how the feed learns about it
@@ -297,6 +304,37 @@ func requireScope(scope domain.Scope) error {
 		return fmt.Errorf("%w: workspace is required", domain.ErrInvalidInput)
 	}
 	return nil
+}
+
+// emitAgentState publishes the state the registry derives for the Bolu that owns
+// the task, so an open roster follows the run without reloading.
+//
+// `task.finished` moves the feed and the task list; a Bolu's own state is read
+// from `agent.state`, which the chat module publishes when it hands a message
+// over. The runtime owes the same event on the way out, or a finished run leaves
+// the header saying "sedang bekerja" (#315).
+func (s *Service) emitAgentState(ctx context.Context, scope domain.Scope, task domain.Task) {
+	if s.deps.Agents == nil || s.deps.Events == nil {
+		return
+	}
+
+	agent, err := s.deps.Agents.Agent(ctx, scope, task.AgentID)
+	if err != nil {
+		if s.deps.Logger != nil {
+			s.deps.Logger.Warn("could not read the Bolu's state for the stream",
+				zap.String("task_id", task.ID.String()), zap.Error(err))
+		}
+		return
+	}
+
+	event, err := domain.AgentStateEvent(scope, task, agent.Display)
+	if err != nil {
+		return
+	}
+	if err := s.deps.Events.Emit(ctx, event); err != nil && s.deps.Logger != nil {
+		s.deps.Logger.Warn("agent state published only to the store",
+			zap.String("task_id", task.ID.String()), zap.Error(err))
+	}
 }
 
 // clientTrigger reports whether a caller may open a task with this trigger.
