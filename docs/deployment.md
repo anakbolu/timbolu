@@ -253,11 +253,64 @@ What this workflow needs, once — six repository secrets, one per service:
 Each URL is the service's own, from its Easypanel page (Deploy Webhook), and it is a credential:
 whoever holds it can trigger a deployment.
 
-### Proving which backend build is live
+### Proving the deploy actually landed
 
-A green Deployment workflow says the deploy hook was *accepted*, not that the build finished: the hook
-answers when the build is queued. The API answers the remaining question itself, because
-`GET /api/health` (`GET /health` too) carries the build identity alongside the liveness status:
+**A green `Deployment` run is not a deploy.** The workflow calls each service's deploy webhook
+(`/api/deploy/<token>`), and the hook answers when Easypanel has *queued* the build; the build itself
+runs on the panel's server after that HTTP call has already returned. A green run therefore proves
+the hook was accepted and nothing more: a build that fails on the panel, a rollout that never replaces
+the container, or a hook pointing at the wrong service all leave the run green while production keeps
+serving the previous image.
+
+The workflow's `verify` job (`Verify the deploy landed`) narrows that gap, and it is the automated
+form of this section. It fails when a deploy job that should have run failed or was skipped. For a
+backend change it computes the fingerprint from the tree the run checked out and polls `/api/health`
+for up to eight minutes until production reports it. For a frontend change it polls `/login` until the
+page's chunk is newer than the commit. Its last step polls `/api/ready` and `/` for three minutes, and
+that step proves only that the services are alive — it can pass on the previous image.
+
+What no run can do is finish the deploy. When a build does not land, the evidence and the fix are on
+the panel, so the checks below are how somebody with access proves a change is live.
+
+#### Frontend
+
+Next writes content-hashed file names, so the assets a page serves name the build they came from.
+Build the tree you merged with the **same `NEXT_PUBLIC_*` values the `timbolu` service carries**:
+they are inlined into the bundle, so a different value changes the bytes — and therefore the chunk
+names — even for an identical tree.
+
+```console
+$ cd apps/frontend
+$ npm ci
+$ NEXT_PUBLIC_API_URL=https://timbolu.com \
+  NEXT_PUBLIC_CONTENT_ORIGIN=https://timbolu-timbolu-backend.auyxz7.easypanel.host \
+  NEXT_PUBLIC_GOOGLE_LOGIN_ENABLED=false \
+  npm run build
+$ shasum -a 256 .next/static/chunks/*.css
+3971f367ab9c9f81991cba66d89d2b927da60a4ca85891032e7da99dec440db0  .next/static/chunks/25cvzt95clchu.css
+$ grep -o '/_next/static/chunks/[^"]*\.js' .next/server/app/login.html | sort -u
+```
+
+The same values, read back from production (`25cvzt95clchu.css` is the name the local build above
+produced; substitute the one your build prints):
+
+```console
+$ curl -s 'https://timbolu.com/login?verify=1' | grep -o '/_next/static/chunks/[^"]*\.js' | sort -u
+$ curl -s 'https://timbolu.com/_next/static/chunks/25cvzt95clchu.css' | shasum -a 256
+3971f367ab9c9f81991cba66d89d2b927da60a4ca85891032e7da99dec440db0  -
+```
+
+Equal chunk lists mean production serves the build this tree produces; a name in one list and not the
+other means it serves a different build. The stylesheet hash is the weaker half, and the reason is
+worth stating: the CSS chunk changes only when the CSS does, so it proves the build for a change that
+touched it and says nothing about one that did not. The page's chunk list moves with the page's own
+code, which is why the workflow compares a chunk's `Last-Modified` against the commit time rather than
+these names.
+
+#### Backend
+
+The API answers the remaining question itself, because `GET /api/health` (`GET /health` too) carries
+the build identity alongside the liveness status:
 
 ```console
 $ curl -s https://timbolu.com/api/health | jq .data
@@ -277,18 +330,10 @@ $ find apps/backend packages -name '*.go' -type f | LC_ALL=C sort | xargs cat | 
 8c258b2de0c32616
 ```
 
-Run that from the tree you merged. Equal values mean that tree is the one serving; a different value
-means the previous image is still up, so the deploy is not done. The hash is over content only, so the
-same source always yields the same value, and any change to a `.go` file changes it.
-
-The Deployment workflow now runs that comparison itself, so a hook that was accepted but never turned
-into a running build fails the run instead of passing quietly. Its `verify` job computes the
-fingerprint from the tree the run checked out, polls `https://timbolu.com/api/health` for up to eight
-minutes, and fails with both values — served and expected — when they never match. It also fails when
-`data.build` is absent altogether, which is the shape of an image built before the fingerprint
-existed, and when any deploy job that should have run failed or was skipped. A separate step polls
-`/api/ready` and `/` for three minutes, but that step only proves the services are alive; it can pass
-on the previous image, so the fingerprint is the proof that a deploy landed.
+Run that from the tree you merged. Equal values are the only proof that the Go binary serving traffic
+is that tree; a different value means the previous image is still up, so the deploy is not done, and
+an absent `build` means the image predates the field. The hash is over content only, so the same
+source always yields the same value and any change to a `.go` file changes it.
 
 `commit` and `built_at` stay `"unknown"` on Easypanel for a structural reason: build arguments in
 Easypanel come from a service's environment, which is static per service, so nothing can name a commit
@@ -300,6 +345,32 @@ arguments, so once the panel is reachable those two can be filled in (a build pi
 both); until then `build` is the deploy identity, and `"unknown"` in the other two is the honest
 answer rather than a broken probe. A local `go run` answers `"unknown"` for all three, which is why
 the probes are only evidence of a *container* deploy.
+
+#### Failure modes this repository has already hit
+
+| Symptom | What it means | What the access holder does on the panel |
+| --- | --- | --- |
+| `/api/health` has no `data.build` | The serving binary predates the build-identity field (#303), so no backend build has landed since 2026-10-28T20:25Z. This is #329. | `timbolu-backend` → Deployments → the last build after the merge time: did it fail, and with what error? Then check the service's environment still carries `BINARY=api`. |
+| The hook answered `success` and the container was not replaced | A rollout, environment, or build-arg problem on the panel side, not in this repository (#329, #200). | Same Deployments list. A green build with the old container still serving is the rollout's problem; a missing `BINARY=api` builds the wrong binary. |
+| The frontend build fails on `Module not found: @timbolu/contracts/events` | The tree was broken and is fixed in-repo by #328 — but a repository fix only lands once the panel's build is green again. | `timbolu` → Deployments → the last build: read the error. A failing build never produces the chunk names above, so the frontend stays on the previous image however often the workflow reruns. |
+
+None of these is fixable from this repository: each needs the build log or the service settings, and
+no panel credential lives here. The repository's part is to make the failure visible — the fingerprint
+and chunk checks above — and to keep the build green.
+
+#### The honesty rule
+
+A change is **live** only with the evidence above: the backend fingerprint equal to the tree you
+merged, or the frontend's CSS hash and page chunk names equal to a local build of that tree. Three
+things are routinely mistaken for that evidence, and none of them is it:
+
+- A green `Deployment` run — the hook was accepted; the build was not proven (#322, #329).
+- A green `/api/ready` — it proves the API reaches its dependencies, which the *old* image does just as
+  well.
+- A `200` on the page — it proves a frontend is serving, not which one.
+
+So when a build has not landed, say so. "Merged, not deployed yet" is an accurate state, and a bug
+that is fixed on `main` and still visible in production is usually this rather than a second bug.
 
 ## Releasing
 
