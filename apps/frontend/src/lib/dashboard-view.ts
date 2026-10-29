@@ -10,6 +10,7 @@
 import { BOLU_SHAPES, type BoluShapeName } from "@/components/bolu/characters";
 import type { ActivityEvent, Agent, AgentTeam, Draft, Task } from "@/lib/api";
 import { ALL_BOTS, type BoluExpressionName, type CrewMember } from "@/lib/crew";
+import type { RealtimeStatus } from "@/lib/realtime";
 
 /**
  * TIMEZONES are the zones a workspace may be set to.
@@ -373,6 +374,30 @@ function finishedOn(tasks: Task[], day: Date): Task[] {
 }
 
 /**
+ * CONNECTION_NOTE is the one thing the "Sedang dikerjakan" card may say about
+ * the stream.
+ *
+ * The count on that card only moves when the realtime stream delivers an event,
+ * so its note is a promise about that stream. The activity card beside it already
+ * tells the truth about a late or missing connection; letting this card keep
+ * saying "tersambung" would put two contradictory claims on one screen. Only
+ * `live` earns the claim, and every other state says what is actually happening.
+ */
+function connectionNote(status: RealtimeStatus): string {
+  switch (status) {
+    case "live":
+      return "tersambung ke kantor";
+    case "slow":
+      return "pembaruan tertunda, angka bisa tertinggal";
+    case "connecting":
+    case "reconnecting":
+      return "menyambung ke kantor…";
+    case "closed":
+      return "tidak tersambung";
+  }
+}
+
+/**
  * buildStats counts what the workspace has actually done.
  *
  * The design's four cards are reproduced in shape, and filled with the counts the
@@ -380,11 +405,16 @@ function finishedOn(tasks: Task[], day: Date): Task[] {
  * many rounds the Bolu have executed this week. The design's "time saved" and
  * "unpaid invoices" cards have no endpoint behind them, and a made-up number on a
  * dashboard is worse than a missing one.
+ *
+ * `status` is required rather than optional because the running count is only as
+ * fresh as the stream: a caller that forgets it would silently claim a connection
+ * the workspace does not have.
  */
 export function buildStats(input: {
   drafts: Draft[];
   tasks: Task[];
   agents: Agent[];
+  status: RealtimeStatus;
   now?: Date;
 }): StatItem[] {
   const now = input.now ?? new Date();
@@ -422,7 +452,7 @@ export function buildStats(input: {
     {
       label: "Sedang dikerjakan",
       value: String(running.length),
-      note: running.length === 0 ? "semua Bolu menganggur" : "tersambung ke kantor",
+      note: running.length === 0 ? "semua Bolu menganggur" : connectionNote(input.status),
     },
     {
       label: "Langkah dijalankan minggu ini",
