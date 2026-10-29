@@ -168,8 +168,8 @@ export function TaskDetailView({ taskID }: { taskID: string }) {
     return (
       <div className="flex flex-col gap-4">
         <Alert tone="error">{message ?? "Tugas tidak ditemukan."}</Alert>
-        <Link href="/tasks" className={`${BUTTON} w-fit no-underline`}>
-          ← Kembali ke daftar tugas
+        <Link href="/dashboard" className={`${BUTTON} w-fit no-underline`}>
+          ← Kembali ke Dasbor
         </Link>
       </div>
     );
@@ -183,8 +183,8 @@ export function TaskDetailView({ taskID }: { taskID: string }) {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <Link href="/tasks" className="text-[14px] text-bolu-muted no-underline hover:underline">
-            ← Tugas
+          <Link href="/dashboard" className="text-[14px] text-bolu-muted no-underline hover:underline">
+            ← Dasbor
           </Link>
           <h1 className={`${HEADING} mt-1`}>{task.title || "Tugas"}</h1>
           <p className="mt-1 text-[15px] text-bolu-muted">
