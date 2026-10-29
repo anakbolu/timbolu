@@ -10,6 +10,7 @@ import (
 	"image/png"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +20,17 @@ import (
 // fakeToken is the shared secret the fake accepts, standing in for the value of
 // VCOMPUTER_CONTROL_TOKEN on the control plane's side.
 const fakeToken = "test-token"
+
+// The navigation targets the fake answers as failures. They stand for the two meanings
+// the control plane gives the same 502 — a page the browser could not load, and a
+// runtime that failed at something — plus the statuses that are not about navigation at
+// all, so a test can show the client reads the body rather than flattening every 5xx.
+const (
+	failedNavigationPath = "/tidak-ada-404"
+	brokenRuntimePath    = "/runtime-error"
+	internalFailurePath  = "/internal-error"
+	unavailablePath      = "/unavailable"
+)
 
 // fakeControl is the control plane as this client sees it: a few routes that record
 // what arrived and answer what the real one answers. It is a fake of the *contract*,
@@ -79,6 +91,28 @@ func newFakeControl(t *testing.T) *fakeControl {
 		target, _ := body["url"].(string)
 		if target == "" {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a url is required"})
+			return
+		}
+		// The 502s the control plane produces, as it produces them: a navigation that
+		// did not load carries its own sentence and the status the page answered with,
+		// while a runtime that failed carries the generic one. They are different
+		// failures under the same status, and the client has to tell them apart.
+		switch {
+		case strings.HasSuffix(target, failedNavigationPath):
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error":       navigationFailedMessage,
+				"final_url":   target,
+				"http_status": http.StatusNotFound,
+			})
+			return
+		case strings.HasSuffix(target, brokenRuntimePath):
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "the sandbox runtime failed"})
+			return
+		case strings.HasSuffix(target, internalFailurePath):
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "the sandbox runtime failed"})
+			return
+		case strings.HasSuffix(target, unavailablePath):
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "the control plane is restarting"})
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"url": target})
@@ -353,8 +387,55 @@ func TestStatusCodesBecomeSentinels(t *testing.T) {
 	}
 }
 
+// TestFailedNavigationIsNotRetryable is the difference the 502's own sentence buys. A
+// navigation the control plane carried out and that did not load is a state, not a
+// hiccup: the same URL answers the same way, so a caller that retried would spend its
+// budget reaching the same page and leave the browser on it. ErrNavigationFailed is what
+// says "this URL did not work" rather than "not now".
+func TestFailedNavigationIsNotRetryable(t *testing.T) {
+	fake := newFakeControl(t)
+	client := New(fake.URL, fakeToken, time.Second)
+
+	err := client.Navigate(context.Background(), "bot-a", "http://vcomputer-fixture:8080"+failedNavigationPath)
+	if !errors.Is(err, domain.ErrNavigationFailed) {
+		t.Fatalf("err = %v, want ErrNavigationFailed", err)
+	}
+	if errors.Is(err, domain.ErrUnavailable) {
+		t.Fatalf("err = %v, want it not to be ErrUnavailable: retrying a missing page is the bug", err)
+	}
+	// The control plane's sentence travels with it, status and all: a task summary that
+	// only said "navigation failed" would hide the 404 that explains it.
+	for _, want := range []string{navigationFailedMessage, "404"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("err = %v, want it to carry %q", err, want)
+		}
+	}
+}
+
+// TestOtherServerFailuresStayRetryable is the other half of that mapping: a 5xx the
+// control plane produced for its own reasons — a runtime that failed, a control plane
+// restarting — may well pass, and flattening it into the same sentinel as a missing page
+// would turn a transient failure into a permanent one.
+func TestOtherServerFailuresStayRetryable(t *testing.T) {
+	fake := newFakeControl(t)
+	client := New(fake.URL, fakeToken, time.Second)
+
+	for _, path := range []string{brokenRuntimePath, internalFailurePath, unavailablePath} {
+		t.Run(path, func(t *testing.T) {
+			err := client.Navigate(context.Background(), "bot-a", "http://vcomputer-fixture:8080"+path)
+			if !errors.Is(err, domain.ErrUnavailable) {
+				t.Fatalf("err = %v, want ErrUnavailable", err)
+			}
+			if errors.Is(err, domain.ErrNavigationFailed) {
+				t.Fatalf("err = %v, want it not to be ErrNavigationFailed", err)
+			}
+		})
+	}
+}
+
 // TestUnreachableControlPlaneIsRetryable covers the difference between "no" and
-// "not now": a closed listener is ErrUnavailable, not a refusal.
+// "not now": a closed listener is ErrUnavailable, not a refusal — and it is the transport
+// failing, not the control plane answering about a navigation, so it stays retryable.
 func TestUnreachableControlPlaneIsRetryable(t *testing.T) {
 	fake := newFakeControl(t)
 	url := fake.URL
@@ -362,7 +443,12 @@ func TestUnreachableControlPlaneIsRetryable(t *testing.T) {
 
 	client := New(url, fakeToken, time.Second)
 	if _, err := client.EnsureSession(context.Background(), "bot-a"); !errors.Is(err, domain.ErrUnavailable) {
-		t.Fatalf("err = %v, want ErrUnavailable", err)
+		t.Fatalf("ensure: err = %v, want ErrUnavailable", err)
+	}
+	if err := client.Navigate(context.Background(), "bot-a", "http://example.com/"); !errors.Is(err, domain.ErrUnavailable) {
+		t.Fatalf("navigate: err = %v, want ErrUnavailable", err)
+	} else if errors.Is(err, domain.ErrNavigationFailed) {
+		t.Fatalf("navigate: err = %v, want a transport failure not to be ErrNavigationFailed", err)
 	}
 }
 
