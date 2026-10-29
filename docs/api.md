@@ -528,6 +528,78 @@ event, so a client that listens for named types sees nothing extra.
 coordinate is stored anywhere**: a client that draws the crew derives a position
 from the state.
 
+### Status realtime di klien
+
+The server decides what the stream carries; the client decides what the screen
+says about it. Five `RealtimeStatus` values are visible to a person, and every
+client uses them as they are — the web app today, the Expo app in #302 Phase 1
+tomorrow — with the Indonesian labels the chat screen already shows:
+
+| Status | Label | When the client enters it |
+| --- | --- | --- |
+| `connecting` | menyambung… | `connect()` has been called and no transport has proven itself yet. This is the state of a first attempt, not a retry. |
+| `live` | tersambung | Only after the transport survives `HEALTHY_AFTER_MS = 5000` or delivers one frame. A frame counts immediately; an `onopen` does not. |
+| `reconnecting` | menyambung ulang… | A failure while the fast retry budget lasts. The retries wait `RECONNECT_DELAYS_MS = [500, 1000, 2000, 4000, 8000]`, and the last value repeats once the list runs out. |
+| `slow` | pembaruan tertunda | `FAILURES_BEFORE_SLOW = 3` consecutive failures. The label stays for the whole slow attempt: a retry in progress must not flick back to `reconnecting` and promise a fast stream it cannot prove. |
+| `closed` | terputus | `close()` was called. It is not a failure, and nothing will move it back on its own. |
+
+`live` is the one status worth arguing about. An open socket means the route
+answered, not that the stream stays up: production answered `200` and closed 32 ms
+later (#314), so a client that treats `onopen` as health resets its retry budget
+and reconnects forever. The health clock is the fix — a transport that dies before
+`HEALTHY_AFTER_MS = 5000` is a failure, and only a transport that survives it, or
+sends a frame first, resets the failure count and earns `live`.
+
+The fast path spends its budget before it admits anything is wrong. Each failure
+schedules the next attempt from `RECONNECT_DELAYS_MS = [500, 1000, 2000, 4000,
+8000]` and the status says `reconnecting`, because a fast retry is still an honest
+promise. After `FAILURES_BEFORE_SLOW = 3` consecutive failures it stops being one,
+and the client says `slow` instead.
+
+On the slow path the stream is retried every `SLOW_RETRY_MS = 30_000` plus a
+random wait of up to `SLOW_RETRY_JITTER_MS = 15_000` — the jitter is there so many
+tabs of a sick server do not return together. Waiting half a minute for a stream
+would leave the feed stale, so a slow client also pulls the backlog over plain
+HTTP: `GET /events?after_id=<last seen>&limit=200` every `SLOW_POLL_MS = 5000`,
+slowing to `SLOW_POLL_BACKOFF_MS = 15_000` after
+`SLOW_POLL_FAILURES_BEFORE_BACKOFF = 2` polls in a row fail. A `200` — with or
+without new events — is the endpoint answering, so the fast cadence resumes rather
+than waiting out the backoff. A transport that proves itself stops the poll,
+because polling beside a live stream only asks the same cursor twice.
+
+Two transport details explain why `reconnecting` cannot hang forever on a route
+the proxy does not upgrade: a socket handshake that stays unopened for
+`SOCKET_OPEN_TIMEOUT_MS = 4000` counts as a failure, and after
+`SOCKET_FAILURES_BEFORE_SSE = 2` failed handshakes the client stops asking for a
+socket for the rest of the session and uses SSE, with the attempt budget reset so
+the fallback does not inherit the socket's backoff.
+
+The rules below bind every client, not just the web one:
+
+1. **Never claim `live` from `onopen` alone.** Survive `HEALTHY_AFTER_MS = 5000`
+   or deliver a frame first (#314). A stream that opens and closes is the failure
+   mode the status exists to expose, and hiding it makes the retry budget lie.
+2. **While `slow`, keep pulling the backlog through `GET /events`.** The stream
+   retry is deliberately half a minute away; the poll is what makes a message
+   sent from another tab arrive in seconds (#335). And do not ask the same
+   `after_id` again when the cursor did not move: a reconnect replay that
+   produced nothing gets the same empty answer until the cursor advances
+   (#333). The web client skips a stalled replay for `REPLAY_STALL_MS = 60_000`;
+   the slow poll is the exception, because asking the same cursor every few
+   seconds is exactly its job, and ids at or below the last seen one are dropped
+   so the two paths cannot duplicate an event.
+3. **Show the status as it is, including when it is bad.** `slow` reads
+   "pembaruan tertunda", never "tersambung". A person deciding whether to trust
+   the screen is entitled to know that the updates are late, and a screen that
+   says "tersambung" while the stream is dead is worse than one that admits it.
+
+The type and every threshold above live in `apps/frontend/src/lib/realtime.ts`,
+which is the implementation these numbers were read from. `packages/contracts`
+cannot be the web app's build-time source yet: the frontend image is built with
+`apps/frontend` as its context, so nothing outside that directory exists inside
+the build (#343). Until that changes, this section is the shared contract — a
+change to a constant there is a change to this document in the same pull request.
+
 ### The content origin
 
 `GET /content/:reference` serves one agent-written HTML document. The reference
