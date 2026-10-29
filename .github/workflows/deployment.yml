@@ -29,8 +29,15 @@ name: Deployment
 #   .github/workflows/**        -> every service above          (this workflow decides what ships)
 #
 # The gateway is its own module and its own image, so it is triggered by its own path rather than by
-# `apps/backend/**`. `packages/**` is the module both Go processes import, so a change there is a
-# change to both and triggers both.
+# `apps/backend/**`. `packages/` is two things: the Go module both Go services import, and TypeScript
+# packages that belong to the web app. Only the Go half enters a Go image — the backend's build
+# fingerprint hashes `*.go` and nothing else (apps/backend/Dockerfile) — so the Go triggers match the
+# module's `.go` files and its manifests, not `packages/**`. A TypeScript-only change there is not a
+# change to either Go image, and the `timbolu` image builds from `apps/frontend` alone (#330 kept the
+# stream's event names local so it would build without `packages/`), so such a change rolls nothing.
+# When the web app starts consuming a package at build time, that package's path goes in the
+# `frontend` filter, where the image that would rebuild is named. A `packages/**` here again would
+# roll four Go services for a change none of them builds.
 #
 # The root build files are `.dockerignore`, `Makefile`, `go.work`, `go.work.sum`, and
 # `docker-compose*.yml`. They belong to no app, so before this filter existed a commit touching only
@@ -38,7 +45,8 @@ name: Deployment
 # image: `.dockerignore` decides what enters every build context (a wrong line there is what broke
 # the gateway build, #316), `go.work`/`go.work.sum` are how the modules are wired for local and CI
 # work, `Makefile` is the same commands, and the compose files run the same images locally. A change
-# to any of them therefore redeploys every service, exactly like `packages/**` does for the Go ones.
+# to any of them therefore redeploys every service, exactly like a change to the Go module under
+# `packages/` does for the Go ones.
 #
 # `.github/workflows/**` is on the same list for the same reason, from the other direction: this
 # workflow is what turns a commit into a deploy, so a commit that only edits it matched no app path,
@@ -101,10 +109,14 @@ jobs:
               - 'apps/frontend/**'
             backend:
               - 'apps/backend/**'
-              - 'packages/**'
+              - 'packages/**/*.go'
+              - 'packages/go.mod'
+              - 'packages/go.sum'
             gateway:
               - 'apps/whatsapp-gw/**'
-              - 'packages/**'
+              - 'packages/**/*.go'
+              - 'packages/go.mod'
+              - 'packages/go.sum'
             migrations:
               - 'apps/backend/migrations/**'
             # Files that decide how every image is built, or whether any is built at all. Bare
@@ -183,8 +195,8 @@ jobs:
     name: Deploy timbolu-wa-gateway
     needs: [changes, migrate]
     # Its own job rather than a fourth matrix entry, because it is its own module: a change to
-    # `apps/whatsapp-gw/**` should roll the gateway and nothing else. `packages/**` counts as a
-    # change here too, since the gateway imports it.
+    # `apps/whatsapp-gw/**` should roll the gateway and nothing else. The Go module under `packages/`
+    # counts as a change here too, since the gateway imports it.
     if: >-
       always() &&
       !cancelled() &&
