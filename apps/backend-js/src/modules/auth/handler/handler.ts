@@ -75,12 +75,18 @@ export interface userPayload {
 /**
  * What a sign-in returns. The refresh token travels in the httpOnly cookie, so
  * it is not repeated here.
+ *
+ * `refresh_token` is set only when the caller presented the token in the body
+ * instead of the cookie: a native client has no cookie jar, so the cookie is not
+ * a channel it can read, and the rotated token would otherwise be lost after a
+ * single refresh.
  */
 export interface sessionPayload {
   access_token: string;
   access_expires_at: string;
   refresh_expires_at: string;
   user: userPayload;
+  refresh_token?: string;
 }
 
 /** Serves the auth endpoints. */
@@ -166,8 +172,15 @@ export class Handler {
    * non-browser clients.
    */
   refresh = async (c: AppContext): Promise<Response> => {
+    // A browser presents the refresh cookie, so the rotated token stays in the
+    // cookie and JavaScript never sees it. A native client has no cookie jar:
+    // the cookie is not a channel it can read at all, so when the token came
+    // from the body the rotated one must go back in the body or the client can
+    // refresh exactly once.
+    let fromCookie = true;
     let token = getCookie(c, CookieName) ?? "";
     if (token === "") {
+      fromCookie = false;
       const req = await readFields(c, ["token"]);
       if (!req.ok) return errorEnvelope(c, 400, "invalid request body", "invalid_request");
       token = req.value?.token ?? "";
@@ -176,7 +189,7 @@ export class Handler {
     try {
       const session = await this.service.refresh(token);
       this.setRefreshCookie(c, session);
-      return ok(c, "session refreshed", toSessionPayload(session));
+      return ok(c, "session refreshed", toSessionPayload(session, !fromCookie));
     } catch (err) {
       this.clearRefreshCookie(c);
       return this.fail(c, "refresh session", err);
@@ -377,14 +390,20 @@ export function toUserPayload(user: User): userPayload {
   };
 }
 
-/** What a sign-in returns. */
-export function toSessionPayload(session: Session): sessionPayload {
-  return {
+/**
+ * What a sign-in returns. `includeRefreshToken` is off by default because the
+ * cookie is the refresh channel for a browser; only a body-token refresh turns
+ * it on, and then only because the client has no cookie to read.
+ */
+export function toSessionPayload(session: Session, includeRefreshToken = false): sessionPayload {
+  const payload: sessionPayload = {
     access_token: session.accessToken,
     access_expires_at: session.accessTokenExp.getTime() ? session.accessTokenExp.toISOString() : "",
     refresh_expires_at: session.refreshTokenExp.getTime() ? session.refreshTokenExp.toISOString() : "",
     user: toUserPayload(session.user),
   };
+  if (includeRefreshToken) payload.refresh_token = session.refreshToken;
+  return payload;
 }
 
 /**
