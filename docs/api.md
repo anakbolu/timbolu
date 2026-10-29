@@ -11,7 +11,7 @@ Base URL: `{API_URL}/api`. Every response uses the envelope
 | `POST /auth/verify-email` | — | `{token}` | `200` account | `400` token invalid, expired, or used |
 | `POST /auth/resend-verification` | — | `{email}` | `200` always | — |
 | `POST /auth/login` | — | `{email, password}` | `200` session | `401` bad credentials, `429` too many attempts |
-| `POST /auth/refresh` | cookie | `{token}` optional | `200` session | `400` token invalid or revoked |
+| `POST /auth/refresh` | cookie, or `{token}` in the body | `{token}` only for a native client | `200` session, plus `refresh_token` on the body path | `400` token invalid or revoked |
 | `POST /auth/logout` | cookie | — | `200` always | — |
 | `POST /auth/password/forgot` | — | `{email}` | `200` always | — |
 | `POST /auth/password/reset` | — | `{token, password}` | `200` | `400` token invalid / weak password |
@@ -40,9 +40,14 @@ Base URL: `{API_URL}/api`. Every response uses the envelope
 the link, and the API checks it again on every admin request. See
 [Platform role and the operator surface](#platform-role-and-the-operator-surface).
 
-The refresh token is **not** in the body: it is set as an `httpOnly` cookie named
-`bolu_refresh`, scoped to `/api/auth`, `SameSite=Lax`, `Secure` outside local
-development.
+For a browser, refresh is cookie-only. `POST /auth/refresh` reads the
+`httpOnly` cookie named `bolu_refresh`, scoped to `/api/auth`, `SameSite=Lax`,
+`Secure` outside local development; the rotated token is written back to that
+same cookie and is **not** in the response body, so JavaScript cannot read it.
+A native client has no cookie jar, so it passes `{"token": "…"}` in the body
+instead; that path returns the rotated token as `refresh_token` in the session
+payload, because the cookie is not a channel the client can read. Either way the
+presented token is revoked, so only the rotated token works next time.
 
 Two endpoints answer identically whether or not the address exists
 (`resend-verification`, `password/forgot`), so they cannot be used to discover
