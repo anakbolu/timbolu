@@ -55,9 +55,12 @@ export function DashView() {
   const currentNotice = workspaceReady ? notice : null;
 
   const now = useMemo(() => new Date(), []);
+  // The running count is only as fresh as the stream, so the stats card takes the
+  // same status the activity card does: one screen must not carry two claims about
+  // the connection.
   const stats = useMemo(
-    () => buildStats({ drafts, tasks, agents, now }),
-    [drafts, tasks, agents, now],
+    () => buildStats({ drafts, tasks, agents, status, now }),
+    [drafts, tasks, agents, status, now],
   );
   const week = useMemo(() => buildWeek(tasks, now), [tasks, now]);
   const feed = useMemo(() => buildFeed(events, agents), [events, agents]);
