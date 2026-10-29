@@ -108,6 +108,31 @@ func TestAnUnconfiguredDeploymentIsNotRetried(t *testing.T) {
 	require.True(t, application.NonRetryable())
 }
 
+// TestFailedNavigationIsNotRetried is the difference between a page that is not there
+// and a control plane that is not answering. The URL already failed once; the retry
+// policy would run the same navigation again and leave the browser on the same error
+// page, so the activity answers non-retryable and the run reports the URL's own reason.
+func TestFailedNavigationIsNotRetried(t *testing.T) {
+	cause := fmt.Errorf("%w: navigation failed (HTTP 404)", domain.ErrNavigationFailed)
+	activities := New(Deps{Computer: stubClient{err: cause}})
+
+	err := activities.Navigate(context.Background(), NavigateRequest{
+		BotID: "bot-1",
+		URL:   "http://vcomputer-fixture:8080/tidak-ada-404",
+	})
+
+	require.ErrorIs(t, err, domain.ErrNavigationFailed)
+
+	var application *sdktemporal.ApplicationError
+	require.ErrorAs(t, err, &application)
+	require.True(t, application.NonRetryable(),
+		"a navigation that did not load must not be retried, got %v", err)
+	require.Equal(t, navigationFailedType, application.Type())
+	// The control plane's sentence travels: the 404 is what tells an operator which URL
+	// was missing rather than which sandbox was broken.
+	require.Contains(t, err.Error(), "404")
+}
+
 // TestTransientFailuresStayRetryable is the other side of the same decision: an unreachable
 // control plane and a request the control plane refused are not configuration, so the retry
 // policy keeps them. Marking everything non-retryable would trade one bug for another — a
