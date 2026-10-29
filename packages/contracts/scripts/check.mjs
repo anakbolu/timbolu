@@ -105,14 +105,9 @@ function contractsNames() {
 
 function frontendNames() {
   const source = read("apps/frontend/src/lib/realtime.ts");
-  if (!/from\s+["']@timbolu\/contracts\/events["']/.test(source)) {
-    // The names live in the package now; a frontend that stops importing them
-    // has gone back to keeping its own list, which is what this gate exists to
-    // prevent.
-    throw new Error("the frontend does not import @timbolu/contracts/events");
-  }
-  const ignored = namesIn(tupleNames(source, "WEB_INTERNAL_EVENT_TYPES"));
-  return new Set([...contractsNames()].filter((name) => !ignored.has(name)));
+  const chat = namesIn(tupleNames(source, "CHAT_EVENT_TYPES"));
+  const realtime = namesIn(tupleNames(source, "REALTIME_EVENT_TYPES"));
+  return new Set([...chat, ...realtime]);
 }
 
 function difference(left, right) {

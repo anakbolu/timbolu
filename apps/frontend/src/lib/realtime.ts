@@ -15,52 +15,41 @@
  *   delay it.
  */
 
-import {
-  AGENT_STATES as CONTRACT_AGENT_STATES,
-  CHAT_EVENT_TYPES as CONTRACT_CHAT_EVENT_TYPES,
-  REALTIME_EVENT_TYPES as CONTRACT_REALTIME_EVENT_TYPES,
-} from "@timbolu/contracts/events";
-
 import { getAccessToken, listEvents, type ActivityEvent } from "./api";
 
 /**
- * The event types the chat thread renders while a reply is still streaming.
- *
- * The names come from the package rather than from a list here: `agent.state` is
- * in it because a Bolu says what it is doing through its own state, which is the
- * only status the stream carries while an answer is still being prepared.
+ * The event names this client acts on are listed here rather than imported from
+ * `packages/contracts/events`: the image is built with `apps/frontend` as its
+ * build context, so nothing outside this directory exists inside it and a
+ * cross-package import fails the build (#328). `make contracts-check` still
+ * rejects a name the docs do not have, so the copy cannot drift silently.
  */
-export const CHAT_EVENT_TYPES: readonly string[] = CONTRACT_CHAT_EVENT_TYPES;
-
-/**
- * The two stream events no web screen renders: `task.step` is a task's internal
- * progress, and `notification.pending` is the notification worker's hook. The
- * package names what the stream carries; which of those this client subscribes
- * to is this client's decision, so the difference is kept here — and
- * `make contracts-check` fails if this set and the script's disagree.
- */
-const WEB_INTERNAL_EVENT_TYPES: readonly string[] = [
-  "task.step",
-  "notification.pending",
+export const CHAT_EVENT_TYPES: readonly string[] = [
+  "message.new",
+  "message.updated",
+  "router.decision",
+  // A Bolu says what it is doing through its own state, which is the only
+  // status the stream carries while an answer is still being prepared.
+  "agent.state",
 ];
 
 /**
- * Every event type the app acts on: the package's list minus the internal ones.
+ * Every event type the app acts on, named once.
  *
  * The SSE fallback subscribes to each of them by name: the server names its
  * frames, and EventSource fires `onmessage` only for unnamed ones, so a named
  * frame with no listener of its own is a frame nobody sees.
  */
-export const REALTIME_EVENT_TYPES: readonly string[] = CONTRACT_REALTIME_EVENT_TYPES.filter(
-  (type) => !WEB_INTERNAL_EVENT_TYPES.includes(type),
-);
-
-/**
- * The states a Bolu reports. Re-exported with the event names so a screen takes
- * the stream's vocabulary from this module instead of reaching into the package
- * for one constant and keeping a copy of the values.
- */
-export const AGENT_STATES: readonly string[] = CONTRACT_AGENT_STATES;
+export const REALTIME_EVENT_TYPES: readonly string[] = [
+  ...CHAT_EVENT_TYPES,
+  "draft.created",
+  "draft.decided",
+  "task.started",
+  "task.finished",
+  "task.waiting_approval",
+  "task.running",
+  "routine.run",
+];
 
 /** Where the last delivered event id per workspace is kept. */
 const LAST_EVENT_ID_PREFIX = "bolu.last_event_id.";
