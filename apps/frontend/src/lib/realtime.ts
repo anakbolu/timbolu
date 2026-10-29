@@ -11,8 +11,8 @@
  *   replaying the workspace's history over the screen;
  * - the connection opens first and the backlog follows it — the server sends
  *   everything after `last_event_id` on the connection itself — so "live" is
- *   reached as soon as the transport is up and a slow HTTP replay can no longer
- *   delay it.
+ *   reached as soon as the transport proves itself and a slow HTTP replay can
+ *   no longer delay it.
  */
 
 import { getAccessToken, listEvents, type ActivityEvent } from "./api";
@@ -123,7 +123,7 @@ function parseEvent(raw: unknown, fallbackId?: number): ActivityEvent | null {
   return { ...candidate, id } as ActivityEvent;
 }
 
-export type RealtimeStatus = "connecting" | "live" | "reconnecting" | "closed";
+export type RealtimeStatus = "connecting" | "live" | "reconnecting" | "slow" | "closed";
 
 export type RealtimeHandlers = {
   onEvent: (event: ActivityEvent) => void;
@@ -141,6 +141,27 @@ const RECONNECT_DELAYS_MS = [500, 1000, 2000, 4000, 8000];
 const REPLAY_LIMIT = 200;
 /** How many backlog pages a single reconnect reads before giving up on the past. */
 const REPLAY_MAX_PAGES = 8;
+
+/**
+ * How long an open connection must survive before it counts as healthy.
+ *
+ * `onopen` says the route answered, not that the stream stays up: production
+ * answered 200 and closed 32 ms later, and resetting the retry budget on that
+ * open is what kept the client reconnecting forever.
+ */
+const HEALTHY_AFTER_MS = 5000;
+
+/** Consecutive failures before the status stops promising a fast reconnect. */
+const FAILURES_BEFORE_SLOW = 3;
+
+/** The first wait between retries once the client is on the slow path. */
+const SLOW_RETRY_MS = 30_000;
+
+/** Extra wait per slow retry, so many tabs do not return to a sick server together. */
+const SLOW_RETRY_JITTER_MS = 15_000;
+
+/** How long a replay that moved the cursor not at all is skipped before retrying. */
+const REPLAY_STALL_MS = 60_000;
 
 /**
  * How many socket handshakes may fail before the client stops asking for one.
@@ -199,8 +220,19 @@ export function connect(
   let timer: number | undefined;
   let handshake: number | undefined;
   let attempts = 0;
-  // Consecutive failed socket handshakes. A socket that opens resets it, so a
-  // working transport is never abandoned over an old failure.
+  // Consecutive failures, counted until a stream proves itself healthy. Unlike
+  // `attempts` it survives the switch from socket to SSE, because the status
+  // describes the feed rather than one transport.
+  let failures = 0;
+  // The health clock of the transport currently open, if it has not proven
+  // itself yet.
+  let healthy: number | undefined;
+  // The cursor a replay stalled at and when it did, so the same question is not
+  // asked again over a backlog that did not move.
+  let replayStalledFrom = 0;
+  let replayStalledAt = 0;
+  // Consecutive failed socket handshakes. A socket that proves itself resets
+  // it, so a working transport is never abandoned over an old failure.
   let socketFailures = 0;
   // Once the socket has been given up on, the rest of the session stays on SSE:
   // retrying a route the proxy does not upgrade only costs the user a stream.
@@ -210,6 +242,32 @@ export function connect(
   function setStatus(next: RealtimeStatus) {
     status = next;
     handlers.onStatus?.(next);
+  }
+
+  /**
+   * proven marks a stream that earned a reset: it survived HEALTHY_AFTER_MS or
+   * delivered a frame. Only then is the status allowed to say "live", because a
+   * connection that opens and dies a frame later is a failure, not a stream.
+   */
+  function proven() {
+    clearTimeout(healthy);
+    healthy = undefined;
+    failures = 0;
+    attempts = 0;
+    socketFailures = 0;
+    setStatus("live");
+  }
+
+  /** opened starts the health clock for a transport that just came up. */
+  function opened() {
+    clearTimeout(healthy);
+    healthy = window.setTimeout(proven, HEALTHY_AFTER_MS);
+  }
+
+  /** lost stops the health clock; a close before it fires is a failure. */
+  function lost() {
+    clearTimeout(healthy);
+    healthy = undefined;
   }
 
   function deliver(event: ActivityEvent) {
@@ -231,25 +289,54 @@ export function connect(
    * `deliver` rather than applied out of order.
    */
   async function replay() {
+    // A backlog that moved nothing will not move when asked again: production
+    // asked for the same `after_id` six times in a row. Skip the next replay
+    // until the cursor has advanced or long enough has passed to expect more.
+    if (
+      replayStalledAt !== 0 &&
+      lastId === replayStalledFrom &&
+      Date.now() - replayStalledAt < REPLAY_STALL_MS
+    ) {
+      return;
+    }
+
+    const from = lastId;
     for (let page = 0; page < REPLAY_MAX_PAGES; page++) {
       if (stopped) {
-        return;
+        break;
       }
       const result = await listEvents(workspaceId, lastId, REPLAY_LIMIT);
       if (!result.ok || result.data.length === 0) {
-        return;
+        break;
       }
       for (const event of result.data) {
         deliver(event);
       }
       if (result.data.length < REPLAY_LIMIT) {
-        return;
+        break;
       }
+    }
+    if (lastId === from) {
+      replayStalledFrom = from;
+      replayStalledAt = Date.now();
+    } else {
+      replayStalledAt = 0;
     }
   }
 
   function scheduleReconnect() {
     if (stopped) {
+      return;
+    }
+    failures++;
+    if (failures >= FAILURES_BEFORE_SLOW) {
+      // Past a few failures a fast retry promises a stream the client cannot
+      // deliver: say the updates are late and back off instead of spinning.
+      setStatus("slow");
+      timer = window.setTimeout(
+        () => start(true),
+        SLOW_RETRY_MS + Math.random() * SLOW_RETRY_JITTER_MS,
+      );
       return;
     }
     const delay = RECONNECT_DELAYS_MS[Math.min(attempts, RECONNECT_DELAYS_MS.length - 1)];
@@ -305,13 +392,14 @@ export function connect(
       }
       clearTimeout(handshake);
       handshake = undefined;
-      attempts = 0;
-      socketFailures = 0;
-      setStatus("live");
+      opened();
     };
     candidate.onmessage = (message) => {
       const event = parseEvent(message.data);
       if (event) {
+        if (healthy !== undefined) {
+          proven();
+        }
         deliver(event);
       }
     };
@@ -324,6 +412,7 @@ export function connect(
       }
       clearTimeout(handshake);
       handshake = undefined;
+      lost();
       socket = null;
       socketFailed();
     };
@@ -352,8 +441,7 @@ export function connect(
       if (source !== candidate) {
         return;
       }
-      attempts = 0;
-      setStatus("live");
+      opened();
     };
 
     // The frames are named, and `onmessage` only fires for unnamed ones, so
@@ -364,6 +452,9 @@ export function connect(
       const header = message.lastEventId ? Number(message.lastEventId) : undefined;
       const event = parseEvent(message.data, header);
       if (event) {
+        if (healthy !== undefined) {
+          proven();
+        }
         deliver(event);
       }
     };
@@ -379,6 +470,7 @@ export function connect(
       if (source !== candidate) {
         return;
       }
+      lost();
       source = null;
       scheduleReconnect();
     };
@@ -388,12 +480,16 @@ export function connect(
     if (stopped) {
       return;
     }
-    setStatus(reconnected ? "reconnecting" : "connecting");
+    // A slow retry keeps the slow label while it runs: flicking back to
+    // "reconnecting" would promise a fast stream this attempt cannot prove.
+    if (status !== "slow") {
+      setStatus(reconnected ? "reconnecting" : "connecting");
+    }
 
     if (reconnected) {
       void replay().catch(() => {
-        // A failed replay is not fatal: the connection is live, and the next
-        // reconnect tries the backlog again.
+        // A failed replay is not fatal: the stream carries its own backlog once
+        // it comes up, and the next reconnect tries the replay again.
       });
     }
 
@@ -416,6 +512,7 @@ export function connect(
       stopped = true;
       clearTimeout(timer);
       clearTimeout(handshake);
+      lost();
       socket?.close();
       source?.close();
       socket = null;

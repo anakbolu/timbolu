@@ -30,6 +30,9 @@ const STATUS_LABEL: Record<string, string> = {
   connecting: "menyambung…",
   live: "tersambung",
   reconnecting: "menyambung ulang…",
+  // The stream is still being retried, but not on the fast path: say the
+  // updates are late instead of claiming a connection that is not there.
+  slow: "pembaruan tertunda",
   closed: "terputus",
 };
 
@@ -84,6 +87,7 @@ const STATUS_DOT: Record<string, string> = {
   connecting: "bg-bolu-rest",
   live: "bg-bolu-live",
   reconnecting: "bg-bolu-flag",
+  slow: "bg-bolu-flag",
   closed: "bg-bolu-belum",
 };
 
