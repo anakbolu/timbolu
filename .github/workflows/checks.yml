@@ -1,0 +1,55 @@
+name: Checks
+
+# The PR-time gate for the two shared packages that a change can silently desynchronise.
+#
+# `docs/api.md` is the source of truth for the realtime event names, and three places have to agree
+# with it: `packages/contracts/events.ts`, the Go constants, and the frontend's handlers. When they
+# drift, nothing fails to compile — a task's progress simply stops arriving on a screen — so the
+# drift is found by a person noticing a blank panel, which is how #310 and #328 were found and fixed
+# by hand. `make contracts-check` is the check that turns that into a red run.
+#
+# `packages/design-tokens/tokens.json` is the same shape of problem for the theme: it mirrors the
+# `@theme` block in the frontend's `globals.css`, and a token added on one side only means a colour
+# that exists in one place and not the other. `make design-tokens-check` compares the two.
+#
+# Both scripts are plain Node with `node:fs`/`node:path` and no dependencies, so there is nothing to
+# install and no lockfile to cache: the repository has no root `package.json`, and the frontend's
+# dependencies are not involved. That is also why this workflow runs `make` rather than the scripts
+# directly — the Makefile is what a person runs locally, and the two must not drift.
+#
+# This is a gate, not a deploy. `deployment.yml` owns turning a push to `main` into a rollout and is
+# deliberately untouched by this file; a failing check here blocks the merge, which is the earlier
+# and cheaper place to stop a bad commit.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # One run per ref: pushing a fix to an open PR cancels the run it supersedes, since the answer for
+  # the previous commit is no longer what anyone is waiting for.
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  packages:
+    name: Contracts and design tokens
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22, the same major the frontend builds with, so a script that relies on a newer runtime
+      # fails here rather than only on a developer's machine.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Event names agree with docs/api.md
+        run: make contracts-check
+
+      - name: Design tokens agree with the @theme block in globals.css
+        run: make design-tokens-check
