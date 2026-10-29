@@ -7,6 +7,7 @@
  */
 
 import { Hono } from "hono";
+import { snapshot as buildSnapshot } from "../../../platform/buildinfo/buildinfo.ts";
 import type { AppContext, AppEnv } from "../../../platform/context.ts";
 import type { Logger } from "../../../platform/logger.ts";
 import { error, ok } from "../../../platform/response.ts";
@@ -25,10 +26,12 @@ export class Handler {
 
   /**
    * Answers "is the process alive". Never touches a dependency, so a database
-   * outage does not restart the container.
+   * outage does not restart the container. It also reports the build identity,
+   * which is how a deploy is verified from outside: a green workflow only means
+   * the deploy hook was accepted. Mirrors Go `liveReport`.
    */
   live = async (c: AppContext): Promise<Response> => {
-    return ok(c, "alive", this.service.liveness());
+    return ok(c, "alive", { ...this.service.liveness(), ...buildSnapshot() });
   };
 
   /**

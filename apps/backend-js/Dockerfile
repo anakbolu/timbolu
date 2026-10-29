@@ -54,6 +54,22 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY apps/backend-js/package.json apps/backend-js/tsconfig.json apps/backend-js/bun.lock ./
 COPY apps/backend-js/src ./src
 
+# The deploy identity the image can compute by itself: a hash of every
+# TypeScript file it ships. `.git` is excluded from the build context, so a
+# commit SHA is not readable here, but the tree is — the same source always
+# yields the same value and any source change a different one. Computed after
+# the COPY (the file set is the image's own) and before `USER bolu`, because
+# the runtime user cannot write to /app.
+#
+# The file list is sorted by relative path under LC_ALL=C, so `find ./src` from
+# /app and `find apps/backend-js/src` from the repository root produce the same
+# order and therefore the same hash: anyone holding a checkout can recompute the
+# fingerprint that GET /api/health reports and prove this image is that tree.
+# `sha256sum`, `sort`, `xargs`, and `cut` are in this Debian slim image, so no
+# extra package is needed.
+RUN find ./src -name '*.ts' -type f | LC_ALL=C sort | xargs cat | sha256sum | cut -c1-16 > /app/.build-fingerprint \
+    && chown bolu:bolu /app/.build-fingerprint
+
 # The YAML defaults ship with the image; every secret and endpoint is supplied
 # through the environment. The loader reads them from src/platform/config.
 ENV ENVIRONMENT=production
