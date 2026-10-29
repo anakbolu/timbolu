@@ -15,7 +15,6 @@ import {
   ChevronDown,
   Clock,
   LayoutGrid,
-  ListChecks,
   Menu,
   MessageCircle,
   Plus,
@@ -42,8 +41,13 @@ import { useWorkspace } from "./workspace-data";
 
 /**
  * The nav entries, in the panel design's order. The design's own entries are the
- * product's screens under their own names: Dasbor where it says Projects, Tugas
- * where it says Artifacts, Rutinitas where it says Scheduled.
+ * product's screens under their own names: Dasbor where it says Projects, Rutinitas
+ * where it says Scheduled.
+ *
+ * The design's Artifacts screen (the task history) is deliberately absent: its
+ * columns are an operator's view of the system, while a person reaches one task
+ * from the dashboard card or the "Lihat tugasnya" link in a conversation. `/tasks`
+ * therefore redirects to Dasbor rather than appearing here.
  */
 const NAV = [
   {
@@ -52,14 +56,6 @@ const NAV = [
     icon: LayoutGrid,
     /** matches reports whether a route is this entry, rather than a screen below it. */
     matches: (pathname: string) => pathname === "/dashboard",
-  },
-  {
-    href: "/tasks",
-    label: "Tugas",
-    icon: ListChecks,
-    // The detail page is below this entry rather than beside it, so the nav stays lit while a
-    // person reads one task — the history is where they came from.
-    matches: (pathname: string) => pathname === "/tasks" || pathname.startsWith("/tasks/"),
   },
   {
     href: "/routines",

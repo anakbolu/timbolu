@@ -1,23 +1,14 @@
-import type { Metadata } from "next";
-import { Suspense } from "react";
-
-import { TasksView } from "@/components/dashboard/tasks-view";
-
-export const metadata: Metadata = {
-  title: "Tugas",
-  description:
-    "Riwayat tugas workspace ini: keadaan tiap tugas, alasan yang berhenti, langkah-langkahnya, dan rantai serah-terimanya.",
-  robots: { index: false },
-};
+import { redirect } from "next/navigation";
 
 /**
- * The list is read from the API at request time, and the Suspense boundary keeps the
- * route static while that happens — the same shape the usage screen uses.
+ * The task history screen is gone: its columns and reasons are an operator's view of
+ * the system, and a person meets one task from the dashboard card or the "Lihat
+ * tugasnya" link in a conversation instead.
+ *
+ * The redirect is here so an old bookmark or a link typed from memory lands on Dasbor
+ * rather than on a 404. One task's page (`/tasks/[taskID]`) stays: that is where those
+ * links lead.
  */
 export default function TasksPage() {
-  return (
-    <Suspense fallback={null}>
-      <TasksView />
-    </Suspense>
-  );
+  redirect("/dashboard");
 }
