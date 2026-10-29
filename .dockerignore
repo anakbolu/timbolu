@@ -27,6 +27,9 @@ docs
 **/*.md
 !apps/backend-js/src/**/*.md
 
-# The other apps build from their own Dockerfiles with their own paths.
-apps/whatsapp-gw
+# apps/virtual-computer builds from its own context (its compose file), so its
+# sandbox image material stays out of every repository-root build. The gateway
+# must NOT be excluded: its Dockerfile deliberately builds from the repository
+# root, because it imports the shared `packages/` module and a Docker build does
+# not read `go.work`.
 apps/virtual-computer
