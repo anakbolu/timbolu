@@ -21,6 +21,7 @@ import { SpanStatusCode } from "../../../platform/telemetry/telemetry.ts";
 import type {
   AgentDirectory,
   AgentNamer,
+  AgentRef,
   AttachmentReader,
   Budget,
   CostTable,
@@ -42,6 +43,7 @@ import type {
   ToolRegistry,
 } from "../domain/task.ts";
 import {
+  AgentStateEvent,
   DraftCanceled,
   ErrDraftNoSender,
   ErrDraftNotApproved,
@@ -448,6 +450,9 @@ export class Activities {
       draft.id,
     );
     await this.emit(scope, parked, EventTaskWaiting);
+    // A parked task is not work in progress, and the roster is told so in the same
+    // breath as the feed.
+    await this.emitAgentState(scope, parked);
 
     return {
       DraftID: draft.id,
@@ -503,6 +508,8 @@ export class Activities {
       }
 
       await this.emit(scope, task, EventTaskWaiting);
+      // Waiting out the workspace's hours is still waiting, not working.
+      await this.emitAgentState(scope, task);
 
       return {
         Status: result.status,
@@ -662,6 +669,10 @@ export class Activities {
     }
 
     await this.emit(scope, stored, EventTaskFinished);
+    // The run is over, so the Bolu stops working: this is the event that lowers
+    // the header and the roster, and it is published after the row is terminal so
+    // the state it carries is the one a reload would read.
+    await this.emitAgentState(scope, stored);
 
     // Whoever opened this task is told how it ended. A task opened by chat has no
     // claimant, and that is not a failure.
@@ -763,6 +774,9 @@ export class Activities {
     const scope = scopeOf(task);
     const resumed = await this.deps.tasks.resume(undefined, scope, task.id);
     await this.emit(scope, resumed, EventTaskRunning);
+    // The decision is in, so the task is in flight again: the roster is told, for
+    // the same reason it was told when the task parked.
+    await this.emitAgentState(scope, resumed);
   }
 
   /**
@@ -938,6 +952,42 @@ export class Activities {
         { type: eventType, err: messageOf(err) },
         "task event published only to the store",
       );
+    }
+  }
+
+  /**
+   * Publishes the state the registry derives for the Bolu that owns the task,
+   * which is what an open roster applies instead of reloading.
+   *
+   * It is emitted whenever a task enters or leaves flight, because the task events
+   * alone do not move the roster: `task.finished` reloads tasks and drafts, and a
+   * Bolu's own state is read from `agent.state`. Without this, a reply that ends by
+   * asking the user something leaves the header saying "sedang bekerja" for as
+   * long as the tab stays open (#315).
+   *
+   * The state is the registry's derived answer, not this task's status: another
+   * task of the same Bolu may still be in flight, and a draft of it may still be
+   * pending.
+   */
+  private async emitAgentState(scope: Scope, task: Task): Promise<void> {
+    if (!this.deps.agents || !this.deps.events) {
+      return;
+    }
+
+    const logger = taskLogger(this.deps, task);
+
+    let agent: AgentRef;
+    try {
+      agent = await this.deps.agents.agent(undefined, scope, task.agentId);
+    } catch (err) {
+      logger.warn({ err: messageOf(err) }, "could not read the Bolu's state for the stream");
+      return;
+    }
+
+    try {
+      await this.deps.events.emit(undefined, AgentStateEvent(scope, task, agent.Display));
+    } catch (err) {
+      logger.warn({ err: messageOf(err) }, "agent state published only to the store");
     }
   }
 }
