@@ -1,8 +1,0 @@
-{
-  "name": "@timbolu/bolu-character",
-  "private": true,
-  "type": "module",
-  "exports": {
-    ".": "./index.ts"
-  }
-}
