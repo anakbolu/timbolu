@@ -376,6 +376,7 @@ export class Handler {
     }
 
     const heartbeat = this.heartbeat;
+    const log = this.log;
     const encoder = new TextEncoder();
 
     const body = new ReadableStream<Uint8Array>({
@@ -405,8 +406,14 @@ export class Handler {
             if (signal.aborted) break;
             write(`id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify(toEventPayload(event))}\n\n`);
           }
-        } catch {
-          // The stream ended; the client reconnects and resumes by id.
+        } catch (err) {
+          // A client that went away aborts the signal, and that is not a
+          // failure. Anything else is the reason the stream ended early; a
+          // silent catch is what once left "closes right after `: connected`"
+          // with no trace to diagnose it.
+          if (!signal.aborted) {
+            log.error({ err }, "event stream ended");
+          }
         } finally {
           clearInterval(timer);
           closed = true;
