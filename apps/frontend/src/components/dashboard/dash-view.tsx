@@ -221,6 +221,8 @@ export function DashView() {
             <h2 className={HEADING}>Aktivitas</h2>
             {status === "live" ? (
               <span className="pulse text-[13px] font-bold text-bolu-lunas">LIVE</span>
+            ) : status === "slow" ? (
+              <span className="text-[13px] text-bolu-muted">pembaruan tertunda</span>
             ) : (
               <span className="text-[13px] text-bolu-muted">menyambung…</span>
             )}
