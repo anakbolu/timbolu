@@ -13,6 +13,7 @@ import type { Logger } from "../../../platform/logger.ts";
 import { nopLogger } from "../../../platform/logger.ts";
 import type {
   AgentDirectory,
+  AgentRef,
   Budget,
   EventSink,
   Filter,
@@ -27,6 +28,7 @@ import type {
   TaskRepository,
 } from "../domain/task.ts";
 import {
+  AgentStateEvent,
   ErrDepthLimitReached,
   ErrInvalidInput,
   ErrUnknownTrigger,
@@ -234,6 +236,10 @@ export class Service implements ServicePort {
     }
 
     await this.emitTask(ctx, scope, canceled, EventTaskFinished);
+    // Canceling is the other way a run stops, and it stops from the API process
+    // rather than from the worker: the roster is told here so a Bolu whose
+    // workflow is already gone does not read as busy forever.
+    await this.emitAgentState(ctx, scope, canceled);
     return canceled;
   }
 
@@ -262,6 +268,9 @@ export class Service implements ServicePort {
     }
 
     await this.emitTask(ctx, scope, failed, EventTaskFinished);
+    // The row was queued for a moment, which the derived status counts as work in
+    // flight: the roster is told it is not.
+    await this.emitAgentState(ctx, scope, failed);
   }
 
   /** Publishes a task's state, which is how the feed learns about it without polling. */
@@ -280,6 +289,36 @@ export class Service implements ServicePort {
       // Not fatal: the event is written to the store first, so a publish that
       // fails costs the live views latency and never the event.
       this.log().warn({ type: eventType, err: messageOf(err) }, "task event published only to the store");
+    }
+  }
+
+  /**
+   * Publishes the state the registry derives for the Bolu that owns the task, so
+   * an open roster follows the run without reloading.
+   *
+   * `task.finished` moves the feed and the task list; a Bolu's own state is read
+   * from `agent.state`, which the chat module publishes when it hands a message
+   * over. The runtime owes the same event on the way out, or a finished run leaves
+   * the header saying "sedang bekerja" (#315).
+   */
+  private async emitAgentState(ctx: AbortSignal | undefined, scope: Scope, task: Task): Promise<void> {
+    if (!this.deps.agents || !this.deps.events) return;
+
+    let agent: AgentRef;
+    try {
+      agent = await this.deps.agents.agent(ctx, scope, task.agentId);
+    } catch (err) {
+      this.log().warn(
+        { task_id: task.id, err: messageOf(err) },
+        "could not read the Bolu's state for the stream",
+      );
+      return;
+    }
+
+    try {
+      await this.deps.events.emit(ctx, AgentStateEvent(scope, task, agent.Display));
+    } catch (err) {
+      this.log().warn({ task_id: task.id, err: messageOf(err) }, "agent state published only to the store");
     }
   }
 

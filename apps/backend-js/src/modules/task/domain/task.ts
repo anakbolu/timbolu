@@ -501,6 +501,45 @@ export interface EventSink {
   emit(ctx: AbortSignal | undefined, event: Event): Promise<void>;
 }
 
+/**
+ * The stream event a screen reads a Bolu's state from. It is the same event the
+ * chat module publishes when it hands a message to the runtime; the runtime
+ * publishes it again on the way out, so a Bolu that has stopped stops reading as
+ * busy without a reload.
+ */
+export const EventAgentState = "agent.state";
+
+/** The body of an `agent.state` event, matching the chat module's wire shape. */
+export interface AgentStatePayload {
+  agent_id: string;
+  state: string;
+  task_id?: string;
+}
+
+/**
+ * Builds that event for a task that is entering or leaving flight.
+ *
+ * The state is the registry's derived answer rather than something inferred from
+ * this task's status: another task of the same Bolu may still be in flight, and a
+ * draft of it may still be pending, so only the derivation knows whether the Bolu
+ * is working, waiting, or idle.
+ */
+export function AgentStateEvent(scope: Scope, task: Task, state: string): Event {
+  const payload: AgentStatePayload = { agent_id: task.agentId, state };
+  if (task.id !== "") payload.task_id = task.id;
+
+  return {
+    workspaceId: scope.workspaceId ?? "",
+    type: EventAgentState,
+    actorAgentId: task.agentId,
+    actorUserId: "",
+    conversationId: task.conversationId,
+    taskId: task.id,
+    draftId: "",
+    payload,
+  };
+}
+
 /** One capability a task may call. */
 export interface Tool {
   Name: string;
