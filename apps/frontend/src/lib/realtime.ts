@@ -153,6 +153,24 @@ const REPLAY_LIMIT = 200;
 /** How many backlog pages a single reconnect reads before giving up on the past. */
 const REPLAY_MAX_PAGES = 8;
 
+/**
+ * How many socket handshakes may fail before the client stops asking for one.
+ *
+ * `new WebSocket` succeeds even when the handshake never will, so a proxy that
+ * does not upgrade the route used to retry the socket forever and never reach
+ * SSE. Two failures tell a flaky network apart from a route that is not there.
+ */
+const SOCKET_FAILURES_BEFORE_SSE = 2;
+
+/**
+ * How long a handshake may stay unopened before it counts as a failure.
+ *
+ * A browser can keep a CONNECTING socket quiet long past the point where the
+ * user needs an answer, and waiting on an event that never comes is what left
+ * production on "reconnecting" indefinitely.
+ */
+const SOCKET_OPEN_TIMEOUT_MS = 4000;
+
 function apiBase(): string {
   return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 }
@@ -190,7 +208,14 @@ export function connect(
   // window.setTimeout returns a number in the browser, so the handle needs no
   // utility type and clears unconditionally.
   let timer: number | undefined;
+  let handshake: number | undefined;
   let attempts = 0;
+  // Consecutive failed socket handshakes. A socket that opens resets it, so a
+  // working transport is never abandoned over an old failure.
+  let socketFailures = 0;
+  // Once the socket has been given up on, the rest of the session stays on SSE:
+  // retrying a route the proxy does not upgrade only costs the user a stream.
+  let preferSSE = false;
   let stopped = false;
 
   function setStatus(next: RealtimeStatus) {
@@ -244,6 +269,21 @@ export function connect(
     timer = window.setTimeout(() => start(true), delay);
   }
 
+  /**
+   * socketFailed records a handshake that never opened and decides whether to
+   * keep asking for one. On the switch the attempt budget is reset: the socket's
+   * backoff says nothing about SSE, and inheriting it would make the first SSE
+   * attempt wait eight seconds after a socket that never even connected.
+   */
+  function socketFailed() {
+    socketFailures++;
+    if (socketFailures >= SOCKET_FAILURES_BEFORE_SSE) {
+      preferSSE = true;
+      attempts = 0;
+    }
+    scheduleReconnect();
+  }
+
   function openSocket(): boolean {
     const token = getAccessToken();
     if (!token || typeof WebSocket === "undefined") {
@@ -259,8 +299,25 @@ export function connect(
     const candidate = new WebSocket(url.toString());
     socket = candidate;
 
+    // Constructing a socket proves nothing; only `onopen` does. A handshake the
+    // browser never completes is what a route the proxy does not upgrade looks
+    // like, so the timeout spends the failure budget: drop the socket first so
+    // its late close cannot schedule a second attempt, then count it.
+    handshake = window.setTimeout(() => {
+      socketFailures = SOCKET_FAILURES_BEFORE_SSE;
+      socket = null;
+      candidate.close();
+      socketFailed();
+    }, SOCKET_OPEN_TIMEOUT_MS);
+
     candidate.onopen = () => {
+      if (socket !== candidate) {
+        return;
+      }
+      clearTimeout(handshake);
+      handshake = undefined;
       attempts = 0;
+      socketFailures = 0;
       setStatus("live");
     };
     candidate.onmessage = (message) => {
@@ -271,8 +328,15 @@ export function connect(
     };
     candidate.onerror = () => candidate.close();
     candidate.onclose = () => {
+      // A late close from a socket this client already replaced must not
+      // schedule a second reconnect on top of the live transport.
+      if (socket !== candidate) {
+        return;
+      }
+      clearTimeout(handshake);
+      handshake = undefined;
       socket = null;
-      scheduleReconnect();
+      socketFailed();
     };
 
     return true;
@@ -296,6 +360,9 @@ export function connect(
     source = candidate;
 
     candidate.onopen = () => {
+      if (source !== candidate) {
+        return;
+      }
       attempts = 0;
       setStatus("live");
     };
@@ -320,6 +387,9 @@ export function connect(
       // EventSource reconnects by itself, but without the query string it would
       // lose the resume point, so the client owns the reconnect.
       candidate.close();
+      if (source !== candidate) {
+        return;
+      }
       source = null;
       scheduleReconnect();
     };
@@ -341,7 +411,11 @@ export function connect(
     if (stopped) {
       return;
     }
-    if (sseForced() || !openSocket()) {
+    if (sseForced() || preferSSE) {
+      openSSE();
+      return;
+    }
+    if (!openSocket()) {
       openSSE();
     }
   }
@@ -352,6 +426,7 @@ export function connect(
     close() {
       stopped = true;
       clearTimeout(timer);
+      clearTimeout(handshake);
       socket?.close();
       source?.close();
       socket = null;
