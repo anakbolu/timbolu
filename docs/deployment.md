@@ -5,27 +5,38 @@ repository can do it from this file alone, and so that every step that is still 
 
 ## The images
 
-Five images come out of one repository, and each carries one process:
+Each image carries one process. The backend exists **twice** — the Go tree under `apps/backend` and
+its Bun port under `apps/backend-js` — and the port is what `timbolu-backend` builds and runs; the
+next section says how to tell them apart from outside.
 
-| Image | Dockerfile | Build arg | What it is |
-| --- | --- | --- | --- |
-| `api` | `apps/backend/Dockerfile` | `BINARY=api` | The HTTP and WebSocket surface, plus the billing sweep, the retention pass, and the staged sweep |
-| `agent-worker` | `apps/backend/Dockerfile` | `BINARY=agent-worker` | Polls the `bolu-agent` Temporal queue and runs tasks |
-| `integration-worker` | `apps/backend/Dockerfile` | `BINARY=integration-worker` | Polls the `bolu-integration` queue and runs the hub's own workflows |
-| `wa-gateway` | `apps/whatsapp-gw/Dockerfile` | — | Holds the WhatsApp sockets, the sealed sessions, and the media bytes |
-| `frontend` | `apps/frontend/Dockerfile` | — | The web app |
+| Image | Dockerfile | Build arg | What it is | In production |
+| --- | --- | --- | --- | --- |
+| `api` | `apps/backend-js/Dockerfile` | `APP=api` | The Bun port of the HTTP and WebSocket surface, plus the billing sweep, the retention pass, and the staged sweep | **yes** — `timbolu-backend` serves timbolu.com from this |
+| `agent-worker` | `apps/backend-js/Dockerfile` | `APP=agent-worker` | The Bun port of the agent-queue worker | intended; the panel's current value is not readable from here (#352) |
+| `integration-worker` | `apps/backend-js/Dockerfile` | `APP=integration-worker` | The Bun port of the integration-queue worker | same |
+| `api` (Go) | `apps/backend/Dockerfile` | `BINARY=api` | The same surface in Go: the contract reference, and where the tests, the migrations and the fixes live | no — see #350 |
+| `agent-worker` (Go) | `apps/backend/Dockerfile` | `BINARY=agent-worker` | Polls the `bolu-agent` Temporal queue and runs tasks | no |
+| `integration-worker` (Go) | `apps/backend/Dockerfile` | `BINARY=integration-worker` | Polls the `bolu-integration` queue and runs the hub's own workflows | no |
+| `wa-gateway` | `apps/whatsapp-gw/Dockerfile` | — | Holds the WhatsApp sockets, the sealed sessions, and the media bytes | yes |
+| `frontend` | `apps/frontend/Dockerfile` | — | The web app | yes |
 
 ```bash
-# The backend is one image, one binary: the same Dockerfile with a different build argument.
+# The Bun backend is one image for all three processes: `APP` selects the entrypoint, because a
+# TypeScript tree has no per-binary compile step.
+docker build -f apps/backend-js/Dockerfile --build-arg APP=api -t bolu/api-js .
+
+# The Go backend is one Dockerfile, one binary at a time: the same file with a different build
+# argument. Production does not run it today (#350).
 docker build -f apps/backend/Dockerfile --build-arg BINARY=agent-worker -t bolu/agent-worker .
 
 # The gateway is a module of its own, so it has its own Dockerfile and one binary.
 docker build -f apps/whatsapp-gw/Dockerfile -t bolu/wa-gateway .
 ```
 
-The backend and the gateway both import the shared `packages/` module, and a Docker build does not read
-`go.work`, so **both build with the repository root as the context** and resolve `packages/` through the
-`replace` directive in their own `go.mod`.
+The Go backend and the gateway both import the shared `packages/` module, and a Docker build does not
+read `go.work`, so **both build with the repository root as the context** and resolve `packages/`
+through the `replace` directive in their own `go.mod`. The Bun Dockerfile takes the same root context —
+it copies `apps/backend-js/` out of it — which is why one Build Path (`/`) works for either backend.
 
 They scale separately: the agent worker is the one that saturates, and a gateway image has no business
 carrying the API's code or its Temporal client. `docker-compose.yml` builds all of them for local
@@ -45,6 +56,40 @@ On the backend the matching rollout switch is `AUTH_REQUIRE_EMAIL_VERIFICATION`:
 default, and setting it `false` lets a fresh account use the product without confirming its address
 (see [api.md](./api.md)). Both are deployment decisions, so they belong in the environment rather
 than in the shared config files.
+
+## What production actually runs
+
+`timbolu-backend` builds `apps/backend-js/Dockerfile` with `APP=api`: the Bun port is the process
+answering customer traffic. The Go tree under `apps/backend` is still the reference — the contract,
+the tests, the migrations and the fixes land there, and it is what the port is measured against — but
+it is **not deployed**, so a change merged into `apps/backend` has no path to production until
+[#350](https://github.com/anakbolu/timbolu/issues/350) decides whether the Go binary returns and how.
+Three earlier diagnoses (#314, #315, #329) went wrong by reading the tables in this file as if it did.
+
+One command separates the two, because they report different identities:
+
+```console
+$ curl -s https://timbolu.com/api/health
+{"success":true,"message":"alive","data":{"status":"ok","commit":"unknown","built_at":"unknown","build":"…"}}
+```
+
+- **A `data.build` field** means the implementation serving traffic reports its own build identity.
+  Both do, and the *value* is what tells them apart, because each hashes a different file set: the Go
+  binary takes the first 16 hex characters of the SHA-256 over every `*.go` file in `apps/backend` and
+  `packages`, and the Bun port does the same over every `*.ts` file in `apps/backend-js/src`. Both are
+  computed inside the image at build time, so the number that matches one of these local commands is
+  the implementation — and the build — answering (see [Backend](#backend) under *Proving the deploy
+  actually landed*):
+
+  ```console
+  $ find apps/backend packages -name '*.go' -type f | LC_ALL=C sort | xargs cat | shasum -a 256 | cut -c1-16
+  $ find apps/backend-js/src -name '*.ts' -type f | LC_ALL=C sort | xargs cat | shasum -a 256 | cut -c1-16
+  ```
+
+- **No `data.build`, or `"build": "unknown"`**, means the process has no fingerprint: a local
+  `go run`/`bun run` outside an image, or an image built before #303 (Go) or #351 (Bun). The field
+  then says nothing about which implementation is live, and the deploy-verification step below has
+  nothing to compare against.
 
 ## The migration step
 
@@ -145,7 +190,10 @@ rather than implied:
 
 Every process serves probes and stops in an orderly way. A process with no HTTP API of its own serves
 its probes on `OPS_ADDRESS` (`/health`, `/ready`, and `/metrics`); the API serves them on its own
-listener.
+listener. The table below is written from the Go processes; the Bun port answers the same two paths on
+the same listeners, and its entrypoints install their own shutdown handlers — which is why a probe
+cannot tell you which implementation is behind it (see
+[What production actually runs](#what-production-actually-runs)).
 
 | Process | Liveness | Readiness | Endpoint | Shutdown |
 | --- | --- | --- | --- | --- |
@@ -174,7 +222,8 @@ There are no tests in it — the gates are a separate concern — and the mappin
 | Changed | Redeployed |
 | --- | --- |
 | `apps/frontend/**` | `timbolu` (the web app) |
-| `apps/backend/**` | `timbolu-backend`, `timbolu-agent-worker`, `timbolu-integration-worker` |
+| `apps/backend-js/**` | `timbolu-backend`, `timbolu-agent-worker`, `timbolu-integration-worker` — the Bun images production runs. **Not in the workflow yet**, so a `backend-js`-only commit matches nothing today; #352 adds it |
+| `apps/backend/**` | `timbolu-backend`, `timbolu-agent-worker`, `timbolu-integration-worker` — the trigger fires, but those services build the Bun tree, so the rebuild carries no Go change; it only costs a rollout until #350 decides the Go backend's fate |
 | `apps/whatsapp-gw/**` | `timbolu-wa-gateway` |
 | `packages/**` | every Go service — `timbolu-backend`, the two workers, and `timbolu-wa-gateway` |
 | `.dockerignore`, `Makefile`, `go.work`, `go.work.sum`, `docker-compose*.yml` | every service — `timbolu`, the three backend services, and `timbolu-wa-gateway` |
@@ -190,24 +239,26 @@ they roll everything, the frontend included.
 ### What each Easypanel service is configured with
 
 A path in the table above is a path that *triggers* a service, not the directory the service builds
-from: every Go service builds from the repository root, because each module imports the shared
-`packages/` module and a Docker build does not read `go.work`. The service's own settings carry that,
-so they are stated here rather than left to whoever set the service up first:
+from: every service builds from the repository root, because the Go modules import the shared
+`packages/` module and a Docker build does not read `go.work`, and because the Bun Dockerfile copies
+`apps/backend-js/` out of the same root. The service's own settings carry that, so they are stated
+here rather than left to whoever set the service up first:
 
 | Service | Source path | Dockerfile | Build arg | Notes |
 | --- | --- | --- | --- | --- |
 | `timbolu` | `/apps/frontend` | `Dockerfile` | — | `NEXT_PUBLIC_*` are build args, see above |
-| `timbolu-backend` | `/` | `apps/backend/Dockerfile` | `BINARY=api` | serves the internal seam on `:8091` |
-| `timbolu-agent-worker` | `/` | `apps/backend/Dockerfile` | `BINARY=agent-worker` | |
-| `timbolu-integration-worker` | `/` | `apps/backend/Dockerfile` | `BINARY=integration-worker` | |
+| `timbolu-backend` | `/` | `apps/backend-js/Dockerfile` | `APP=api` | the Bun port; serves the internal seam on `:8091` |
+| `timbolu-agent-worker` | `/` | `apps/backend-js/Dockerfile` | `APP=agent-worker` | intended configuration; the panel's current value is not readable from this repository (#352) |
+| `timbolu-integration-worker` | `/` | `apps/backend-js/Dockerfile` | `APP=integration-worker` | same |
 | `timbolu-wa-gateway` | `/` | `apps/whatsapp-gw/Dockerfile` | — | listens on `:8090`, never published |
-| `timbolu-migrate` | `/` | `apps/backend/Dockerfile` | `BINARY=../tools/migrate` | one-shot, runs `up` |
+| `timbolu-migrate` | `/` | `apps/backend/Dockerfile` | `BINARY=../tools/migrate` | one-shot, runs `up`; still the Go runner, and the one Go image production does use |
 
 The build arg is not a separate Easypanel field: Easypanel passes a service's environment values to
-the Docker build as build arguments, so the `BINARY=…` line in the service's environment is what
-selects the binary, and the same variable is present in the container at runtime. The Build Path is
-both where the Dockerfile path is resolved from and what the build context is, which is why the
-Dockerfile paths above are repository-relative while the source path is `/`.
+the Docker build as build arguments, so the `APP=…` line (Bun image) or `BINARY=…` line (Go image) in
+the service's environment is what selects the entrypoint, and the same variable is present in the
+container at runtime. The Build Path is both where the Dockerfile path is resolved from and what the
+build context is, which is why the Dockerfile paths above are repository-relative while the source
+path is `/`.
 
 **All four data processes share one storage directory.** `STORAGE_DRIVER=local` with
 `STORAGE_LOCAL_ROOT=/data/storage` means the bytes live on the filesystem, and the gateway is the
@@ -264,10 +315,15 @@ serving the previous image.
 
 The workflow's `verify` job (`Verify the deploy landed`) narrows that gap, and it is the automated
 form of this section. It fails when a deploy job that should have run failed or was skipped. For a
-backend change it computes the fingerprint from the tree the run checked out and polls `/api/health`
-for up to eight minutes until production reports it. For a frontend change it polls `/login` until the
-page's chunk is newer than the commit. Its last step polls `/api/ready` and `/` for three minutes, and
-that step proves only that the services are alive — it can pass on the previous image.
+backend change it computes the fingerprint of the implementation(s) the commit touched — Go over
+`apps/backend` and `packages`, Bun over `apps/backend-js/src` — and polls `/api/health` for up to
+eight minutes until production reports one of them. A match names the implementation and the build;
+no match means the image did not land, or the process predates build reporting, and the failure
+distinguishes "serves a different build" from "carries no `data.build` at all" (see
+[What production actually runs](#what-production-actually-runs)). For a frontend change it polls
+`/login` until the page's chunk is newer than the commit. Its last step polls `/api/ready` and `/` for
+three minutes, and that step proves only that the services are alive — it can pass on the previous
+image.
 
 What no run can do is finish the deploy. When a build does not land, the evidence and the fix are on
 the panel, so the checks below are how somebody with access proves a change is live.
@@ -309,8 +365,8 @@ these names.
 
 #### Backend
 
-The API answers the remaining question itself, because `GET /api/health` (`GET /health` too) carries
-the build identity alongside the liveness status:
+Both implementations answer the remaining question themselves, because `GET /api/health` (`GET
+/health` too) carries the build identity alongside the liveness status:
 
 ```console
 $ curl -s https://timbolu.com/api/health | jq .data
@@ -322,6 +378,11 @@ $ curl -s https://timbolu.com/api/health | jq .data
 }
 ```
 
+Production answers that shape too since #351: the Bun port fills `commit` and `built_at` from its
+environment and `build` from `/app/.build-fingerprint`, which its Dockerfile writes at build time, so
+the shape alone no longer says which implementation is serving — the value does. The fingerprint below
+is the Go one; [What production actually runs](#what-production-actually-runs) has the Bun command.
+
 `build` is the first 16 hex characters of the SHA-256 over every Go file of the backend and the shared
 module, in sorted order — computed inside the image at build time, not passed in:
 
@@ -330,10 +391,12 @@ $ find apps/backend packages -name '*.go' -type f | LC_ALL=C sort | xargs cat | 
 8c258b2de0c32616
 ```
 
-Run that from the tree you merged. Equal values are the only proof that the Go binary serving traffic
-is that tree; a different value means the previous image is still up, so the deploy is not done, and
-an absent `build` means the image predates the field. The hash is over content only, so the same
-source always yields the same value and any change to a `.go` file changes it.
+Run that from the tree you merged. An equal value is the only proof that the Go binary serving traffic
+is that tree; a different value means the Go build you merged is not serving — either the previous
+image is still up, so the deploy is not done, or the process is the Bun port, whose fingerprint comes
+from the other command. An absent `build`, or `"build": "unknown"`, means the process predates build
+reporting (#303 for Go, #351 for Bun) and cannot be identified at all. The hash is over content only,
+so the same source always yields the same value and any change to a `.go` file changes it.
 
 `commit` and `built_at` stay `"unknown"` on Easypanel for a structural reason: build arguments in
 Easypanel come from a service's environment, which is static per service, so nothing can name a commit
@@ -350,8 +413,8 @@ the probes are only evidence of a *container* deploy.
 
 | Symptom | What it means | What the access holder does on the panel |
 | --- | --- | --- |
-| `/api/health` has no `data.build` | The serving binary predates the build-identity field (#303), so no backend build has landed since 2026-10-28T20:25Z. This is #329. | `timbolu-backend` → Deployments → the last build after the merge time: did it fail, and with what error? Then check the service's environment still carries `BINARY=api`. |
-| The hook answered `success` and the container was not replaced | A rollout, environment, or build-arg problem on the panel side, not in this repository (#329, #200). | Same Deployments list. A green build with the old container still serving is the rollout's problem; a missing `BINARY=api` builds the wrong binary. |
+| `/api/health` has no `data.build` | Both implementations report one now (#303 for Go, #351 for Bun), so this means the process predates build reporting — an image built before those changes, or a local run — and the probe cannot say which build is live. If production is *supposed* to run the Go image, it can instead mean no Go build has landed since 2026-10-28T20:25Z (#329). | `timbolu-backend` → Deployments → the last build after the merge time: did it fail, and with what error? Then check the build settings: `apps/backend-js/Dockerfile` with `APP=api` is what production runs today, `apps/backend/Dockerfile` with `BINARY=api` is the Go image. |
+| The hook answered `success` and the container was not replaced | A rollout, environment, or build-arg problem on the panel side, not in this repository (#329, #200). | Same Deployments list. A green build with the old container still serving is the rollout's problem; a missing `APP=api` (Bun image) or `BINARY=api` (Go image) builds the wrong entrypoint. |
 | The frontend build fails on `Module not found: @timbolu/contracts/events` | The tree was broken and is fixed in-repo by #328 — but a repository fix only lands once the panel's build is green again. | `timbolu` → Deployments → the last build: read the error. A failing build never produces the chunk names above, so the frontend stays on the previous image however often the workflow reruns. |
 
 None of these is fixable from this repository: each needs the build log or the service settings, and
@@ -360,9 +423,12 @@ and chunk checks above — and to keep the build green.
 
 #### The honesty rule
 
-A change is **live** only with the evidence above: the backend fingerprint equal to the tree you
-merged, or the frontend's CSS hash and page chunk names equal to a local build of that tree. Three
-things are routinely mistaken for that evidence, and none of them is it:
+A change is **live** only with the evidence above: the backend fingerprint equal to one of the two
+local hashes of the tree you merged — the match also names which implementation is serving — or the
+frontend's CSS hash and page chunk names equal to a local build of that tree. A backend change now has
+that evidence whichever implementation answers, so "merged, not deployed yet" is distinguishable from
+"deployed" instead of being the default assumption. Three things are routinely mistaken for that
+evidence, and none of them is it:
 
 - A green `Deployment` run — the hook was accepted; the build was not proven (#322, #329).
 - A green `/api/ready` — it proves the API reaches its dependencies, which the *old* image does just as
@@ -381,6 +447,10 @@ that is fixed on `main` and still visible in production is usually this rather t
    `$REGISTRY/$IMAGE_PREFIX` tagged with both the commit sha and the ref.
 3. **Migrations** — `tools/migrate up` against the environment's `DATABASE_URL`.
 4. **Rollout** — only when asked for. It calls the environment's `DEPLOY_HOOK`, then polls `/ready`.
+
+Note what this workflow builds: the **Go** backend images, the gateway and the frontend. It is a
+release path for a deployment that runs `apps/backend`, and today's production does not — `main` to
+Easypanel is the path described above, and the Go backend's return is the open question in #350.
 
 What a deployment must provide, once:
 
