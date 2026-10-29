@@ -1,6 +1,10 @@
 # Testing and quality gates
 
-Everything in this document is enforced by `make ci` locally.
+Everything in this document is enforced by `make ci` locally, over the Go tree
+(`apps/backend`, `apps/whatsapp-gw`) and the shared `packages/` module. `make ci` does
+not read `apps/backend-js` — the Bun port, which is what production runs — so
+[What production runs, and which gates apply](#what-production-runs-and-which-gates-apply)
+says which of the gates below a given change actually needs.
 
 **No workflow enforces them.** The CI workflow was replaced by
 `.github/workflows/deployment.yml`, which calls the Easypanel deploy webhooks on a
@@ -8,7 +12,31 @@ push to `main` and runs no tests, and `release.yml` is disabled. Every CI run be
 that had already failed in about three seconds without producing a step log, which is
 the shape of an account that cannot execute workflows rather than of a failing gate.
 So **run `make ci` locally and say so in the pull request**, because nothing automated
-is enforcing the gates.
+is enforcing the gates. The `verify` job in that workflow is not an exception: it polls
+`/api/health` and compares the build fingerprint production serves against the one
+computed from the changed tree, so it proves a rollout landed and says nothing about
+whether the code is correct.
+
+## What production runs, and which gates apply
+
+`timbolu.com/api/**` is served by the Bun port under `apps/backend-js`; the Go tree
+under `apps/backend` is not what `timbolu-backend` builds. `docs/deployment.md` has the
+image table and [how to tell the two apart from outside](deployment.md#what-production-actually-runs),
+and [#350](https://github.com/anakbolu/timbolu/issues/350) is where the Go tree's fate
+is decided. Three cases follow from that:
+
+- **A change under `apps/backend-js/**` changes the code a user runs.** Its gates are
+  the Bun ones in the table below. Nothing in `make ci` covers this tree, so passing
+  `make ci` is not evidence about it.
+- **A change under `apps/backend/**` alone changes nothing a user can see today.** The
+  Go gates still apply — it is where the contract, the migrations and the fixes live,
+  and it is what would return if #350 says so — but a green Go suite does not mean the
+  change reached production.
+- **A change touching both needs both.**
+
+This is not a hypothetical: until #355 added the `apps/backend-js/**` filter, a commit
+that only touched the Bun tree matched no deploy path at all, every deploy job was
+skipped, and the run went green while production kept serving the previous image.
 
 ## The gates
 
@@ -24,6 +52,17 @@ is enforcing the gates.
 | Tests | `make test` (`go test ./...`) | Unit and integration tests |
 | Race detector | `go test ./... -race` | Data races |
 | Coverage | `make cover` (`scripts/coverage.sh`) | Total coverage ≥ 80% |
+| Types (Bun port) | `cd apps/backend-js && bun run typecheck` | `tsc --noEmit` over `apps/backend-js/src/**/*.ts`: no type error in the tree production runs |
+| Tests (Bun port) | `cd apps/backend-js && bun test` | `src/platform/buildinfo/buildinfo.test.ts` (the build fingerprint `/api/health` reports) and `src/modules/chat/service/stream.test.ts` (the stream's positional contract with its publisher) |
+
+Both Bun commands need `bun install` in `apps/backend-js` first (it reads
+`bun.lock`). Neither is wired to `make ci`: `make ci` has no Bun target, and
+`apps/backend-js/package.json` defines `typecheck` but no `test` script, so
+`bun test` is run by hand. That is the whole Bun suite today — two files, four tests —
+so treat it as a floor, not as the coverage the Go tree has. Adding a `test` script
+and a `make` target would make it enforceable; until then, a PR that touches
+`apps/backend-js/**` should paste both commands' output, the same way a Go change
+pastes `make ci`.
 
 ## Linting
 
@@ -726,3 +765,6 @@ bisa dikecilkan lagi.
 4. Register the routes in `container.registerRoutes`.
 5. Add `internal/modules/<name>/repository/queries/*.sql`, add the module to
    `sqlc.yaml`, and run `make sqlc`.
+
+A module for the Bun port lives in `apps/backend-js/src/modules/<name>/` and none of these steps apply to it — follow `chat`'s layering and put a `*.test.ts` beside the code it covers.
+
