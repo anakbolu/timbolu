@@ -25,10 +25,23 @@ name: Deployment
 #                                  timbolu-integration-worker  (the integration queue)
 #   apps/whatsapp-gw/**         -> timbolu-wa-gateway          (the WhatsApp gateway)
 #   apps/backend/migrations/**  -> timbolu-migrate             (the schema, applied first)
+#   root build files           -> every service above          (see below)
 #
 # The gateway is its own module and its own image, so it is triggered by its own path rather than by
 # `apps/backend/**`. `packages/**` is the module both Go processes import, so a change there is a
 # change to both and triggers both.
+#
+# The root build files are `.dockerignore`, `Makefile`, `go.work`, `go.work.sum`, and
+# `docker-compose*.yml`. They belong to no app, so before this filter existed a commit touching only
+# one of them matched nothing and the run went green with every deploy job skipped. They shape every
+# image: `.dockerignore` decides what enters every build context (a wrong line there is what broke
+# the gateway build, #316), `go.work`/`go.work.sum` are how the modules are wired for local and CI
+# work, `Makefile` is the same commands, and the compose files run the same images locally. A change
+# to any of them therefore redeploys every service, exactly like `packages/**` does for the Go ones.
+#
+# The patterns have no leading `/`: `dorny/paths-filter` matches with picomatch, where a leading
+# slash is a literal character that a repository-relative path never has. A bare name still matches
+# the root only, because the pattern contains no `/` to match at another depth.
 #
 # `timbolu-temporal` and `timbolu-temporal-ui` are upstream images with no path in this repository, so
 # nothing here triggers them.
@@ -68,6 +81,7 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       gateway: ${{ steps.filter.outputs.gateway }}
       migrations: ${{ steps.filter.outputs.migrations }}
+      build: ${{ steps.filter.outputs.build }}
     steps:
       - uses: actions/checkout@v4
 
@@ -85,6 +99,14 @@ jobs:
               - 'packages/**'
             migrations:
               - 'apps/backend/migrations/**'
+            # Root files that decide how every image is built. Bare names, not `/<name>`: see the
+            # note at the top of this file.
+            build:
+              - '.dockerignore'
+              - 'Makefile'
+              - 'go.work'
+              - 'go.work.sum'
+              - 'docker-compose*.yml'
 
   # ---------------------------------------------------------------- schema first
   migrate:
@@ -114,7 +136,7 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
-      needs.changes.outputs.backend == 'true' &&
+      (needs.changes.outputs.backend == 'true' || needs.changes.outputs.build == 'true') &&
       (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
     runs-on: ubuntu-latest
     strategy:
@@ -157,7 +179,7 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
-      needs.changes.outputs.gateway == 'true' &&
+      (needs.changes.outputs.gateway == 'true' || needs.changes.outputs.build == 'true') &&
       (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
@@ -178,7 +200,7 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
-      needs.changes.outputs.frontend == 'true' &&
+      (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.build == 'true') &&
       (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
@@ -191,3 +213,117 @@ jobs:
             exit 1
           fi
           curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --max-time 60 -X POST "$DEPLOY_HOOK"
+
+  # ---------------------------------------------------------------- did it land
+  # A green hook is not a finished deploy. The hook answers when Easypanel has queued the build, and
+  # the build itself happens on the server, so a build that fails there — or a hook pointing at the
+  # wrong service — leaves this workflow green while production keeps serving the previous image
+  # (#322). That is worse than a red run: nothing in GitHub ever says the change did not ship.
+  #
+  # The one identity the deployed process can prove about itself is `/api/health`'s `data.build`: the
+  # fingerprint baked in at build time from every Go file of the backend and the shared module (see
+  # apps/backend/Dockerfile). The same command run on the tree this workflow checked out yields the
+  # value this commit's image must report. Equal values mean the image serving traffic is this tree;
+  # anything else means the build did not land, whatever the hook answered.
+  verify:
+    name: Verify the deploy landed
+    needs: [changes, migrate, backend, gateway, frontend]
+    # Runs even when a rollout job failed, so it can name which one, and never runs when nothing was
+    # supposed to be deployed. `build` is in the condition for the same reason it is in every deploy
+    # job's: a root build file (`.dockerignore`, `go.work`, …) rolls every image, and a rollout
+    # nothing verifies is exactly the hole #322 fell through.
+    if: >-
+      always() &&
+      !cancelled() &&
+      (needs.changes.outputs.frontend == 'true' ||
+       needs.changes.outputs.backend == 'true' ||
+       needs.changes.outputs.gateway == 'true' ||
+       needs.changes.outputs.build == 'true')
+    runs-on: ubuntu-latest
+    env:
+      CHANGED_FRONTEND: ${{ needs.changes.outputs.frontend }}
+      CHANGED_BACKEND: ${{ needs.changes.outputs.backend }}
+      CHANGED_GATEWAY: ${{ needs.changes.outputs.gateway }}
+      CHANGED_BUILD: ${{ needs.changes.outputs.build }}
+      RESULT_BACKEND: ${{ needs.backend.result }}
+      RESULT_GATEWAY: ${{ needs.gateway.result }}
+      RESULT_FRONTEND: ${{ needs.frontend.result }}
+    steps:
+      - name: Fail when a rollout did not succeed
+        run: |
+          # The deploy jobs own separate hooks; one of them failing must fail the run instead of
+          # being absorbed by a job that only looks at the site. `migrate` is covered through
+          # `backend`, which cannot succeed when the migration it waits for did not.
+          #
+          # "Should this job have run" is `changed || build`: a root build file rolls every image, so
+          # on a build-only commit all three rollouts run with `changed` false. The deploy jobs use
+          # that same condition; keeping it in one place here means the two cannot drift.
+          should_run() {
+            [ "$1" = "true" ] || [ "$CHANGED_BUILD" = "true" ]
+          }
+          failed=0
+          check() {
+            changed="$1"; result="$2"; job="$3"
+            should_run "$changed" || return 0
+            if [ "$result" != "success" ]; then
+              echo "::error::$job finished '$result' although its paths changed" >&2
+              failed=1
+            fi
+          }
+          check "$CHANGED_FRONTEND" "$RESULT_FRONTEND" "Deploy timbolu"
+          check "$CHANGED_BACKEND" "$RESULT_BACKEND" "Deploy (backend matrix)"
+          check "$CHANGED_GATEWAY" "$RESULT_GATEWAY" "Deploy timbolu-wa-gateway"
+          exit "$failed"
+
+      - name: Check out the tree that was deployed
+        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.build == 'true'
+        uses: actions/checkout@v4
+
+      - name: Wait for production to serve this tree's backend build
+        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.build == 'true'
+        run: |
+          # The same command the Dockerfile runs, over the same file set (`.dockerignore` excludes no
+          # `.go` file), so the two values are comparable. If `.dockerignore` ever excludes a Go file,
+          # this has to follow it or the comparison stops meaning anything.
+          expected="$(find apps/backend packages -name '*.go' -type f | LC_ALL=C sort | xargs cat | sha256sum | cut -c1-16)"
+          echo "this tree's build fingerprint: $expected"
+
+          # Eight minutes: an image build plus the rollout, with the first build after a cold cache
+          # being the slow end. A build that has not landed by then is not about to.
+          deadline=$((SECONDS + 480))
+          while :; do
+            body="$(curl --silent --show-error --max-time 30 https://timbolu.com/api/health || true)"
+            served="$(printf '%s' "$body" | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("data") or {}).get("build") or "")' 2>/dev/null || true)"
+            echo "production serves build: '${served}'"
+            if [ "$served" = "$expected" ]; then
+              echo "production is serving this tree's build"
+              exit 0
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              if [ -z "$served" ]; then
+                echo "::error::production's /api/health carries no data.build after 8 minutes; the image predates #303, so it cannot be this tree" >&2
+              else
+                echo "::error::production still serves build '$served' after 8 minutes; this tree is '$expected' — the deploy hook was accepted but the build did not land" >&2
+              fi
+              exit 1
+            fi
+            sleep 20
+          done
+
+      - name: Check the site answers
+        # Liveness only, and that is all it proves: `/api/ready` says the API reaches its configured
+        # dependencies and `/` says the frontend is up. Both can answer from the previous image; the
+        # fingerprint step above is the one that says the build is new.
+        if: always() && !cancelled()
+        run: |
+          for url in https://timbolu.com/api/ready https://timbolu.com/; do
+            deadline=$((SECONDS + 180))
+            until curl --fail --silent --show-error --max-time 30 --output /dev/null "$url"; do
+              if [ "$SECONDS" -ge "$deadline" ]; then
+                echo "::error::$url did not answer 200 within 3 minutes" >&2
+                exit 1
+              fi
+              sleep 10
+            done
+            echo "$url answered 200"
+          done

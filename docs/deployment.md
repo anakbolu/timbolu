@@ -177,10 +177,15 @@ There are no tests in it — the gates are a separate concern — and the mappin
 | `apps/backend/**` | `timbolu-backend`, `timbolu-agent-worker`, `timbolu-integration-worker` |
 | `apps/whatsapp-gw/**` | `timbolu-wa-gateway` |
 | `packages/**` | every Go service — `timbolu-backend`, the two workers, and `timbolu-wa-gateway` |
+| `.dockerignore`, `Makefile`, `go.work`, `go.work.sum`, `docker-compose*.yml` | every service — `timbolu`, the three backend services, and `timbolu-wa-gateway` |
 | `apps/backend/migrations/**` | `timbolu-migrate`, applied first |
 
 `apps/whatsapp-gw` is a module of its own, so a change to it rolls only the gateway; `packages/` is
-the module both Go processes import, so a change there rolls all four Go services.
+the module both Go processes import, so a change there rolls all four Go services. The root build
+files belong to no app, which is why they used to match nothing and a commit touching only
+`.dockerignore` finished green with every deploy job skipped. They shape every image — `.dockerignore`
+decides what enters every build context, and a wrong line there is what broke the gateway build — so
+they roll everything, the frontend included.
 
 ### What each Easypanel service is configured with
 
@@ -275,6 +280,15 @@ $ find apps/backend packages -name '*.go' -type f | LC_ALL=C sort | xargs cat | 
 Run that from the tree you merged. Equal values mean that tree is the one serving; a different value
 means the previous image is still up, so the deploy is not done. The hash is over content only, so the
 same source always yields the same value, and any change to a `.go` file changes it.
+
+The Deployment workflow now runs that comparison itself, so a hook that was accepted but never turned
+into a running build fails the run instead of passing quietly. Its `verify` job computes the
+fingerprint from the tree the run checked out, polls `https://timbolu.com/api/health` for up to eight
+minutes, and fails with both values — served and expected — when they never match. It also fails when
+`data.build` is absent altogether, which is the shape of an image built before the fingerprint
+existed, and when any deploy job that should have run failed or was skipped. A separate step polls
+`/api/ready` and `/` for three minutes, but that step only proves the services are alive; it can pass
+on the previous image, so the fingerprint is the proof that a deploy landed.
 
 `commit` and `built_at` stay `"unknown"` on Easypanel for a structural reason: build arguments in
 Easypanel come from a service's environment, which is static per service, so nothing can name a commit
