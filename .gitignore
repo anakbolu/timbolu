@@ -25,6 +25,8 @@ build/
 # go
 bin/
 apps/backend/bin/
+# built from source by the sandbox Dockerfile's gate stage; never commit the output
+apps/virtual-computer/sandbox/gate/gate
 
 # env files (opt-in for the committed template)
 .env
