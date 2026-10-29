@@ -19,7 +19,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@timbolu/bolu-character": ["../../packages/bolu-character/index.ts"]
     }
   },
   "include": [
