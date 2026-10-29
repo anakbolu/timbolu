@@ -26,6 +26,7 @@ name: Deployment
 #   apps/whatsapp-gw/**         -> timbolu-wa-gateway          (the WhatsApp gateway)
 #   apps/backend/migrations/**  -> timbolu-migrate             (the schema, applied first)
 #   root build files           -> every service above          (see below)
+#   .github/workflows/**        -> every service above          (this workflow decides what ships)
 #
 # The gateway is its own module and its own image, so it is triggered by its own path rather than by
 # `apps/backend/**`. `packages/**` is the module both Go processes import, so a change there is a
@@ -38,6 +39,13 @@ name: Deployment
 # the gateway build, #316), `go.work`/`go.work.sum` are how the modules are wired for local and CI
 # work, `Makefile` is the same commands, and the compose files run the same images locally. A change
 # to any of them therefore redeploys every service, exactly like `packages/**` does for the Go ones.
+#
+# `.github/workflows/**` is on the same list for the same reason, from the other direction: this
+# workflow is what turns a commit into a deploy, so a commit that only edits it matched no app path,
+# every job was skipped, and the edit was never exercised. That is exactly how the `verify` job added
+# in #324 spent its first twelve hours never having run at all, while production kept serving an
+# image from before the commit that added it (#322). A change here redeploys every service, which
+# costs one full rollout and buys the only thing that can prove a workflow edit works: a run of it.
 #
 # The patterns have no leading `/`: `dorny/paths-filter` matches with picomatch, where a leading
 # slash is a literal character that a repository-relative path never has. A bare name still matches
@@ -99,14 +107,15 @@ jobs:
               - 'packages/**'
             migrations:
               - 'apps/backend/migrations/**'
-            # Root files that decide how every image is built. Bare names, not `/<name>`: see the
-            # note at the top of this file.
+            # Files that decide how every image is built, or whether any is built at all. Bare
+            # names, not `/<name>`: see the note at the top of this file.
             build:
               - '.dockerignore'
               - 'Makefile'
               - 'go.work'
               - 'go.work.sum'
               - 'docker-compose*.yml'
+              - '.github/workflows/**'
 
   # ---------------------------------------------------------------- schema first
   migrate:
@@ -225,6 +234,13 @@ jobs:
   # apps/backend/Dockerfile). The same command run on the tree this workflow checked out yields the
   # value this commit's image must report. Equal values mean the image serving traffic is this tree;
   # anything else means the build did not land, whatever the hook answered.
+  #
+  # That fingerprint says nothing about the frontend, which is the service most likely to ship alone:
+  # a commit that only touches `apps/frontend/**` skips the fingerprint step entirely and leaves
+  # "the site answers 200" as the only check — which the previous image passes just as well. What the
+  # frontend does expose is the mtime of the assets it serves: Next writes content-hashed chunks, so
+  # the HTML of a build names only that build's chunks, and each chunk's `Last-Modified` is the
+  # moment the build wrote it. A chunk older than this commit is an earlier build still being served.
   verify:
     name: Verify the deploy landed
     needs: [changes, migrate, backend, gateway, frontend]
@@ -248,6 +264,9 @@ jobs:
       RESULT_BACKEND: ${{ needs.backend.result }}
       RESULT_GATEWAY: ${{ needs.gateway.result }}
       RESULT_FRONTEND: ${{ needs.frontend.result }}
+      # The commit's own time, which the frontend's assets have to postdate. From the event rather
+      # than the clock, so a rerun of this run compares against the same value.
+      COMMIT_TIMESTAMP: ${{ github.event.head_commit.timestamp }}
     steps:
       - name: Fail when a rollout did not succeed
         run: |
@@ -310,10 +329,68 @@ jobs:
             sleep 20
           done
 
+      - name: Wait for production to serve this tree's frontend build
+        # The fingerprint step above covers the backend only, and the frontend is the service that
+        # ships on its own most often: for a commit that touches only `apps/frontend/**` this step is
+        # the only thing between a green run and a build that never landed (#322).
+        if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.build == 'true'
+        run: |
+          if [ -z "$COMMIT_TIMESTAMP" ]; then
+            echo "::error::github.event.head_commit.timestamp is empty, so there is nothing to compare the frontend build against" >&2
+            exit 1
+          fi
+          commit_epoch="$(python3 -c 'import sys; from datetime import datetime; print(int(datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00")).timestamp()))' "$COMMIT_TIMESTAMP")"
+          echo "this commit: $COMMIT_TIMESTAMP ($commit_epoch)"
+
+          # `/login` is served by the frontend image itself, and its HTML names the content-hashed
+          # chunks that image ships. The cache-busting query keeps a CDN copy of the previous
+          # build's HTML from answering for this one; on the chunk it only skips a cached header,
+          # since the path already carries the hash.
+          #
+          # Five minutes of slack: `Last-Modified` is the build server's clock and the commit time is
+          # GitHub's, and those are different machines, so inside that window the ordering proves
+          # nothing either way. Outside it, an older chunk is a previous build still being served.
+          #
+          # Eight minutes, same as the fingerprint step: one image build plus the rollout.
+          tolerance=300
+          deadline=$((SECONDS + 480))
+          while :; do
+            html="$(curl --silent --show-error --max-time 30 "https://timbolu.com/login?verify=${SECONDS}" || true)"
+            chunk="$(printf '%s' "$html" | python3 -c 'import re,sys; m=re.search(r"/_next/static/chunks/[^\s\"<>]+\.js", sys.stdin.read()); print(m.group(0) if m else "")' || true)"
+            last_modified=""
+            lm_epoch=""
+            if [ -z "$chunk" ]; then
+              echo "/login carries no /_next/static/chunks/*.js; retrying"
+            else
+              headers="$(curl --silent --show-error --max-time 30 --output /dev/null --dump-header - "https://timbolu.com${chunk}?verify=${SECONDS}" || true)"
+              last_modified="$(printf '%s' "$headers" | python3 -c 'import sys; print(next((line.split(":",1)[1].strip() for line in sys.stdin if line.lower().startswith("last-modified:")), ""))' || true)"
+              if [ -n "$last_modified" ]; then
+                lm_epoch="$(python3 -c 'import sys; from email.utils import parsedate_to_datetime; print(int(parsedate_to_datetime(sys.argv[1]).timestamp()))' "$last_modified" 2>/dev/null || true)"
+              fi
+              echo "production serves $chunk last modified: '${last_modified}'"
+              if [ -n "$lm_epoch" ] && [ "$lm_epoch" -ge $((commit_epoch - tolerance)) ]; then
+                echo "production is serving this tree's frontend build"
+                exit 0
+              fi
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              if [ -z "$last_modified" ]; then
+                # No header, no proof. The check cannot tell this build from the one it replaced, so
+                # it must not pass — and the fix is to find another fingerprint, not to drop the
+                # check: a green run is what #322 was.
+                echo "::error::no readable Last-Modified on ${chunk:-the frontend assets} after 8 minutes; the age of the frontend build cannot be proven, so this is not a pass" >&2
+              else
+                echo "::error::production serves $chunk last modified $last_modified, older than this commit ($COMMIT_TIMESTAMP) minus 5 minutes of clock slack — the frontend build did not land" >&2
+              fi
+              exit 1
+            fi
+            sleep 20
+          done
+
       - name: Check the site answers
         # Liveness only, and that is all it proves: `/api/ready` says the API reaches its configured
         # dependencies and `/` says the frontend is up. Both can answer from the previous image; the
-        # fingerprint step above is the one that says the build is new.
+        # fingerprint and chunk steps above are the ones that say the builds are new.
         if: always() && !cancelled()
         run: |
           for url in https://timbolu.com/api/ready https://timbolu.com/; do
