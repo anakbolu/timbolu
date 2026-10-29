@@ -75,6 +75,9 @@ func newHubAPI(t *testing.T, dsn string) (*fiber.App, *identityAPI) {
 		Auth: config.AuthConfig{
 			AccessTokenMinutes: 15, RefreshHours: 24, VerificationHours: 24,
 			ResetMinutes: 60, StateMinutes: 10, LoginThrottleCapacity: 100, LoginThrottleRefill: 100,
+			// signedIn registers and clicks the verification link, so this
+			// harness must ask for verification the way the deployment does.
+			RequireEmailVerification: true,
 		},
 		Mail:         config.MailConfig{Driver: "log"},
 		Logging:      config.LoggingConfig{Level: "error", Format: "json"},

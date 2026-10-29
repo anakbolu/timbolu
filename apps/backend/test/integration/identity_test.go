@@ -79,8 +79,16 @@ func newIdentityAPI(t *testing.T, dsn string, opts ...container.Option) *identit
 			MaxOpenConns: 5,
 			MaxIdleConns: 1,
 		},
-		JWT:     config.JWTConfig{Secret: "integration-test-secret", ExpireHours: 1},
-		Auth:    config.AuthConfig{AccessTokenMinutes: 15, RefreshHours: 24, VerificationHours: 24, ResetMinutes: 60, StateMinutes: 10, LoginThrottleCapacity: 100, LoginThrottleRefill: 100},
+		JWT: config.JWTConfig{Secret: "integration-test-secret", ExpireHours: 1},
+		Auth: config.AuthConfig{
+			AccessTokenMinutes: 15, RefreshHours: 24, VerificationHours: 24, ResetMinutes: 60, StateMinutes: 10,
+			LoginThrottleCapacity: 100, LoginThrottleRefill: 100,
+			// The deployment's config.yaml requires a confirmed address, so the
+			// sign-up and password flows below expect a verification link. The
+			// zero value is false, and leaving it there silently turns every
+			// register into a no-mail path.
+			RequireEmailVerification: true,
+		},
 		Mail:    config.MailConfig{Driver: "log"},
 		Logging: config.LoggingConfig{Level: "error", Format: "json"},
 	}
