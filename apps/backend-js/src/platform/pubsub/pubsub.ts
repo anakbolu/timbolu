@@ -87,13 +87,13 @@ export class Publisher {
    * leak a subscription.
    */
   async subscribe(
-    ctx: AbortSignal | undefined,
     workspaceID: string,
+    signal?: AbortSignal,
   ): Promise<AsyncIterable<Event>> {
     if (this.client === null) {
       throw new Error("pubsub: redis is not configured");
     }
-    if (ctx?.aborted) {
+    if (signal?.aborted) {
       throw new Error("pubsub: subscribe: context canceled");
     }
 
@@ -113,14 +113,14 @@ export class Publisher {
       throw new Error(`pubsub: subscribe: ${errorText(err)}`);
     }
 
-    return this.stream(subscriber, name, ctx);
+    return this.stream(subscriber, name, signal);
   }
 
   /** Turns one confirmed subscription into an async iterable that owns it. */
   private stream(
     subscriber: Redis,
     name: string,
-    ctx: AbortSignal | undefined,
+    signal: AbortSignal | undefined,
   ): AsyncIterable<Event> {
     const queue: Event[] = [];
     const waiters: Array<() => void> = [];
@@ -166,15 +166,15 @@ export class Publisher {
     subscriber.on("message", onMessage);
     subscriber.on("end", onEnd);
     subscriber.on("close", onEnd);
-    ctx?.addEventListener("abort", onAbort, { once: true });
+    signal?.addEventListener("abort", onAbort, { once: true });
     // The signal may have fired while the subscription was being confirmed.
-    if (ctx?.aborted) onAbort();
+    if (signal?.aborted) onAbort();
 
     const release = (): void => {
       subscriber.off("message", onMessage);
       subscriber.off("end", onEnd);
       subscriber.off("close", onEnd);
-      ctx?.removeEventListener("abort", onAbort);
+      signal?.removeEventListener("abort", onAbort);
       subscriber
         .quit()
         .catch(() => {
