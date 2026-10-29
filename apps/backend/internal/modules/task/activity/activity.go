@@ -423,6 +423,9 @@ func (a *Activities) RequestDraft(ctx context.Context, request workflow.ToolRequ
 		return workflow.DraftOutcome{}, err
 	}
 	a.emit(ctx, scope, parked, workflow.EventTaskWaiting)
+	// A parked task is not work in progress, and the roster is told so in the same
+	// breath as the feed.
+	a.emitAgentState(ctx, scope, parked)
 
 	return workflow.DraftOutcome{
 		DraftID: draft.ID.String(),
@@ -480,6 +483,8 @@ func (a *Activities) CarryOutDraft(ctx context.Context, request workflow.DraftCa
 		}
 
 		a.emit(ctx, scope, task, workflow.EventTaskWaiting)
+		// Waiting out the workspace's hours is still waiting, not working.
+		a.emitAgentState(ctx, scope, task)
 
 		return workflow.DraftCarryOutcome{
 			Status:    result.Status,
@@ -644,6 +649,10 @@ func (a *Activities) CompleteTask(ctx context.Context, request workflow.Complete
 	}
 
 	a.emit(ctx, scope, stored, workflow.EventTaskFinished)
+	// The run is over, so the Bolu stops working: this is the event that lowers
+	// the header and the roster, and it is published after the row is terminal so
+	// the state it carries is the one a reload would read.
+	a.emitAgentState(ctx, scope, stored)
 
 	// Whoever opened this task is told how it ended. A routine's run is finished
 	// with the task's own one-line summary, which is what its history shows; a task
@@ -799,6 +808,9 @@ func (a *Activities) ResumeTask(ctx context.Context, request workflow.ResumeRequ
 	}
 
 	a.emit(ctx, scopeOf(task), resumed, workflow.EventTaskRunning)
+	// The decision is in, so the task is in flight again: the roster is told, for
+	// the same reason it was told when the task parked.
+	a.emitAgentState(ctx, scopeOf(task), resumed)
 	return nil
 }
 
@@ -959,6 +971,34 @@ func (a *Activities) emit(ctx context.Context, scope domain.Scope, task domain.T
 	if err := a.deps.Events.Emit(ctx, workflow.TaskEvent(scope, task, eventType, payload)); err != nil {
 		a.taskLogger(ctx, task).Warn("task event published only to the store",
 			zap.String("type", eventType), zap.Error(err))
+	}
+}
+
+// emitAgentState publishes the state the registry derives for the Bolu that owns
+// the task, which is what an open roster applies instead of reloading.
+//
+// It is emitted whenever a task enters or leaves flight, because the task events
+// alone do not move the roster: `task.finished` reloads tasks and drafts, and a
+// Bolu's own state is read from `agent.state`. Without this, a reply that ends by
+// asking the user something leaves the header saying "sedang bekerja" for as long
+// as the tab stays open (#315).
+func (a *Activities) emitAgentState(ctx context.Context, scope domain.Scope, task domain.Task) {
+	if a.deps.Agents == nil || a.deps.Events == nil {
+		return
+	}
+
+	agent, err := a.deps.Agents.Agent(ctx, scope, task.AgentID)
+	if err != nil {
+		a.taskLogger(ctx, task).Warn("could not read the Bolu's state for the stream", zap.Error(err))
+		return
+	}
+
+	event, err := domain.AgentStateEvent(scope, task, agent.Display)
+	if err != nil {
+		return
+	}
+	if err := a.deps.Events.Emit(ctx, event); err != nil {
+		a.taskLogger(ctx, task).Warn("agent state published only to the store", zap.Error(err))
 	}
 }
 

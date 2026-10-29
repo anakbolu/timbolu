@@ -567,6 +567,43 @@ type EventSink interface {
 	Emit(ctx context.Context, event Event) error
 }
 
+// EventAgentState is the stream event a screen reads a Bolu's state from. It is
+// the same event the chat module publishes when it hands a message to the
+// runtime; the runtime publishes it again on the way out, so a Bolu that has
+// stopped stops reading as busy without a reload.
+const EventAgentState = "agent.state"
+
+// AgentStateEvent builds that event for a task that is entering or leaving
+// flight.
+//
+// The state is the registry's derived answer rather than something inferred from
+// this task's status: another task of the same Bolu may still be in flight, and a
+// draft of it may still be pending, so only the derivation knows whether the Bolu
+// is working, waiting, or idle.
+func AgentStateEvent(scope Scope, task Task, state string) (Event, error) {
+	payload, err := json.Marshal(struct {
+		AgentID string `json:"agent_id"`
+		State   string `json:"state"`
+		TaskID  string `json:"task_id,omitempty"`
+	}{
+		AgentID: WireID(task.AgentID),
+		State:   state,
+		TaskID:  WireID(task.ID),
+	})
+	if err != nil {
+		return Event{}, err
+	}
+
+	return Event{
+		WorkspaceID:    scope.WorkspaceID,
+		Type:           EventAgentState,
+		ActorAgentID:   task.AgentID,
+		ConversationID: task.ConversationID,
+		TaskID:         task.ID,
+		Payload:        payload,
+	}, nil
+}
+
 // Tool is one capability a task may call.
 //
 // Schema is what the model is offered: a tool without one cannot be called, so
