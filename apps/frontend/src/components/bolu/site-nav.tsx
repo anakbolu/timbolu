@@ -1,4 +1,15 @@
+"use client";
+
+/**
+ * The "Home" link exists only off the front page: on the landing page it would
+ * point at the page you are already reading, and the wordmark beside it already
+ * goes home. Every other page — pricing, the legal pages, a 404 — has no other
+ * way back to the landing page, so the link appears there.
+ */
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+
 import { TimboluMark } from "@/components/bolu/timbolu-mark";
 import { StartLink } from "@/components/bolu/start-link";
 import { SiteNavMenu } from "@/components/bolu/site-nav-menu";
@@ -19,6 +30,8 @@ const LINKS = [
 ];
 
 export function SiteNav() {
+  const pathname = usePathname();
+
   return (
     <div className="mx-auto flex w-full max-w-[1248px] flex-wrap items-center justify-between gap-4 px-6 py-5">
       <Link href="/#atas" className="flex items-center text-bolu-ink no-underline">
@@ -34,8 +47,18 @@ export function SiteNav() {
         aria-label="Navigasi utama"
         className="flex flex-wrap items-center gap-x-7 gap-y-2 font-medium max-[760px]:hidden"
       >
+        {pathname === "/" ? null : (
+          <Link href="/" className="text-bolu-ink no-underline">
+            Home
+          </Link>
+        )}
         {LINKS.map((link) => (
-          <Link key={link.href} href={link.href} className="text-bolu-ink no-underline">
+          <Link
+            key={link.href}
+            href={link.href}
+            aria-current={pathname === link.href ? "page" : undefined}
+            className="text-bolu-ink no-underline"
+          >
             {link.label}
           </Link>
         ))}
