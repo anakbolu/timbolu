@@ -16,6 +16,7 @@ is enforcing the gates.
 | --- | --- | --- |
 | Formatting | `gofmt -l ./cmd ./internal ./migrations ./tools ./test` | No unformatted file is merged |
 | Dependency rules | `make archcheck` | Module boundaries (see below) |
+| Event names | `make contracts-check` | `docs/api.md`, `packages/contracts/events.ts`, and the Go constants name the same event types; the frontend names every event except the two internal ones listed in the script |
 | Lint | `make lint` (`golangci-lint run ./...`) | Static analysis; the linter set lives in `apps/backend/.golangci.yml`, the version is pinned to v2.5.0 in CI |
 | Generated code | `sqlc generate && git diff --exit-code -- internal/modules` | `sqlcgen` matches the migrations and queries |
 | Generated mocks | `mockery --config .mockery.yaml && git diff --exit-code -- internal/modules` | Committed mocks match the domain interfaces |

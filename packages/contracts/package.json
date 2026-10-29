@@ -1,0 +1,8 @@
+{
+  "name": "@timbolu/contracts",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./events": "./events.ts"
+  }
+}
