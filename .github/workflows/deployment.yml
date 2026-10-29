@@ -23,6 +23,9 @@ name: Deployment
 #   apps/backend/**             -> timbolu-backend             (the API)
 #                                  timbolu-agent-worker        (the agent queue)
 #                                  timbolu-integration-worker  (the integration queue)
+#   apps/backend-js/**          -> timbolu-backend             (the API, Bun port)
+#                                  timbolu-agent-worker        (the agent queue, Bun port)
+#                                  timbolu-integration-worker  (the integration queue, Bun port)
 #   apps/whatsapp-gw/**         -> timbolu-wa-gateway          (the WhatsApp gateway)
 #   apps/backend/migrations/**  -> timbolu-migrate             (the schema, applied first)
 #   root build files           -> every service above          (see below)
@@ -38,6 +41,17 @@ name: Deployment
 # When the web app starts consuming a package at build time, that package's path goes in the
 # `frontend` filter, where the image that would rebuild is named. A `packages/**` here again would
 # roll four Go services for a change none of them builds.
+#
+# `apps/backend-js/**` is the second implementation of those same three backend services: the Bun
+# port, which `apps/backend-js/Dockerfile` builds into one image and selects with `APP=api`,
+# `APP=agent-worker` or `APP=integration-worker`. It is not an optional path. The implementation
+# that actually serves production today is that Bun port (#350), so a commit that only touches
+# `apps/backend-js/**` changes the code users run — before this filter existed it matched nothing,
+# every deploy job was skipped and the run went green, the same hole as #322/#345. The Bun tree
+# shares no build input with the Go one: its Dockerfile copies `apps/backend-js/package.json`,
+# `apps/backend-js/tsconfig.json`, `apps/backend-js/bun.lock` and `apps/backend-js/src`, and nothing
+# from `packages/`, so `packages/**` stays out of this filter for the same reason it is out of the
+# gateway's.
 #
 # The root build files are `.dockerignore`, `Makefile`, `go.work`, `go.work.sum`, and
 # `docker-compose*.yml`. They belong to no app, so before this filter existed a commit touching only
@@ -95,6 +109,7 @@ jobs:
     outputs:
       frontend: ${{ steps.filter.outputs.frontend }}
       backend: ${{ steps.filter.outputs.backend }}
+      backend_js: ${{ steps.filter.outputs.backend_js }}
       gateway: ${{ steps.filter.outputs.gateway }}
       migrations: ${{ steps.filter.outputs.migrations }}
       build: ${{ steps.filter.outputs.build }}
@@ -112,6 +127,10 @@ jobs:
               - 'packages/**/*.go'
               - 'packages/go.mod'
               - 'packages/go.sum'
+            # The Bun port of the same three services. Its own filter because it shares no build
+            # input with the Go tree — see the note at the top of this file.
+            backend_js:
+              - 'apps/backend-js/**'
             gateway:
               - 'apps/whatsapp-gw/**'
               - 'packages/**/*.go'
@@ -153,11 +172,14 @@ jobs:
     name: Deploy ${{ matrix.service }}
     needs: [changes, migrate]
     # `always()` so a *skipped* `migrate` (no new migration) does not skip the rollout, and the
-    # explicit result check so a *failed* migration still blocks it.
+    # explicit result check so a *failed* migration still blocks it. `backend_js` rolls the same
+    # three services: they are the same processes, built from the Bun tree instead of the Go one.
     if: >-
       always() &&
       !cancelled() &&
-      (needs.changes.outputs.backend == 'true' || needs.changes.outputs.build == 'true') &&
+      (needs.changes.outputs.backend == 'true' ||
+       needs.changes.outputs.backend_js == 'true' ||
+       needs.changes.outputs.build == 'true') &&
       (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
     runs-on: ubuntu-latest
     strategy:
@@ -247,6 +269,14 @@ jobs:
   # value this commit's image must report. Equal values mean the image serving traffic is this tree;
   # anything else means the build did not land, whatever the hook answered.
   #
+  # Two implementations can be the one behind that endpoint now: the Go image (`backend`) and the Bun
+  # port (`backend_js`), which is what production actually runs today (#350). Each has its own file
+  # set and therefore its own fingerprint, so the step computes the expected value for every filter
+  # that changed and accepts either match. The Bun tree does not report `data.build` yet, so a
+  # `backend_js` deploy cannot be proven by this check — the step fails and says so instead of
+  # calling the image stale, because an empty value names an unidentifiable implementation, not an
+  # old one.
+  #
   # That fingerprint says nothing about the frontend, which is the service most likely to ship alone:
   # a commit that only touches `apps/frontend/**` skips the fingerprint step entirely and leaves
   # "the site answers 200" as the only check — which the previous image passes just as well. What the
@@ -265,12 +295,14 @@ jobs:
       !cancelled() &&
       (needs.changes.outputs.frontend == 'true' ||
        needs.changes.outputs.backend == 'true' ||
+       needs.changes.outputs.backend_js == 'true' ||
        needs.changes.outputs.gateway == 'true' ||
        needs.changes.outputs.build == 'true')
     runs-on: ubuntu-latest
     env:
       CHANGED_FRONTEND: ${{ needs.changes.outputs.frontend }}
       CHANGED_BACKEND: ${{ needs.changes.outputs.backend }}
+      CHANGED_BACKEND_JS: ${{ needs.changes.outputs.backend_js }}
       CHANGED_GATEWAY: ${{ needs.changes.outputs.gateway }}
       CHANGED_BUILD: ${{ needs.changes.outputs.build }}
       RESULT_BACKEND: ${{ needs.backend.result }}
@@ -288,10 +320,16 @@ jobs:
           #
           # "Should this job have run" is `changed || build`: a root build file rolls every image, so
           # on a build-only commit all three rollouts run with `changed` false. The deploy jobs use
-          # that same condition; keeping it in one place here means the two cannot drift.
+          # that same condition; keeping it in one place here means the two cannot drift. The backend
+          # matrix is the one job two filters can trigger, so its two are folded together before the
+          # check: either tree changing rolls it.
           should_run() {
             [ "$1" = "true" ] || [ "$CHANGED_BUILD" = "true" ]
           }
+          backend_changed=false
+          if [ "$CHANGED_BACKEND" = "true" ] || [ "$CHANGED_BACKEND_JS" = "true" ]; then
+            backend_changed=true
+          fi
           failed=0
           check() {
             changed="$1"; result="$2"; job="$3"
@@ -302,22 +340,33 @@ jobs:
             fi
           }
           check "$CHANGED_FRONTEND" "$RESULT_FRONTEND" "Deploy timbolu"
-          check "$CHANGED_BACKEND" "$RESULT_BACKEND" "Deploy (backend matrix)"
+          check "$backend_changed" "$RESULT_BACKEND" "Deploy (backend matrix)"
           check "$CHANGED_GATEWAY" "$RESULT_GATEWAY" "Deploy timbolu-wa-gateway"
           exit "$failed"
 
       - name: Check out the tree that was deployed
-        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.build == 'true'
+        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.backend_js == 'true' || needs.changes.outputs.build == 'true'
         uses: actions/checkout@v4
 
       - name: Wait for production to serve this tree's backend build
-        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.build == 'true'
+        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.backend_js == 'true' || needs.changes.outputs.build == 'true'
         run: |
-          # The same command the Dockerfile runs, over the same file set (`.dockerignore` excludes no
-          # `.go` file), so the two values are comparable. If `.dockerignore` ever excludes a Go file,
-          # this has to follow it or the comparison stops meaning anything.
-          expected="$(find apps/backend packages -name '*.go' -type f | LC_ALL=C sort | xargs cat | sha256sum | cut -c1-16)"
-          echo "this tree's build fingerprint: $expected"
+          # Two implementations can answer this endpoint, and each fingerprints its own file set. The
+          # Go command is the one apps/backend/Dockerfile runs, over the same files (`.dockerignore`
+          # excludes no `.go` file, so the sets match); if that ever stops being true, this has to
+          # follow it or the comparison stops meaning anything. The Bun command covers what
+          # apps/backend-js/Dockerfile copies into its image. Only the sets this commit actually
+          # changed are computed, so a match can only come from an image this run was meant to roll.
+          go_expected=""
+          bun_expected=""
+          if [ "$CHANGED_BACKEND" = "true" ] || [ "$CHANGED_BUILD" = "true" ]; then
+            go_expected="$(find apps/backend packages -name '*.go' -type f | LC_ALL=C sort | xargs cat | sha256sum | cut -c1-16)"
+            echo "this tree's Go build fingerprint:  $go_expected"
+          fi
+          if [ "$CHANGED_BACKEND_JS" = "true" ] || [ "$CHANGED_BUILD" = "true" ]; then
+            bun_expected="$(find apps/backend-js/src -name '*.ts' -type f | LC_ALL=C sort | xargs cat | sha256sum | cut -c1-16)"
+            echo "this tree's Bun build fingerprint: $bun_expected"
+          fi
 
           # Eight minutes: an image build plus the rollout, with the first build after a cold cache
           # being the slow end. A build that has not landed by then is not about to.
@@ -326,15 +375,24 @@ jobs:
             body="$(curl --silent --show-error --max-time 30 https://timbolu.com/api/health || true)"
             served="$(printf '%s' "$body" | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("data") or {}).get("build") or "")' 2>/dev/null || true)"
             echo "production serves build: '${served}'"
-            if [ "$served" = "$expected" ]; then
-              echo "production is serving this tree's build"
+            if [ -n "$go_expected" ] && [ "$served" = "$go_expected" ]; then
+              echo "production is serving this tree's Go build"
+              exit 0
+            fi
+            if [ -n "$bun_expected" ] && [ "$served" = "$bun_expected" ]; then
+              echo "production is serving this tree's Bun build"
               exit 0
             fi
             if [ "$SECONDS" -ge "$deadline" ]; then
               if [ -z "$served" ]; then
-                echo "::error::production's /api/health carries no data.build after 8 minutes; the image predates #303, so it cannot be this tree" >&2
+                # No value, no identity. The Bun port does not report `data.build` yet (#350), and an
+                # empty answer could equally come from a Go image older than #303. Either way this
+                # check cannot say which implementation is serving production, so it cannot pass —
+                # but it must not claim the image is stale, because that is exactly what it cannot
+                # see.
+                echo "::error::production's /api/health carries no data.build after 8 minutes, so the implementation serving production cannot be identified — the Bun port reports no fingerprint yet (#350), and an older Go image would look the same. This is not a pass." >&2
               else
-                echo "::error::production still serves build '$served' after 8 minutes; this tree is '$expected' — the deploy hook was accepted but the build did not land" >&2
+                echo "::error::production still serves build '$served' after 8 minutes; this tree is '${go_expected:-not changed}' (Go) / '${bun_expected:-not changed}' (Bun) — the deploy hook was accepted but the build did not land" >&2
               fi
               exit 1
             fi
