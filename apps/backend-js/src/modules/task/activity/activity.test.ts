@@ -13,12 +13,19 @@ import { describe, expect, test } from "bun:test";
 
 import { deriveStatus, StoredActive } from "../../agent/domain/agent.ts";
 import {
+  DraftApproved,
+  DraftPending,
   StatusQueued,
   StatusRunning,
   StatusSucceeded,
+  StatusWaitingApproval,
   agentActive,
   type AgentDirectory,
   type AgentRef,
+  type Draft,
+  type DraftExecution,
+  type DraftGate,
+  type DraftRequest,
   type Event,
   type EventSink,
   type Finish,
@@ -99,8 +106,18 @@ class MemoryTasks implements TaskRepository {
     throw new Error("not used by these cases");
   }
 
-  async park(): Promise<Task> {
-    throw new Error("not used by these cases");
+  async park(
+    _ctx: AbortSignal | undefined,
+    _scope: Scope,
+    id: string,
+    reason: string,
+    draftId: string,
+  ): Promise<Task> {
+    const row = this.rows.find((candidate) => candidate.id === id)!;
+    row.status = StatusWaitingApproval;
+    row.waitingReason = reason;
+    row.waitingDraftId = draftId;
+    return { ...row };
   }
 
   async resume(): Promise<Task> {
@@ -113,6 +130,46 @@ class MemoryTasks implements TaskRepository {
 
   async children(): Promise<Task[]> {
     throw new Error("not used by these cases");
+  }
+}
+
+/** A store whose park fails, which is the best-effort park in `CarryOutDraft`. */
+class UnparkableTasks extends MemoryTasks {
+  async park(): Promise<Task> {
+    throw new Error("park is down");
+  }
+}
+
+/** An approval gate with one draft, pending unless the case says it was held. */
+class StubDrafts implements DraftGate {
+  constructor(
+    private readonly draftId: string,
+    private readonly held = false,
+  ) {}
+
+  async requestDraft(
+    _ctx: AbortSignal | undefined,
+    _scope: Scope,
+    request: DraftRequest,
+  ): Promise<Draft> {
+    return {
+      id: this.draftId,
+      title: request.title,
+      status: DraftPending,
+      note: "",
+      auto: false,
+      content: null,
+    };
+  }
+
+  async carryOut(): Promise<DraftExecution> {
+    return {
+      status: DraftApproved,
+      content: null,
+      held: this.held,
+      notBefore: null,
+      reason: this.held ? "menunggu jam kerja" : "",
+    };
   }
 }
 
@@ -185,13 +242,14 @@ class RecordingSink implements EventSink {
   }
 }
 
-function build(tasks: MemoryTasks): { activities: Activities; sink: RecordingSink } {
+function build(tasks: MemoryTasks, overrides: Partial<Deps> = {}): { activities: Activities; sink: RecordingSink } {
   const sink = new RecordingSink();
   const deps: Deps = {
     tasks,
     steps: new EmptySteps(),
     agents: new DerivedDirectory(tasks),
     events: sink,
+    ...overrides,
   };
   return { activities: new Activities(deps), sink };
 }
@@ -274,5 +332,69 @@ describe("CompleteTask", () => {
     const outcome = await activities.CompleteTask(completion("task-1"));
 
     expect(outcome.Status).toBe(StatusSucceeded);
+  });
+});
+
+describe("task.waiting_approval payload", () => {
+  test("carries the draft id a task is parked on", async () => {
+    const tasks = new MemoryTasks([task()]);
+    const { activities, sink } = build(tasks, { drafts: new StubDrafts("draft-1") });
+
+    await activities.RequestDraft({
+      TaskID: "task-1",
+      WorkspaceID: "ws-1",
+      CallID: "call-1",
+      Name: "gmail.send",
+      Arguments: { subject: "Tagihan Maret" },
+    });
+
+    const event = sink.events.find((candidate) => candidate.type === "task.waiting_approval");
+    expect(event).toBeDefined();
+    expect(event!.payload).toEqual({
+      task_id: "task-1",
+      agent_id: "agent-1",
+      status: StatusWaitingApproval,
+      trigger: "chat",
+      title: "jawab pertanyaan",
+      waiting_draft_id: "draft-1",
+    });
+  });
+
+  test("omits the field when the task waits without a draft", async () => {
+    // The hold's park is best-effort: when it fails the task still reads as
+    // waiting on the wire, and it names no draft because none was stored.
+    const tasks = new UnparkableTasks([task()]);
+    const { activities, sink } = build(tasks, { drafts: new StubDrafts("draft-1", true) });
+
+    await activities.CarryOutDraft({ TaskID: "task-1", WorkspaceID: "ws-1", DraftID: "draft-1" });
+
+    const event = sink.events.find((candidate) => candidate.type === "task.waiting_approval");
+    expect(event).toBeDefined();
+    const payload = event!.payload as Record<string, unknown>;
+    expect("waiting_draft_id" in payload).toBe(false);
+    expect(payload).toEqual({
+      task_id: "task-1",
+      agent_id: "agent-1",
+      status: StatusRunning,
+      trigger: "chat",
+      title: "jawab pertanyaan",
+    });
+  });
+
+  test("keeps every other event at five fields, even with a stale draft id", async () => {
+    const tasks = new MemoryTasks([task({ status: StatusWaitingApproval, waitingDraftId: "draft-1" })]);
+    const { activities, sink } = build(tasks);
+
+    await activities.CompleteTask(completion("task-1"));
+
+    const event = sink.events.find((candidate) => candidate.type === "task.finished");
+    expect(event).toBeDefined();
+    expect(event!.payload).toEqual({
+      task_id: "task-1",
+      agent_id: "agent-1",
+      status: StatusSucceeded,
+      trigger: "chat",
+      title: "jawab pertanyaan",
+    });
   });
 });

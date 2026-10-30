@@ -99,6 +99,16 @@ import { end, span, taskLogger, toolSpan } from "./tracing.ts";
 /** How much of a conversation a task is given. */
 const historyLimit = 30;
 
+/** The body of a task event, which is what the feed reads. */
+interface TaskEventPayload {
+  task_id: string;
+  agent_id: string;
+  status: string;
+  trigger: string;
+  title: string;
+  waiting_draft_id?: string;
+}
+
 /** The activity dependencies. Every one is optional except the repositories. */
 export interface Deps {
   tasks: TaskRepository;
@@ -937,13 +947,23 @@ export class Activities {
       return;
     }
 
-    const payload = {
+    const payload: TaskEventPayload = {
       task_id: task.id,
       agent_id: WireID(task.agentId),
       status: task.status,
       trigger: task.trigger,
       title: task.title,
     };
+
+    // Only the approval wait names the draft: the notification worker builds
+    // `bolu://approval/<draft_id>` from this field, and a finished task can still
+    // carry the id it was parked on, which would point at a decision that is no
+    // longer waiting. A task waiting without a draft omits the key rather than
+    // sending an empty uuid.
+    const draftId = WireID(task.waitingDraftId);
+    if (eventType === EventTaskWaiting && draftId !== "") {
+      payload.waiting_draft_id = draftId;
+    }
 
     try {
       await this.deps.events.emit(undefined, TaskEvent(scope, task, eventType, payload));
