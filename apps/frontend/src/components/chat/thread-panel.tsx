@@ -19,7 +19,7 @@ import { useEffect, useMemo } from "react";
 
 import { useWorkspace } from "@/components/dashboard/workspace-data";
 import type { Attachment, ChatConversation } from "@/lib/api";
-import { relativeAge } from "@/lib/dashboard-view";
+import { expressionOf, relativeAge, stateOf } from "@/lib/dashboard-view";
 
 import { Composer, MessageRow, TypingRow, authorFace, colorOf, nameOf, useStickToBottom } from "./chat-view";
 import { isBusy, useChat } from "./use-chat";
@@ -162,6 +162,15 @@ function ThreadView({
   );
   const typingFace = typing ? authorFace(chat.active, typing, agents) : null;
 
+  // The face every Bolu message in the thread wears: the one its state poses.
+  // A group has no single partner, so its messages keep the neutral face.
+  const partnerParticipant =
+    chat.active && chat.active.kind !== "group"
+      ? chat.active.participants.find((item) => item.is_agent)
+      : undefined;
+  const partner = agents.find((agent) => agent.id === partnerParticipant?.agent_id) ?? null;
+  const partnerExpression = partner ? expressionOf(stateOf(partner)) : undefined;
+
   return (
     <>
       <header className="flex h-14 flex-none items-center justify-between gap-2 border-b border-bolu-line px-4">
@@ -222,6 +231,7 @@ function ThreadView({
               name={nameOf(chat.active, message)}
               face={authorFace(chat.active, message, agents)}
               color={colorOf(message, agents)}
+              expression={partnerExpression}
               compact
             />
           ))}
