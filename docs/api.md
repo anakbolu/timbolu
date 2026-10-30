@@ -312,6 +312,71 @@ variabel yang tidak disetel, adalah default: pengirim tidak pernah memanggil
 `exp.host`. Endpoint registry perangkat tidak terpengaruh; telepon tetap bisa
 mendaftar dan mencabut alamatnya saat pengiriman dimatikan.
 
+### Pemetaan event ke notifikasi
+
+Pemetaannya tinggal di satu tempat, `notificationFor` pada
+`apps/backend-js/src/modules/push/domain/push.ts`, bukan di setiap pemancar.
+Alasannya: satu push adalah janji tentang sebuah layar, dan kalau setiap pemanggil
+menyusun judul serta link-nya sendiri, dua layar akan bercerita berbeda tentang
+draf yang sama.
+
+| Event | Judul | Isi | Deep link |
+| --- | --- | --- | --- |
+| `task.finished` | Tugas selesai | Bolu sudah menyelesaikan tugasnya. | `bolu://task/<task_id>` |
+| `task.waiting_approval` | Menunggu persetujuan | Bolu menunggu persetujuanmu untuk melanjutkan. | `bolu://approval/<draft_id>`, jatuh ke `bolu://task/<task_id>` |
+| `draft.created` | Draf baru | Bolu membuat draf yang perlu kamu putuskan. | `bolu://approval/<draft_id>` |
+| `routine.run` | Rutinitas berjalan | Rutinitas Bolu sudah dijalankan. | `bolu://routine/<routine_id>` |
+| `notification.pending` | Ada yang perlu diputuskan | Bolu menunggu keputusanmu. | `bolu://approval/<draft_id>` |
+
+Judul dan isi di tabel adalah string yang dikirim apa adanya ke Expo; keduanya
+tidak diterjemahkan lagi di sisi app. Link-nya ikut sebagai `data.deepLink` pada
+pesan Expo, dan `routine.run` memakai `routine_id` — bukan `task_id` dari run
+yang dibukanya.
+
+**Event tanpa id yang dibutuhkan tidak mengirim apa pun.** Ketika id tujuan link
+tidak ada, `notificationFor` menjawab `null` dan pengirim berhenti di situ —
+bukan mengirim notifikasi dengan link ke path kosong. Event di luar lima baris di
+atas juga dijawab `null` dengan alasan yang sama: mayoritas stream
+(`message.new`, `task.step`, `draft.decided`, dan seterusnya) memang untuk klien
+yang sedang terbuka, jadi tidak ada yang perlu dibangunkan.
+
+**`task.waiting_approval` memilih tujuan yang bisa diputuskan.** Kalau payload
+membawa `waiting_draft_id`, notifikasinya menunjuk draf itu lewat
+`bolu://approval/<draft_id>`; kalau tidak, ia jatuh ke `bolu://task/<task_id>`.
+Keduanya tetap tunduk pada aturan sebelumnya: id yang tidak ada berarti tidak ada
+notifikasi, bukan notifikasi tanpa tujuan.
+
+**Token mati dibuang, alamat yang bukan token Expo dilewati.** Token yang dijawab
+Expo `DeviceNotRegistered` dihapus dari registry, karena token untuk app yang
+sudah dicopot akan dicoba ulang pada setiap event tanpa akhir. Sebelum batch
+dikirim, alamat yang tidak berbentuk `ExponentPushToken[…]` atau
+`ExpoPushToken[…]` dilewati: satu registrasi buruk tidak boleh menggagalkan
+seluruh batch, dan tidak ada cara menebak alamat apa yang sebenarnya ingin
+didaftarkan telepon itu.
+
+**Copy-nya generik dan Bahasa Indonesia, dengan sengaja.** Payload event membawa
+id, bukan judul tugas, jadi notifikasi tidak mengarang isi yang tidak
+diketahuinya. Judul tugas datang dari layar yang dibuka link-nya, bukan dari
+notifikasi.
+
+**Pengiriman tidak pernah menggagalkan pemicunya.** Push adalah bonus di atas
+aksi bisnis yang sudah tercatat: kegagalan membaca registry, jaringan yang mati,
+atau jawaban error dari Expo hanya menjadi baris log, tidak menjadi exception
+yang membatalkan task atau draf yang memicunya.
+
+Dua baris terakhir, `routine.run` dan `notification.pending`, sudah dipetakan
+tetapi belum punya pemancar di kedua tree backend hari ini; bentuknya tetap
+kontrak, jadi baris itu tidak berubah saat produsennya ada.
+
+Bentuk setiap `bolu://` yang dipakai tabel — termasuk aturan bahwa `<id>` wajib
+UUID — ada di § Skema `bolu://` pada `docs/deep-links.md`. App yang terpasang
+membuka universal link untuk path yang sama saat sebuah notifikasi disentuh,
+sementara `data.deepLink` pada pesan Expo tetap berbentuk `bolu://`. Kapan
+pengiriman hidup ditentukan § Kill switch pengiriman di atas, dan alamat tujuan
+notifikasi didaftarkan lewat `POST /devices` (§ Mendaftarkan sebuah alamat):
+tanpa baris di registry itu, event yang sudah dipetakan tetap tidak menghasilkan
+apa pun.
+
 ### Mendaftarkan sebuah alamat
 
 `POST /devices` menjawab `201` dengan envelope:
