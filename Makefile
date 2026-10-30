@@ -1,6 +1,6 @@
 .PHONY: help up down logs build dev frontend backend api worker-logs wa-gateway \
         test test-backend test-gateway test-packages test-integration smoke-task smoke-approval smoke-order measure-orders demo demo-stop gate-report cover cover-backend cover-gateway lint lint-backend lint-gateway archcheck contracts-check design-tokens-check sqlc mocks generate llm-fixtures \
-        migrate-up migrate-down migrate-create psql ci
+        migrate-up migrate-down migrate-create psql test-backend-js typecheck-backend-js ci
 
 COMPOSE := docker compose
 BACKEND := apps/backend
@@ -139,9 +139,15 @@ contracts-check: ## Fail when the event names drift from docs/api.md
 design-tokens-check: ## Fail when tokens.json drifts from the @theme block in globals.css
 	node packages/design-tokens/scripts/check.mjs
 
+test-backend-js: ## Run the Bun port's test suite (what production runs)
+	cd apps/backend-js && bun test
+
+typecheck-backend-js: ## Type-check the Bun port (tsc --noEmit)
+	cd apps/backend-js && bun run typecheck
+
 fmt: ## Format the Go code of every module
 	gofmt -w $(PACKAGES)/platform $(PACKAGES)/whatsapp
 	cd $(BACKEND) && gofmt -w ./cmd ./internal ./migrations ./tools ./test
 	cd $(GATEWAY) && gofmt -w ./cmd ./internal
 
-ci: contracts-check design-tokens-check archcheck lint test cover ## Run the same gates as CI locally
+ci: contracts-check design-tokens-check archcheck lint test cover test-backend-js typecheck-backend-js ## Run the same gates as CI locally
