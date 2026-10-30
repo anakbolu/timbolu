@@ -43,6 +43,10 @@ export default function proxy(request: NextRequest) {
  * session before it can answer anything — and not for the platform role: a role
  * is a fact only the API knows, so the admin layout asks for it and redirects a
  * plain account. This gate only decides whether the shell is worth loading.
+ *
+ * `/approval` is the screen a notification lands on, and it reads a draft with
+ * the session's token — so it is a workspace route like `/tasks`, not a page
+ * about one.
  */
 export const config = {
   matcher: [
@@ -53,6 +57,7 @@ export const config = {
     "/groups/:path*",
     "/settings/:path*",
     "/tasks/:path*",
+    "/approval/:path*",
     "/admin/:path*",
   ],
 };

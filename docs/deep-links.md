@@ -57,7 +57,7 @@ terhadap `apps/frontend/src/app`.
 | `/settings/data` | `(workspace)/settings/data/page.tsx` | ada |
 | `/settings/usage` | `(workspace)/settings/usage/page.tsx` | ada |
 | `/settings/subscription` | `(workspace)/settings/subscription/page.tsx` | ada |
-| `/approval/<draft_id>` | — | tidak ada |
+| `/approval/<draft_id>` | `(workspace)/approval/[draftID]/page.tsx` | ada |
 | `/chat/<conversation_id>` | — | tidak ada |
 | `/routines/<run_id>` | — | tidak ada |
 | `/routines/<routine_id>` | — | tidak ada |
@@ -72,7 +72,7 @@ baris-baris `/settings/...`; tidak ada path lain di bawah keduanya yang dilayani
 | --- | --- | --- | --- |
 | `bolu://task/<task_id>` | `tasks.id` (UUID) | Detail tugas: keadaan, alasan berhenti, langkah, hasil serahan | `/tasks/<task_id>` |
 | `bolu://chat/<conversation_id>` | `conversations.id` (UUID) | Obrolan itu: 1:1 dengan Bolu, grup, atau thread | `/chat?conversation=<conversation_id>` |
-| `bolu://approval/<draft_id>` | `drafts.id` (UUID) | Inbox persetujuan, dibuka pada draf itu (Fase 1) | **belum ada di web** — lihat [Celah](#celah) |
+| `bolu://approval/<draft_id>` | `drafts.id` (UUID) | Inbox persetujuan, dibuka pada draf itu (Fase 1) | `/approval/<draft_id>` |
 | `bolu://routine/<routine_id>` | `routines.id` (UUID) | Daftar rutinitas, dibuka pada rutin itu | **belum ada di web** — `/routines` hanya daftar dan riwayat |
 
 Aturan yang mengikat keempatnya:
@@ -116,6 +116,7 @@ sama — lihat `docs/deployment.md`). Pemetaannya diturunkan dari route yang ben
 | `/chat?conversation=<conversation_id>` | Obrolan | Grup dan thread; ini yang dipakai `bolu://chat/<id>` |
 | `/tasks` | Dasbor | Layar daftar tugas sudah dihapus; `/tasks` hanya `redirect("/dashboard")`, jadi path ini tidak punya layar app sendiri |
 | `/tasks/<task_id>` | Detail tugas | Tujuan `bolu://task/<id>` |
+| `/approval/<draft_id>` | Draf persetujuan | Tujuan `bolu://approval/<id>`; satu draf beserta tombol putusnya |
 | `/routines` | Rutinitas | Daftar dan riwayat; tidak ada halaman per-run |
 | `/groups` | Grup | |
 | `/bolu/new` | Bolu baru | |
@@ -148,13 +149,6 @@ atau di app nanti.
 
 ### Layar web yang belum ada
 
-- **`/approval/<draft_id>` tidak ada.** Web hari ini punya tiga tempat yang mendekati, dan ketiganya
-  bukan layar draf: panel "Menunggu persetujuanmu" di `/dashboard` (tombol setujui ada di sana,
-  tetapi drafnya tidak bisa dialamatkan), tombol "Lihat drafnya" di `/tasks/<task_id>` yang justru menuju
-  `/dashboard`, dan blok `draft` di dalam thread `/chat?conversation=<id>`. Karena itu
-  `bolu://approval/<draft_id>` sementara hanya bisa dibuka oleh app Fase 1 (inbox persetujuan);
-  universal link `https://timbolu.com/approval/<draft_id>` **tidak boleh** diumumkan sampai layar
-  itu ada.
 - **`/chat/<conversation_id>` tidak ada.** Obrolan dialamatkan lewat query (`?agent=` atau
   `?conversation=`), bukan segmen path.
 - **`/routines/<run_id>` tidak ada.** `/routines` adalah daftar dan riwayat; satu run tidak punya
@@ -168,9 +162,12 @@ atau di app nanti.
 
 - `task.waiting_approval` dipancarkan dari worker (`apps/backend/internal/modules/task/activity/activity.go`,
   `apps/backend-js/src/modules/task/activity/activity.ts`) dengan payload lima field: `task_id`,
-  `agent_id`, `status`, `trigger`, `title`. **`waiting_draft_id` tidak ada di payload itu**, padahal
-  field tersebut ada di `GET /tasks/:id` (`PayloadShape.WaitingDraftID`). Sampai emit-nya diperluas,
-  worker notifikasi harus membaca tugasnya dulu untuk mendapatkan id draf.
+  `agent_id`, `status`, `trigger`, `title`. Kedua runtime sekarang **juga** membawa
+  `waiting_draft_id` (UUID string) saat tugas menunggu sebuah draf; key itu tidak dikirim saat tugas
+  menunggu tanpa draf, bukan dikirim kosong, supaya worker bisa membedakan "tidak ada draf untuk
+  dibuka" dari "draf ber-id kosong". Event lain tetap lima field, jadi field ini hanya ada di event
+  ini. Worker notifikasi boleh membangun `bolu://approval/<waiting_draft_id>` langsung dari payload
+  dan tidak perlu membaca `GET /tasks/:id` lebih dulu.
 - `routine.run` belum punya produsen: nama itu hanya ada sebagai nama di
   `packages/contracts/events.ts`, `docs/api.md`, `apps/frontend/src/lib/realtime.ts`,
   `apps/frontend/src/lib/dashboard-view.ts`, dan konstanta Go/Bun. Satu run membuka tepat
@@ -264,7 +261,7 @@ envelope, bukan hanya dari `payload`.
 | Event | Id yang tersedia hari ini | Deep link yang dibawa | Kenapa |
 | --- | --- | --- | --- |
 | `task.finished` | `task_id` (envelope dan payload), `conversation_id` (envelope), `status`, `trigger` | `bolu://task/<task_id>` | Layar tugas memuat ringkasan, alasan berhenti, dan langkah — satu-satunya tempat pertanyaan "apa yang tadi dikerjakan" dijawab utuh |
-| `task.waiting_approval` | `task_id` (envelope), `conversation_id` (envelope); `waiting_draft_id` **tidak** ada di payload worker | `bolu://approval/<draft_id>` kalau id draf bisa dibaca, selain itu `bolu://task/<task_id>` | Notifikasi ini ada supaya orang bisa memutuskan; mendarat di tugas tanpa tombol putus adalah perjalanan yang sia-sia |
+| `task.waiting_approval` | `task_id` (envelope dan payload), `conversation_id` (envelope), `waiting_draft_id` (payload, hanya saat menunggu sebuah draf) | `bolu://approval/<waiting_draft_id>` | Notifikasi ini ada supaya orang bisa memutuskan; mendarat di tugas tanpa tombol putus adalah perjalanan yang sia-sia. Kalau payload tidak membawa `waiting_draft_id` (menunggu tanpa draf), tidak ada yang bisa diputuskan dan tidak ada link yang dikirim |
 | `draft.created` | `draft_id`, `task_id` (envelope dan payload), `conversation_id` (envelope), `title`, `summary`, `action_kind` | `bolu://approval/<draft_id>` | Draf adalah objek yang diputuskan; `task_id` hanya menjelaskan asalnya |
 | `routine.run` | belum ada produsen; run menyimpan `task_id` (`routine_runs.task_id`) | `bolu://task/<task_id>` | Satu run adalah satu tugas, dan hasilnya adalah ringkasan tugas itu; tidak ada halaman per-run untuk dibuka |
 | `notification.pending` | belum ada produsen; hanya konstanta "hook the notification worker consumes" | Tidak punya layar sendiri | Ini pintu masuk worker, bukan notifikasi. Worker harus menerjemahkannya ke event di atas dan memakai baris itu; mengirimnya apa adanya berarti mengirim notifikasi tanpa tujuan |
