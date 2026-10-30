@@ -7,17 +7,24 @@ Bun tree and the Bun gates say nothing about the Go one, so
 [What production runs, and which gates apply](#what-production-runs-and-which-gates-apply)
 says which of the gates below a given change actually needs.
 
-**No workflow enforces them.** The CI workflow was replaced by
-`.github/workflows/deployment.yml`, which calls the Easypanel deploy webhooks on a
-push to `main` and runs no tests, and `release.yml` is disabled. Every CI run before
-that had already failed in about three seconds without producing a step log, which is
-the shape of an account that cannot execute workflows rather than of a failing gate.
-So **run `make ci` locally and say so in the pull request**, because nothing automated
-is enforcing the gates. The `verify` job in that workflow is not an exception: it polls
-`/api/health` and compares the build fingerprint production serves against the Go and
-Bun fingerprints computed from the checked-out tree (a match to either one names the
-implementation serving), so it proves a rollout landed and says nothing about
-whether the code is correct.
+**A workflow enforces three of them, and only three.** `.github/workflows/checks.yml`
+(the workflow named **Checks**, whose job is the check run "Contracts and design
+tokens") runs `make contracts-check`, `make design-tokens-check` and
+`make deep-links-check` on every pull request and on every push to `main`. Those are
+the gates whose drift compiles cleanly and breaks something only later, so a change
+that desynchronises the event names, the design tokens or the route audit fails the
+**Checks** run on that pull request instead of waiting for a person to notice.
+
+Everything else in the table — formatting, `archcheck`, lint, generated code,
+migrations, `go test`, the race detector, coverage, and the Bun typecheck and tests —
+is run by no workflow. `.github/workflows/deployment.yml` calls the Easypanel deploy
+webhooks on a push to `main` and runs no tests, `release.yml` is disabled, and the
+`verify` job is not an exception: it polls `/api/health` and compares the build
+fingerprint production serves against the Go and Bun fingerprints computed from the
+checked-out tree (a match to either one names the implementation serving), so it proves
+a rollout landed and says nothing about whether the code is correct. So **run `make ci`
+locally and paste its output in the pull request**; the three checks above are the only
+gates a machine runs for you.
 
 ## What production runs, and which gates apply
 
@@ -49,7 +56,7 @@ skipped, and the run went green while production kept serving the previous image
 | Dependency rules | `make archcheck` | Module boundaries (see below) |
 | Event names | `make contracts-check` | `docs/api.md`, `packages/contracts/events.ts`, and the Go constants name the same event types; the frontend names every event except the two internal ones listed in the script |
 | Deep links | `make deep-links-check` | The route audit in `docs/deep-links.md` matches `apps/frontend/src/app`: every `ada` row has its `page.tsx` at the named file, every `pindah` row is still only a redirect, every `tidak ada` row is still served by no page (including `[param]` pages), and the well-known globs cover only documented pages |
-| Lint | `make lint` (`golangci-lint run ./...`) | Static analysis; the linter set lives in `apps/backend/.golangci.yml`, the version is pinned to v2.5.0 in CI |
+| Lint | `make lint` (`golangci-lint run ./...`) | Static analysis; the linter set lives in `apps/backend/.golangci.yml`, and v2.5.0 is the version the disabled `ci.yml` pinned, so installing it locally keeps parity if that gate returns |
 | Generated code | `sqlc generate && git diff --exit-code -- internal/modules` | `sqlcgen` matches the migrations and queries |
 | Generated mocks | `mockery --config .mockery.yaml && git diff --exit-code -- internal/modules` | Committed mocks match the domain interfaces |
 | Migrations | `go run ./tools/migrate up`, `down`, `up` | Both directions of every migration work |
@@ -79,9 +86,12 @@ there rather than silently making the document wrong.
 
 ## Linting
 
-`apps/backend/.golangci.yml` declares the linter set explicitly so a locally
-installed golangci-lint behaves like CI. CI pins the version
-(`golangci-lint@v2.5.0`); install the same version locally to avoid drift:
+`apps/backend/.golangci.yml` declares the linter set explicitly, so a locally
+installed golangci-lint behaves the same whichever version runs it. No workflow
+runs lint today: `ci.yml` was disabled in commit `e9a6e4e`, and that file pinned
+`golangci-lint@v2.5.0`. `make lint` does not check the version it finds. Install
+the pinned version locally so you stay on the same linter release if the
+workflow comes back:
 
 ```bash
 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0
