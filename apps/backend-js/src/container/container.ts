@@ -662,8 +662,21 @@ export async function newContainer(
       log,
     );
 
+    // Erasure is the half of this module a customer can invoke, and it needs
+    // all three ports to be honest: the evidence, the workspace deletion, and
+    // the bucket walk. They are passed structurally so the compiler keeps that
+    // shape — an omitted port used to be hidden by a cast, and the result was a
+    // deployed service answering 503 `erasure_unavailable` to every request.
+    // Anything still null here is a deployment that cannot erase, which the
+    // service says rather than a state the cast should cover.
     const retentionRepo = new RetentionRepository(db);
-    retentionService = new RetentionService({ repository: retentionRepo, logger: log } as any);
+    retentionService = new RetentionService({
+      repository: retentionRepo,
+      logger: log,
+      erasures: retentionRepo,
+      workspaces: workspaceRepository,
+      objects: chatService,
+    });
     retention = new RetentionHandler(retentionService, log);
 
     // The embedder and the model are the same gateway object: memory imports the

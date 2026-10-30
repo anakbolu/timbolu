@@ -16,10 +16,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Hono } from "hono";
 
 import type { AppEnv } from "../platform/context.ts";
-import type { Database, Scope, Tx } from "../platform/database/index.ts";
+import type { Database, Scope, Sql, Tx } from "../platform/database/index.ts";
 import { loadFromFile } from "../platform/config/init.ts";
 import { PostgresRepository as WorkspaceRepository } from "../modules/workspace/repository/postgres.ts";
 import { routes as deviceRoutes } from "../modules/device/handler/handler.ts";
@@ -43,7 +46,9 @@ type Answers = (text: string) => unknown[];
  * The transaction the repositories run in.
  *
  * postgres.js tags a template literal onto the object it hands the callback, so
- * the fake is a callable that records every statement. The cast names the shape
+ * the fake is a callable that records every statement. `unsafe` rides on that
+ * same callable, because the workspace deletion reaches for it through the
+ * transaction rather than through a separate handle. The cast names the shape
  * the driver already guarantees: the repositories only ever use it as a tag.
  */
 class FakeTx {
@@ -51,29 +56,43 @@ class FakeTx {
 
   constructor(private readonly answers: Answers) {}
 
-  readonly tag = ((strings: TemplateStringsArray, ...values: unknown[]) => {
-    const text = strings.join("$").replace(/\s+/g, " ").trim();
+  private readonly run = (query: string, values: unknown[]) => {
+    const text = query.replace(/\s+/g, " ").trim();
     this.statements.push({ text, values });
     return Promise.resolve(this.answers(text));
-  }) as unknown as Tx;
+  };
+
+  readonly tag = Object.assign(
+    ((strings: TemplateStringsArray, ...values: unknown[]) =>
+      this.run(strings.join("$"), values)) as unknown as Tx,
+    { unsafe: (query: string) => this.run(query, []) },
+  );
 }
 
 /**
- * The pool, reduced to the one thing onboarding uses it for. `Database` carries
- * a driver handle the repositories here never touch, so the cast is the whole
- * difference between this and the real thing.
+ * The pool, reduced to the two things the cases here use it for: a scoped
+ * transaction and an unscoped statement. `Database` carries a driver handle the
+ * repositories here never touch, so the cast is the whole difference between
+ * this and the real thing.
  */
 class FakeDatabase {
   readonly tx: FakeTx;
+  /** The same statements, presented as the pool an unscoped read runs on. */
+  readonly sql: Sql;
   /** The same object, presented as the pool the repositories are built over. */
   readonly database: Database;
 
   constructor(answers: Answers) {
     this.tx = new FakeTx(answers);
+    this.sql = this.tx.tag as unknown as Sql;
     this.database = this as unknown as Database;
   }
 
   async inScope<T>(_scope: Scope, fn: (tx: Tx) => Promise<T>): Promise<T> {
+    return fn(this.tx.tag);
+  }
+
+  async inScopeRead<T>(_scope: Scope, fn: (tx: Tx) => Promise<T>): Promise<T> {
     return fn(this.tx.tag);
   }
 }
@@ -154,6 +173,15 @@ function answers(text: string): unknown[] {
   if (text.startsWith("FROM plans") || text.includes("FROM plans")) return [trialPlanRow];
   if (text.startsWith("INSERT INTO subscriptions")) return [trialSubscriptionRow];
   if (text.startsWith("INSERT INTO device_tokens")) return [deviceRow];
+
+  // The erasure path's own statements. `rows` on the count query is the number
+  // the record keeps, and `count` on the delete is what postgres.js puts on a
+  // DELETE result, which the repository reads.
+  if (text.startsWith("SELECT name FROM workspaces")) return [{ name: request.name }];
+  if (text.startsWith("SELECT email FROM users")) return [{ email: "owner@example.com" }];
+  if (text.startsWith("INSERT INTO data_erasures")) return [{ id: 7 }];
+  if (text.includes("query_to_xml")) return [{ rows: 3 }];
+  if (text.startsWith("DELETE FROM workspaces")) return Object.assign([], { count: 1 });
   return [];
 }
 
@@ -264,5 +292,60 @@ describe("device wiring", () => {
     expect(insert).toBeDefined();
     expect(insert?.values[0]).toBe(userId);
     expect(insert?.values[3]).toBe("ExponentPushToken[abc123]");
+  });
+});
+
+describe("erasure wiring", () => {
+  test("the container's retention service erases instead of refusing", async () => {
+    // The bug this pins: `RetentionService` was built with only its repository
+    // and logger behind an `any`, so `erase` answered "the erasure path is not
+    // configured" to every request and production replied 503
+    // `erasure_unavailable`. Driving the container's own service is the only
+    // way to say the three ports are attached to it; a service built by hand in
+    // the test would pass however the container was wired.
+    const config = loadFromFile("");
+    config.logging.level = "silent";
+    config.database.url = "";
+    config.redis.url = "";
+    config.temporal.hostPort = "";
+    config.kms.masterKey = "";
+    config.llm.secretEncryptionKey = "";
+
+    // A real local store, because the object walk runs before the rows go and
+    // `ChatService` refuses to start one without a bucket. A workspace with no
+    // objects lists nothing, which is the honest answer here.
+    const root = await mkdtemp(join(tmpdir(), "timbolu-erasure-"));
+    config.storage.localRoot = root;
+
+    try {
+      const db = new FakeDatabase(answers);
+      const container = await newContainer({ config, db: db.database });
+      const service = container.retentionService;
+      if (!service) throw new Error("the container built no retention service");
+
+      const result = await service.erase({ workspaceId, requestedBy: userId });
+
+      // Objects first, then the rows the cascade took: the fake answers three
+      // workspace-owned rows and one deleted workspace.
+      expect(result).toEqual({ objects: 0, rows: 4 });
+
+      // The evidence is written before the rows go, and closed only once the
+      // whole path succeeded.
+      const started = db.tx.statements.filter((statement) =>
+        statement.text.startsWith("INSERT INTO data_erasures"),
+      );
+      expect(started).toHaveLength(1);
+      expect(started[0].values[0]).toBe(workspaceId);
+
+      const finished = db.tx.statements.find((statement) =>
+        statement.text.startsWith("UPDATE data_erasures"),
+      );
+      expect(finished).toBeDefined();
+      expect(finished?.values[0]).toBe(0);
+      expect(finished?.values[1]).toBe(4);
+      expect(finished?.values[2]).toBe("");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
