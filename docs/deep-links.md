@@ -59,12 +59,15 @@ terhadap `apps/frontend/src/app`.
 | `/settings/subscription` | `(workspace)/settings/subscription/page.tsx` | ada |
 | `/approval/<draft_id>` | `(workspace)/approval/[draftID]/page.tsx` | ada |
 | `/chat/<conversation_id>` | — | tidak ada |
-| `/routines/<run_id>` | — | tidak ada |
-| `/routines/<routine_id>` | — | tidak ada |
+| `/routines/<run_id>` | `(workspace)/routines/[routineID]/page.tsx` | ada — bentuk path ini dilayani halaman rutin yang sama, tetapi id run bukan id rutin sehingga berakhir di layar "Rutinitas tidak ditemukan"; tetap tidak ada layar per-run |
+| `/routines/<routine_id>` | `(workspace)/routines/[routineID]/page.tsx` | ada — halaman rutin yang difokus: kartu rutin disorot dan riwayat rutin itu yang disaring; id yang tidak ada berakhir di "Rutinitas tidak ditemukan" |
 | `/drafts/<draft_id>` | — | tidak ada |
 
-`/tasks/*` dan `/settings/*` di berkas well-known adalah glob dari baris `/tasks/<task_id>` dan
-baris-baris `/settings/...`; tidak ada path lain di bawah keduanya yang dilayani.
+`/tasks/*`, `/routines/*`, dan `/settings/*` di berkas well-known adalah glob dari baris
+`/tasks/<task_id>`, baris `/routines/<routine_id>`, dan baris-baris `/settings/...`. `/routines/*`
+mencakup kedua bentuk `/routines/...` karena keduanya dilayani satu berkas dinamis yang sama, jadi
+id run pun sampai ke app dan berakhir di layar "tidak ditemukan". Tidak ada path lain di bawah
+ketiganya yang dilayani.
 
 ## Skema `bolu://`
 
@@ -73,7 +76,7 @@ baris-baris `/settings/...`; tidak ada path lain di bawah keduanya yang dilayani
 | `bolu://task/<task_id>` | `tasks.id` (UUID) | Detail tugas: keadaan, alasan berhenti, langkah, hasil serahan | `/tasks/<task_id>` |
 | `bolu://chat/<conversation_id>` | `conversations.id` (UUID) | Obrolan itu: 1:1 dengan Bolu, grup, atau thread | `/chat?conversation=<conversation_id>` |
 | `bolu://approval/<draft_id>` | `drafts.id` (UUID) | Inbox persetujuan, dibuka pada draf itu (Fase 1) | `/approval/<draft_id>` |
-| `bolu://routine/<routine_id>` | `routines.id` (UUID) | Daftar rutinitas, dibuka pada rutin itu | **belum ada di web** — `/routines` hanya daftar dan riwayat |
+| `bolu://routine/<routine_id>` | `routines.id` (UUID) | Daftar rutinitas, dibuka pada rutin itu | `/routines/<routine_id>` |
 
 Aturan yang mengikat keempatnya:
 
@@ -118,6 +121,7 @@ sama — lihat `docs/deployment.md`). Pemetaannya diturunkan dari route yang ben
 | `/tasks/<task_id>` | Detail tugas | Tujuan `bolu://task/<id>` |
 | `/approval/<draft_id>` | Draf persetujuan | Tujuan `bolu://approval/<id>`; satu draf beserta tombol putusnya |
 | `/routines` | Rutinitas | Daftar dan riwayat; tidak ada halaman per-run |
+| `/routines/<routine_id>` | Rutinitas | Tujuan `bolu://routine/<id>`; kartu rutin disorot dan riwayatnya tersaring |
 | `/groups` | Grup | |
 | `/bolu/new` | Bolu baru | |
 | `/dashboard/integrations` | Integrasi | |
@@ -138,9 +142,9 @@ anggota workspace.
 Query string ikut terbawa ke app di kedua platform, jadi `/chat?conversation=<id>` tetap membawa
 id-nya. Jangan mengubahnya menjadi `/chat/<id>`: path itu tidak ada di web.
 
-`bolu://routine/<routine_id>` belum punya padanan universal link: `/routines/<routine_id>` tidak
-ada di web. Notifikasi run rutin tetap memakai `bolu://task/<task_id>` (lihat tabel di bawah), bukan
-link rutin.
+`bolu://routine/<routine_id>` sudah punya padanan universal link: `/routines/<routine_id>`, halaman
+rutin yang difokus (kartu rutin disorot, riwayatnya tersaring). Notifikasi run rutin tetap memakai
+`bolu://task/<task_id>` (lihat tabel di bawah), bukan link rutin.
 
 ## Celah
 
@@ -151,10 +155,9 @@ atau di app nanti.
 
 - **`/chat/<conversation_id>` tidak ada.** Obrolan dialamatkan lewat query (`?agent=` atau
   `?conversation=`), bukan segmen path.
-- **`/routines/<run_id>` tidak ada.** `/routines` adalah daftar dan riwayat; satu run tidak punya
-  halaman sendiri.
-- **`/routines/<routine_id>` tidak ada.** `GET /routines/:id` ada di API, tetapi `/routines` hanya
-  menampilkan daftar; satu rutin tidak bisa dialamatkan lewat path.
+- **`/routines/<run_id>` tidak punya layar sendiri.** Path itu dilayani
+  `(workspace)/routines/[routineID]/page.tsx`, tetapi id run bukan id rutin, jadi yang terbuka
+  adalah layar "Rutinitas tidak ditemukan" dengan jalan kembali — bukan riwayat run itu.
 - **`/drafts/<draft_id>` tidak ada.** `GET /drafts/:id` ada di API, tetapi tidak ada halaman web
   yang menampilkannya.
 
@@ -203,6 +206,7 @@ Tanpa ekstensi, satu objek JSON, tanpa signature (iOS 9 ke atas tidak meminta si
           { "/": "/chat" },
           { "/": "/tasks/*" },
           { "/": "/routines" },
+          { "/": "/routines/*" },
           { "/": "/groups" },
           { "/": "/bolu/new" },
           { "/": "/settings" },
@@ -218,7 +222,8 @@ Field yang wajib benar: `appIDs` berisi Team ID dan bundle id yang sama dengan y
 build; `components` hanya memuat path yang benar-benar dilayani app. Path yang diklaim tetapi tidak
 bisa dirender app akan membuka app ke layar kosong — lebih buruk daripada tetap di browser.
 `/tasks` sengaja tidak ada di daftar itu: path tersebut hanya redirect ke `/dashboard` di web.
-`/tasks/*` tetap ada karena detail tugas punya layar sendiri.
+`/tasks/*` tetap ada karena detail tugas punya layar sendiri. `/routines/*` ada karena halaman rutin
+yang difokus punya alamat sendiri; `/routines` tetap dicantumkan untuk daftar biasa.
 
 ### `/.well-known/assetlinks.json`
 
