@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { VerifyEmailForm } from "@/components/auth/verify-email-form";
 
 export const metadata: Metadata = {
-  title: "verifikasi email",
+  title: "Verifikasi email",
   description: "Verify the email address of your Bolu account.",
 };
 

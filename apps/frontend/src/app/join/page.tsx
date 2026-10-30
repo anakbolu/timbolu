@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { InviteAccept } from "@/components/auth/onboarding-form";
 
 export const metadata: Metadata = {
-  title: "undangan",
+  title: "Undangan",
   description: "Accept an invitation to a Bolu workspace.",
 };
 

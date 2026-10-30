@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { PasswordResetForm } from "@/components/auth/password-reset-form";
 
 export const metadata: Metadata = {
-  title: "atur ulang kata sandi",
+  title: "Atur ulang kata sandi",
   description: "Reset the password of your Bolu account.",
 };
 
