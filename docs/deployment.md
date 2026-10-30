@@ -6,19 +6,21 @@ repository can do it from this file alone, and so that every step that is still 
 ## The images
 
 Each image carries one process. The backend exists **twice** — the Go tree under `apps/backend` and
-its Bun port under `apps/backend-js` — and the port is what `timbolu-backend` builds and runs; the
-next section says how to tell them apart from outside.
+its Bun port under `apps/backend-js` — and the port is what all three backend services
+(`timbolu-backend`, `timbolu-agent-worker`, `timbolu-integration-worker`) build and run; the next
+section says how to tell them apart from outside.
 
 | Image | Dockerfile | Build arg | What it is | In production |
 | --- | --- | --- | --- | --- |
 | `api` | `apps/backend-js/Dockerfile` | `APP=api` | The Bun port of the HTTP and WebSocket surface, plus the billing sweep, the retention pass, and the staged sweep | **yes** — `timbolu-backend` serves timbolu.com from this |
-| `agent-worker` | `apps/backend-js/Dockerfile` | `APP=agent-worker` | The Bun port of the agent-queue worker | intended; the panel's current value is not readable from here (#352) |
-| `integration-worker` | `apps/backend-js/Dockerfile` | `APP=integration-worker` | The Bun port of the integration-queue worker | same |
+| `agent-worker` | `apps/backend-js/Dockerfile` | `APP=agent-worker` | The Bun port of the agent-queue worker | **yes** — `timbolu-agent-worker` |
+| `integration-worker` | `apps/backend-js/Dockerfile` | `APP=integration-worker` | The Bun port of the integration-queue worker | **yes** — `timbolu-integration-worker` |
+| `wa-gateway` | `apps/whatsapp-gw/Dockerfile` | — | Holds the WhatsApp sockets, the sealed sessions, and the media bytes | **yes** — `timbolu-wa-gateway` |
+| `migrate` | `apps/backend/Dockerfile` | `BINARY=../tools/migrate` | The Go migration runner; it applies the schema before anything else rolls | **yes** — `timbolu-migrate`, the only Go image production runs |
+| `frontend` | `apps/frontend/Dockerfile.root` | — | The web app, built from the repository root so it can import `packages/contracts` (#343) | **yes** — `timbolu` |
 | `api` (Go) | `apps/backend/Dockerfile` | `BINARY=api` | The same surface in Go: the contract reference, and where the tests, the migrations and the fixes live | no — see #350 |
 | `agent-worker` (Go) | `apps/backend/Dockerfile` | `BINARY=agent-worker` | Polls the `bolu-agent` Temporal queue and runs tasks | no |
 | `integration-worker` (Go) | `apps/backend/Dockerfile` | `BINARY=integration-worker` | Polls the `bolu-integration` queue and runs the hub's own workflows | no |
-| `wa-gateway` | `apps/whatsapp-gw/Dockerfile` | — | Holds the WhatsApp sockets, the sealed sessions, and the media bytes | yes |
-| `frontend` | `apps/frontend/Dockerfile` | — | The web app | yes |
 
 ```bash
 # The Bun backend is one image for all three processes: `APP` selects the entrypoint, because a
@@ -26,17 +28,24 @@ next section says how to tell them apart from outside.
 docker build -f apps/backend-js/Dockerfile --build-arg APP=api -t bolu/api-js .
 
 # The Go backend is one Dockerfile, one binary at a time: the same file with a different build
-# argument. Production does not run it today (#350).
-docker build -f apps/backend/Dockerfile --build-arg BINARY=agent-worker -t bolu/agent-worker .
+# argument. Production runs only the migration binary from it (#350).
+docker build -f apps/backend/Dockerfile --build-arg BINARY=../tools/migrate -t bolu/migrate .
 
 # The gateway is a module of its own, so it has its own Dockerfile and one binary.
 docker build -f apps/whatsapp-gw/Dockerfile -t bolu/wa-gateway .
+
+# The frontend builds from the repository root, not from `apps/frontend`: `Dockerfile.root` copies
+# `apps/frontend/` and `packages/`, which is what makes the `packages/contracts` import resolve (#343).
+docker build -f apps/frontend/Dockerfile.root -t bolu/frontend .
 ```
 
 The Go backend and the gateway both import the shared `packages/` module, and a Docker build does not
 read `go.work`, so **both build with the repository root as the context** and resolve `packages/`
 through the `replace` directive in their own `go.mod`. The Bun Dockerfile takes the same root context —
 it copies `apps/backend-js/` out of it — which is why one Build Path (`/`) works for either backend.
+The frontend needs the root context for the same class of reason: it imports `packages/contracts`,
+which exists inside the image only when the context is the repository root (#343), and
+`apps/frontend/Dockerfile` stays the app-context build that cannot see it.
 
 They scale separately: the agent worker is the one that saturates, and a gateway image has no business
 carrying the API's code or its Temporal client. `docker-compose.yml` builds all of them for local
@@ -222,34 +231,36 @@ There are no tests in it — the gates are a separate concern — and the mappin
 | Changed | Redeployed |
 | --- | --- |
 | `apps/frontend/**` | `timbolu` (the web app) |
-| `apps/backend-js/**` | `timbolu-backend`, `timbolu-agent-worker`, `timbolu-integration-worker` — the Bun images production runs. **Not in the workflow yet**, so a `backend-js`-only commit matches nothing today; #352 adds it |
+| `apps/backend-js/**` | `timbolu-backend`, `timbolu-agent-worker`, `timbolu-integration-worker` — the Bun images production runs, so a commit here changes the code users run |
 | `apps/backend/**` | `timbolu-backend`, `timbolu-agent-worker`, `timbolu-integration-worker` — the trigger fires, but those services build the Bun tree, so the rebuild carries no Go change; it only costs a rollout until #350 decides the Go backend's fate |
 | `apps/whatsapp-gw/**` | `timbolu-wa-gateway` |
-| `packages/**` | every Go service — `timbolu-backend`, the two workers, and `timbolu-wa-gateway` |
+| `packages/**/*.go`, `packages/go.mod`, `packages/go.sum` | `timbolu-wa-gateway`, and the three backend services — only the gateway serves traffic from the Go module; the others rebuild the Bun image, which does not import it |
 | `.dockerignore`, `Makefile`, `go.work`, `go.work.sum`, `docker-compose*.yml` | every service — `timbolu`, the three backend services, and `timbolu-wa-gateway` |
 | `apps/backend/migrations/**` | `timbolu-migrate`, applied first |
 
 `apps/whatsapp-gw` is a module of its own, so a change to it rolls only the gateway; `packages/` is
-the module both Go processes import, so a change there rolls all four Go services. The root build
-files belong to no app, which is why they used to match nothing and a commit touching only
-`.dockerignore` finished green with every deploy job skipped. They shape every image — `.dockerignore`
-decides what enters every build context, and a wrong line there is what broke the gateway build — so
-they roll everything, the frontend included.
+the Go module the gateway imports (and the Go backend images, which production does not run), so a
+change there rolls the gateway and triggers the three backend services, whose Bun image does not
+import it. The root build files belong to no app, which is why they used to match nothing and a
+commit touching only `.dockerignore` finished green with every deploy job skipped. They shape every
+image — `.dockerignore` decides what enters every build context, and a wrong line there is what broke
+the gateway build — so they roll everything, the frontend included.
 
 ### What each Easypanel service is configured with
 
 A path in the table above is a path that *triggers* a service, not the directory the service builds
 from: every service builds from the repository root, because the Go modules import the shared
-`packages/` module and a Docker build does not read `go.work`, and because the Bun Dockerfile copies
-`apps/backend-js/` out of the same root. The service's own settings carry that, so they are stated
-here rather than left to whoever set the service up first:
+`packages/` module and a Docker build does not read `go.work`, because the Bun Dockerfile copies
+`apps/backend-js/` out of the same root, and because the frontend's `Dockerfile.root` copies
+`apps/frontend/` and `packages/` out of it (#343). The service's own settings carry that, so they are
+stated here rather than left to whoever set the service up first:
 
 | Service | Source path | Dockerfile | Build arg | Notes |
 | --- | --- | --- | --- | --- |
-| `timbolu` | `/apps/frontend` | `Dockerfile` | — | `NEXT_PUBLIC_*` are build args, see above |
+| `timbolu` | `/` | `apps/frontend/Dockerfile.root` | — | `NEXT_PUBLIC_*` are build args, see above; the root context is what lets `packages/contracts` resolve (#343) |
 | `timbolu-backend` | `/` | `apps/backend-js/Dockerfile` | `APP=api` | the Bun port; serves the internal seam on `:8091` |
-| `timbolu-agent-worker` | `/` | `apps/backend-js/Dockerfile` | `APP=agent-worker` | intended configuration; the panel's current value is not readable from this repository (#352) |
-| `timbolu-integration-worker` | `/` | `apps/backend-js/Dockerfile` | `APP=integration-worker` | same |
+| `timbolu-agent-worker` | `/` | `apps/backend-js/Dockerfile` | `APP=agent-worker` | the Bun port of the agent-queue worker |
+| `timbolu-integration-worker` | `/` | `apps/backend-js/Dockerfile` | `APP=integration-worker` | the Bun port of the integration-queue worker |
 | `timbolu-wa-gateway` | `/` | `apps/whatsapp-gw/Dockerfile` | — | listens on `:8090`, never published |
 | `timbolu-migrate` | `/` | `apps/backend/Dockerfile` | `BINARY=../tools/migrate` | one-shot, runs `up`; still the Go runner, and the one Go image production does use |
 
@@ -260,20 +271,35 @@ container at runtime. The Build Path is both where the Dockerfile path is resolv
 build context is, which is why the Dockerfile paths above are repository-relative while the source
 path is `/`.
 
-**All four data processes share one storage directory.** `STORAGE_DRIVER=local` with
-`STORAGE_LOCAL_ROOT=/data/storage` means the bytes live on the filesystem, and the gateway is the
-process that *writes* an inbound attachment while the API is the process that *reads* it back to
-serve it. Easypanel names a volume per service, so a per-service volume would give each process its
-own empty directory and an attachment stored by one would be a 404 in the other. Each of
-`timbolu-wa-gateway`, `timbolu-agent-worker`, and `timbolu-integration-worker` therefore bind-mounts
-the API's own volume directory at the same path:
+**The four data processes share one object store, not one directory.** `timbolu-backend`, the two
+workers, and `timbolu-wa-gateway` all run with `STORAGE_DRIVER=s3`: the gateway is the process that
+*writes* an inbound attachment while the API is the process that *reads* it back to serve it, and a
+bucket is the one place both reach without a volume shared between services (#198). The values are
+set in each service's environment, and the ones that matter are:
 
-```text
-/var/lib/docker/volumes/timbolu_timbolu-backend_storage/_data  ->  /data/storage
-```
+| Variable | Value | Why |
+| --- | --- | --- |
+| `STORAGE_DRIVER` | `s3` | Selects the S3-compatible driver; `local` is the development default |
+| `S3_ENDPOINT` | `is3.cloudhost.id` | The host **without a scheme** — the driver builds the URL, and `S3_USE_SSL` picks http or https |
+| `S3_REGION` | `us-east-1` | The region the client signs with; the config calls it required by AWS and ignored by most alternatives |
+| `S3_BUCKET` | `timbolu-prod` | One bucket for every attachment and sandboxed document, shared by all four processes |
+| `S3_ACCESS_KEY`, `S3_SECRET_KEY` | the bucket's credentials | Secrets, so they live in the service environment and never in this repository |
+| `S3_USE_SSL` | `true` — the YAML default | The scheme switch for the scheme-less endpoint |
+| `S3_PATH_STYLE` | `true` | Bucket-in-path addressing, which this endpoint needs |
 
-The API keeps its named volume, which is what owns the directory; the others mount it, so there is one
-copy of the bytes and no service that can be rolled into an empty one.
+The defaults in `apps/backend-js/src/platform/config/config.yaml` already select the S3 driver
+(`Driver: "s3"`, `UseSSL: true`, `PathStyle: true`), so `STORAGE_DRIVER=s3` restates the default and
+the environment's real payload is the endpoint, region, bucket, and credentials; the Go gateway reads
+the same names from `packages/platform/config`. Local development is the exception:
+`docker-compose.yml` and `.env.example` default to `STORAGE_DRIVER=local` with
+`STORAGE_LOCAL_ROOT=/data/storage` (or `.storage`), so nothing on a laptop needs a bucket.
+
+**The bytes in the old local directory do not move.** They are still on the API host's volume —
+`/var/lib/docker/volumes/timbolu_timbolu-backend_storage/_data`, the directory the old
+`STORAGE_LOCAL_ROOT=/data/storage` pointed at — and changing the driver only changes where *new*
+writes go: an attachment stored before the switch is a 404 until somebody copies it into the bucket
+with an S3 client. The bind mounts that used to put that directory inside the gateway and the workers
+are no longer needed and can be removed, because the bucket is now what the four processes share.
 
 The gateway's environment carries the seam in the direction it does not already have: `WA_API_URL`
 (`http://timbolu_timbolu-backend:8091`) and `WA_GATEWAY_TOKEN`, the same token the API reaches the
@@ -333,7 +359,10 @@ the panel, so the checks below are how somebody with access proves a change is l
 Next writes content-hashed file names, so the assets a page serves name the build they came from.
 Build the tree you merged with the **same `NEXT_PUBLIC_*` values the `timbolu` service carries**:
 they are inlined into the bundle, so a different value changes the bytes — and therefore the chunk
-names — even for an identical tree.
+names — even for an identical tree. The panel builds that tree from the repository root through
+`apps/frontend/Dockerfile.root`; running the build from `apps/frontend` in a full checkout sees the
+same layout, because `packages/` sits two levels up in both, so the chunks it prints are the ones to
+compare.
 
 ```console
 $ cd apps/frontend
