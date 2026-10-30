@@ -48,6 +48,7 @@ skipped, and the run went green while production kept serving the previous image
 | Formatting | `gofmt -l ./cmd ./internal ./migrations ./tools ./test` | No unformatted file is merged |
 | Dependency rules | `make archcheck` | Module boundaries (see below) |
 | Event names | `make contracts-check` | `docs/api.md`, `packages/contracts/events.ts`, and the Go constants name the same event types; the frontend names every event except the two internal ones listed in the script |
+| Deep links | `make deep-links-check` | The route audit in `docs/deep-links.md` matches `apps/frontend/src/app`: every `ada` row has its `page.tsx` at the named file, every `pindah` row is still only a redirect, every `tidak ada` row is still served by no page (including `[param]` pages), and the well-known globs cover only documented pages |
 | Lint | `make lint` (`golangci-lint run ./...`) | Static analysis; the linter set lives in `apps/backend/.golangci.yml`, the version is pinned to v2.5.0 in CI |
 | Generated code | `sqlc generate && git diff --exit-code -- internal/modules` | `sqlcgen` matches the migrations and queries |
 | Generated mocks | `mockery --config .mockery.yaml && git diff --exit-code -- internal/modules` | Committed mocks match the domain interfaces |
@@ -70,6 +71,11 @@ auth, task activity, and the device registry's service and handler — so treat 
 floor, not as the coverage the Go tree has. A PR that
 touches `apps/backend-js/**` should paste `make ci`'s output, the same way a Go change
 does.
+
+`make ci` also runs `make deep-links-check`, a dependency-free Node script that parses
+the route audit in `docs/deep-links.md` and compares it with the pages under
+`apps/frontend/src/app`; a screen added or removed without updating the contract fails
+there rather than silently making the document wrong.
 
 ## Linting
 
