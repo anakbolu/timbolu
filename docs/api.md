@@ -287,6 +287,113 @@ not read. Bolus, tasks, conversations and money all stay behind the workspace
 policies, so a platform admin administers the deployment without becoming a reader
 of every customer's data.
 
+## Device registry (Fase 0 #302)
+
+Device token adalah alamat push Expo untuk satu instalasi app: yang dicari
+pengirim ketika sebuah task selesai atau sebuah draf menunggu keputusan. Registry
+ini hanya punya dua tulisan, dan keduanya bekerja pada baris milik pemanggil
+sendiri — akun diambil dari bearer token dan workspace dari middleware tenant,
+jadi klien tidak pernah menyebutkan salah satunya.
+
+| Endpoint | Auth | Role | Notes |
+| --- | --- | --- | --- |
+| `POST /devices` | bearer + tenant | any | `{token, platform, app_version?}`; satu baris per akun dan token, diperbarui pada setiap peluncuran |
+| `DELETE /devices/:token` | bearer + tenant | any | `204` tanpa body; token akun lain dan token yang tidak terdaftar adalah `404` yang sama |
+
+Keduanya berada di grup tenant, jadi `X-Workspace-Id` yang tidak valid sudah
+dijawab `403` oleh middleware sebelum handler berjalan; sebuah deployment yang
+tidak memasang modul ini menjawab `503 device_not_configured` untuk kedua route.
+
+### Mendaftarkan sebuah alamat
+
+`POST /devices` menjawab `201` dengan envelope:
+
+```json
+{
+  "success": true,
+  "message": "perangkat terdaftar",
+  "data": {
+    "device_id": "5f0d1c8e-3b7a-4a41-9d0e-0f6c2b9a7e11",
+    "workspace_id": "8a1e7c42-6d3f-4b52-9c88-2e0d5a4f1b63",
+    "platform": "ios",
+    "token": "ExponentPushToken[aBcD…]",
+    "app_version": "1.4.0",
+    "last_seen_at": "2026-10-30T09:12:00Z",
+    "created_at": "2026-10-02T07:40:00Z"
+  }
+}
+```
+
+`workspace_id` dan `app_version` **tidak dikirim** saat kosong, bukan dikirim
+sebagai `null`: `workspace_id` kosong hanya mungkin pada baris yang workspace-nya
+sudah dihapus, dan `app_version` kosong berarti klien tidak menyebutkannya.
+
+| Yang dikirim | Jawaban |
+| --- | --- |
+| Body bukan JSON, atau tipe field-nya salah | `400 invalid_request` |
+| `token` kosong atau hanya spasi | `422 validation_failed` |
+| `token` lebih dari 512 karakter | `422 validation_failed` |
+| `platform` selain `ios` dan `android` | `422 validation_failed` |
+
+`platform` di-trim lalu dihuruf-kecilkan sebelum dibandingkan, jadi `iOS` dari
+klien adalah `ios` yang sama dan bukan alasan penolakan; yang disimpan juga nilai
+yang sudah dinormalkan. `token` di-trim saat didaftarkan, karena spasi di ujung
+token bukan bagian dari alamatnya. Batas 512 karakter bukan deskripsi token Expo
+yang sebenarnya — token Expo jauh lebih pendek — melainkan pagar agar body yang
+jelas bukan token ditolak sebelum masuk tabel.
+
+**Registrasi kedua bukan baris kedua.** `device_tokens` punya unique index
+`(user_id, token)`, dan `POST /devices` adalah upsert terhadap index itu: platform,
+`app_version`, dan `last_seen_at` diperbarui, sementara `created_at` tetap momen
+pertama kali alamat itu muncul dan `workspace_id` tetap workspace tempat ia
+pertama didaftarkan. Ini bukan optimisasi. Telepon mendaftar ulang pada setiap
+peluncuran, dan tabel yang tumbuh per peluncuran akan memberi pengirim alamat yang
+sama beberapa kali — duplikat yang tidak bisa dirapikan lagi setelahnya.
+`last_seen_at` karena itu berguna sebagai tanda alamat masih hidup, bukan sekadar
+metadata.
+
+### Mencabut sebuah alamat
+
+`DELETE /devices/:token` menjawab `204` tanpa envelope: barisnya sudah tidak ada,
+dan tidak ada lagi yang bisa dikatakan tentangnya. Token dipakai persis seperti
+yang dikirim klien, tanpa di-trim — memangkasnya di sini akan mengubah token lain
+menjadi token ini, dan pernyataan hapusnya sudah yang paling sempit: baris milik
+pemanggil saja. Konsekuensinya nyata: token yang didaftarkan dengan spasi di
+ujungnya tersimpan tanpa spasi, jadi yang harus dikirim untuk menghapusnya adalah
+bentuk yang tersimpan itu.
+
+Token milik akun lain dan token yang tidak pernah terdaftar dijawab sama,
+`404 not_found`. Dua keadaan itu memang satu jawaban: apakah akun lain pernah
+mendaftarkan sebuah token bukan sesuatu yang boleh diketahui endpoint ini, dan
+jawaban yang berbeda untuk keduanya akan membuat endpoint ini menjadi alat untuk
+menebak alamat push orang lain. Yang membuatnya murah adalah Row Level Security
+pada tabel ini, yang dikunci pada `user_id` dan bukan pada `workspace_id`: baris
+akun lain sudah tidak terlihat sebelum `DELETE` dijalankan, sehingga pernyataan
+yang tidak mengenai apa pun cukup diterjemahkan menjadi `404`.
+
+### Kenapa perangkat milik akun, bukan workspace
+
+`device_tokens.user_id` adalah pemiliknya; `workspace_id` hanya mencatat dari mana
+registrasi itu datang, boleh `NULL`, dan foreign key-nya `ON DELETE SET NULL`
+sehingga menghapus sebuah workspace tidak menghapus alamat push-nya. Sebuah
+telepon bisa berpindah workspace, sedangkan alamat push tetap milik orang yang
+memegangnya; kalau workspace yang menjadi pemiliknya, menghapus satu workspace
+akan ikut mencabut alamat yang masih dibutuhkan di workspace lain.
+
+Karena itu `DELETE` tidak memerlukan role apa pun selain member: yang dihapus
+adalah alamat milik pemanggil sendiri, bukan data workspace, dan policy-nya sudah
+membatasi pernyataan itu ke barisnya. Role `owner` atau `admin` di sini hanya akan
+membuat satu orang tidak bisa mencabut teleponnya sendiri.
+
+Kedua tree memuat modul yang sama: `apps/backend/internal/modules/device/**`
+(`domain`/`service`/`handler`/`repository`, implementasi Go yang menjadi port
+asal) dan `apps/backend-js/src/modules/device/**` (port Bun, #420). Produksi
+menjalankan tree Bun, jadi `apps/backend-js` yang menjawab kedua route hari ini;
+tree Go tetap ada sebagai implementasi asal yang di-port. Migration
+`apps/backend/migrations/000028_device_tokens.up.sql` adalah rujukan skema untuk
+keduanya: kolom, unique index `(user_id, token)`, dan policy RLS
+`device_tokens_owner` yang memakai `app_current_user_id()`.
+
 ## Agent registry (EPIC 3)
 
 Every workspace starts with **no Bolu and one team**: onboarding creates Tim Bolu
@@ -1375,15 +1482,18 @@ level deep, so a screen that shows progress reads it rather than counting for it
 | `user_not_found` | 404 | No such account |
 | `workspace_not_found` | 404 | No such workspace |
 | `member_not_found` | 404 | No such member |
+| `not_found` | 404 | No such row for this caller: a device token, an order, or an MCP server is unknown, or belongs to somebody else |
 | `email_taken` | 409 | Address already registered |
 | `last_owner` | 409 | A workspace must keep at least one owner |
 | `cannot_remove_yourself` | 409 | Use leave instead |
 | `invitation_pending` | 409 | An invitation for this address is already pending |
+| `validation_failed` | 422 | A write fails the module's own validation: a device `platform` that is not `ios`/`android`, or a device `token` that is empty or longer than 512 characters |
 | `too_many_attempts` | 429 | Login throttle |
 | `auth_not_configured` / `workspace_not_configured` | 503 | Module not wired (no database) |
 | `google_not_configured` | 503 | Google client not configured |
 | `agent_not_found` | 404 | No such Bolu in this workspace |
 | `checklist_not_configured` | 503 | Module not wired (no database) |
+| `device_not_configured` | 503 | Module not wired (no database) |
 | `team_not_found` | 404 | No such team in this workspace |
 | `integration_not_found` | 404 | No such integration, or no such grant |
 | `invalid_status` | 400 | Status is not `active` or `resting` |
