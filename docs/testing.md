@@ -13,8 +13,9 @@ that had already failed in about three seconds without producing a step log, whi
 the shape of an account that cannot execute workflows rather than of a failing gate.
 So **run `make ci` locally and say so in the pull request**, because nothing automated
 is enforcing the gates. The `verify` job in that workflow is not an exception: it polls
-`/api/health` and compares the build fingerprint production serves against the one
-computed from the changed tree, so it proves a rollout landed and says nothing about
+`/api/health` and compares the build fingerprint production serves against the Go and
+Bun fingerprints computed from the checked-out tree (a match to either one names the
+implementation serving), so it proves a rollout landed and says nothing about
 whether the code is correct.
 
 ## What production runs, and which gates apply
