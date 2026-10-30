@@ -137,11 +137,14 @@ const REPLAY_LIMIT = 200;
 const REPLAY_MAX_PAGES = 8;
 
 /**
- * How long an open connection must survive before it counts as healthy.
+ * How long an open connection must survive before it earns a retry reset.
  *
- * `onopen` says the route answered, not that the stream stays up: production
- * answered 200 and closed 32 ms later, and resetting the retry budget on that
- * open is what kept the client reconnecting forever.
+ * An SSE `onopen` says the route answered, not that the stream stays up:
+ * production answered 200 and closed 32 ms later, and resetting the retry
+ * budget on that open is what kept the client reconnecting forever. A
+ * WebSocket `onopen` is a different event — a completed `101` upgrade proves
+ * the transport — so the socket shows `live` at once but still goes through
+ * this clock before its open counts as health (#475).
  */
 const HEALTHY_AFTER_MS = 5000;
 
@@ -275,7 +278,7 @@ export function connect(
 
   /**
    * proven marks a stream that earned a reset: it survived HEALTHY_AFTER_MS or
-   * delivered a frame. Only then is the status allowed to say "live", because a
+   * delivered a frame. Only then may the retry budgets be cleared, because a
    * connection that opens and dies a frame later is a failure, not a stream.
    */
   function proven() {
@@ -294,6 +297,19 @@ export function connect(
   function opened() {
     clearTimeout(healthy);
     healthy = window.setTimeout(proven, HEALTHY_AFTER_MS);
+  }
+
+  /**
+   * handshakeProven says a WebSocket handshake completed: a `101` upgrade is
+   * the transport alive, so the label may say "live" without the five-second
+   * wait an idle feed would otherwise impose (#475). Deliberately narrower
+   * than `proven()`: it clears no retry budget and stops no poll, because a
+   * socket that closes before HEALTHY_AFTER_MS is still a failure and must
+   * still demote the status. SSE has no equivalent — an `EventSource` `onopen`
+   * proves only a `200`, not a stream — and reaches "live" the old way.
+   */
+  function handshakeProven() {
+    setStatus("live");
   }
 
   /** lost stops the health clock; a close before it fires is a failure. */
@@ -498,10 +514,11 @@ export function connect(
     const candidate = new WebSocket(url.toString());
     socket = candidate;
 
-    // Constructing a socket proves nothing; only `onopen` does. A handshake the
-    // browser never completes is what a route the proxy does not upgrade looks
-    // like, so the timeout spends the failure budget: drop the socket first so
-    // its late close cannot schedule a second attempt, then count it.
+    // Constructing a socket proves nothing; only the completed upgrade in
+    // `onopen` does. A handshake the browser never completes is what a route
+    // the proxy does not upgrade looks like, so the timeout spends the failure
+    // budget: drop the socket first so its late close cannot schedule a second
+    // attempt, then count it.
     handshake = window.setTimeout(() => {
       socketFailures = SOCKET_FAILURES_BEFORE_SSE;
       socket = null;
@@ -516,6 +533,9 @@ export function connect(
       clearTimeout(handshake);
       handshake = undefined;
       opened();
+      // The upgrade is done, so the transport is alive now; the health clock
+      // above still decides whether this open turns into a failure.
+      handshakeProven();
     };
     candidate.onmessage = (message) => {
       const event = parseEvent(message.data);

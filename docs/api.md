@@ -896,17 +896,21 @@ tomorrow — with the Indonesian labels the chat screen already shows:
 | Status | Label | When the client enters it |
 | --- | --- | --- |
 | `connecting` | menyambung… | `connect()` has been called and no transport has proven itself yet. This is the state of a first attempt, not a retry. |
-| `live` | tersambung | Only after the transport survives `HEALTHY_AFTER_MS = 5000` or delivers one frame. A frame counts immediately; an `onopen` does not. |
+| `live` | tersambung | A WebSocket handshake counts at once: a completed `101` upgrade means the transport is alive. SSE reaches `live` only after the transport survives `HEALTHY_AFTER_MS = 5000` or delivers one frame, because an `EventSource` `onopen` proves only a `200`. |
 | `reconnecting` | menyambung ulang… | A failure while the fast retry budget lasts. The retries wait `RECONNECT_DELAYS_MS = [500, 1000, 2000, 4000, 8000]`, and the last value repeats once the list runs out. |
 | `slow` | pembaruan tertunda | `FAILURES_BEFORE_SLOW = 3` consecutive failures. The label stays for the whole slow attempt: a retry in progress must not flick back to `reconnecting` and promise a fast stream it cannot prove. |
 | `closed` | terputus | `close()` was called. It is not a failure, and nothing will move it back on its own. |
 
-`live` is the one status worth arguing about. An open socket means the route
-answered, not that the stream stays up: production answered `200` and closed 32 ms
-later (#314), so a client that treats `onopen` as health resets its retry budget
-and reconnects forever. The health clock is the fix — a transport that dies before
-`HEALTHY_AFTER_MS = 5000` is a failure, and only a transport that survives it, or
-sends a frame first, resets the failure count and earns `live`.
+`live` is the one status worth arguing about. The two transports answer
+differently. A WebSocket `onopen` is a completed `101` upgrade, so the transport
+is alive at that instant and the label turns `live` immediately — production used
+to make a user wait five seconds for a socket that had already proven itself
+(#475). An `EventSource` `onopen` proves only a `200`: production answered that
+and closed 32 ms later (#314), so SSE still needs a frame or
+`HEALTHY_AFTER_MS = 5000`. In both cases the health clock still decides whether
+the open was a failure — the handshake does not reset the retry budgets, so a
+socket that dies before the clock is still a failure, and only a transport that
+survives it, or sends a frame first, resets the failure count.
 
 The fast path spends its budget before it admits anything is wrong. Each failure
 schedules the next attempt from `RECONNECT_DELAYS_MS = [500, 1000, 2000, 4000,
@@ -934,9 +938,12 @@ the fallback does not inherit the socket's backoff.
 
 The rules below bind every client, not just the web one:
 
-1. **Never claim `live` from `onopen` alone.** Survive `HEALTHY_AFTER_MS = 5000`
-   or deliver a frame first (#314). A stream that opens and closes is the failure
-   mode the status exists to expose, and hiding it makes the retry budget lie.
+1. **Never claim `live` from an SSE `onopen` alone.** A WebSocket `101` does
+   count, and the label may turn at that instant, but it earns no retry reset.
+   SSE reaches `live` only by surviving `HEALTHY_AFTER_MS = 5000` or delivering
+   a frame first (#314). A stream that opens and closes early is the failure mode
+   the status exists to expose: the close demotes it, and hiding it makes the
+   retry budget lie.
 2. **While `slow`, keep pulling the backlog through `GET /events`.** The stream
    retry is deliberately half a minute away; the poll is what makes a message
    sent from another tab arrive in seconds (#335). And do not ask the same
