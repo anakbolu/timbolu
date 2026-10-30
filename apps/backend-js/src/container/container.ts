@@ -143,6 +143,9 @@ import { Handler as TaskHandler } from "../modules/task/handler/handler.ts";
 import { Repository as DeviceRepository } from "../modules/device/repository/postgres.ts";
 import { Service as DeviceService } from "../modules/device/service/service.ts";
 import { Handler as DeviceHandler } from "../modules/device/handler/handler.ts";
+// push
+import { Service as PushService } from "../modules/push/service/service.ts";
+import { Client as ExpoClient } from "../modules/push/expo/client.ts";
 // admin
 import { Repository as AdminRepository } from "../modules/admin/repository/postgres.ts";
 import { Service as AdminService } from "../modules/admin/service/service.ts";
@@ -197,6 +200,8 @@ export interface Container {
   integrationService: IntegrationService | null;
   routineService: RoutineService | null;
   taskService: TaskService | null;
+  /** Wakes a person's phones; the worker hands it to the task activities. */
+  pushService: PushService | null;
   costs: CostTable;
   /** The two loops `cmd/api.ts` runs in-process. */
   retentionService: RetentionService | null;
@@ -472,6 +477,7 @@ export async function newContainer(
   let approval: ApprovalHandler | null = null;
   let approvalService: ApprovalService | null = null;
   let device: DeviceHandler | null = null;
+  let pushService: PushService | null = null;
   let retention: RetentionHandler | null = null;
   let retentionService: RetentionService | null = null;
   let memory: MemoryHandler | null = null;
@@ -617,10 +623,22 @@ export async function newContainer(
     // rather than at the workspace's own wiring, which would need it first.
     if (workspaceRepository) workspaceRepository.setSubscriptionProvisioner(billingRepository);
 
+    // Push notifications. The sender reads addresses from the device registry
+    // and hands the batches to Expo; both env values are optional, and an
+    // absent access token is the normal state for a project that has not
+    // enabled Expo's enhanced security. Built before the approval service
+    // because a new draft is the first thing worth ringing about.
+    pushService = new PushService({
+      devices: new DeviceRepository(db),
+      expo: new ExpoClient({ logger: log }),
+      logger: log,
+    });
+
     approvalService = new ApprovalService({
       drafts: new ApprovalRepository(db),
+      notifications: pushService,
       logger: log,
-    } as any);
+    });
     approval = new ApprovalHandler(approvalService, log);
 
     // The registry of Expo push addresses. It needs nothing but the pool: the
@@ -765,6 +783,7 @@ export async function newContainer(
     integrationService,
     routineService,
     taskService,
+    pushService,
     costs,
     retentionService,
     billingService,

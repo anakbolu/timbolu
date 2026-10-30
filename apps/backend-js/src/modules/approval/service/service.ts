@@ -56,6 +56,7 @@ import type {
   Request,
   Service as ServicePort,
 } from "../domain/service.ts";
+import type { Notifier } from "../../push/domain/push.ts";
 import { requestAmount } from "../domain/service.ts";
 import { hashPayload } from "./digest.ts";
 
@@ -80,6 +81,12 @@ export interface Deps {
   events?: EventSink | null;
   /** Reads the workspace's working hours. Optional: without it every window is open. */
   hours?: HoursReader | null;
+  /**
+   * Wakes the phones of the person who has to decide. Optional, and a no-op
+   * when absent: a deployment without an Expo project still records drafts, it
+   * just does not ring.
+   */
+  notifications?: Notifier | null;
   logger?: Logger | null;
   clock?: Clock;
 }
@@ -630,6 +637,33 @@ export class Service implements ServicePort {
       });
     } catch (err) {
       this.deps.logger?.warn({ type: eventType, err }, "draft event published only to the store");
+    }
+
+    await this.notify(scope, eventType, draft);
+  }
+
+  /**
+   * Wakes the deciding person's phones. Only a draft that just appeared is worth
+   * a notification: a decision the caller made themselves needs no alarm, and
+   * `draft.decided` fires for holds and sends as well, which would ring for work
+   * that is already done.
+   */
+  private async notify(scope: Scope, eventType: string, draft: Draft): Promise<void> {
+    const notifier = this.deps.notifications;
+    if (!notifier || eventType !== EventDraftCreated) {
+      return;
+    }
+
+    try {
+      await notifier.send(scope, {
+        type: eventType,
+        taskId: draft.taskId,
+        draftId: draft.id,
+      });
+    } catch (err) {
+      // The notifier is documented not to throw; this is the guard that keeps a
+      // push from ever turning a recorded draft into a failed request.
+      this.deps.logger?.warn({ draft_id: draft.id, err }, "draft notification was not sent");
     }
   }
 
