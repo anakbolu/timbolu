@@ -1,7 +1,12 @@
-import type { Metadata } from "next";
 import { ContentPage } from "@/components/bolu/content-page";
+import { pageMetadata } from "@/lib/metadata";
 
-export const metadata: Metadata = { title: "Kebijakan Privasi" };
+export const metadata = pageMetadata({
+  title: "Kebijakan Privasi",
+  description:
+    "Draf kebijakan Timbolu tentang informasi yang kamu berikan dan cara menggunakannya.",
+  path: "/privacy",
+});
 
 export default function PrivacyPage() {
   return (

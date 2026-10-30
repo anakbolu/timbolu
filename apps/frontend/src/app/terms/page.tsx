@@ -1,7 +1,12 @@
-import type { Metadata } from "next";
 import { ContentPage } from "@/components/bolu/content-page";
+import { pageMetadata } from "@/lib/metadata";
 
-export const metadata: Metadata = { title: "Syarat dan Ketentuan" };
+export const metadata = pageMetadata({
+  title: "Syarat dan Ketentuan",
+  description:
+    "Draf aturan penggunaan Timbolu. Dengan membuat akun atau menggunakan layanan, kamu menyetujui ketentuan yang berlaku setelah dokumen ini ditinjau dan diterbitkan secara resmi.",
+  path: "/terms",
+});
 
 export default function TermsPage() {
   return (
