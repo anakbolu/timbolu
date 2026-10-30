@@ -5,25 +5,35 @@ name: Deployment
 # separate concern, and this workflow owns one thing — turning "these paths changed" into "the
 # services that build from those paths are redeployed".
 #
-# The mapping is path -> service. Every Go service builds from the repository root, because each
-# module imports the shared `packages/` module and a Docker build does not read `go.work`, so what a
-# service is configured with in Easypanel is:
+# The mapping is path -> service. Every service builds from the repository root, because each Go
+# module imports the shared `packages/` module and a Docker build does not read `go.work`, and
+# because the Bun Dockerfile copies `apps/backend-js/` out of that same root, so what a service is
+# configured with in Easypanel is:
 #
 #   service                      source path      Dockerfile                    build arg
 #   timbolu                      /apps/frontend   Dockerfile                    —
-#   timbolu-backend              /                apps/backend/Dockerfile       BINARY=api
-#   timbolu-agent-worker         /                apps/backend/Dockerfile       BINARY=agent-worker
-#   timbolu-integration-worker   /                apps/backend/Dockerfile       BINARY=integration-worker
+#   timbolu-backend              /                apps/backend-js/Dockerfile    APP=api
+#   timbolu-agent-worker         /                apps/backend-js/Dockerfile    APP=agent-worker
+#   timbolu-integration-worker   /                apps/backend-js/Dockerfile    APP=integration-worker
 #   timbolu-wa-gateway           /                apps/whatsapp-gw/Dockerfile   —
 #   timbolu-migrate              /                apps/backend/Dockerfile       BINARY=../tools/migrate
+#
+# The three backend services build the Bun port, not the Go tree (#350, direction 2; #368 corrects
+# this table). `apps/backend` is the reference implementation — the contract, the tests, the
+# migrations and the fixes land there, and the port is measured against it — but it is **not
+# deployed**: `apps/backend/Dockerfile` builds no service that serves traffic, so a commit under
+# `apps/backend/**` alone has no path to production. That is why the `backend` filter still triggers
+# a rollout: the trigger cannot tell the two trees apart by content, and it is harmless to rebuild
+# the Bun image from an unchanged tree, but the run must not claim a Go change shipped. `timbolu-migrate`
+# is the exception among Go images: it is the migration runner, one-shot, and production does use it.
 #
 # Which paths therefore redeploy which service:
 #
 #   apps/frontend/**            -> timbolu                     (the web app)
-#   apps/backend/**             -> timbolu-backend             (the API)
-#                                  timbolu-agent-worker        (the agent queue)
-#                                  timbolu-integration-worker  (the integration queue)
-#   apps/backend-js/**          -> timbolu-backend             (the API, Bun port)
+#   apps/backend/**             -> timbolu-backend             (rolls the Bun image; no Go change ships)
+#                                  timbolu-agent-worker        (same)
+#                                  timbolu-integration-worker  (same)
+#   apps/backend-js/**          -> timbolu-backend             (the API, Bun port — the image served)
 #                                  timbolu-agent-worker        (the agent queue, Bun port)
 #                                  timbolu-integration-worker  (the integration queue, Bun port)
 #   apps/whatsapp-gw/**         -> timbolu-wa-gateway          (the WhatsApp gateway)
@@ -32,15 +42,15 @@ name: Deployment
 #   .github/workflows/**        -> every service above          (this workflow decides what ships)
 #
 # The gateway is its own module and its own image, so it is triggered by its own path rather than by
-# `apps/backend/**`. `packages/` is two things: the Go module both Go services import, and TypeScript
-# packages that belong to the web app. Only the Go half enters a Go image — the backend's build
+# `apps/backend/**`. `packages/` is two things: the Go module the Go images import, and TypeScript
+# packages that belong to the web app. Only the Go half enters a Go image — the Go images' build
 # fingerprint hashes `*.go` and nothing else (apps/backend/Dockerfile) — so the Go triggers match the
 # module's `.go` files and its manifests, not `packages/**`. A TypeScript-only change there is not a
 # change to either Go image, and the `timbolu` image builds from `apps/frontend` alone (#330 kept the
 # stream's event names local so it would build without `packages/`), so such a change rolls nothing.
 # When the web app starts consuming a package at build time, that package's path goes in the
 # `frontend` filter, where the image that would rebuild is named. A `packages/**` here again would
-# roll four Go services for a change none of them builds.
+# roll the three backend services and the gateway for a change none of them builds.
 #
 # `apps/backend-js/**` is the second implementation of those same three backend services: the Bun
 # port, which `apps/backend-js/Dockerfile` builds into one image and selects with `APP=api`,
@@ -263,19 +273,28 @@ jobs:
   # wrong service — leaves this workflow green while production keeps serving the previous image
   # (#322). That is worse than a red run: nothing in GitHub ever says the change did not ship.
   #
-  # The one identity the deployed process can prove about itself is `/api/health`'s `data.build`: the
+  # The one identity the deployed process can prove about itself is `/api/health`'s `data.build`: a
   # fingerprint baked in at build time from every Go file of the backend and the shared module (see
-  # apps/backend/Dockerfile). The same command run on the tree this workflow checked out yields the
-  # value this commit's image must report. Equal values mean the image serving traffic is this tree;
-  # anything else means the build did not land, whatever the hook answered.
+  # apps/backend/Dockerfile), or, in the Bun image production actually runs, from every TypeScript file
+  # of `apps/backend-js/src` (see apps/backend-js/Dockerfile). The same command run on the tree this
+  # workflow checked out yields the value this commit's image must report. Equal values mean the image
+  # serving traffic is this tree; anything else means the build did not land, whatever the hook
+  # answered.
   #
-  # Two implementations can be the one behind that endpoint now: the Go image (`backend`) and the Bun
-  # port (`backend_js`), which is what production actually runs today (#350). Each has its own file
-  # set and therefore its own fingerprint, so the step computes the expected value for every filter
-  # that changed and accepts either match. The Bun tree does not report `data.build` yet, so a
-  # `backend_js` deploy cannot be proven by this check — the step fails and says so instead of
-  # calling the image stale, because an empty value names an unidentifiable implementation, not an
-  # old one.
+  # Two implementations can be the one behind that endpoint: the Go image and the Bun port, which is
+  # what production runs today (#350). Each has its own file set and therefore its own fingerprint, so
+  # whenever the backend matrix rolls — `backend`, `backend_js`, or `build` — the step computes *both*
+  # and accepts either match. Computing both is what stops a Go-only commit from turning red: the Go
+  # tree changed, but the image answering is the Bun one, whose source did not, so its fingerprint
+  # equals this tree's Bun fingerprint and the check passes honestly. Computing only the changed
+  # tree's fingerprint would compare production's Bun build against a Go hash and fail on a correct
+  # deploy (#368). `go_expected` is still printed for the record, and it is what identifies a Go image
+  # if production ever goes back to Go.
+  #
+  # Both implementations report `data.build` since #303 (Go) and #351 (Bun), so an empty or `unknown`
+  # value is no longer "the Bun port cannot be fingerprinted": it means an image built before those
+  # changes, or a process running outside an image. That names no implementation, so the step cannot
+  # pass on it — but it must not call the image stale either, because it cannot see which one it is.
   #
   # That fingerprint says nothing about the frontend, which is the service most likely to ship alone:
   # a commit that only touches `apps/frontend/**` skips the fingerprint step entirely and leaves
@@ -355,16 +374,19 @@ jobs:
           # Go command is the one apps/backend/Dockerfile runs, over the same files (`.dockerignore`
           # excludes no `.go` file, so the sets match); if that ever stops being true, this has to
           # follow it or the comparison stops meaning anything. The Bun command covers what
-          # apps/backend-js/Dockerfile copies into its image. Only the sets this commit actually
-          # changed are computed, so a match can only come from an image this run was meant to roll.
+          # apps/backend-js/Dockerfile copies into its image.
+          #
+          # Both are computed whenever the backend matrix rolls, not only the tree this commit
+          # changed: that matrix builds the Bun image whatever triggered it, so a Go-only commit
+          # still deploys a Bun image whose source is unchanged, and its fingerprint equals this
+          # tree's Bun fingerprint. Computing only the Go hash there compares production's Bun build
+          # against a Go hash, which can never match — the false red of #368.
           go_expected=""
           bun_expected=""
-          if [ "$CHANGED_BACKEND" = "true" ] || [ "$CHANGED_BUILD" = "true" ]; then
+          if [ "$CHANGED_BACKEND" = "true" ] || [ "$CHANGED_BACKEND_JS" = "true" ] || [ "$CHANGED_BUILD" = "true" ]; then
             go_expected="$(find apps/backend packages -name '*.go' -type f | LC_ALL=C sort | xargs cat | sha256sum | cut -c1-16)"
-            echo "this tree's Go build fingerprint:  $go_expected"
-          fi
-          if [ "$CHANGED_BACKEND_JS" = "true" ] || [ "$CHANGED_BUILD" = "true" ]; then
             bun_expected="$(find apps/backend-js/src -name '*.ts' -type f | LC_ALL=C sort | xargs cat | sha256sum | cut -c1-16)"
+            echo "this tree's Go build fingerprint:  $go_expected"
             echo "this tree's Bun build fingerprint: $bun_expected"
           fi
 
@@ -374,6 +396,13 @@ jobs:
           while :; do
             body="$(curl --silent --show-error --max-time 30 https://timbolu.com/api/health || true)"
             served="$(printf '%s' "$body" | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("data") or {}).get("build") or "")' 2>/dev/null || true)"
+            # `unknown` is what a process reports when it has no fingerprint — an image built before
+            # #303/#351, or a run outside an image. Treat it as no identity, so it reaches the
+            # branch below that says the implementation cannot be identified instead of being
+            # compared as if it were a build hash.
+            if [ "$served" = "unknown" ]; then
+              served=""
+            fi
             echo "production serves build: '${served}'"
             if [ -n "$go_expected" ] && [ "$served" = "$go_expected" ]; then
               echo "production is serving this tree's Go build"
@@ -385,14 +414,29 @@ jobs:
             fi
             if [ "$SECONDS" -ge "$deadline" ]; then
               if [ -z "$served" ]; then
-                # No value, no identity. The Bun port does not report `data.build` yet (#350), and an
-                # empty answer could equally come from a Go image older than #303. Either way this
-                # check cannot say which implementation is serving production, so it cannot pass —
-                # but it must not claim the image is stale, because that is exactly what it cannot
-                # see.
-                echo "::error::production's /api/health carries no data.build after 8 minutes, so the implementation serving production cannot be identified — the Bun port reports no fingerprint yet (#350), and an older Go image would look the same. This is not a pass." >&2
+                # No value, no identity. Both implementations report `data.build` since #303 (Go)
+                # and #351 (Bun), so an empty answer now means an image built before those changes,
+                # or a process running outside an image — not a port that cannot report it. Either
+                # way this check cannot say which implementation is serving production, so it
+                # cannot pass — but it must not claim the image is stale, because that is exactly
+                # what it cannot see.
+                echo "::error::production's /api/health carries no usable data.build after 8 minutes (missing or 'unknown'), so the implementation serving production cannot be identified — both the Go image and the Bun port report one since #303/#351, so this is an image built before that, or a process running outside an image. This is not a pass." >&2
               else
-                echo "::error::production still serves build '$served' after 8 minutes; this tree is '${go_expected:-not changed}' (Go) / '${bun_expected:-not changed}' (Bun) — the deploy hook was accepted but the build did not land" >&2
+                # Name which tree this run rolled and both values it could have matched, so the
+                # next reader can tell "the wrong implementation landed" from "nothing landed"
+                # without re-deriving the hashes. Production is serving an image neither value
+                # describes: this tree's build did not land.
+                expected=""
+                if [ "$CHANGED_BACKEND" = "true" ]; then
+                  expected="apps/backend/** (Go tree; rolls the Bun image unchanged)"
+                fi
+                if [ "$CHANGED_BACKEND_JS" = "true" ]; then
+                  expected="${expected:+$expected, }apps/backend-js/** (Bun tree, the image served)"
+                fi
+                if [ "$CHANGED_BUILD" = "true" ]; then
+                  expected="${expected:+$expected, }root build files (every service)"
+                fi
+                echo "::error::production serves build '$served' after 8 minutes, which is neither this tree's Go fingerprint '$go_expected' nor its Bun fingerprint '$bun_expected'; this run rolled the backend matrix for ${expected}. The deploy hook was accepted but the build serving production is not this tree." >&2
               fi
               exit 1
             fi
