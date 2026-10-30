@@ -226,9 +226,11 @@ export function ChatView({
 
   // A deep link to a Bolu the API refused: the whole error is kept so the banner
   // can say what happened without printing the server's status label, and can
-  // offer a retry only when repeating the request could help.
+  // offer a retry only when repeating the request could help. A link that is
+  // permanently broken gets the way back to the list instead, since retrying the
+  // same id can only fail the same way.
   const openFailure =
-    agentId && chat.openError ? friendlyLoadFailure(chat.openError, "conversation") : null;
+    agentId && chat.openError ? friendlyLoadFailure(chat.openError, "agent") : null;
 
   // An id the loaded list does not hold is a link this workspace cannot open. It
   // waits for that first read, and for a read that succeeded: an empty list left
@@ -320,7 +322,11 @@ export function ChatView({
               <button type="button" onClick={() => void chat.openByAgent(agentId)} className="ml-2 cursor-pointer underline">
                 Coba lagi
               </button>
-            ) : null}
+            ) : (
+              <Link href="/chat" className="ml-2 underline">
+                Kembali ke obrolan
+              </Link>
+            )}
           </p>
         ) : null}
 

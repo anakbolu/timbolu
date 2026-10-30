@@ -14,7 +14,7 @@
 
 import type { ApiError } from "@/lib/api";
 
-export type DeepLinkKind = "task" | "draft" | "conversation";
+export type DeepLinkKind = "task" | "draft" | "conversation" | "agent";
 
 export type LoadFailure = {
   /** The sentence the screen shows. Never the API's own wording for a broken id. */
@@ -28,6 +28,8 @@ const INVALID_LINK: Record<DeepLinkKind, string> = {
   draft: "Tautan tidak valid — id draf di tautan ini tidak dikenali. Buka daftar draf lalu pilih dari sana.",
   conversation:
     "Tautan tidak valid — id obrolan di tautan ini tidak dikenali. Buka daftar obrolan lalu pilih dari sana.",
+  agent:
+    "Tautan tidak valid — id Bolu di tautan ini tidak dikenali. Buka daftar obrolan lalu pilih dari sana.",
 };
 
 const NOT_FOUND: Record<DeepLinkKind, string> = {
@@ -35,12 +37,21 @@ const NOT_FOUND: Record<DeepLinkKind, string> = {
   draft: "Draf tidak ditemukan — mungkin sudah dihapus, atau tautannya berasal dari ruang kerja lain.",
   conversation:
     "Obrolan tidak ditemukan — mungkin sudah dihapus, atau tautannya berasal dari ruang kerja lain.",
+  agent: "Bolu tidak ditemukan — mungkin sudah dihapus, atau tautannya berasal dari ruang kerja lain.",
 };
 
+/**
+ * The sentence for a failure that repeating the read could fix.
+ *
+ * It says what happened and stops there: every screen that shows it also shows a
+ * "Coba lagi" button next to it, and a sentence ending in the same words printed
+ * "Coba lagi.Coba lagi" on the chat banner. The sentence explains, the button acts.
+ */
 const RETRY: Record<DeepLinkKind, string> = {
-  task: "Tugas gagal dimuat — server atau jaringannya sedang bermasalah. Coba lagi.",
-  draft: "Draf gagal dimuat — server atau jaringannya sedang bermasalah. Coba lagi.",
-  conversation: "Obrolan gagal dimuat — server atau jaringannya sedang bermasalah. Coba lagi.",
+  task: "Tugas gagal dimuat — server atau jaringannya sedang bermasalah.",
+  draft: "Draf gagal dimuat — server atau jaringannya sedang bermasalah.",
+  conversation: "Obrolan gagal dimuat — server atau jaringannya sedang bermasalah.",
+  agent: "Bolu gagal dimuat — server atau jaringannya sedang bermasalah.",
 };
 
 /**
@@ -93,7 +104,11 @@ export function friendlyLoadFailure(error: ApiError, kind: DeepLinkKind): LoadFa
     return { message: NOT_FOUND[kind], retryable: false };
   }
 
-  const detail = error.message.trim();
+  // Some client-written messages already end in the same invitation the banner's
+  // button carries (`Server terlalu lama menjawab. Coba lagi.`); appending that
+  // verbatim would print "Coba lagi.Coba lagi" again, so the trailing invitation
+  // is dropped before the rest is shown.
+  const detail = error.message.trim().replace(/\s*coba lagi\.?$/i, "").trim();
   return {
     // Last resort: an unexpected failure whose own sentence is readable is better
     // than a generic one, but a technical one is replaced rather than shown.
