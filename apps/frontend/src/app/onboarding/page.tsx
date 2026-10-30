@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { OnboardingForm } from "@/components/auth/onboarding-form";
 
 export const metadata: Metadata = {
-  title: "Onboarding",
+  title: "Kenalan dulu",
   description: "Kenalan singkat sebelum tim Bolu-mu mulai bekerja.",
 };
 
