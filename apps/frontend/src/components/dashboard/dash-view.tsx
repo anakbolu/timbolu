@@ -157,9 +157,16 @@ export function DashView() {
         <section className={`${CARD} flex min-w-0 flex-[999_1_420px] flex-col gap-3 p-5`}>
           <div className="flex flex-wrap items-center justify-between gap-2.5">
             <h2 className={HEADING}>Menunggu persetujuanmu</h2>
-            <span className="text-[14px] text-bolu-muted">
-              {pending.length === 0 ? "tidak ada" : `${pending.length} draf`}
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-[14px] text-bolu-muted">
+                {pending.length === 0 ? "tidak ada" : `${pending.length} draf`}
+              </span>
+              {/* The card lists what fits; the inbox is where the rest lives, so the
+                  card needs a way there rather than being the only door. */}
+              <Link href="/approval" className="text-[14px] text-bolu-muted no-underline hover:underline">
+                Lihat semua
+              </Link>
+            </div>
           </div>
 
           {pending.length === 0 ? (
