@@ -31,6 +31,12 @@ name: Checks
 # silence around this tree already cost once — a Bun-only commit went green because no filter matched
 # it. Unlike the three scripts it has dependencies, so the job installs them first.
 #
+# The third job applies it to `apps/frontend`, the tree `timbolu.com` itself is served by. Its lint and
+# production build ran only when a person remembered to run them before merge, so a pull request that
+# broke `next build` went green and surfaced in `deployment.yml`, after the merge that would have
+# rejected it. This job moves that failure to the pull request, and installs its dependencies first
+# like the Bun one.
+#
 # This is a gate, not a deploy. `deployment.yml` owns turning a push to `main` into a rollout and is
 # deliberately untouched by this file; a failing check here blocks the merge, which is the earlier
 # and cheaper place to stop a bad commit.
@@ -97,3 +103,25 @@ jobs:
 
       - name: Tests
         run: make test-backend-js
+
+  # The tree timbolu.com is served by; its lint and build only matter if a machine runs them pre-merge.
+  frontend:
+    name: Next lint and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22, the major of the `packages` job and the frontend image (`node:22-slim`).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The Makefile's frontend targets never install; `--no-audit --no-fund` keeps this to the tree.
+      - name: Install
+        run: cd apps/frontend && npm ci --no-audit --no-fund
+
+      - name: Lint
+        run: make lint-frontend
+
+      - name: Build
+        run: make build-frontend
