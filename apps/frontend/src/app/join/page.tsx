@@ -4,7 +4,7 @@ import { InviteAccept } from "@/components/auth/onboarding-form";
 
 export const metadata: Metadata = {
   title: "Undangan",
-  description: "Accept an invitation to a Bolu workspace.",
+  description: "Terima undangan untuk bergabung ke workspace Bolu-mu.",
 };
 
 // The component reads its query parameter on the client, so the page itself
