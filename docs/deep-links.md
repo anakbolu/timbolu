@@ -43,10 +43,10 @@ terhadap `apps/frontend/src/app`.
 | `/dashboard` | `(workspace)/dashboard/page.tsx` | ada |
 | `/dashboard/integrations` | `(workspace)/dashboard/integrations/page.tsx` | ada |
 | `/tasks` | `(workspace)/tasks/page.tsx` | pindah ke `/dashboard` — berkas hanya `redirect("/dashboard")`, tidak punya layar |
-| `/tasks/<task_id>` | `(workspace)/tasks/[taskID]/page.tsx` | ada |
+| `/tasks/<task_id>` | `(workspace)/tasks/[taskID]/page.tsx` | ada — keadaan id tidak valid diatur di § Keadaan saat tautan tidak bisa dibuka |
 | `/chat` | `(workspace)/chat/page.tsx` | ada |
 | `/chat?agent=<agent_id>` | `(workspace)/chat/page.tsx` | ada — query dibaca `components/chat/chat-view.tsx` |
-| `/chat?conversation=<conversation_id>` | `(workspace)/chat/page.tsx` | ada — query dibaca `components/chat/chat-view.tsx` |
+| `/chat?conversation=<conversation_id>` | `(workspace)/chat/page.tsx` | ada — query dibaca `components/chat/chat-view.tsx`; keadaan obrolan tidak ada diatur di § Keadaan saat tautan tidak bisa dibuka |
 | `/groups` | `(workspace)/groups/page.tsx` | ada |
 | `/routines` | `(workspace)/routines/page.tsx` | ada — daftar dan riwayat, tanpa halaman per-run |
 | `/bolu/new` | `(workspace)/bolu/new/page.tsx` | ada |
@@ -57,7 +57,7 @@ terhadap `apps/frontend/src/app`.
 | `/settings/data` | `(workspace)/settings/data/page.tsx` | ada |
 | `/settings/usage` | `(workspace)/settings/usage/page.tsx` | ada |
 | `/settings/subscription` | `(workspace)/settings/subscription/page.tsx` | ada |
-| `/approval/<draft_id>` | `(workspace)/approval/[draftID]/page.tsx` | ada |
+| `/approval/<draft_id>` | `(workspace)/approval/[draftID]/page.tsx` | ada — keadaan draf tidak ada diatur di § Keadaan saat tautan tidak bisa dibuka |
 | `/chat/<conversation_id>` | — | tidak ada |
 | `/routines/<run_id>` | `(workspace)/routines/[routineID]/page.tsx` | ada — bentuk path ini dilayani halaman rutin yang sama, tetapi id run bukan id rutin sehingga berakhir di layar "Rutinitas tidak ditemukan"; tetap tidak ada layar per-run |
 | `/routines/<routine_id>` | `(workspace)/routines/[routineID]/page.tsx` | ada — halaman rutin yang difokus: kartu rutin disorot dan riwayat rutin itu yang disaring; id yang tidak ada berakhir di "Rutinitas tidak ditemukan" |
@@ -68,6 +68,56 @@ terhadap `apps/frontend/src/app`.
 mencakup kedua bentuk `/routines/...` karena keduanya dilayani satu berkas dinamis yang sama, jadi
 id run pun sampai ke app dan berakhir di layar "tidak ditemukan". Tidak ada path lain di bawah
 ketiganya yang dilayani.
+
+## Keadaan saat tautan tidak bisa dibuka
+
+Tautan dari notifikasi sering basi: tugas yang dirujuk sudah dihapus, drafnya sudah disetujui dari
+perangkat lain, atau id-nya berasal dari ruang kerja lain. Orang yang mengetuk tautan itu tidak bisa
+menindaklanjuti pesan developer, jadi layar yang tampil harus selalu kalimat Bahasa Indonesia yang
+menyebut keadaannya, plus satu jalan keluar. Keadaan ini justru yang paling sering terjadi, karena
+notifikasi memang dibaca belakangan — bukan kasus pinggiran.
+
+Hasil pengamatan produksi 30 Oktober 2026 (akun uji baru), pada bentuk tautan yang dipakai
+notifikasi:
+
+| Tautan | Yang tampil |
+| --- | --- |
+| `/routines/<uuid acak>` | "Rutinitas tidak ditemukan …" + tombol ke daftar rutinitas — BENAR |
+| `/approval/<uuid acak>` | "Draf tidak ditemukan …" — BENAR |
+| `/tasks/<uuid acak>` | `task not found` — salah, bocoran pesan server |
+| `/tasks/bukan-uuid` | `task id is not a uuid` — salah |
+| `/approval/bukan-uuid` | `draft id is not a uuid` — salah |
+
+Aturan yang mengikat semua layar yang dibuka dari tautan:
+
+1. **Pesan error server tidak pernah tampil.** `ApiError.message` — dan teks apa pun yang datang
+   dari server — tidak dirender ke layar. Halaman bercabang dulu pada status atau kode, baru memilih
+   kalimatnya sendiri. Pesan server hanya boleh masuk log.
+2. **404 dan id yang tidak lolos validasi adalah layar yang sama.** Id asing dijawab
+   `*_not_found` (404); id yang bukan UUID dijawab `invalid_input` (400) dengan teks seperti
+   `task id is not a uuid` (`apps/backend/internal/modules/task/handler/handler.go`,
+   `apps/backend/internal/modules/approval/handler/handler.go`). Keduanya berarti "tidak
+   ditemukan" bagi orang yang mengetuk tautan, jadi keduanya memakai layar yang sama. Jangan ada
+   layar "id bukan uuid": itu detail skema, bukan keadaan.
+3. **Copy Bahasa Indonesia, menyebut objeknya, tanpa istilah developer.** "Tugas tidak ditemukan",
+   bukan `task not found`; "Draf tidak ditemukan", bukan `draft not found`. Sebut juga kemungkinan
+   penyebabnya dalam bahasa manusia — dihapus, sudah diputuskan, atau dari ruang kerja lain.
+4. **Selalu ada jalan keluar.** Setiap layar tidak ditemukan menyertakan tautan kembali: Dasbor
+   untuk tugas dan draf, `/routines` untuk rutinitas, `/chat` tanpa parameter untuk obrolan. Layar
+   tanpa tautan keluar memaksa orang menekan tombol back sistem, dan di app itu berarti keluar dari
+   app.
+5. **Tidak ada retry otomatis untuk 404.** "Coba lagi" hanya untuk kegagalan jaringan atau 5xx;
+   menawarkannya pada 404 menjanjikan sesuatu yang tidak akan berubah.
+6. **Draf yang sudah diputuskan bukan tautan rusak.** `draft_already_decided` (409) membuka drafnya
+   dan menampilkan keputusan yang berlaku — lihat tabel perilaku per resource di § Skema `bolu://`.
+
+Padanan app untuk keadaan yang sama ada di tabel "Perilaku per resource saat resource tidak bisa
+dibuka" (§ Skema `bolu://`); aturan di atas adalah sisi web-nya, dan app memakai kalimat yang sama.
+
+Hari ini `/tasks/*` dan `/approval/<id bukan UUID>` belum memenuhi aturan 1–3: keduanya merender
+`message` dari `ApiError` (`components/dashboard/task-detail-view.tsx`,
+`components/dashboard/approval-view.tsx`). Perbaikannya di `apps/frontend` dan bukan bagian dari
+dokumen ini; sampai itu mendarat, tabel di atas adalah kontrak, bukan deskripsi perilaku hari ini.
 
 ## Skema `bolu://`
 
