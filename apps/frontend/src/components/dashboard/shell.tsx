@@ -46,8 +46,8 @@ import { useWorkspace } from "./workspace-data";
  *
  * The design's Artifacts screen (the task history) is deliberately absent: its
  * columns are an operator's view of the system, while a person reaches one task
- * from the dashboard card or the "Lihat tugasnya" link in a conversation. `/tasks`
- * therefore redirects to Dasbor rather than appearing here.
+ * from the dashboard's task cards. `/tasks` therefore redirects to Dasbor rather
+ * than appearing here.
  */
 const NAV = [
   {
