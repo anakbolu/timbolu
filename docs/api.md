@@ -263,10 +263,10 @@ effect on the next call rather than when the access token expires. A promotion i
 visible on `/auth/me` immediately, which is what lets the workspace sidebar offer
 the link without a second endpoint.
 
-**The surface asks for no workspace.** It is registered on a path prefix rather
-than through a group, so no tenant middleware and no subscription guard reaches
-it: an account with no workspace is still administrable. Three refusals are the
-whole reason the module has a service:
+**The surface asks for no workspace.** It is registered ahead of the tenant
+groups and carries only the platform-admin guard, so no tenant middleware and no
+subscription guard reaches it: an account with no workspace is still
+administrable. Three refusals are the whole reason the module has a service:
 
 | Refusal | Status | Code |
 | --- | --- | --- |

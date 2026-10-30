@@ -134,9 +134,14 @@ export function registerRoutes(app: Hono<AppEnv>, c: Container): void {
   // The operator surface: an authenticated account and nothing else. It is
   // registered before the tenant groups because those are empty-path groups, and
   // a platform-role check registered after them would be asked for a workspace.
-  if (c.admin) {
-    api.use("/admin", requireUser(deps), requirePlatformAdmin(deps));
-    adminRoutes(api, c.admin);
+  const admin = c.admin;
+  if (admin) {
+    // The guard is attached to the paths the module registers, not to "/admin",
+    // which Hono matches exactly and which no admin route has (#485). A wildcard
+    // would cover those paths too, but it would also answer 401 on "/admin" and
+    // on a typo below it, where the contract is 404 — so this uses the same
+    // per-path mechanism as the other guarded groups.
+    api.route("/", withGuards((g) => adminRoutes(g, admin), requireUser(deps), requirePlatformAdmin(deps)));
   } else {
     api.all("/admin*", unavailable("the operator surface is not configured", "admin_not_configured"));
   }
