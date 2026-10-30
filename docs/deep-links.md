@@ -78,15 +78,15 @@ menyebut keadaannya, plus satu jalan keluar. Keadaan ini justru yang paling seri
 notifikasi memang dibaca belakangan — bukan kasus pinggiran.
 
 Hasil pengamatan produksi 30 Oktober 2026 (akun uji baru), pada bentuk tautan yang dipakai
-notifikasi:
+notifikasi. Baris tugas dan draf diamati setelah #448:
 
 | Tautan | Yang tampil |
 | --- | --- |
 | `/routines/<uuid acak>` | "Rutinitas tidak ditemukan …" + tombol ke daftar rutinitas — BENAR |
-| `/approval/<uuid acak>` | "Draf tidak ditemukan …" — BENAR |
-| `/tasks/<uuid acak>` | `task not found` — salah, bocoran pesan server |
-| `/tasks/bukan-uuid` | `task id is not a uuid` — salah |
-| `/approval/bukan-uuid` | `draft id is not a uuid` — salah |
+| `/approval/<uuid acak>` | "Draf tidak ditemukan …" + tombol ke semua draf dan ke Dasbor — BENAR |
+| `/tasks/<uuid acak>` | "Tugas tidak ditemukan — mungkin sudah dihapus, atau tautannya berasal dari ruang kerja lain." + tombol "← Kembali ke Dasbor" — BENAR |
+| `/tasks/bukan-uuid` | "Tautan tidak valid — id tugas di tautan ini tidak dikenali. Buka dasbor lalu pilih tugas dari kartunya." + tombol "← Kembali ke Dasbor" — BENAR |
+| `/approval/bukan-uuid` | "Tautan tidak valid — id draf di tautan ini tidak dikenali. Buka daftar draf lalu pilih dari sana." + tombol "← Kembali ke semua draf" — BENAR |
 
 Aturan yang mengikat semua layar yang dibuka dari tautan:
 
@@ -114,10 +114,16 @@ Aturan yang mengikat semua layar yang dibuka dari tautan:
 Padanan app untuk keadaan yang sama ada di tabel "Perilaku per resource saat resource tidak bisa
 dibuka" (§ Skema `bolu://`); aturan di atas adalah sisi web-nya, dan app memakai kalimat yang sama.
 
-Hari ini `/tasks/*` dan `/approval/<id bukan UUID>` belum memenuhi aturan 1–3: keduanya merender
-`message` dari `ApiError` (`components/dashboard/task-detail-view.tsx`,
-`components/dashboard/approval-view.tsx`). Perbaikannya di `apps/frontend` dan bukan bagian dari
-dokumen ini; sampai itu mendarat, tabel di atas adalah kontrak, bukan deskripsi perilaku hari ini.
+`/tasks/*` dan `/approval/<id bukan UUID>` sekarang memenuhi aturan 1–4: `ApiError.message` tidak
+dirender, 404 dan id yang tidak lolos validasi memakai layar yang sama, kalimatnya Bahasa Indonesia
+yang menyebut objeknya, dan setiap layar membawa tautan kembali. Pemetaan status dan kode ke kalimat
+itu ada di satu tempat, `apps/frontend/src/lib/friendly-error.ts` (`friendlyLoadFailure`), dipakai
+`components/dashboard/task-detail-view.tsx` dan `components/dashboard/approval-view.tsx` (#448).
+
+Sisa pelanggaran yang nyata ada di `/chat`: `/chat?agent=<id asing>` masih merender
+`internal server error`, dan `/chat?conversation=<id asing>` masih berakhir di layar kosong "Pilih
+obrolan" tanpa penjelasan. Keduanya dilacak di issue #449; sampai perbaikan itu mendarat, dua baris
+`/chat` di § Audit rute belum punya layar keadaan.
 
 ## Skema `bolu://`
 
