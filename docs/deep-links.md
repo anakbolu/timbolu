@@ -7,14 +7,64 @@ mengira pekerjaannya hilang.
 
 Dokumen ini **kontrak, bukan implementasi**. Belum ada app Expo di repo ini, `notification.pending`
 belum punya produsen, dan `routine.run` baru ada sebagai nama. Yang ditetapkan di sini adalah bentuk
-yang harus dipenuhi saat bagian-bagian itu dibangun. Route yang disebut bisa dicek di
-`apps/frontend/src/app`, tetapi daftar nama `page.tsx` saja tidak cukup: berkasnya harus dibaca.
-Sebuah `page.tsx` boleh hanya berisi `redirect()` ke layar lain, dan itu berarti layarnya tidak ada.
-Nama event selalu bisa dicek di `packages/contracts/events.ts` dan `docs/api.md` (§ The stream).
+yang harus dipenuhi saat bagian-bagian itu dibangun. Nama event selalu bisa dicek di
+`packages/contracts/events.ts` dan `docs/api.md` (§ The stream).
 
 Route group `(workspace)` tidak menambah segmen ke URL: `app/(workspace)/tasks/[taskID]/page.tsx`
 dilayani sebagai `/tasks/<task_id>`. Itu sebabnya tabel di bawah memakai path publik, bukan path
 berkas.
+
+## Sumber kebenaran
+
+Rute web dibaca dari `apps/frontend/src/app`. Sebuah path hanya disebut "ada" kalau ada `page.tsx`
+yang merendernya; `page.tsx` yang isinya hanya `redirect()` dihitung sebagai layar yang sudah
+pindah. Nama endpoint, kode error, dan bentuk payload dibaca dari `docs/api.md`. Kalau keduanya
+bertentangan, berkas halaman menang untuk path dan `docs/api.md` menang untuk endpoint.
+
+## Audit rute
+
+Setiap path yang disebut di dokumen ini, dicocokkan dengan `apps/frontend`. Kolom berkas relatif
+terhadap `apps/frontend/src/app`.
+
+| Path | Berkas halaman | Status |
+| --- | --- | --- |
+| `/` | `page.tsx` | ada — landing pemasaran, bukan layar app |
+| `/login` | `login/page.tsx` | ada |
+| `/signup` | `signup/page.tsx` | ada |
+| `/verify` | `verify/page.tsx` | ada |
+| `/forgot-password` | `forgot-password/page.tsx` | ada |
+| `/onboarding` | `onboarding/page.tsx` | ada |
+| `/join` | `join/page.tsx` | ada |
+| `/pricing` | `pricing/page.tsx` | ada |
+| `/contact` | `contact/page.tsx` | ada |
+| `/privacy` | `privacy/page.tsx` | ada |
+| `/terms` | `terms/page.tsx` | ada |
+| `/admin/**` | `admin/page.tsx` (redirect ke `/admin/dashboard`), `admin/dashboard/page.tsx`, `admin/users/page.tsx` | ada |
+| `/dashboard` | `(workspace)/dashboard/page.tsx` | ada |
+| `/dashboard/integrations` | `(workspace)/dashboard/integrations/page.tsx` | ada |
+| `/tasks` | `(workspace)/tasks/page.tsx` | pindah ke `/dashboard` — berkas hanya `redirect("/dashboard")`, tidak punya layar |
+| `/tasks/<task_id>` | `(workspace)/tasks/[taskID]/page.tsx` | ada |
+| `/chat` | `(workspace)/chat/page.tsx` | ada |
+| `/chat?agent=<agent_id>` | `(workspace)/chat/page.tsx` | ada — query dibaca `components/chat/chat-view.tsx` |
+| `/chat?conversation=<conversation_id>` | `(workspace)/chat/page.tsx` | ada — query dibaca `components/chat/chat-view.tsx` |
+| `/groups` | `(workspace)/groups/page.tsx` | ada |
+| `/routines` | `(workspace)/routines/page.tsx` | ada — daftar dan riwayat, tanpa halaman per-run |
+| `/bolu/new` | `(workspace)/bolu/new/page.tsx` | ada |
+| `/settings` | `(workspace)/settings/page.tsx` | ada |
+| `/settings/team` | `(workspace)/settings/team/page.tsx` | ada — `TeamView`: tim dan Bolu-nya, bukan anggota manusia |
+| `/settings/model` | `(workspace)/settings/model/page.tsx` | ada |
+| `/settings/memory` | `(workspace)/settings/memory/page.tsx` | ada |
+| `/settings/data` | `(workspace)/settings/data/page.tsx` | ada |
+| `/settings/usage` | `(workspace)/settings/usage/page.tsx` | ada |
+| `/settings/subscription` | `(workspace)/settings/subscription/page.tsx` | ada |
+| `/approval/<draft_id>` | — | tidak ada |
+| `/chat/<conversation_id>` | — | tidak ada |
+| `/routines/<run_id>` | — | tidak ada |
+| `/routines/<routine_id>` | — | tidak ada |
+| `/drafts/<draft_id>` | — | tidak ada |
+
+`/tasks/*` dan `/settings/*` di berkas well-known adalah glob dari baris `/tasks/<task_id>` dan
+baris-baris `/settings/...`; tidak ada path lain di bawah keduanya yang dilayani.
 
 ## Skema `bolu://`
 
@@ -22,16 +72,17 @@ berkas.
 | --- | --- | --- | --- |
 | `bolu://task/<task_id>` | `tasks.id` (UUID) | Detail tugas: keadaan, alasan berhenti, langkah, hasil serahan | `/tasks/<task_id>` |
 | `bolu://chat/<conversation_id>` | `conversations.id` (UUID) | Obrolan itu: 1:1 dengan Bolu, grup, atau thread | `/chat?conversation=<conversation_id>` |
-| `bolu://approval/<draft_id>` | `drafts.id` (UUID) | Inbox persetujuan, dibuka pada draf itu (Fase 1) | **belum ada** — lihat [Celah](#celah) |
+| `bolu://approval/<draft_id>` | `drafts.id` (UUID) | Inbox persetujuan, dibuka pada draf itu (Fase 1) | **belum ada di web** — lihat [Celah](#celah) |
+| `bolu://routine/<routine_id>` | `routines.id` (UUID) | Daftar rutinitas, dibuka pada rutin itu | **belum ada di web** — `/routines` hanya daftar dan riwayat |
 
-Aturan yang mengikat ketiganya:
+Aturan yang mengikat keempatnya:
 
 1. **`<id>` wajib UUID, tanpa query, fragment, atau token.** Id yang bukan UUID ditolak sebelum
    layar dibuka; app tidak boleh mengarang id dari string lain.
 2. **Link tidak membawa workspace.** App membuka link di workspace aktif, bukan berpindah workspace
    karena link. Setiap read di API di-scope tenant, dan id milik workspace lain dijawab
-   `task_not_found` / `conversation_not_found` / `draft_not_found` (404) — bukan 403. Jadi link
-   lintas-workspace tidak punya arti yang bisa dihormati.
+   `task_not_found` / `conversation_not_found` / `draft_not_found` / `routine_not_found` (404) —
+   bukan 403. Jadi link lintas-workspace tidak punya arti yang bisa dihormati.
 3. **Hilang dan terlarang adalah jawaban yang sama.** API tidak membocorkan "ada tapi bukan
    milikmu": id asing dijawab 404. App memperlakukan 404 sebagai "tidak ditemukan", bukan sebagai
    error jaringan yang layak di-retry.
@@ -49,6 +100,7 @@ Perilaku per resource saat resource tidak bisa dibuka:
 | Tugas | `task_not_found` (404) | Layar "tugas tidak ditemukan" dengan tombol ke Dasbor; tidak membuka tugas lain dan tidak crash |
 | Obrolan | `conversation_not_found` (404) | `/chat` tanpa parameter, dengan pemberitahuan bahwa obrolannya tidak ada |
 | Draf | `draft_not_found` (404) | Inbox persetujuan dengan pemberitahuan bahwa drafnya tidak ada |
+| Rutinitas | `routine_not_found` (404) | `/routines` tanpa fokus, dengan pemberitahuan bahwa rutinnya tidak ada |
 | Draf yang sudah diputuskan | `draft_already_decided` (409) | Tetap buka drafnya dan tampilkan keputusan yang sudah berlaku; ini bukan link rusak |
 
 ## Universal link
@@ -69,7 +121,7 @@ sama — lihat `docs/deployment.md`). Pemetaannya diturunkan dari route yang ben
 | `/bolu/new` | Bolu baru | |
 | `/dashboard/integrations` | Integrasi | |
 | `/settings` | Pengaturan | |
-| `/settings/team` | Anggota ruang kerja | |
+| `/settings/team` | Tim dan Bolu-nya | `TeamView`: tim workspace beserta Bolu di dalamnya, bukan anggota manusia |
 | `/settings/model` | Model | |
 | `/settings/memory` | Memori | |
 | `/settings/data` | Data dan penghapusan | |
@@ -84,6 +136,10 @@ anggota workspace.
 
 Query string ikut terbawa ke app di kedua platform, jadi `/chat?conversation=<id>` tetap membawa
 id-nya. Jangan mengubahnya menjadi `/chat/<id>`: path itu tidak ada di web.
+
+`bolu://routine/<routine_id>` belum punya padanan universal link: `/routines/<routine_id>` tidak
+ada di web. Notifikasi run rutin tetap memakai `bolu://task/<task_id>` (lihat tabel di bawah), bukan
+link rutin.
 
 ## Celah
 
@@ -103,6 +159,8 @@ atau di app nanti.
   `?conversation=`), bukan segmen path.
 - **`/routines/<run_id>` tidak ada.** `/routines` adalah daftar dan riwayat; satu run tidak punya
   halaman sendiri.
+- **`/routines/<routine_id>` tidak ada.** `GET /routines/:id` ada di API, tetapi `/routines` hanya
+  menampilkan daftar; satu rutin tidak bisa dialamatkan lewat path.
 - **`/drafts/<draft_id>` tidak ada.** `GET /drafts/:id` ada di API, tetapi tidak ada halaman web
   yang menampilkannya.
 
@@ -221,6 +279,9 @@ Aturan tambahan:
 3. **`task.finished` dengan `trigger` `routine` tetap memakai layar tugas.** Sampai `routine.run`
    punya produsen, run rutin sudah terlihat sebagai `task.finished` dengan `trigger: "routine"`;
    tidak perlu menunggu event baru untuk bisa membuka layar yang benar.
+4. **`bolu://routine/<routine_id>` bukan link notifikasi.** Ia untuk navigasi di dalam app (daftar
+   rutinitas ke satu rutin). Notifikasi run tetap membuka tugasnya, karena tugas itulah yang memuat
+   hasil run.
 
 ## Auth saat cold start
 
