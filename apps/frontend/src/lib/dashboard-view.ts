@@ -428,8 +428,13 @@ export function buildStats(input: {
     return new Date(draft.created_at) < new Date(oldestIso) ? draft.created_at : oldestIso;
   }, undefined);
 
+  // `succeeded` is the stored outcome, and `health === "done"` is not a
+  // substitute for it: health is derived, so it also reads `done` for a task
+  // that failed or was canceled. The card counts what actually finished today,
+  // which is the status the runtime wrote plus the day its `finished_at` fell
+  // on. This is the same split `taskState` draws between the two fields.
   const doneToday = input.tasks.filter(
-    (task) => isSameDay(task.finished_at, now) && task.status === "done",
+    (task) => task.status === "succeeded" && isSameDay(task.finished_at, now),
   );
   const running = input.tasks.filter(
     (task) => task.health === "running" || task.health === "waiting",
