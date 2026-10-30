@@ -251,22 +251,26 @@ export function ChatView({
                         .map((participant) => participant.name)
                         .join(", ")
                     : (
-                        <>
-                          <span className="max-[760px]:hidden">Pilih Bolu di kiri untuk mulai.</span>
-                          <span className="hidden max-[760px]:inline">Buka menu ☰ untuk memilih Bolu atau obrolan.</span>
-                        </>
+                        // With no conversation open the empty state below already says
+                        // how to pick one; repeating it here read as the same sentence
+                        // twice on a narrow screen, so the header just names the room.
+                        "Kantor Tim Bolu"
                       )}
               </p>
             </div>
           </div>
           <div className="flex flex-none items-center gap-3 text-bolu-muted">
-            <span
-              className="flex items-center gap-1.5 text-[12px]"
-              title={STATUS_LABEL[chat.status] ?? chat.status}
-            >
-              <span className={`size-2 rounded-full ${STATUS_DOT[chat.status] ?? STATUS_DOT.closed}`} />
-              <span className="max-[760px]:sr-only">{STATUS_LABEL[chat.status] ?? chat.status}</span>
-            </span>
+            {/* With no conversation open there is no stream to connect, so the
+                indicator would report a broken connection nobody needs. */}
+            {chat.active ? (
+              <span
+                className="flex items-center gap-1.5 text-[12px]"
+                title={STATUS_LABEL[chat.status] ?? chat.status}
+              >
+                <span className={`size-2 rounded-full ${STATUS_DOT[chat.status] ?? STATUS_DOT.closed}`} />
+                <span className="max-[760px]:sr-only">{STATUS_LABEL[chat.status] ?? chat.status}</span>
+              </span>
+            ) : null}
             {chat.active ? (
               <button
                 type="button"
@@ -304,7 +308,10 @@ export function ChatView({
             </button>
           ) : null}
 
-          {chat.messages.length === 0 && !chat.loading ? (
+          {/* The one place the instruction lives: with no conversation open it is the
+              whole screen's message, and it must not wait on a message load that
+              will never happen. */}
+          {!chat.active || (chat.messages.length === 0 && !chat.loading) ? (
             <p className="mt-8 text-center text-[15px] text-bolu-muted">
               {chat.active
                 ? `Belum ada pesan dengan ${title}. Tulis sesuatu untuk mulai.`
