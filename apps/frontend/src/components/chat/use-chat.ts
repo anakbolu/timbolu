@@ -20,6 +20,7 @@ import { useWorkspace } from "@/components/dashboard/workspace-data";
 import {
   ActivityEvent,
   AgentStatePayload,
+  ApiError,
   ApiResult,
   Attachment,
   ChatConversation,
@@ -70,6 +71,25 @@ export type ChatState = {
   status: string;
   error: string | null;
   /**
+   * Why opening the conversation a deep link names failed, when it did.
+   *
+   * It is kept apart from `error` because the API's sentence is not what the
+   * screen may print: `internal server error` is a status label. The view maps
+   * this through friendlyLoadFailure, which is also why the whole error is kept
+   * rather than only its message — the status decides whether a retry is worth
+   * offering.
+   */
+  openError: ApiError | null;
+  /**
+   * loaded reports whether the conversation list's first read has settled.
+   *
+   * A link whose id is missing from a list that has not loaded yet is not a
+   * broken link, so a screen must wait for this before calling an id unknown.
+   * The store's `ready` is set after the same first load, which includes the
+   * conversation list, so it is that flag rather than a second read here.
+   */
+  loaded: boolean;
+  /**
    * What the responding Bolu says it is doing, from its own state events.
    *
    * The agent is named because the stream is workspace-wide: another thread's
@@ -119,6 +139,7 @@ export function useChat(): ChatState {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [openError, setOpenError] = useState<ApiError | null>(null);
   const [responders, setResponders] = useState<{ agentId: string; name: string }[]>([]);
   const [routerNotice, setRouterNotice] = useState<RouterNotice | null>(null);
   const [activity, setActivity] = useState<{ agentId: string; text: string } | null>(null);
@@ -143,6 +164,9 @@ export function useChat(): ChatState {
     (conversation: ChatConversation) => {
       setActive(conversation);
       setMessages([]);
+      // A conversation is open now, so whatever deep link failed before is not
+      // what the screen is about anymore.
+      setOpenError(null);
       setRouterNotice(null);
       setResponders([]);
       setActivity(null);
@@ -186,9 +210,12 @@ export function useChat(): ChatState {
         return;
       }
 
+      setOpenError(null);
       const result = await openDirectConversation(workspaceId, agentId);
       if (!result.ok) {
-        setError(result.message);
+        // The API's sentence is a status label (`internal server error`), so it
+        // is kept whole for the view to translate rather than printed here.
+        setOpenError(result);
         return;
       }
       open(result.data);
@@ -323,6 +350,8 @@ export function useChat(): ChatState {
     hasMore,
     status: store.status,
     error: error ?? store.error,
+    openError,
+    loaded: store.ready,
     responders,
     activity,
     routerNotice,
