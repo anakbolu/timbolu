@@ -103,9 +103,22 @@ function contractsNames() {
   return new Set([...chat, ...realtime]);
 }
 
+/**
+ * The chat names as the frontend sees them.
+ *
+ * The frontend used to keep its own copy of `CHAT_EVENT_TYPES` because the image
+ * was built with `apps/frontend` as its context (#328). It now imports the shared
+ * tuple (#343), so the names come from `packages/contracts/events.ts`; the rest
+ * of the client's list is still declared locally and parsed here.
+ */
+const SHARED_CHAT_IMPORT =
+  /import\s*\{[^}]*\bCHAT_EVENT_TYPES\b[^}]*\}\s*from\s*"@timbolu\/contracts\/events"/;
+
 function frontendNames() {
   const source = read("apps/frontend/src/lib/realtime.ts");
-  const chat = namesIn(tupleNames(source, "CHAT_EVENT_TYPES"));
+  const chat = SHARED_CHAT_IMPORT.test(source)
+    ? namesIn(tupleNames(read("packages/contracts/events.ts"), "CHAT_EVENT_TYPES"))
+    : namesIn(tupleNames(source, "CHAT_EVENT_TYPES"));
   const realtime = namesIn(tupleNames(source, "REALTIME_EVENT_TYPES"));
   return new Set([...chat, ...realtime]);
 }

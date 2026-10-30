@@ -19,23 +19,13 @@
  *   that is deliberately half a minute away.
  */
 
+import { CHAT_EVENT_TYPES } from "@timbolu/contracts/events";
 import { getAccessToken, listEvents, type ActivityEvent } from "./api";
 
-/**
- * The event names this client acts on are listed here rather than imported from
- * `packages/contracts/events`: the image is built with `apps/frontend` as its
- * build context, so nothing outside this directory exists inside it and a
- * cross-package import fails the build (#328). `make contracts-check` still
- * rejects a name the docs do not have, so the copy cannot drift silently.
- */
-export const CHAT_EVENT_TYPES: readonly string[] = [
-  "message.new",
-  "message.updated",
-  "router.decision",
-  // A Bolu says what it is doing through its own state, which is the only
-  // status the stream carries while an answer is still being prepared.
-  "agent.state",
-];
+/* The names the chat thread renders come from `packages/contracts/events`, which
+ * `make contracts-check` keeps in step with `docs/api.md`. Re-exported so the
+ * thread keeps importing them from here. */
+export { CHAT_EVENT_TYPES };
 
 /**
  * Every event type the app acts on, named once.

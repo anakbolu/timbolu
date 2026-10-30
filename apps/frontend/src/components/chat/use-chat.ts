@@ -289,7 +289,7 @@ export function useChat(): ChatState {
   // The stream: the store's connection, filtered to this conversation.
   useEffect(() => {
     const unsubscribe = subscribe((event: ActivityEvent) => {
-      if (!CHAT_EVENT_TYPES.includes(event.type)) {
+      if (!(CHAT_EVENT_TYPES as readonly string[]).includes(event.type)) {
         return;
       }
       if (event.conversation_id && event.conversation_id !== activeID.current) {
