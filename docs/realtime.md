@@ -28,10 +28,13 @@ for the rest of the session. The latch is what stops a route the proxy does not 
 a fresh pair of handshakes on every retry; the attempt budget is reset when it flips, so the first SSE
 attempt does not inherit the socket's backoff.
 
-**When a stream counts as healthy.** `onopen` says the route answered, not that the stream stays up.
-A transport earns `live` only after surviving `HEALTHY_AFTER_MS = 5000`, or earlier if it delivers a
-frame first; a transport that dies before then is a failure, and the retry budget is not reset. The
-five `RealtimeStatus` values and the labels the chat screen renders are documented in
+**When a stream counts as healthy.** `onopen` is not one answer for both transports. A WebSocket
+handshake that completes is a `101` upgrade, so the transport is alive and the status turns `live` at
+that instant without waiting for the clock (#475) — but it does not reset the retry budgets. An
+`EventSource` `onopen` proves only a `200`: production answered that and closed 32 ms later (#314), so
+SSE earns `live` only after surviving `HEALTHY_AFTER_MS = 5000`, or earlier if it delivers a frame
+first. Either way a transport that dies before the clock is a failure, and the retry budget is not
+reset. The five `RealtimeStatus` values and the labels the chat screen renders are documented in
 [api.md](./api.md#status-realtime-di-klien).
 
 **Why a reconnect is cheap.** Both URLs carry `last_event_id`, taken from `readLastEventId()` in the
@@ -151,9 +154,9 @@ id and watch the replay arrive before the heartbeat. `curl` again exits 28 when 
 
 **The fallback end to end.** With the socket blocked — a proxy that does not upgrade, or the
 `bolu.realtime` key above — the page must still end up `live` over SSE: the status reaches it once
-the transport survives `HEALTHY_AFTER_MS` or delivers one frame, and events keep arriving. If the
-page instead stays on `reconnecting` or goes `slow` while `/events/stream` answers `: connected`, the
-problem is on the SSE side rather than the socket.
+the transport survives `HEALTHY_AFTER_MS` or delivers one frame (there is no handshake to trust on
+this path), and events keep arriving. If the page instead stays on `reconnecting` or goes `slow`
+while `/events/stream` answers `: connected`, the problem is on the SSE side rather than the socket.
 
 ## Where the rest lives
 
