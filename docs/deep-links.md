@@ -45,8 +45,8 @@ terhadap `apps/frontend/src/app`.
 | `/tasks` | `(workspace)/tasks/page.tsx` | pindah ke `/dashboard` — berkas hanya `redirect("/dashboard")`, tidak punya layar |
 | `/tasks/<task_id>` | `(workspace)/tasks/[taskID]/page.tsx` | ada — keadaan id tidak valid diatur di § Keadaan saat tautan tidak bisa dibuka |
 | `/chat` | `(workspace)/chat/page.tsx` | ada |
-| `/chat?agent=<agent_id>` | `(workspace)/chat/page.tsx` | ada — query dibaca `components/chat/chat-view.tsx` |
-| `/chat?conversation=<conversation_id>` | `(workspace)/chat/page.tsx` | ada — query dibaca `components/chat/chat-view.tsx`; keadaan obrolan tidak ada diatur di § Keadaan saat tautan tidak bisa dibuka |
+| `/chat?agent=<agent_id>` | `(workspace)/chat/page.tsx` | ada — query dibaca `components/chat/chat-view.tsx`; Bolu asing atau id bukan UUID berakhir di banner "Bolu tidak ditemukan …" / "Tautan tidak valid — id Bolu …" dengan tautan ke `/chat`, tanpa coba lagi |
+| `/chat?conversation=<conversation_id>` | `(workspace)/chat/page.tsx` | ada — query dibaca `components/chat/chat-view.tsx`; obrolan asing berakhir di banner "Obrolan tidak ditemukan …" dengan tautan ke `/chat` tanpa parameter |
 | `/groups` | `(workspace)/groups/page.tsx` | ada |
 | `/routines` | `(workspace)/routines/page.tsx` | ada — daftar dan riwayat, tanpa halaman per-run |
 | `/bolu/new` | `(workspace)/bolu/new/page.tsx` | ada |
@@ -120,10 +120,22 @@ yang menyebut objeknya, dan setiap layar membawa tautan kembali. Pemetaan status
 itu ada di satu tempat, `apps/frontend/src/lib/friendly-error.ts` (`friendlyLoadFailure`), dipakai
 `components/dashboard/task-detail-view.tsx` dan `components/dashboard/approval-view.tsx` (#448).
 
-Sisa pelanggaran yang nyata ada di `/chat`: `/chat?agent=<id asing>` masih merender
-`internal server error`, dan `/chat?conversation=<id asing>` masih berakhir di layar kosong "Pilih
-obrolan" tanpa penjelasan. Keduanya dilacak di issue #449; sampai perbaikan itu mendarat, dua baris
-`/chat` di § Audit rute belum punya layar keadaan.
+`/chat?conversation=<id asing>` sudah memenuhi aturan 1–5 sejak #454: setelah daftar
+obrolan selesai dimuat dan id itu tidak ada di dalamnya, panel menampilkan "Obrolan tidak ditemukan
+— mungkin sudah dihapus, atau tautannya berasal dari ruang kerja lain." beserta tautan "Kembali ke
+obrolan" ke `/chat` tanpa parameter, dan tidak menawarkan coba lagi. Id yang bukan UUID berakhir di
+layar yang sama, sesuai aturan 2.
+
+Tidak ada pelanggaran yang diketahui tersisa pada bentuk tautan yang sudah punya layar keadaan:
+`/tasks/<id>`, `/approval/<id>`, `/routines/<id>`, `/chat?conversation=<id>`, dan
+`/chat?agent=<id>` kini memenuhi aturan 1–5. Untuk `/chat?agent=<id asing>`, `POST
+/conversations/direct` menjawab 404 `agent_not_found`, sehingga layar menampilkan "Bolu tidak
+ditemukan — mungkin sudah dihapus, atau tautannya berasal dari ruang kerja lain." beserta tautan
+"Kembali ke obrolan" ke `/chat` dan tidak menawarkan coba lagi; id yang bukan UUID menampilkan
+"Tautan tidak valid — id Bolu di tautan ini tidak dikenali. …" dengan tautan yang sama. Kalimatnya
+ada di `apps/frontend/src/lib/friendly-error.ts` (`INVALID_LINK.agent`, `NOT_FOUND.agent`) dan
+dipakai `components/chat/chat-view.tsx` (`openFailure`); 404 untuk Bolu asing ditutup #455, layar
+keadaannya #456.
 
 ## Skema `bolu://`
 
