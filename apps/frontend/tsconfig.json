@@ -11,6 +11,7 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "incremental": true,
     "plugins": [
@@ -21,7 +22,9 @@
     "paths": {
       "@/*": ["./src/*"],
       "@timbolu/contracts/*": ["../../packages/contracts/*"],
-      "@timbolu/bolu-character/*": ["../../packages/bolu-character/*"]
+      "@timbolu/bolu-character/*": ["../../packages/bolu-character/*"],
+      "react": ["./node_modules/@types/react"],
+      "react/*": ["./node_modules/@types/react/*"]
     }
   },
   "include": [

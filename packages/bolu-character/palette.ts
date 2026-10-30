@@ -3,8 +3,7 @@
  *
  * This file has no JSX and no React import on purpose: the web app renders it
  * into SVG attributes, and the Expo app will read the same numbers through
- * `react-native-svg`. Moving these four values here is step 1 of #302; the body
- * geometry still lives in `apps/frontend/src/components/bolu/characters.tsx`.
+ * `react-native-svg`. The body geometry sits beside it in `characters.ts`.
  *
  * The arithmetic is copied verbatim from the reference port. Do not "fix" it:
  * `hexToHsl` returns degrees and percentages, and `feetColorFor` interpolates
