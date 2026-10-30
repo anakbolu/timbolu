@@ -1,0 +1,10 @@
+node_modules/
+.expo/
+dist/
+*.log
+
+# The lockfile is left out on purpose: this PR is a scaffold, and a generated
+# dependency graph would bury the files under review in one unreadable hunk.
+bun.lock
+bun.lockb
+package-lock.json
