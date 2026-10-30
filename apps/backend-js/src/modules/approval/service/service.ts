@@ -27,6 +27,7 @@ import {
   StatusSent,
   defaultPolicy,
   is,
+  isMissingID,
   isNil,
   isZeroScope,
   needsDraft,
@@ -276,7 +277,10 @@ export class Service implements ServicePort {
     action: string,
   ): Promise<Draft> {
     this.requireScope(scope);
-    if (isNil(decision.draftId)) {
+    // Only an absent id is a bad request. A zero uuid was sent and names no
+    // draft, so the store answers not found rather than telling the client its
+    // request was wrong (#480).
+    if (isMissingID(decision.draftId)) {
       throw wrap(ErrInvalidInput, "draft id is required");
     }
 
@@ -464,7 +468,10 @@ export class Service implements ServicePort {
   /** Returns one draft. */
   async draft(ctx: AbortSignal | undefined, scope: Scope, id: string): Promise<Draft> {
     this.requireScope(scope);
-    if (isNil(id)) {
+    // The id reached here through a path segment, so a zero uuid is an id the
+    // caller sent rather than a missing one: it names no draft, and the store's
+    // not-found answer is the honest one (#480).
+    if (isMissingID(id)) {
       throw wrap(ErrInvalidInput, "draft id is required");
     }
 
