@@ -1,9 +1,9 @@
 import { Check } from "lucide-react";
-import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteFooter } from "@/components/bolu/site-footer";
 import { SiteNav } from "@/components/bolu/site-nav";
 import { StartLink } from "@/components/bolu/start-link";
+import { pageMetadata } from "@/lib/metadata";
 
 type Tier = {
   name: string;
@@ -58,11 +58,12 @@ const TIERS: Tier[] = [
   },
 ];
 
-export const metadata: Metadata = {
+export const metadata = pageMetadata({
   title: "Harga",
   description:
     "Harga Timbolu: mulai gratis dengan 200 ribu token, naikkan paket saat bisnismu siap. Bayar lewat transfer bank atau virtual account Indonesia.",
-};
+  path: "/pricing",
+});
 
 export default function PricingPage() {
   return (
