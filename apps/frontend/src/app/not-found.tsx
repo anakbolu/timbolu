@@ -34,6 +34,14 @@ export default function NotFound() {
           >
             Kembali ke beranda
           </Link>
+
+          {/* Pengunjung yang salah ketik URL notifikasi/draf biasanya butuh dasbor, bukan halaman pemasaran. */}
+          <Link
+            href="/dashboard"
+            className="mt-4 text-[14px] text-bolu-muted no-underline hover:underline"
+          >
+            Ke dasbor
+          </Link>
         </div>
       </main>
       <SiteFooter />
