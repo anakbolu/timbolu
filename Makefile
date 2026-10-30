@@ -1,5 +1,5 @@
 .PHONY: help up down logs build dev frontend backend api worker-logs wa-gateway \
-        test test-backend test-gateway test-packages test-integration smoke-task smoke-approval smoke-order measure-orders demo demo-stop gate-report cover cover-backend cover-gateway lint lint-backend lint-gateway archcheck contracts-check design-tokens-check sqlc mocks generate llm-fixtures \
+        test test-backend test-gateway test-packages test-integration smoke-task smoke-approval smoke-order measure-orders demo demo-stop gate-report cover cover-backend cover-gateway lint lint-backend lint-gateway archcheck contracts-check design-tokens-check deep-links-check sqlc mocks generate llm-fixtures \
         migrate-up migrate-down migrate-create psql test-backend-js typecheck-backend-js ci
 
 COMPOSE := docker compose
@@ -139,6 +139,9 @@ contracts-check: ## Fail when the event names drift from docs/api.md
 design-tokens-check: ## Fail when tokens.json drifts from the @theme block in globals.css
 	node packages/design-tokens/scripts/check.mjs
 
+deep-links-check: ## Fail when the route audit in docs/deep-links.md drifts from apps/frontend/src/app
+	node scripts/deep-links-check.mjs
+
 test-backend-js: ## Run the Bun port's test suite (what production runs)
 	cd apps/backend-js && bun test
 
@@ -150,4 +153,4 @@ fmt: ## Format the Go code of every module
 	cd $(BACKEND) && gofmt -w ./cmd ./internal ./migrations ./tools ./test
 	cd $(GATEWAY) && gofmt -w ./cmd ./internal
 
-ci: contracts-check design-tokens-check archcheck lint test cover test-backend-js typecheck-backend-js ## Run the same gates as CI locally
+ci: contracts-check design-tokens-check deep-links-check archcheck lint test cover test-backend-js typecheck-backend-js ## Run the same gates as CI locally
