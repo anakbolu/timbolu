@@ -45,6 +45,7 @@ import { routes as billingRoutes, webhookRoutes as billingWebhook } from "../mod
 import { routes as approvalRoutes, managerRoutes as approvalManager } from "../modules/approval/handler/handler.ts";
 import { ownerRoutes as retentionOwner } from "../modules/retention/handler/handler.ts";
 import { routes as memoryRoutes } from "../modules/memory/handler/handler.ts";
+import { routes as deviceRoutes } from "../modules/device/handler/handler.ts";
 import { routes as routineRoutes } from "../modules/routine/handler/handler.ts";
 import { routes as whatsappRoutes, linkStreamRoutes as whatsappLinkStream } from "../modules/whatsapp/handler/handler.ts";
 import { routes as taskRoutes } from "../modules/task/handler/handler.ts";
@@ -164,6 +165,7 @@ export function registerRoutes(app: Hono<AppEnv>, c: Container): void {
   if (!c.integration) pending.push(["/integrations*", "integrations are not configured", "integration_not_configured"]);
   if (!c.order) pending.push(["/orders*", "orders are not configured", "order_not_configured"]);
   if (!c.checklist) pending.push(["/checklists*", "checklists are not configured", "checklist_not_configured"]);
+  if (!c.device) pending.push(["/devices*", "devices are not configured", "device_not_configured"]);
 
   const tenant = withGuards((g) => {
     if (c.workspace) workspaceTenant(g, c.workspace);
@@ -179,6 +181,7 @@ export function registerRoutes(app: Hono<AppEnv>, c: Container): void {
     if (c.integration) integrationRoutes(g, c.integration);
     if (c.order) orderRoutes(g, c.order);
     if (c.checklist) checklistRoutes(g, c.checklist);
+    if (c.device) deviceRoutes(g, c.device);
     // Modules not wired answer 503 on their documented paths rather than 404, so a
     // screen that asks for one says "not configured" instead of looking like a typo.
     for (const [path, message, code] of pending) g.all(path, unavailable(message, code));

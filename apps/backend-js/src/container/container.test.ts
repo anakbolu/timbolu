@@ -10,13 +10,19 @@
  * inside the onboarding transaction and after the workspace row. The second builds
  * the real container over a fake pool, so it says the container is what installs
  * the provisioner — the half that was missing.
+ *
+ * The third case does the same for the device registry: the container builds the
+ * handler, and the handler's route is what writes the row.
  */
 
 import { describe, expect, test } from "bun:test";
+import { Hono } from "hono";
 
+import type { AppEnv } from "../platform/context.ts";
 import type { Database, Scope, Tx } from "../platform/database/index.ts";
 import { loadFromFile } from "../platform/config/init.ts";
 import { PostgresRepository as WorkspaceRepository } from "../modules/workspace/repository/postgres.ts";
+import { routes as deviceRoutes } from "../modules/device/handler/handler.ts";
 import { newContainer } from "./container.ts";
 
 const userId = "22222222-2222-2222-2222-222222222222";
@@ -128,6 +134,18 @@ const trialSubscriptionRow = {
   updated_at: new Date(0),
 };
 
+/** The row a device registration returns. */
+const deviceRow = {
+  id: "66666666-6666-6666-6666-666666666666",
+  user_id: userId,
+  workspace_id: workspaceId,
+  platform: "ios",
+  token: "ExponentPushToken[abc123]",
+  app_version: "1.0.0",
+  last_seen_at: new Date("2026-10-30T09:00:00Z"),
+  created_at: new Date("2026-10-30T09:00:00Z"),
+};
+
 /** The statements onboarding and the trial issue, answered in order. */
 function answers(text: string): unknown[] {
   if (text.includes("FROM workspaces") && text.includes("owner_user_id")) return [];
@@ -135,6 +153,7 @@ function answers(text: string): unknown[] {
   if (text.startsWith("INSERT INTO teams")) return [teamRow];
   if (text.startsWith("FROM plans") || text.includes("FROM plans")) return [trialPlanRow];
   if (text.startsWith("INSERT INTO subscriptions")) return [trialSubscriptionRow];
+  if (text.startsWith("INSERT INTO device_tokens")) return [deviceRow];
   return [];
 }
 
@@ -198,5 +217,52 @@ describe("container", () => {
     );
     expect(subscription).toBeDefined();
     expect(subscription?.values[0]).toBe(workspaceId);
+  });
+});
+
+describe("device wiring", () => {
+  test("the container's handler writes through the repository", async () => {
+    // The bug this guards against is the one #406 found elsewhere: a component
+    // built and stored on the container, and a handler that answers from
+    // somewhere else. The only evidence that the two are connected is a statement
+    // reaching the pool, so this case drives the real route over the real
+    // handler and reads the statement back.
+    const config = loadFromFile("");
+    config.logging.level = "silent";
+    config.database.url = "";
+    config.redis.url = "";
+    config.temporal.hostPort = "";
+    config.storage.localRoot = "";
+    config.kms.masterKey = "";
+    config.llm.secretEncryptionKey = "";
+
+    const db = new FakeDatabase(answers);
+    const container = await newContainer({ config, db: db.database });
+
+    const handler = container.device;
+    if (!handler) throw new Error("the container built no device handler");
+
+    const app = new Hono<AppEnv>();
+    app.use("*", async (c, next) => {
+      c.set("userId", userId);
+      c.set("scope", { userId, workspaceId });
+      await next();
+    });
+    deviceRoutes(app, handler);
+
+    const res = await app.request("/devices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: "ExponentPushToken[abc123]", platform: "ios", app_version: "1.0.0" }),
+    });
+
+    expect(res.status).toBe(201);
+
+    const insert = db.tx.statements.find((statement) =>
+      statement.text.startsWith("INSERT INTO device_tokens"),
+    );
+    expect(insert).toBeDefined();
+    expect(insert?.values[0]).toBe(userId);
+    expect(insert?.values[3]).toBe("ExponentPushToken[abc123]");
   });
 });
