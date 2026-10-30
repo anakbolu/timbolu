@@ -1464,3 +1464,98 @@ func TestCallModelStopsWhenTheDayIsSpent(t *testing.T) {
 	require.ErrorContains(t, err, "micro-rupiah")
 	require.Zero(t, calls, "the provider is never called once the day is spent")
 }
+
+// failingPark is a store that refuses the park. The wait is still announced, but
+// the row keeps its pre-park state — a waiting event with no draft behind it.
+type failingPark struct{ domain.TaskRepository }
+
+func (f failingPark) Park(context.Context, domain.Scope, uuid.UUID, string, uuid.UUID) (domain.Task, error) {
+	return domain.Task{}, errors.New("store unavailable")
+}
+
+// payloadOf decodes the last event of a type, so a test asserts the shape a
+// consumer parses rather than only the event's name.
+func payloadOf(t *testing.T, events []domain.Event, eventType string) map[string]any {
+	t.Helper()
+
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].Type != eventType {
+			continue
+		}
+
+		var payload map[string]any
+		require.NoError(t, json.Unmarshal(events[i].Payload, &payload))
+		return payload
+	}
+
+	require.FailNow(t, "no event of the type was published", eventType)
+	return nil
+}
+
+func keysOf(payload map[string]any) []string {
+	keys := make([]string, 0, len(payload))
+	for key := range payload {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+// TestWaitingEventCarriesTheDraftID is the notification worker's contract: the
+// approval event names the draft it waits on, so a link is built from the event
+// alone rather than by re-reading the task.
+func TestWaitingEventCarriesTheDraftID(t *testing.T) {
+	h := newHarness(t, domain.DefaultLimits)
+
+	_, err := h.activities.RequestDraft(context.Background(), workflow.ToolRequest{
+		TaskID:      h.task.ID.String(),
+		WorkspaceID: h.scope.WorkspaceID.String(),
+		CallID:      "call-1",
+		Name:        "gmail.send",
+		Arguments:   json.RawMessage(`{"subject":"Tagihan Maret","to":"a@b.c"}`),
+	})
+	require.NoError(t, err)
+
+	stored, err := h.tasks.Get(context.Background(), h.scope, h.task.ID)
+	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil, stored.WaitingDraftID)
+
+	payload := payloadOf(t, h.events.events, workflow.EventTaskWaiting)
+	require.Equal(t, stored.WaitingDraftID.String(), payload["waiting_draft_id"])
+	require.Equal(t, h.task.ID.String(), payload["task_id"])
+	require.Equal(t, string(domain.StatusWaitingApproval), payload["status"])
+}
+
+// TestWaitingEventOmitsAnAbsentDraftID covers the other direction: a wait with no
+// draft sends no field at all, so the worker cannot mistake an empty id for one.
+func TestWaitingEventOmitsAnAbsentDraftID(t *testing.T) {
+	h := newHarness(t, domain.DefaultLimits, func(deps *Deps) {
+		deps.Tasks = failingPark{deps.Tasks}
+	})
+	h.drafts.execution = domain.DraftExecution{Held: true, Reason: "menunggu jam kerja"}
+
+	_, err := h.activities.CarryOutDraft(context.Background(), workflow.DraftCarryRequest{
+		TaskID:      h.task.ID.String(),
+		WorkspaceID: h.scope.WorkspaceID.String(),
+		DraftID:     uuid.NewString(),
+	})
+	require.NoError(t, err)
+
+	payload := payloadOf(t, h.events.events, workflow.EventTaskWaiting)
+	require.NotContains(t, payload, "waiting_draft_id")
+	require.Len(t, payload, 5)
+}
+
+// TestOtherEventsKeepTheirFiveFieldPayload pins the rest of the stream: the draft
+// id is added to one event, not to the map every event is built from.
+func TestOtherEventsKeepTheirFiveFieldPayload(t *testing.T) {
+	h := newHarness(t, domain.DefaultLimits)
+
+	require.NoError(t, h.activities.RecordStep(context.Background(), workflow.StepRequest{
+		TaskID:      h.task.ID.String(),
+		WorkspaceID: h.scope.WorkspaceID.String(),
+		Record:      workflow.StepRecord{Kind: domain.StepThink},
+	}))
+
+	payload := payloadOf(t, h.events.events, workflow.EventTaskStep)
+	require.ElementsMatch(t, []string{"task_id", "agent_id", "status", "trigger", "title"}, keysOf(payload))
+}
