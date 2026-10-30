@@ -172,6 +172,8 @@ export interface Container {
   /** The guards call these directly; a handler keeps its service private. */
   authService: AuthService | null;
   workspaceService: WorkspaceService | null;
+  /** The repository onboarding writes through, which is what the trial provisioner is installed on. */
+  workspaceRepository: WorkspaceRepository | null;
   /** The services the task runtime's ports read. The worker assembles its activities from them. */
   chatService: ChatService | null;
   chatRepo: ChatRepository | null;
@@ -190,7 +192,9 @@ export interface Container {
 }
 
 /** Builds the container. A dependency that cannot be opened is logged and skipped. */
-export async function newContainer(overrides: { config?: Config } = {}): Promise<Container> {
+export async function newContainer(
+  overrides: { config?: Config; db?: Database } = {},
+): Promise<Container> {
   const config = overrides.config ?? (await loadConfig());
   const log = createLogger({
     level: config.logging.level,
@@ -200,17 +204,23 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
   for (const warning of config.warnings()) log.warn(warning);
 
   // --- infrastructure -------------------------------------------------------
-  let db: Database | null = null;
-  if (config.database.url) {
-    try {
-      db = createDatabase({ url: config.database.url });
-      await db.ping();
-    } catch (err) {
-      log.error({ err }, "database is unreachable; starting without it");
-      db = null;
+  // A caller-supplied pool is already open and is neither pinged nor closed
+  // here: it belongs to the caller, which is how a test drives the assembly
+  // without a Postgres.
+  const ownsDb = overrides.db === undefined;
+  let db: Database | null = overrides.db ?? null;
+  if (ownsDb) {
+    if (config.database.url) {
+      try {
+        db = createDatabase({ url: config.database.url });
+        await db.ping();
+      } catch (err) {
+        log.error({ err }, "database is unreachable; starting without it");
+        db = null;
+      }
+    } else {
+      log.warn("DATABASE_URL is empty: starting without a database");
     }
-  } else {
-    log.warn("DATABASE_URL is empty: starting without a database");
   }
 
   let redis: RedisClient | null = null;
@@ -349,9 +359,12 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
 
   let workspace: WorkspaceHandler | null = null;
   let workspaceService: WorkspaceService | null = null;
+  let workspaceRepository: WorkspaceRepository | null = null;
   if (db) {
+    const repository = new WorkspaceRepository(db);
+    workspaceRepository = repository;
     const service = new WorkspaceService({
-      repository: new WorkspaceRepository(db),
+      repository,
       mailer: workspaceMailer(mailer, config.mail.from),
       tokens: workspaceTokens,
       limits: workspacePlanLimits(config.plan.maxAgentsPerWorkspace > 0 ? config.plan.maxAgentsPerWorkspace : 50),
@@ -542,12 +555,20 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
       log,
     );
 
+    const billingRepository = new BillingRepository(db);
     billingService = new BillingService({
-      repository: new BillingRepository(db),
+      repository: billingRepository,
       counter: quota ? spendCounter(quota) : null,
       logger: log,
     } as any);
     billing = new BillingHandler(billingService, log);
+
+    // A new workspace gets its trial package inside the onboarding transaction, so
+    // "exactly one live subscription" is a fact about the data rather than a rule
+    // every read has to remember. Billing is assembled after the workspace module,
+    // so the provisioner is installed here — at the one point where both exist —
+    // rather than at the workspace's own wiring, which would need it first.
+    if (workspaceRepository) workspaceRepository.setSubscriptionProvisioner(billingRepository);
 
     approvalService = new ApprovalService({
       drafts: new ApprovalRepository(db),
@@ -640,7 +661,7 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
   }
 
   const close = async (): Promise<void> => {
-    await db?.close().catch(() => undefined);
+    if (ownsDb) await db?.close().catch(() => undefined);
     await redis?.close().catch(() => undefined);
   };
 
@@ -678,6 +699,7 @@ export async function newContainer(overrides: { config?: Config } = {}): Promise
     task,
     authService,
     workspaceService,
+    workspaceRepository,
     chatService,
     chatRepo,
     llmService,
