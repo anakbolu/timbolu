@@ -422,7 +422,7 @@ func (a *Activities) RequestDraft(ctx context.Context, request workflow.ToolRequ
 	if err != nil {
 		return workflow.DraftOutcome{}, err
 	}
-	a.emit(ctx, scope, parked, workflow.EventTaskWaiting)
+	a.emitWaiting(ctx, scope, parked)
 	// A parked task is not work in progress, and the roster is told so in the same
 	// breath as the feed.
 	a.emitAgentState(ctx, scope, parked)
@@ -482,7 +482,7 @@ func (a *Activities) CarryOutDraft(ctx context.Context, request workflow.DraftCa
 			task = parked
 		}
 
-		a.emit(ctx, scope, task, workflow.EventTaskWaiting)
+		a.emitWaiting(ctx, scope, task)
 		// Waiting out the workspace's hours is still waiting, not working.
 		a.emitAgentState(ctx, scope, task)
 
@@ -953,17 +953,44 @@ func (a *Activities) cost(task domain.Task, beat workflow.Beat) int64 {
 
 // emit publishes a task event, which is how the feed sees it.
 func (a *Activities) emit(ctx context.Context, scope domain.Scope, task domain.Task, eventType string) {
+	a.publish(ctx, scope, task, eventType, nil)
+}
+
+// emitWaiting publishes `task.waiting_approval` with the draft the task waits on.
+//
+// The id rides only on this event: every other event keeps the five-field
+// payload its consumers already parse. A wait with no draft behind it (a held
+// send whose park failed, say) carries no field at all rather than an empty one,
+// so the notification worker can tell "there is no draft to open" from "a draft
+// with a blank id" and skip the deep link instead of building one from nothing.
+func (a *Activities) emitWaiting(ctx context.Context, scope domain.Scope, task domain.Task) {
+	var extra map[string]any
+	if task.WaitingDraftID != uuid.Nil {
+		extra = map[string]any{"waiting_draft_id": task.WaitingDraftID.String()}
+	}
+
+	a.publish(ctx, scope, task, workflow.EventTaskWaiting, extra)
+}
+
+// publish marshals the payload and hands the event to the sink. extra is merged
+// over the shared fields, which is how one event carries an id the others do not.
+func (a *Activities) publish(ctx context.Context, scope domain.Scope, task domain.Task, eventType string, extra map[string]any) {
 	if a.deps.Events == nil {
 		return
 	}
 
-	payload, err := json.Marshal(map[string]any{
+	fields := map[string]any{
 		"task_id":  task.ID.String(),
 		"agent_id": domain.WireID(task.AgentID),
 		"status":   task.Status,
 		"trigger":  task.Trigger,
 		"title":    task.Title,
-	})
+	}
+	for key, value := range extra {
+		fields[key] = value
+	}
+
+	payload, err := json.Marshal(fields)
 	if err != nil {
 		return
 	}
