@@ -20,6 +20,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Alert } from "@/components/auth/auth-shell";
 import { Bolu } from "@/components/bolu/bolu";
 import {
+  type ApiError,
   type Draft,
   type DraftRevision,
   decideDraft,
@@ -28,6 +29,7 @@ import {
   listDraftRevisions,
 } from "@/lib/api";
 import { crewFor, expressionOf, formatMoment, stateOf } from "@/lib/dashboard-view";
+import { friendlyLoadFailure } from "@/lib/friendly-error";
 import { NO_WORKSPACE_MESSAGE } from "@/lib/workspace-messages";
 
 import { useWorkspace } from "./workspace-data";
@@ -62,6 +64,9 @@ export function ApprovalView({ draftID }: { draftID: string }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [revisions, setRevisions] = useState<DraftRevision[]>([]);
   const [load, setLoad] = useState<"loading" | "ready" | "missing" | "error">("loading");
+  // Kept whole because the page chooses its sentence from the status and code. The
+  // API's own wording is English for a developer and must not reach the screen.
+  const [failure, setFailure] = useState<ApiError | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [note, setNote] = useState("");
@@ -73,6 +78,7 @@ export function ApprovalView({ draftID }: { draftID: string }) {
       if (mode === "initial") {
         setLoad("loading");
         setMessage(null);
+        setFailure(null);
       }
 
       const [draftResult, revisionsResult] = await Promise.all([
@@ -90,7 +96,7 @@ export function ApprovalView({ draftID }: { draftID: string }) {
           return;
         }
         setLoad("error");
-        setMessage(draftResult.message);
+        setFailure(draftResult);
         return;
       }
 
@@ -184,20 +190,38 @@ export function ApprovalView({ draftID }: { draftID: string }) {
         <Alert tone="error">
           Draf tidak ditemukan. Mungkin sudah dihapus, atau tautannya berasal dari ruang kerja lain.
         </Alert>
-        <Link href="/dashboard" className={`${BUTTON} w-fit no-underline`}>
-          ← Kembali ke Dasbor
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href="/approval" className={`${BUTTON} w-fit no-underline`}>
+            ← Kembali ke semua draf
+          </Link>
+          <Link href="/dashboard" className={`${BUTTON} w-fit no-underline`}>
+            ← Kembali ke Dasbor
+          </Link>
+        </div>
       </div>
     );
   }
 
   if (load === "error" || !draft) {
+    const friendly = failure ? friendlyLoadFailure(failure, "draft") : null;
     return (
       <div className="flex flex-col gap-4 p-[24px_28px_48px] max-[760px]:p-[18px_14px_36px]">
-        <Alert tone="error">{message ?? "Draf gagal dimuat."}</Alert>
-        <button type="button" className={`${BUTTON} w-fit`} onClick={() => setAttempt((count) => count + 1)}>
-          Coba lagi
-        </button>
+        <Alert tone="error">{friendly?.message ?? message ?? "Draf gagal dimuat."}</Alert>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href="/approval" className={`${BUTTON} w-fit no-underline`}>
+            ← Kembali ke semua draf
+          </Link>
+          <Link href="/dashboard" className={`${BUTTON} w-fit no-underline`}>
+            ← Kembali ke Dasbor
+          </Link>
+          {/* Only a server or network failure can answer differently on a second
+              try; an id the API refused outright will be refused again. */}
+          {(friendly?.retryable ?? true) ? (
+            <button type="button" className={`${BUTTON} w-fit`} onClick={() => setAttempt((count) => count + 1)}>
+              Coba lagi
+            </button>
+          ) : null}
+        </div>
       </div>
     );
   }

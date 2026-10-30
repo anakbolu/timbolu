@@ -25,6 +25,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Alert } from "@/components/auth/auth-shell";
 import {
+  type ApiError,
   type Task,
   type TaskStep,
   cancelTask,
@@ -41,6 +42,7 @@ import {
   taskStepLabel,
   taskTriggerLabel,
 } from "@/lib/dashboard-view";
+import { friendlyLoadFailure } from "@/lib/friendly-error";
 
 import { useWorkspace } from "./workspace-data";
 
@@ -65,9 +67,15 @@ export function TaskDetailView({ taskID }: { taskID: string }) {
   const [steps, setSteps] = useState<TaskStep[]>([]);
   const [children, setChildren] = useState<Task[]>([]);
   const [load, setLoad] = useState<"loading" | "ready" | "error">("loading");
+  // The whole error, not just its message: which sentence the page shows depends on
+  // the status and code, and the API's own wording is the one thing it must not print.
+  const [failure, setFailure] = useState<ApiError | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  // Bumped by "Coba lagi", which is what re-runs the read below. The button is only
+  // offered when a retry can actually change the answer.
+  const [attempt, setAttempt] = useState(0);
   // A running task's duration grows while the page is open, and a number frozen at load is a number a
   // person reloads to trust. The clock is state rather than a call in render, because reading it
   // during render is impure and would make two renders of the same data disagree.
@@ -77,6 +85,7 @@ export function TaskDetailView({ taskID }: { taskID: string }) {
     async (workspace: string) => {
       setLoad("loading");
       setMessage(null);
+      setFailure(null);
 
       const [taskResult, stepsResult, childrenResult] = await Promise.all([
         getTask(workspace, taskID),
@@ -86,7 +95,7 @@ export function TaskDetailView({ taskID }: { taskID: string }) {
 
       if (!taskResult.ok) {
         setLoad("error");
-        setMessage(taskResult.message);
+        setFailure(taskResult);
         return;
       }
 
@@ -115,7 +124,7 @@ export function TaskDetailView({ taskID }: { taskID: string }) {
     return () => {
       cancelled = true;
     };
-  }, [workspaceID, read]);
+  }, [workspaceID, read, attempt]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -164,13 +173,23 @@ export function TaskDetailView({ taskID }: { taskID: string }) {
   const crewName = (id: string) => agents.find((agent) => agent.id === id)?.name ?? "Bolu";
   const state = task ? taskState(task) : null;
 
-  if (load === "error") {
+  if (load === "error" && failure) {
+    const friendly = friendlyLoadFailure(failure, "task");
     return (
       <div className="flex flex-col gap-4">
-        <Alert tone="error">{message ?? "Tugas tidak ditemukan."}</Alert>
-        <Link href="/dashboard" className={`${BUTTON} w-fit no-underline`}>
-          ← Kembali ke Dasbor
-        </Link>
+        <Alert tone="error">{friendly.message}</Alert>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href="/dashboard" className={`${BUTTON} w-fit no-underline`}>
+            ← Kembali ke Dasbor
+          </Link>
+          {/* A retry only makes sense for a server or network failure. A link whose id
+              the API already rejected answers the same way every time. */}
+          {friendly.retryable ? (
+            <button type="button" className={BUTTON} onClick={() => setAttempt((count) => count + 1)}>
+              Coba lagi
+            </button>
+          ) : null}
+        </div>
       </div>
     );
   }
