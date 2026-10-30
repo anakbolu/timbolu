@@ -67,8 +67,16 @@ COPY apps/backend-js/src ./src
 # fingerprint that GET /api/health reports and prove this image is that tree.
 # `sha256sum`, `sort`, `xargs`, and `cut` are in this Debian slim image, so no
 # extra package is needed.
+#
+# The timestamp answers a different question than the fingerprint: the
+# fingerprint says *which tree* is served, the timestamp says *when this image
+# was built*. They are not interchangeable — a re-rolled container for a tree
+# whose contents did not change (a docs-only deploy, a rollout after a restart)
+# reports the same fingerprint, and only the timestamp tells the two apart.
+# `date` is in Debian slim, so this needs no extra package either.
 RUN find ./src -name '*.ts' -type f | LC_ALL=C sort | xargs cat | sha256sum | cut -c1-16 > /app/.build-fingerprint \
-    && chown bolu:bolu /app/.build-fingerprint
+    && date -u +%Y-%m-%dT%H:%M:%SZ > /app/.build-built-at \
+    && chown bolu:bolu /app/.build-fingerprint /app/.build-built-at
 
 # The YAML defaults ship with the image; every secret and endpoint is supplied
 # through the environment. The loader reads them from src/platform/config.
