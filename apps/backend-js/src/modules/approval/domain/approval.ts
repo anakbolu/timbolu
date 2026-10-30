@@ -97,6 +97,18 @@ export function isNil(id: string | null | undefined): boolean {
   return !id || id === NilUUID;
 }
 
+/**
+ * True when the request carried no id at all.
+ *
+ * An id in a path is not the same kind of value as a stored reference: a zero
+ * uuid is still an id the caller sent, and it names nothing, so the repository
+ * must answer not found (#480). `isNil` belongs to fields where the zero uuid
+ * means "this reference is empty" and stays untouched.
+ */
+export function isMissingID(id: string | null | undefined): boolean {
+  return !id;
+}
+
 /** The tenant identity a query runs as. */
 export interface Scope {
   userId?: string;
