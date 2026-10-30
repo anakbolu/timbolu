@@ -17,7 +17,7 @@
  */
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Alert } from "@/components/auth/auth-shell";
 import { Bolu } from "@/components/bolu/bolu";
@@ -84,6 +84,13 @@ const STATUS_STYLE: Record<string, string> = {
 
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 const MINUTES = [0, 15, 30, 45];
+
+/**
+ * A routine link carries its id as a path segment, so anything that is not a UUID
+ * cannot name a routine. Checking the shape before the read keeps `/routines/bukan-id`
+ * from becoming an empty list with a network error attached.
+ */
+const ROUTINE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** weekdayLabel names one ISO weekday in the words the form uses. */
 function weekdayLabel(day: number): string {
@@ -218,14 +225,26 @@ function formFor(routine: Routine): RoutineInput {
   };
 }
 
-/** RoutinesView is the routines screen. */
-export function RoutinesView() {
+/**
+ * RoutinesView is the routines screen.
+ *
+ * `focusID` is the segment of `/routines/<routine_id>`, set by the deep link
+ * `bolu://routine/<routine_id>`. It only changes which routine is highlighted and
+ * which runs the history lists; the list itself is the same read, so the focused
+ * screen cannot show a routine the plain list would not.
+ */
+export function RoutinesView({ focusID }: { focusID?: string }) {
   const store = useWorkspace();
   const { agents, workspace, members, user, hub } = store;
+
+  const focus = focusID ?? "";
+  const focused = focus !== "";
+  const focusIsID = ROUTINE_ID.test(focus);
 
   const [workspaceID, setWorkspaceID] = useState<string | null>(null);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [runs, setRuns] = useState<RoutineRun[]>([]);
+  const [listed, setListed] = useState(false);
   const [draft, setDraft] = useState<RoutineInput | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [preview, setPreview] = useState<string[]>([]);
@@ -249,11 +268,19 @@ export function RoutinesView() {
       return;
     }
 
-    const [listed, history] = await Promise.all([listRoutines(active), listRoutineRuns(active, { limit: 50 })]);
-    if (listed.ok) {
-      setRoutines(listed.data);
+    const [allRoutines, history] = await Promise.all([
+      listRoutines(active),
+      // A focused screen asks the server for that routine's runs rather than
+      // reading the workspace's whole history and hiding the rest in the browser:
+      // the history is already a paged read, and a client-side filter would spend
+      // the fifty rows on runs the person did not come to see.
+      listRoutineRuns(active, focusIsID ? { routine_id: focus, limit: 50 } : { limit: 50 }),
+    ]);
+    if (allRoutines.ok) {
+      setRoutines(allRoutines.data);
+      setListed(true);
     } else {
-      setError(listed.message);
+      setError(allRoutines.message);
     }
     if (history.ok) {
       setRuns(history.data);
@@ -261,13 +288,30 @@ export function RoutinesView() {
       setError(history.message);
     }
     setLoading(false);
-  }, []);
+  }, [focus, focusIsID]);
 
   useEffect(() => {
     void (async () => {
       await load();
     })();
   }, [load]);
+
+  // The routine the link names, read from the list this screen already loads: a
+  // second GET would answer the same question and could disagree with the list on
+  // the same render. The miss is gated on `listed`, so a failed list read stays an
+  // error instead of being reported as a routine that does not exist.
+  const focusRoutine = focusIsID ? (routines.find((routine) => routine.id === focus) ?? null) : null;
+  const focusRef = useRef<HTMLLIElement | null>(null);
+  const scrolledTo = useRef<string | null>(null);
+
+  // Scrolled once the list has arrived, not on mount: at mount the ref points at
+  // nothing. `center` keeps the card's neighbours visible, so the person can still
+  // see which Bolu the routine belongs to.
+  useEffect(() => {
+    if (!focusRoutine || loading || scrolledTo.current === focusRoutine.id) return;
+    scrolledTo.current = focusRoutine.id;
+    focusRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [focusRoutine, loading]);
 
   // The form opens on the first Bolu, because a routine belongs to one and a form
   // that starts with nothing chosen cannot show what it will save. It is derived
@@ -419,10 +463,15 @@ export function RoutinesView() {
     return events;
   }, [hub.adapters]);
 
+  // The focused screen keeps the whole list so the highlighted card still has its
+  // neighbours for context; the history, though, is the server's read scoped to
+  // that routine, so the Bolu filter has nothing left to do and is hidden below.
   const shown = filterAgent ? routines.filter((routine) => routine.agent_id === filterAgent) : routines;
-  const shownRuns = filterAgent
-    ? runs.filter((run) => routineAgent(run, routines) === filterAgent)
-    : runs;
+  const shownRuns = focused
+    ? runs
+    : filterAgent
+      ? runs.filter((run) => routineAgent(run, routines) === filterAgent)
+      : runs;
   const byAgent = useMemo(() => {
     const map = new Map<string, Routine[]>();
     for (const routine of shown) {
@@ -445,6 +494,29 @@ export function RoutinesView() {
     );
   }
 
+  // A deep link that names a routine this workspace does not have is answered with
+  // a sentence and a way back, not with the plain list and not with a 404: the
+  // person followed a notification, and a blank screen reads as lost work.
+  if (focused && (!focusIsID || (listed && !focusRoutine))) {
+    return (
+      <div className="flex flex-col gap-[22px] p-[24px_28px_48px] max-[760px]:p-[18px_14px_36px]">
+        <div className={`${CARD} flex flex-col items-start gap-3 p-[22px]`}>
+          <h1 className="font-display text-[28px] font-bold leading-[1.1]">Rutinitas tidak ditemukan</h1>
+          <p className="text-[14px] text-bolu-muted">
+            Tautan ini menunjuk rutinitas yang tidak ada di ruang kerja ini. Rutinitas yang sudah dihapus
+            tidak bisa dibuka lagi.
+          </p>
+          <Link
+            href="/routines"
+            className="min-h-10 rounded-full border border-bolu-border px-4 py-[9px] text-[14px] font-semibold text-bolu-ink"
+          >
+            Kembali ke semua rutinitas
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-[22px] p-[24px_28px_48px] max-[760px]:p-[18px_14px_36px]">
       <div>
@@ -460,6 +532,19 @@ export function RoutinesView() {
               : `${routines.length} rutinitas, ${scheduled} terjadwal, ${running} sedang jalan.`}
         </div>
       </div>
+
+      {/* A focused screen leaves the list visible for context, so the way back has
+          to be on screen too; otherwise the only exit is the browser's back button. */}
+      {focused ? (
+        <div>
+          <Link
+            href="/routines"
+            className="inline-flex min-h-10 items-center rounded-full border border-bolu-border px-4 py-[9px] text-[14px] font-semibold text-bolu-ink"
+          >
+            Semua rutinitas
+          </Link>
+        </div>
+      ) : null}
 
       {error ? <Alert tone="error">{error}</Alert> : null}
       {notice && !error ? <Alert tone="success">{notice}</Alert> : null}
@@ -765,7 +850,10 @@ export function RoutinesView() {
                 {list.map((routine) => (
                   <li
                     key={routine.id}
-                    className="flex flex-wrap items-center gap-3 border-t border-bolu-line p-[12px_0]"
+                    ref={routine.id === focus ? focusRef : undefined}
+                    className={`flex flex-wrap items-center gap-3 border-t border-bolu-line p-[12px_0] ${
+                      routine.id === focus ? "rounded-md ring-1 ring-bolu-accent" : ""
+                    }`}
                   >
                     <div className="min-w-[200px] flex-1">
                       <div className="font-semibold">{routine.name}</div>
