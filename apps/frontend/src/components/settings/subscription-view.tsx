@@ -139,6 +139,11 @@ export function SubscriptionView() {
   const [snapshot, setSnapshot] = useState<BillingSnapshot | null>(null);
   const [plans, setPlans] = useState<BillingPlan[]>([]);
   const [busy, setBusy] = useState(false);
+  // missing is the workspace that has no subscription at all, which the API answers
+  // with a 404 rather than an empty snapshot. It is its own state because the server's
+  // message for it names the domain error, and showing that would be a leak rather than
+  // an explanation a person can act on.
+  const [missing, setMissing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [paying, setPaying] = useState<Invoice | null>(null);
@@ -150,12 +155,23 @@ export function SubscriptionView() {
     ]);
 
     if (!snapshotResult.ok) {
+      // A workspace with no subscription is not a failure of this screen: the plan list
+      // it was loaded beside still describes what could be chosen, so the screen offers
+      // that and a retry instead of the server's sentence about a missing record.
+      if (snapshotResult.status === 404 && snapshotResult.code === "billing_not_found") {
+        setMissing(true);
+        setError(null);
+        setSnapshot(null);
+        setPlans(planResult.ok ? planResult.data : []);
+        return;
+      }
       setError(snapshotResult.message);
       return;
     }
 
     setSnapshot(snapshotResult.data);
     setPlans(planResult.ok ? planResult.data : []);
+    setMissing(false);
 
     // A load that worked clears whatever an earlier one said, so a refusal a retry has
     // already fixed never sits above a screen showing the package correctly.
@@ -251,6 +267,50 @@ export function SubscriptionView() {
         <Link href="/settings" className="text-bolu-muted underline">
           Balik ke pengaturan
         </Link>
+      </main>
+    );
+  }
+
+  if (missing) {
+    return (
+      <main className={PAGE}>
+        <section className={`${CARD} p-[22px]`}>
+          <h1 className={HEADING}>Belum ada langganan aktif</h1>
+          <p className="mt-2 text-bolu-muted">
+            Workspace ini belum punya paket aktif. Paket percobaan biasanya dibuat otomatis saat workspace dibuat,
+            jadi kalau layar ini muncul terus, muat ulang dulu.
+          </p>
+
+          {plans.length > 0 ? (
+            <>
+              <h2 className="mt-5 text-[13px] text-bolu-muted">Paket yang tersedia</h2>
+              <ul className="mt-2 list-none space-y-2 p-0">
+                {plans.map((plan) => (
+                  <li key={plan.key} className="rounded-md border border-bolu-border p-4">
+                    <div className="font-semibold">{plan.name}</div>
+                    <div className="mt-1 text-[13px] text-bolu-muted">{packageLine(plan)}</div>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              if (!workspaceID) {
+                return;
+              }
+              run(async () => {
+                await load(workspaceID);
+              });
+            }}
+            className="mt-5 min-h-10 rounded-full border-2 border-bolu-ink px-4 font-bold text-bolu-ink disabled:opacity-50"
+          >
+            Muat ulang
+          </button>
+        </section>
       </main>
     );
   }
