@@ -4,10 +4,9 @@
  * The dashboard shell: the frame every screen lives in.
  *
  * The sidebar is the internal panel design's (`timbolu_admin_panel.html`): 256px,
- * a shade off the page, a compact nav, the roster of every team, the recent
- * conversations, and the account at the foot. Navigation is by route rather than
- * by in-page state, so a screen keeps its own URL and the browser's back button
- * does what a person expects.
+ * a shade off the page, a compact nav, the roster of every team, and the account
+ * at the foot. Navigation is by route rather than by in-page state, so a screen
+ * keeps its own URL and the browser's back button does what a person expects.
  */
 
 import {
@@ -30,11 +29,9 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 import { Bolu } from "@/components/bolu/bolu";
-import { GroupIcon } from "@/components/bolu/group-icon";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
-import type { Agent, ChatConversation } from "@/lib/api";
 import { LOGO } from "@/lib/crew";
-import { countPending, crewFor, relativeAge } from "@/lib/dashboard-view";
+import { countPending } from "@/lib/dashboard-view";
 
 import { BoluRoster } from "./roster";
 import { useWorkspace } from "./workspace-data";
@@ -82,9 +79,6 @@ const SETTINGS_TITLES: Record<string, string> = {
   "/settings/usage": "Pemakaian",
 };
 
-/** How many conversations the Terbaru section lists before it stops. */
-const RECENT_LIMIT = 8;
-
 /** The class every compact sidebar row shares, lit or not. */
 function rowClass(on: boolean): string {
   return `flex min-h-[32px] items-center gap-3 rounded-md px-2 text-[14px] no-underline ${
@@ -95,69 +89,20 @@ function rowClass(on: boolean): string {
 }
 
 /**
- * RecentRow is one conversation in Terbaru: a direct one by its Bolu's face, a
- * group by its members'. A thread is not listed here — it lives in the panel of
- * the conversation it was opened from.
- */
-function RecentRow({
-  conversation,
-  agents,
-  onNavigate,
-}: {
-  conversation: ChatConversation;
-  agents: Agent[];
-  onNavigate: () => void;
-}) {
-  const participant = conversation.participants.find((item) => item.is_agent);
-  const agent = agents.find((item) => item.id === participant?.agent_id) ?? null;
-  const group = conversation.kind === "group";
-  const name = group ? conversation.title || "Grup" : (participant?.name ?? agent?.name ?? "Bolu");
-  // A direct thread is opened by its Bolu, which is the link the roster writes, so
-  // the two open the same conversation.
-  const href =
-    !group && participant?.agent_id
-      ? `/chat?agent=${participant.agent_id}`
-      : `/chat?conversation=${conversation.id}`;
-
-  return (
-    <Link href={href} onClick={onNavigate} className={rowClass(false)} title={relativeAge(conversation.last_activity_at)}>
-      {group ? (
-        <GroupIcon participants={conversation.participants} agents={agents} size={20} className="flex-none" />
-      ) : (
-        <Bolu
-          member={agent ? crewFor(agent) : LOGO}
-          color={agent?.color || undefined}
-          size={20}
-          className="flex-none"
-        />
-      )}
-      <span className="min-w-0 flex-1 truncate">{name}</span>
-    </Link>
-  );
-}
-
-/**
  * WorkspaceShell is the frame: a mobile bar, the sidebar, and the active screen.
  *
  * The sidebar follows the panel design: the mark and two quick actions on top, a
- * compact nav, the Bolu of every team, the conversations a person came from, and
- * the account at the foot. Which entry is lit comes from the route rather than
- * from a prop each screen would have to remember to pass.
+ * compact nav, the Bolu of every team, and the account at the foot. Which entry
+ * is lit comes from the route rather than from a prop each screen would have to
+ * remember to pass.
  */
 export function WorkspaceShell({ children }: { children: React.ReactNode }) {
-  const { conversations, drafts, agents, error, user } = useWorkspace();
+  const { drafts, error, user } = useWorkspace();
   const [navOpen, setNavOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
-  const [recentOpen, setRecentOpen] = useState(true);
   const pathname = usePathname();
 
   const pending = countPending(drafts);
-  // Threads belong to the conversation they were opened from, so the sidebar lists
-  // the rooms and leaves the work inside them to the chat's own panel.
-  const recents = conversations
-    .filter((conversation) => conversation.kind !== "thread")
-    .sort((left, right) => Date.parse(right.last_activity_at) - Date.parse(left.last_activity_at))
-    .slice(0, RECENT_LIMIT);
 
   const screenTitle =
     NAV.find((item) => item.matches(pathname))?.label === "Pengaturan"
@@ -329,34 +274,6 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <BoluRoster />
-
-          <section className="flex flex-col">
-            <button
-              type="button"
-              aria-expanded={recentOpen}
-              onClick={() => setRecentOpen((open) => !open)}
-              className="mb-1 flex cursor-pointer items-center justify-between border-0 bg-transparent px-2 text-[12px] font-semibold text-bolu-muted hover:text-bolu-body"
-            >
-              <span>Terbaru</span>
-              <ChevronDown
-                size={12}
-                strokeWidth={2.5}
-                aria-hidden="true"
-                className={`transition-transform ${recentOpen ? "" : "-rotate-90"}`}
-              />
-            </button>
-            {recentOpen ? (
-              recents.length === 0 ? (
-                <p className="px-2 text-[12px] text-bolu-muted">Belum ada obrolan.</p>
-              ) : (
-                <div className="flex flex-col gap-0.5">
-                  {recents.map((conversation) => (
-                    <RecentRow key={conversation.id} conversation={conversation} agents={agents} onNavigate={close} />
-                  ))}
-                </div>
-              )
-            ) : null}
-          </section>
         </div>
 
         {/* The account at the foot, as in the design. The theme sits beside it: it
