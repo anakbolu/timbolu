@@ -7,7 +7,7 @@ dir: "{{.InterfaceDir}}/mocks"
 outpkg: "mocks"
 mockname: "{{.InterfaceName}}"
 packages:
-  github.com/robzlabz/employeebot/packages/whatsapp/domain:
+  github.com/anakbolu/timbolu/packages/whatsapp/domain:
     interfaces:
       Service:
       Store:

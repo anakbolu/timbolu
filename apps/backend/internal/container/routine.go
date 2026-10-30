@@ -8,16 +8,16 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	approvaldomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/domain"
-	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/activity"
-	routinedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
-	routineservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/service"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/workflow"
-	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	routinetemporal "github.com/robzlabz/employeebot/apps/backend/internal/platform/routine/temporal"
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	approvaldomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/approval/domain"
+	integrationdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/routine/activity"
+	routinedomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/routine/domain"
+	routineservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/routine/service"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/routine/workflow"
+	taskdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/domain"
+	workspacerepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/repository"
+	routinetemporal "github.com/anakbolu/timbolu/apps/backend/internal/platform/routine/temporal"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 // openRoutine builds the routine runtime: the routines a Bolu runs on its own, the

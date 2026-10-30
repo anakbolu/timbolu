@@ -14,10 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain/mocks"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/response"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/domain/mocks"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/middleware"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/response"
 )
 
 // The handler tests exercise the HTTP surface with a mocked service: status

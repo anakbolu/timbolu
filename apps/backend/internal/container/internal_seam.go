@@ -9,8 +9,8 @@ import (
 
 	"go.uber.org/zap"
 
-	whatsappdomain "github.com/robzlabz/employeebot/packages/whatsapp/domain"
-	"github.com/robzlabz/employeebot/packages/whatsapp/seam"
+	whatsappdomain "github.com/anakbolu/timbolu/packages/whatsapp/domain"
+	"github.com/anakbolu/timbolu/packages/whatsapp/seam"
 )
 
 // The internal listener: the second half of the seam, served by the API for the

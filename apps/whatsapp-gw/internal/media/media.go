@@ -12,8 +12,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/robzlabz/employeebot/packages/platform/storage"
-	whatsappdomain "github.com/robzlabz/employeebot/packages/whatsapp/domain"
+	"github.com/anakbolu/timbolu/packages/platform/storage"
+	whatsappdomain "github.com/anakbolu/timbolu/packages/whatsapp/domain"
 )
 
 // Store implements whatsappdomain.MediaStore over an object store.

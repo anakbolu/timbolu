@@ -9,15 +9,15 @@ import (
 
 	"github.com/google/uuid"
 
-	approvaldomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/domain"
-	approvalrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/repository"
-	approvalservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/service"
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
-	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/pubsub"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/temporal"
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	approvaldomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/approval/domain"
+	approvalrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/approval/repository"
+	approvalservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/approval/service"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
+	taskdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/domain"
+	workspacerepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/repository"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/pubsub"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/temporal"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 // openApproval builds the approval runtime: the draft gate, the policy screen,

@@ -9,9 +9,9 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/order/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/order/domain/mocks"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/order/service"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/order/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/order/domain/mocks"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/order/service"
 )
 
 // This file is the module's own rules rather than Postgres's: what a name resolves to, what makes an

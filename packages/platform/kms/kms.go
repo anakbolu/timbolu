@@ -21,7 +21,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/robzlabz/employeebot/packages/platform/crypto"
+	"github.com/anakbolu/timbolu/packages/platform/crypto"
 )
 
 // DataKeySize is the length of a workspace data key: the same AES-256 key the

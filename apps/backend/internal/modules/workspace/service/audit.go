@@ -1,6 +1,6 @@
 package service
 
-import "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
+import "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain"
 
 // UseAuditor installs the trail writer a membership change is recorded through.
 //

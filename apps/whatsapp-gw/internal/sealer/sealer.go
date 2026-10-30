@@ -14,10 +14,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/robzlabz/employeebot/apps/whatsapp-gw/internal/repository"
-	"github.com/robzlabz/employeebot/packages/platform/crypto"
-	"github.com/robzlabz/employeebot/packages/platform/kms"
-	whatsappdomain "github.com/robzlabz/employeebot/packages/whatsapp/domain"
+	"github.com/anakbolu/timbolu/apps/whatsapp-gw/internal/repository"
+	"github.com/anakbolu/timbolu/packages/platform/crypto"
+	"github.com/anakbolu/timbolu/packages/platform/kms"
+	whatsappdomain "github.com/anakbolu/timbolu/packages/whatsapp/domain"
 )
 
 // Keys is where a workspace's wrapped data key is stored.

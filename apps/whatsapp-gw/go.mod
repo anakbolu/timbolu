@@ -1,13 +1,13 @@
-module github.com/robzlabz/employeebot/apps/whatsapp-gw
+module github.com/anakbolu/timbolu/apps/whatsapp-gw
 
 go 1.26.0
 
 require (
+	github.com/anakbolu/timbolu/packages v0.0.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/pgvector/pgvector-go v0.4.1
 	github.com/redis/go-redis/v9 v9.23.0
-	github.com/robzlabz/employeebot/packages v0.0.0
 	github.com/stretchr/testify v1.12.1
 	github.com/testcontainers/testcontainers-go v0.44.0
 	go.mau.fi/util v0.10.1
@@ -118,4 +118,4 @@ require (
 	gopkg.in/ini.v1 v1.67.3 // indirect
 )
 
-replace github.com/robzlabz/employeebot/packages => ../../packages
+replace github.com/anakbolu/timbolu/packages => ../../packages

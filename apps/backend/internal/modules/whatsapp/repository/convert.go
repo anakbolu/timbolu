@@ -5,8 +5,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/repository/sqlcgen"
-	"github.com/robzlabz/employeebot/packages/whatsapp/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/whatsapp/repository/sqlcgen"
+	"github.com/anakbolu/timbolu/packages/whatsapp/domain"
 )
 
 // The conversions from the generated rows to the domain types.

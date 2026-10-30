@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/workflow"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/routine/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/routine/workflow"
 )
 
 // stubService answers one tick.

@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain/mocks"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/domain/mocks"
 )
 
 func scope() domain.Scope {

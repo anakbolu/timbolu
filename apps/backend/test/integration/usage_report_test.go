@@ -7,10 +7,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
-	llmrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/repository"
-	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	taskrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/repository"
+	llmdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
+	llmrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/repository"
+	taskdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/domain"
+	taskrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/repository"
 )
 
 // EPIC 13's E13.5 gate: the numbers the usage screen reads are the rows the ledger holds, read three

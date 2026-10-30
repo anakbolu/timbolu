@@ -17,7 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib" // init() registers the database/sql driver golang-migrate uses
 
-	"github.com/robzlabz/employeebot/apps/backend/migrations"
+	"github.com/anakbolu/timbolu/apps/backend/migrations"
 )
 
 // ErrNoChange is returned when the database is already at the target version.

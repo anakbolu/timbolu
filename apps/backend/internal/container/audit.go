@@ -3,13 +3,13 @@ package container
 import (
 	"context"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/domain"
-	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
-	integrationservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/service"
-	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
-	llmservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/service"
-	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
-	workspaceservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/service"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/approval/domain"
+	integrationdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
+	integrationservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/service"
+	llmdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
+	llmservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/service"
+	workspacedomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain"
+	workspaceservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/service"
 )
 
 // The audit adapters: three modules that record a sensitive action and none of which owns

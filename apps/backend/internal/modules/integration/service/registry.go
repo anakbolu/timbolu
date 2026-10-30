@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
 )
 
 // registry holds every adapter this deployment knows.

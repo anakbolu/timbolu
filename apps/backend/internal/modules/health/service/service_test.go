@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/mock"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/health/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/health/domain/mocks"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/health/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/health/domain/mocks"
 )
 
 func TestLivenessNeverTouchesDependencies(t *testing.T) {

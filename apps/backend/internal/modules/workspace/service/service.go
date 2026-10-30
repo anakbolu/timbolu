@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain"
 )
 
 // Config holds the workspace settings.

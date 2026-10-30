@@ -3,10 +3,10 @@ package llm
 import (
 	"fmt"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/anthropic"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/openai"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/vision"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/llm/anthropic"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/llm/openai"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/llm/vision"
 )
 
 // Factory turns a stored configuration into a ready-to-call adapter.

@@ -8,9 +8,9 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/health/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/buildinfo"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/response"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/health/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/buildinfo"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/response"
 )
 
 // liveReport is the liveness answer. It embeds the domain's report instead of

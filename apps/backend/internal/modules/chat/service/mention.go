@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
 )
 
 // mentioned returns the Bolu a message calls by name, in the order the names

@@ -42,7 +42,7 @@ import (
 	sdktemporal "go.temporal.io/sdk/temporal"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/vcomputer/domain"
 )
 
 // Deps are the activity dependencies. The client is the only required one.

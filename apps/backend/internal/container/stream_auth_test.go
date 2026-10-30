@@ -13,11 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	authdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain/mocks"
-	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
-	workspacemocks "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain/mocks"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
+	authdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/domain/mocks"
+	workspacedomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain"
+	workspacemocks "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain/mocks"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/middleware"
 )
 
 // streamApp mounts the stream middleware in front of a handler that reports the

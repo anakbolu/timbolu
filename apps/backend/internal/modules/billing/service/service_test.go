@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/domain/mocks"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/service"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/billing/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/billing/domain/mocks"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/billing/service"
 )
 
 // The module's own rules are this file: what a workspace may spend, what it is told

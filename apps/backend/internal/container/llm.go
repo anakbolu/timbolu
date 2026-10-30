@@ -7,14 +7,14 @@ import (
 
 	"github.com/google/uuid"
 
-	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
-	llmservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/service"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/pricing"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/vision"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/quota"
-	"github.com/robzlabz/employeebot/packages/platform/config"
-	"github.com/robzlabz/employeebot/packages/platform/crypto"
+	llmdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
+	llmservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/service"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/llm"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/llm/pricing"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/llm/vision"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/quota"
+	"github.com/anakbolu/timbolu/packages/platform/config"
+	"github.com/anakbolu/timbolu/packages/platform/crypto"
 )
 
 // openLLM builds the model gateway: the provider configuration, the adapters,

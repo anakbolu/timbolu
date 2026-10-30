@@ -10,9 +10,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/order/adapter"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/order/domain"
+	integrationdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/order/adapter"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/order/domain"
 )
 
 // The adapter is deliberately thin — it decides nothing about what an order says — so what this file

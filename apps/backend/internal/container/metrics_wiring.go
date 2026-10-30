@@ -6,8 +6,8 @@ import (
 
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
 
-	"github.com/robzlabz/employeebot/packages/platform/config"
-	"github.com/robzlabz/employeebot/packages/platform/metrics"
+	"github.com/anakbolu/timbolu/packages/platform/config"
+	"github.com/anakbolu/timbolu/packages/platform/metrics"
 )
 
 // openMetrics installs the meter and the instruments the product records into.

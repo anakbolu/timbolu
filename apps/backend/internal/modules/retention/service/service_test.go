@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/retention/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/retention/domain"
 )
 
 // retentionFixture is a fake repository that records what the pass did, plus the two pruners.

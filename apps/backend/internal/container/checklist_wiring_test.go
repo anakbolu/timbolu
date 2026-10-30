@@ -9,12 +9,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	checklistadapter "github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/adapter"
-	checklistdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/domain"
-	checklistrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/repository"
-	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
-	integrationservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/service"
-	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
+	checklistadapter "github.com/anakbolu/timbolu/apps/backend/internal/modules/checklist/adapter"
+	checklistdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/checklist/domain"
+	checklistrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/checklist/repository"
+	integrationdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
+	integrationservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/service"
+	taskdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/domain"
 )
 
 // The wiring tests for the checklist module cover the decisions only the container makes, and each of

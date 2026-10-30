@@ -20,7 +20,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/billing/domain"
 )
 
 // Config holds the settings a deployment decides.

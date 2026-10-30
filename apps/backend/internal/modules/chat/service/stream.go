@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
 )
 
 // streamBuffer is how many events a slow client may fall behind before the

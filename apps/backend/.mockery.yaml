@@ -6,16 +6,16 @@ dir: "{{.InterfaceDir}}/mocks"
 outpkg: "mocks"
 mockname: "{{.InterfaceName}}"
 packages:
-  github.com/robzlabz/employeebot/apps/backend/internal/modules/health/domain:
+  github.com/anakbolu/timbolu/apps/backend/internal/modules/health/domain:
     interfaces:
       Repository:
       Checker:
       Service:
-  github.com/robzlabz/employeebot/apps/backend/internal/modules/admin/domain:
+  github.com/anakbolu/timbolu/apps/backend/internal/modules/admin/domain:
     interfaces:
       Repository:
       Service:
-  github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain:
+  github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/domain:
     interfaces:
       Repository:
       Service:
@@ -26,12 +26,12 @@ packages:
       LoginThrottle:
       Passwords:
       Tokens:
-  github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain:
+  github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/domain:
     interfaces:
       Repository:
       Service:
       PlanLimits:
-  github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain:
+  github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain:
     interfaces:
       Repository:
       Service:
@@ -39,10 +39,10 @@ packages:
       Provisioner:
       Tokens:
       PlanLimits:
-  github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain:
+  github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain:
     interfaces:
       PlanLimits:
-  github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/domain:
+  github.com/anakbolu/timbolu/apps/backend/internal/modules/billing/domain:
     interfaces:
       Service:
       Repository:
@@ -51,7 +51,7 @@ packages:
       Gateway:
       Notifier:
       Activity:
-  github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain:
+  github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain:
     interfaces:
       Store:
       AgentStore:
@@ -66,7 +66,7 @@ packages:
       Provider:
       SecretBox:
       Resolver:
-  github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain:
+  github.com/anakbolu/timbolu/apps/backend/internal/modules/memory/domain:
     interfaces:
       Service:
       Repository:
@@ -74,7 +74,7 @@ packages:
       Auditor:
       Scheduler:
       Completer:
-  github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain:
+  github.com/anakbolu/timbolu/apps/backend/internal/modules/routine/domain:
     interfaces:
       Service:
       Repository:
@@ -83,7 +83,7 @@ packages:
       WorkQueue:
       Auditor:
       WorkspaceClock:
-  github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain:
+  github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain:
     interfaces:
       Service:
       ConversationRepository:
@@ -95,11 +95,11 @@ packages:
       Router:
       Responder:
       ObjectStore:
-  github.com/robzlabz/employeebot/apps/backend/internal/modules/order/domain:
+  github.com/anakbolu/timbolu/apps/backend/internal/modules/order/domain:
     interfaces:
       Repository:
       Service:
-  github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/domain:
+  github.com/anakbolu/timbolu/apps/backend/internal/modules/checklist/domain:
     interfaces:
       Repository:
       Service:

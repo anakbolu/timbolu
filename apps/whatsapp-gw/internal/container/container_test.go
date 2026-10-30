@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/packages/platform/config"
-	"github.com/robzlabz/employeebot/packages/platform/database"
-	"github.com/robzlabz/employeebot/packages/platform/redis"
-	"github.com/robzlabz/employeebot/packages/platform/storage"
+	"github.com/anakbolu/timbolu/packages/platform/config"
+	"github.com/anakbolu/timbolu/packages/platform/database"
+	"github.com/anakbolu/timbolu/packages/platform/redis"
+	"github.com/anakbolu/timbolu/packages/platform/storage"
 )
 
 // Assembly is where a missing dependency becomes a process that refuses to

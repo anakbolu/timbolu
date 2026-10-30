@@ -19,8 +19,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
-	platformtemporal "github.com/robzlabz/employeebot/apps/backend/internal/platform/temporal"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/routine/domain"
+	platformtemporal "github.com/anakbolu/timbolu/apps/backend/internal/platform/temporal"
 )
 
 // Scheduler registers the schedules a routine is fired by.

@@ -7,13 +7,13 @@ import (
 
 	"github.com/google/uuid"
 
-	agentdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
-	chatservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/service"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/attachtext"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/pubsub"
-	"github.com/robzlabz/employeebot/packages/platform/config"
-	"github.com/robzlabz/employeebot/packages/platform/storage"
+	agentdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/domain"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
+	chatservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/service"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/attachtext"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/pubsub"
+	"github.com/anakbolu/timbolu/packages/platform/config"
+	"github.com/anakbolu/timbolu/packages/platform/storage"
 )
 
 // openChat builds the conversation module: the repository, the object storage,

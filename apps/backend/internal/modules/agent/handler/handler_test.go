@@ -15,11 +15,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain/mocks"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/response"
-	"github.com/robzlabz/employeebot/packages/platform/database"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/domain/mocks"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/middleware"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/response"
+	"github.com/anakbolu/timbolu/packages/platform/database"
 )
 
 // identity stands in for what the container's auth and tenant middleware put on

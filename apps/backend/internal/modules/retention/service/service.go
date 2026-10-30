@@ -28,7 +28,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/retention/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/retention/domain"
 )
 
 // Deps are the service dependencies.

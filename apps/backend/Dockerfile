@@ -52,7 +52,7 @@ RUN find apps/backend packages -name '*.go' -type f | LC_ALL=C sort | xargs cat 
 # The -X values are what GET /api/health reports: a caller compares the build
 # fingerprint with the one computed from the merged tree, which is the only way
 # to prove from outside that this image — not the previous one — is serving.
-RUN cd apps/backend && FINGERPRINT="$(cat /tmp/fingerprint)" && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X github.com/robzlabz/employeebot/apps/backend/internal/platform/buildinfo.Fingerprint=$FINGERPRINT -X github.com/robzlabz/employeebot/apps/backend/internal/platform/buildinfo.Commit=$GIT_COMMIT -X github.com/robzlabz/employeebot/apps/backend/internal/platform/buildinfo.BuiltAt=$BUILD_TIME" -o /out/app ./cmd/${BINARY}
+RUN cd apps/backend && FINGERPRINT="$(cat /tmp/fingerprint)" && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X github.com/anakbolu/timbolu/apps/backend/internal/platform/buildinfo.Fingerprint=$FINGERPRINT -X github.com/anakbolu/timbolu/apps/backend/internal/platform/buildinfo.Commit=$GIT_COMMIT -X github.com/anakbolu/timbolu/apps/backend/internal/platform/buildinfo.BuiltAt=$BUILD_TIME" -o /out/app ./cmd/${BINARY}
 
 FROM alpine:3.22
 

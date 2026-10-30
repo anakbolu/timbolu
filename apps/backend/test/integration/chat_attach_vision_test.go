@@ -13,14 +13,14 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
-	chatservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/service"
-	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
-	llmrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/repository"
-	llmservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/service"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/pricing"
-	"github.com/robzlabz/employeebot/packages/platform/crypto"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
+	chatservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/service"
+	llmdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
+	llmrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/repository"
+	llmservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/service"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/llm"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/llm/pricing"
+	"github.com/anakbolu/timbolu/packages/platform/crypto"
 )
 
 // This file covers issue #237 end to end: a picture meets a model that cannot read

@@ -1,6 +1,6 @@
 package service
 
-import "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
+import "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
 
 // UseAuditor installs the trail writer a grant change is recorded through.
 //

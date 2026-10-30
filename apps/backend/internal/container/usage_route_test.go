@@ -9,11 +9,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	authmocks "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain/mocks"
-	llmhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/handler"
-	taskhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/handler"
-	workspacemocks "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain/mocks"
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	authmocks "github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/domain/mocks"
+	llmhandler "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/handler"
+	taskhandler "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/handler"
+	workspacemocks "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain/mocks"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 // The wiring tests for the usage screen: which routes exist, and which of them the container's route

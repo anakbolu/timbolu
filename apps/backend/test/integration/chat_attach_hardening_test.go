@@ -17,11 +17,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
-	chathandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/handler"
-	chatservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/service"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
-	"github.com/robzlabz/employeebot/packages/platform/database"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
+	chathandler "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/handler"
+	chatservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/service"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/middleware"
+	"github.com/anakbolu/timbolu/packages/platform/database"
 )
 
 // flakyObjects is an object store whose Put can be made to fail.

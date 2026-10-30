@@ -15,8 +15,8 @@ import (
 	"go.mau.fi/whatsmeow/types"
 	"google.golang.org/protobuf/proto"
 
-	whatsappdomain "github.com/robzlabz/employeebot/packages/whatsapp/domain"
-	"github.com/robzlabz/employeebot/packages/whatsapp/domain/mocks"
+	whatsappdomain "github.com/anakbolu/timbolu/packages/whatsapp/domain"
+	"github.com/anakbolu/timbolu/packages/whatsapp/domain/mocks"
 )
 
 // The engine's own rules are this file: which numbers it serves at all, and how a

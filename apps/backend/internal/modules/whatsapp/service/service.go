@@ -29,7 +29,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/packages/whatsapp/domain"
+	"github.com/anakbolu/timbolu/packages/whatsapp/domain"
 )
 
 // App is the application key a linked number appears under in the hub.

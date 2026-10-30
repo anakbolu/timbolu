@@ -15,11 +15,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	billingdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/domain/mocks"
-	billinghandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/handler"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
-	"github.com/robzlabz/employeebot/packages/platform/database"
+	billingdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/billing/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/billing/domain/mocks"
+	billinghandler "github.com/anakbolu/timbolu/apps/backend/internal/modules/billing/handler"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/middleware"
+	"github.com/anakbolu/timbolu/packages/platform/database"
 )
 
 // The wiring tests for billing cover what only the container can get wrong: which routes

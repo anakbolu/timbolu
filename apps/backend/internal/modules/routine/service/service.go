@@ -24,7 +24,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/routine/domain"
 )
 
 // nameMaxRunes bounds a routine's name, which is shown in a list and in a history

@@ -17,8 +17,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/payment/duitku"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/billing/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/payment/duitku"
 )
 
 // The adapter is this file: what it asks Duitku for, what it reads back, and — the part

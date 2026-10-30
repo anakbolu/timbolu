@@ -5,11 +5,11 @@ import (
 
 	"go.uber.org/zap"
 
-	vcomputerdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/domain"
-	vcomputerservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/service"
-	vcomputertemporal "github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/temporal"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/workflow"
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	vcomputerdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/vcomputer/domain"
+	vcomputerservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/vcomputer/service"
+	vcomputertemporal "github.com/anakbolu/timbolu/apps/backend/internal/modules/vcomputer/temporal"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/vcomputer/workflow"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 // NewVComputerTasks builds the virtual computer's activity set.

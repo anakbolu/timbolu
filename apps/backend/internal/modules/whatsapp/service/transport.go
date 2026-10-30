@@ -1,7 +1,7 @@
 package service
 
 import (
-	"github.com/robzlabz/employeebot/packages/whatsapp/domain"
+	"github.com/anakbolu/timbolu/packages/whatsapp/domain"
 )
 
 // The two halves of one runtime are mutually dependent, and this is where that is

@@ -9,7 +9,7 @@ import (
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/migrations"
+	"github.com/anakbolu/timbolu/apps/backend/migrations"
 )
 
 // TestLatestMigrationMatchesMigrations keeps latestMigration honest without a

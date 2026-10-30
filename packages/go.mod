@@ -1,4 +1,4 @@
-module github.com/robzlabz/employeebot/packages
+module github.com/anakbolu/timbolu/packages
 
 go 1.26.0
 

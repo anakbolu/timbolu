@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/container"
-	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
-	"github.com/robzlabz/employeebot/packages/platform/config"
-	platformredis "github.com/robzlabz/employeebot/packages/platform/redis"
+	"github.com/anakbolu/timbolu/apps/backend/internal/container"
+	integrationdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
+	"github.com/anakbolu/timbolu/packages/platform/config"
+	platformredis "github.com/anakbolu/timbolu/packages/platform/redis"
 )
 
 // These tests cover the E8.5 gate: a per-integration ceiling is respected even

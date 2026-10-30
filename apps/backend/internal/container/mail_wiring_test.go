@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/mail"
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/mail"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 // TestSelectMailerMarksTheNetworkDriverAsync: the SMTP driver's Send reaches the

@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/domain/mocks"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/service"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/checklist/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/checklist/domain/mocks"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/checklist/service"
 )
 
 // This file is the module's rules rather than Postgres's: one plan at a time, a task is not done while

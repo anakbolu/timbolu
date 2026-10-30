@@ -23,7 +23,7 @@ import (
 
 	"github.com/google/uuid"
 
-	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
+	llmdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
 )
 
 // Memory kinds, matching the check constraint on `memories.kind`.

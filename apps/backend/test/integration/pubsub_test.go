@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/pubsub"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/pubsub"
 )
 
 // TestChannelIsNamespacedByWorkspace is the isolation rule the stream depends on:

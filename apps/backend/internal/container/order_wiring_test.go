@@ -10,13 +10,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	agentdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
-	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
-	integrationservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/service"
-	orderadapter "github.com/robzlabz/employeebot/apps/backend/internal/modules/order/adapter"
-	orderdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/order/domain"
-	orderrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/order/repository"
-	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
+	agentdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/domain"
+	integrationdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
+	integrationservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/service"
+	orderadapter "github.com/anakbolu/timbolu/apps/backend/internal/modules/order/adapter"
+	orderdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/order/domain"
+	orderrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/order/repository"
+	taskdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/domain"
 )
 
 // The wiring tests for the order module cover the decisions only the container makes, and each of them

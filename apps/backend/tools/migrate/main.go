@@ -14,7 +14,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/migrate"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/migrate"
 )
 
 func main() {

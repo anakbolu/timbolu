@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain/mocks"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/authn"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/domain/mocks"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/authn"
 )
 
 // The primitives are used for real: they are pure and fast, and using them keeps

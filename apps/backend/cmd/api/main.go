@@ -14,8 +14,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/container"
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	"github.com/anakbolu/timbolu/apps/backend/internal/container"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 const shutdownTimeout = 10 * time.Second

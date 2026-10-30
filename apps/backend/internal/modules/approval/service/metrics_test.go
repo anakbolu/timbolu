@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/approval/domain"
 )
 
 // recordingMetrics is the port the deployment implements, kept here so a test reads what the gate

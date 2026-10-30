@@ -39,10 +39,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/anthropic"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/llmtest"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/openai"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/llm/anthropic"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/llm/llmtest"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/llm/openai"
 )
 
 // adapterSpec describes one provider: where to call it, which environment

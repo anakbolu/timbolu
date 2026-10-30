@@ -13,8 +13,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	ghconnector "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/adapters/github"
-	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
+	ghconnector "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/adapters/github"
+	integrationdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
 )
 
 // The adapter's contract with the runtime is what this file tests: the URL it sends
@@ -278,7 +278,7 @@ func TestListReposSendsTheTokenAndThePinnedHeaders(t *testing.T) {
 				"full_name": "robzlabz/timbolu",
 				"name": "timbolu",
 				"private": true,
-				"html_url": "https://github.com/robzlabz/timbolu",
+				"html_url": "https://github.com/anakbolu/timbolu",
 				"default_branch": "main",
 				"updated_at": "2026-10-16T03:00:00Z",
 				"description": "Bolu untuk toko"
@@ -326,7 +326,7 @@ func TestCreateIssuePostsIntoTheNamedRepository(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{
 			"number": 178,
-			"html_url": "https://github.com/robzlabz/timbolu/issues/178",
+			"html_url": "https://github.com/anakbolu/timbolu/issues/178",
 			"state": "open",
 			"title": "Stok gula habis"
 		}`))
@@ -347,7 +347,7 @@ func TestCreateIssuePostsIntoTheNamedRepository(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(result.Content, &decoded))
 	require.Equal(t, 178, decoded.Number)
-	require.Equal(t, "https://github.com/robzlabz/timbolu/issues/178", decoded.HTMLURL)
+	require.Equal(t, "https://github.com/anakbolu/timbolu/issues/178", decoded.HTMLURL)
 }
 
 // TestCreateIssueRefusesAnIncompleteCall: a call the schema would have caught is
@@ -378,7 +378,7 @@ func TestCreatePullRequestPostsTheBranches(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{
 			"number": 290,
-			"html_url": "https://github.com/robzlabz/timbolu/pull/290",
+			"html_url": "https://github.com/anakbolu/timbolu/pull/290",
 			"state": "open",
 			"title": "Panel thread",
 			"draft": true
@@ -403,7 +403,7 @@ func TestCreatePullRequestPostsTheBranches(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(result.Content, &decoded))
 	require.Equal(t, 290, decoded.Number)
-	require.Equal(t, "https://github.com/robzlabz/timbolu/pull/290", decoded.HTMLURL)
+	require.Equal(t, "https://github.com/anakbolu/timbolu/pull/290", decoded.HTMLURL)
 	require.True(t, decoded.Draft)
 }
 

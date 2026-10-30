@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/service"
-	"github.com/robzlabz/employeebot/packages/whatsapp/domain"
-	"github.com/robzlabz/employeebot/packages/whatsapp/domain/mocks"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/whatsapp/service"
+	"github.com/anakbolu/timbolu/packages/whatsapp/domain"
+	"github.com/anakbolu/timbolu/packages/whatsapp/domain/mocks"
 )
 
 // The module's own rules are this file: who may link a number, what a customer's

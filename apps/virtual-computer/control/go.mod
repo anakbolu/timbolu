@@ -3,6 +3,6 @@
 // and it depends on nothing the backend depends on (docs/adr/0003-virtual-computer.md
 // §3.2). Its only dependency is the standard library, which is also why the image it
 // ships in stays small.
-module github.com/robzlabz/employeebot/apps/virtual-computer/control
+module github.com/anakbolu/timbolu/apps/virtual-computer/control
 
 go 1.26.0

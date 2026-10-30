@@ -14,9 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	whatsappservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/service"
-	whatsappdomain "github.com/robzlabz/employeebot/packages/whatsapp/domain"
-	"github.com/robzlabz/employeebot/packages/whatsapp/domain/mocks"
+	whatsappservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/whatsapp/service"
+	whatsappdomain "github.com/anakbolu/timbolu/packages/whatsapp/domain"
+	"github.com/anakbolu/timbolu/packages/whatsapp/domain/mocks"
 )
 
 // The internal listener is the second half of the seam: the API serves the

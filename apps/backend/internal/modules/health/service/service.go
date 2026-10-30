@@ -5,7 +5,7 @@ package service
 import (
 	"context"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/health/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/health/domain"
 )
 
 type service struct {

@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/health/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/health/domain/mocks"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/response"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/health/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/health/domain/mocks"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/response"
 )
 
 func newTestApp(t *testing.T, service domain.Service) *fiber.App {

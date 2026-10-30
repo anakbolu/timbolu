@@ -24,8 +24,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/admin/domain"
-	authdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/admin/domain"
+	authdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/domain"
 )
 
 // Deps is what the service is built from.

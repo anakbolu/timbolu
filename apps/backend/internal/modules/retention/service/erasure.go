@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/retention/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/retention/domain"
 )
 
 // Erase removes a workspace's data on request.

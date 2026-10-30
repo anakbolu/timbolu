@@ -53,7 +53,7 @@ const (
 )
 
 // ScopeName is the instrumentation scope the instruments are filed under.
-const ScopeName = "github.com/robzlabz/employeebot"
+const ScopeName = "github.com/anakbolu/timbolu"
 
 // Config is how a deployment reports metrics.
 type Config struct {

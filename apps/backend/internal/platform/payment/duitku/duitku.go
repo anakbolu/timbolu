@@ -30,7 +30,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/billing/domain"
 )
 
 // Name is the provider key invoices record and callbacks arrive under.

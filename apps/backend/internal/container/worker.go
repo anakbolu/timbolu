@@ -7,8 +7,8 @@ import (
 	sdkworker "go.temporal.io/sdk/worker"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/task/workflow"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/temporal"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/task/workflow"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/temporal"
 )
 
 // WorkerConfig describes one Temporal worker process. The container owns the

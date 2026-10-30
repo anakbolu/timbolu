@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/vision"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/llm"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/llm/vision"
 )
 
 // TestATextOnlyModelIsNeverSentThePicture is the configured half of #237: the

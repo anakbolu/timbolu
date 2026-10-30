@@ -9,8 +9,8 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 
-	healthrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/repository"
-	"github.com/robzlabz/employeebot/packages/platform/redis"
+	healthrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/health/repository"
+	"github.com/anakbolu/timbolu/packages/platform/redis"
 )
 
 // TestRedisClientAgainstARealServer covers the happy path of the shared Redis

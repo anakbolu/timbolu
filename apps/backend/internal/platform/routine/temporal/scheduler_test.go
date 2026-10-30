@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/client"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/routine/domain"
 )
 
 // E11.2's verification is this file: the four cadences, translated into the schedule

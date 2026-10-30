@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
-	chatmocks "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain/mocks"
-	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
+	chatmocks "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain/mocks"
+	taskdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/domain"
 )
 
 // TestTaskAttachmentReaderReadsInsideTheWorkspaceScope is the seam's contract:

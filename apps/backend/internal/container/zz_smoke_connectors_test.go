@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	integrationservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/service"
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	integrationservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/service"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 // Smoke: the env keys reach the config field, and the container offers the two

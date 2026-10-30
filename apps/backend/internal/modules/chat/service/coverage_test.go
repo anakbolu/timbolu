@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
-	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
-	llmmocks "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain/mocks"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
+	llmdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
+	llmmocks "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain/mocks"
 )
 
 // TestConversationReadsAreScoped keeps the two read paths and the scope check

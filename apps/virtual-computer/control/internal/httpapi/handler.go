@@ -37,7 +37,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/robzlabz/employeebot/apps/virtual-computer/control/internal/sandbox"
+	"github.com/anakbolu/timbolu/apps/virtual-computer/control/internal/sandbox"
 )
 
 // maxBody bounds a request. The largest thing that crosses this surface is a typed

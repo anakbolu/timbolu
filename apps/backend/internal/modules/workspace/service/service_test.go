@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain/mocks"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain/mocks"
 )
 
 type harness struct {

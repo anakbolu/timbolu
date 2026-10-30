@@ -14,11 +14,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/order/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/order/domain/mocks"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/response"
-	"github.com/robzlabz/employeebot/packages/platform/database"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/order/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/order/domain/mocks"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/middleware"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/response"
+	"github.com/anakbolu/timbolu/packages/platform/database"
 )
 
 // This file is the wire and nothing else: the fields a screen sends and reads, and the status and

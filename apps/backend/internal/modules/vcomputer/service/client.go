@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/vcomputer/domain"
 )
 
 // maxResponse bounds an answer. A screenshot is the largest thing that crosses this

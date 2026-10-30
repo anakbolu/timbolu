@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/robzlabz/employeebot/apps/backend/tools/archcheck/engine"
+	"github.com/anakbolu/timbolu/apps/backend/tools/archcheck/engine"
 )
 
 func main() {

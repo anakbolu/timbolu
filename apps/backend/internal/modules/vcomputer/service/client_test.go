@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/vcomputer/domain"
 )
 
 // fakeToken is the shared secret the fake accepts, standing in for the value of

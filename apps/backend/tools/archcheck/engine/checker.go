@@ -52,7 +52,7 @@ type Import struct {
 // Package is one Go package of the module.
 type Package struct {
 	// ImportPath is the full import path, e.g.
-	// github.com/robzlabz/employeebot/apps/backend/internal/modules/health/domain
+	// github.com/anakbolu/timbolu/apps/backend/internal/modules/health/domain
 	ImportPath string
 	// Rel is the path relative to the module root, e.g. internal/modules/health/domain
 	Rel string
