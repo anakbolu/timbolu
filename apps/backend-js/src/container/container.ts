@@ -131,6 +131,10 @@ import { Handler as WhatsAppHandler } from "../modules/whatsapp/handler/handler.
 import { PostgresRepository as TaskRepository } from "../modules/task/repository/postgres.ts";
 import { Service as TaskService } from "../modules/task/service/service.ts";
 import { Handler as TaskHandler } from "../modules/task/handler/handler.ts";
+// device
+import { Repository as DeviceRepository } from "../modules/device/repository/postgres.ts";
+import { Service as DeviceService } from "../modules/device/service/service.ts";
+import { Handler as DeviceHandler } from "../modules/device/handler/handler.ts";
 // admin
 import { Repository as AdminRepository } from "../modules/admin/repository/postgres.ts";
 import { Service as AdminService } from "../modules/admin/service/service.ts";
@@ -164,6 +168,7 @@ export interface Container {
   order: OrderHandler | null;
   billing: BillingHandler | null;
   approval: ApprovalHandler | null;
+  device: DeviceHandler | null;
   retention: RetentionHandler | null;
   memory: MemoryHandler | null;
   routine: RoutineHandler | null;
@@ -458,6 +463,7 @@ export async function newContainer(
   let billingService: BillingService | null = null;
   let approval: ApprovalHandler | null = null;
   let approvalService: ApprovalService | null = null;
+  let device: DeviceHandler | null = null;
   let retention: RetentionHandler | null = null;
   let retentionService: RetentionService | null = null;
   let memory: MemoryHandler | null = null;
@@ -576,6 +582,14 @@ export async function newContainer(
     } as any);
     approval = new ApprovalHandler(approvalService, log);
 
+    // The registry of Expo push addresses. It needs nothing but the pool: the
+    // policy on `device_tokens` is keyed on the user, so the service never asks
+    // another module who the caller is.
+    device = new DeviceHandler(
+      new DeviceService({ repository: new DeviceRepository(db) }),
+      log,
+    );
+
     const retentionRepo = new RetentionRepository(db);
     retentionService = new RetentionService({ repository: retentionRepo, logger: log } as any);
     retention = new RetentionHandler(retentionService, log);
@@ -692,6 +706,7 @@ export async function newContainer(
     order,
     billing,
     approval,
+    device,
     retention,
     memory,
     routine,
