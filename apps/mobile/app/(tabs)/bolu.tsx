@@ -9,11 +9,19 @@ import {
   View,
 } from "react-native";
 import { Redirect, router } from "expo-router";
+import * as Linking from "expo-linking";
 
 import { BoluFace } from "@/components/bolu-face";
 import { listAgents } from "@/lib/api";
 import type { Agent } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+
+/**
+ * Where a workspace is created. Onboarding is a web flow with no app screen yet,
+ * and the address is written out rather than derived from `API_URL`: during
+ * development that base is a LAN address the phone's browser could not open.
+ */
+const ONBOARDING_URL = "https://timbolu.com/onboarding";
 
 /** The display status, in the app's language. Unknown values are shown as-is. */
 const STATUS_LABEL: Record<string, string> = {
@@ -24,32 +32,55 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 /**
+ * What the tab is showing. "No workspace" is its own case rather than an error
+ * or an empty list: it is the one state whose way out is a browser, not a retry
+ * of the same request, so it needs its own words and its own button.
+ */
+type ListState =
+  | { kind: "loading" }
+  | { kind: "agents"; agents: Agent[] }
+  | { kind: "no-workspace" }
+  | { kind: "error"; message: string };
+
+/** Initial load, pull-to-refresh, or the button that must re-ask `/workspaces`. */
+type LoadMode = "initial" | "pull" | "retry";
+
+/**
  * The Bolu in this workspace, read from `GET /agents`: the flat registry list,
  * which is what a phone with one scrollable column wants. Tapping one opens the
  * direct thread with it.
  */
 export default function BoluScreen() {
   const { status } = useAuth();
-  const [agents, setAgents] = useState<Agent[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [list, setList] = useState<ListState>({ kind: "loading" });
   const [refreshing, setRefreshing] = useState(false);
+  const [checking, setChecking] = useState(false);
 
-  const load = useCallback(async (isRefresh: boolean) => {
-    if (isRefresh) setRefreshing(true);
-    const result = await listAgents();
-    if (result.ok) {
-      setAgents(result.data);
-      setError(null);
+  const load = useCallback(async (mode: LoadMode) => {
+    if (mode === "pull") setRefreshing(true);
+    if (mode === "retry") setChecking(true);
+
+    // Only "retry" re-asks `GET /workspaces`. The person pressing it has just
+    // been told the workspace is made in a browser, so this run's cached answer
+    // is exactly what must not be trusted; a pull refresh keeps the workspace it
+    // already has.
+    const result = await listAgents({ refreshWorkspace: mode === "retry" });
+
+    if (result.kind === "agents") {
+      setList({ kind: "agents", agents: result.agents });
+    } else if (result.kind === "no-workspace") {
+      setList({ kind: "no-workspace" });
     } else {
-      setError(result.message);
+      setList({ kind: "error", message: result.error.message });
     }
     setRefreshing(false);
+    setChecking(false);
   }, []);
 
   // Reload when the session changes, not on every render: a sign-out and a
   // sign-in as somebody else must not leave the previous account's Bolu here.
   useEffect(() => {
-    if (status === "signed-in") void load(false);
+    if (status === "signed-in") void load("initial");
   }, [status, load]);
 
   if (status === "signed-out") {
@@ -58,34 +89,75 @@ export default function BoluScreen() {
 
   return (
     <View style={styles.page}>
-      {agents === null && error === null ? (
+      {list.kind === "loading" ? (
         <View style={styles.centered}>
           <ActivityIndicator />
         </View>
       ) : null}
 
-      {error !== null ? (
+      {list.kind === "error" ? (
         <View style={styles.centered}>
-          <Text style={styles.error}>{error}</Text>
-          <Pressable onPress={() => void load(true)} accessibilityRole="button" style={styles.retry}>
+          <Text style={styles.error}>{list.message}</Text>
+          <Pressable
+            onPress={() => void load("retry")}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: checking }}
+            disabled={checking}
+            style={({ pressed }) => [styles.retry, (pressed || checking) && styles.buttonPressed]}
+          >
             <Text style={styles.retryText}>Coba lagi</Text>
           </Pressable>
         </View>
       ) : null}
 
-      {agents !== null && agents.length === 0 ? (
+      {list.kind === "no-workspace" ? (
+        <View style={styles.centered}>
+          <Text style={styles.empty}>Belum ada ruang usaha.</Text>
+          <Text style={styles.emptyHint}>
+            Ruang usaha dibuat di web, bukan di app ini. Buka timbolu.com, isi data usahamu dan Bolu
+            pertamamu, lalu kembali ke sini dan tekan “Coba lagi”.
+          </Text>
+          <Pressable
+            onPress={() => {
+              // A phone with no browser handler rejects; the sentence names the
+              // address so it can still be typed on another device.
+              void Linking.openURL(ONBOARDING_URL).catch(() => {
+                setList({
+                  kind: "error",
+                  message: `Tidak bisa membuka browser. Buka ${ONBOARDING_URL} di perangkat lain.`,
+                });
+              });
+            }}
+            accessibilityRole="button"
+            style={styles.primary}
+          >
+            <Text style={styles.primaryText}>Buat ruang usaha di web</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => void load("retry")}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: checking }}
+            disabled={checking}
+            style={({ pressed }) => [styles.secondary, (pressed || checking) && styles.buttonPressed]}
+          >
+            <Text style={styles.secondaryText}>{checking ? "Memeriksa…" : "Coba lagi"}</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {list.kind === "agents" && list.agents.length === 0 ? (
         <View style={styles.centered}>
           <Text style={styles.empty}>Belum ada Bolu di workspace ini.</Text>
           <Text style={styles.emptyHint}>Buat yang pertama dari web, lalu tarik ke bawah untuk memuat ulang.</Text>
         </View>
       ) : null}
 
-      {agents !== null && agents.length > 0 ? (
+      {list.kind === "agents" && list.agents.length > 0 ? (
         <FlatList
-          data={agents}
+          data={list.agents}
           keyExtractor={(agent) => agent.id}
           contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load("pull")} />}
           renderItem={({ item }) => (
             <Pressable
               accessibilityRole="button"
@@ -130,6 +202,17 @@ const styles = StyleSheet.create({
   error: { color: "#B3261E", fontSize: 14, textAlign: "center" },
   empty: { fontSize: 16, fontWeight: "600", color: "#1E1B2E", textAlign: "center" },
   emptyHint: { fontSize: 13, color: "#5A5670", textAlign: "center" },
+  primary: { backgroundColor: "#F28C4E", borderRadius: 10, paddingHorizontal: 18, paddingVertical: 10 },
+  primaryText: { color: "#FFFFFF", fontWeight: "700" },
   retry: { backgroundColor: "#F28C4E", borderRadius: 10, paddingHorizontal: 18, paddingVertical: 10 },
   retryText: { color: "#FFFFFF", fontWeight: "700" },
+  secondary: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#F28C4E",
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+  },
+  buttonPressed: { opacity: 0.7 },
+  secondaryText: { color: "#F28C4E", fontWeight: "700" },
 });

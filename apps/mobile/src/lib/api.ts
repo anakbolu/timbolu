@@ -386,19 +386,57 @@ function refreshTokenFromSetCookie(setCookie: string | null): string | null {
 }
 
 /**
+ * The answer to "which workspace is this run scoped to?" — three different
+ * things, kept apart because a screen acts differently on each: the account has
+ * one, the account has none yet (onboarding lives on the web), or the question
+ * could not be asked. Folding the last two into a single `null` would tell a
+ * person whose phone is offline to create a workspace they already have.
+ */
+export type WorkspaceLookup =
+  | { kind: "workspace"; workspaceId: string }
+  | { kind: "no-workspace" }
+  | { kind: "error"; error: ApiError };
+
+/**
  * Reads the namespace one app run works in: the first workspace the account
  * belongs to.
  *
  * Every tenant-scoped call needs `X-Workspace-Id`, and this scaffold has nowhere
  * to remember a chosen one, so the first is the default — which is what an
  * account with a single workspace expects to see anyway.
+ *
+ * `refresh` skips the cached id and asks `GET /workspaces` again. That is what a
+ * "Coba lagi" button needs after the workspace was created in a browser: the
+ * account's membership changed outside this run, so only a fresh answer knows it.
+ */
+async function resolveWorkspace(refresh: boolean): Promise<WorkspaceLookup> {
+  if (!refresh && activeWorkspaceId) {
+    return { kind: "workspace", workspaceId: activeWorkspaceId };
+  }
+  const result = await request<Workspace[]>("/workspaces");
+  if (!result.ok) return { kind: "error", error: result };
+
+  const first = result.data[0];
+  if (!first) {
+    // A workspace can disappear between calls (it was removed on the web), so a
+    // stale id must not survive an answer that says there is nothing to scope to.
+    activeWorkspaceId = null;
+    return { kind: "no-workspace" };
+  }
+
+  activeWorkspaceId = first.id;
+  return { kind: "workspace", workspaceId: activeWorkspaceId };
+}
+
+/**
+ * The workspace id a tenant-scoped call carries, or `null` when there is none
+ * to carry. Callers that only need "can this call proceed?" -- the chat calls --
+ * use this; the Bolu list asks `resolveWorkspace` directly so it can say which
+ * of the two empty reasons applies.
  */
 async function ensureWorkspace(): Promise<string | null> {
-  if (activeWorkspaceId) return activeWorkspaceId;
-  const result = await request<Workspace[]>("/workspaces");
-  if (!result.ok || result.data.length === 0) return null;
-  activeWorkspaceId = result.data[0].id;
-  return activeWorkspaceId;
+  const found = await resolveWorkspace(false);
+  return found.kind === "workspace" ? found.workspaceId : null;
 }
 
 /** What a screen needs once a session exists: the account and its workspace. */
@@ -492,11 +530,33 @@ const NO_WORKSPACE: ApiError = {
   message: "Akun ini belum punya workspace.",
 };
 
-/** The Bolu in the active workspace, flat and in the registry's own order. */
-export async function listAgents(): Promise<ApiResult<Agent[]>> {
-  const workspaceId = await ensureWorkspace();
-  if (!workspaceId) return NO_WORKSPACE;
-  return request<Agent[]>("/agents", { workspace: workspaceId });
+/**
+ * What `GET /agents` means to a screen. `agents: []` is a workspace that exists
+ * but has no Bolu yet; `no-workspace` is an account that has nothing to look
+ * inside. They need different sentences and different buttons, so they are not
+ * one `ApiResult` whose error text happens to differ.
+ */
+export type AgentListResult =
+  | { kind: "agents"; agents: Agent[] }
+  | { kind: "no-workspace" }
+  | { kind: "error"; error: ApiError };
+
+/**
+ * The Bolu in the active workspace, flat and in the registry's own order.
+ *
+ * `refreshWorkspace` asks `GET /workspaces` again before reading. The no-workspace
+ * screen passes it on "Coba lagi": the workspace is created in a browser, so the
+ * app only learns about it by asking rather than trusting this run's cache.
+ */
+export async function listAgents(
+  options: { refreshWorkspace?: boolean } = {},
+): Promise<AgentListResult> {
+  const found = await resolveWorkspace(options.refreshWorkspace === true);
+  if (found.kind !== "workspace") return found;
+
+  const result = await request<Agent[]>("/agents", { workspace: found.workspaceId });
+  if (!result.ok) return { kind: "error", error: result };
+  return { kind: "agents", agents: result.data };
 }
 
 /**
