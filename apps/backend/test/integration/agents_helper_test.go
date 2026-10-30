@@ -7,10 +7,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	agentdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
-	agentrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/repository"
-	agentservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/service"
-	"github.com/robzlabz/employeebot/packages/platform/database"
+	agentdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/domain"
+	agentrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/repository"
+	agentservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/service"
+	"github.com/anakbolu/timbolu/packages/platform/database"
 )
 
 // A workspace is created empty, so a test that needs Bolu creates them the way a

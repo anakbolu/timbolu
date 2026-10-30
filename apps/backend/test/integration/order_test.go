@@ -8,14 +8,14 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	authrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository"
-	orderadapter "github.com/robzlabz/employeebot/apps/backend/internal/modules/order/adapter"
-	orderdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/order/domain"
-	orderrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/order/repository"
-	orderservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/order/service"
-	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
-	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	"github.com/robzlabz/employeebot/packages/platform/database"
+	authrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/repository"
+	orderadapter "github.com/anakbolu/timbolu/apps/backend/internal/modules/order/adapter"
+	orderdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/order/domain"
+	orderrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/order/repository"
+	orderservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/order/service"
+	workspacedomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain"
+	workspacerepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/repository"
+	"github.com/anakbolu/timbolu/packages/platform/database"
 )
 
 // This file is EPIC 14's proof against a real Postgres. The claims are the ones a mock would only

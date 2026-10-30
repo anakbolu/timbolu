@@ -15,7 +15,7 @@ import (
 
 	"github.com/google/uuid"
 
-	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
+	llmdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
 )
 
 // Status values, matching the check constraint on `tasks.status`.

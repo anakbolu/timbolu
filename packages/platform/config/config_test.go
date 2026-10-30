@@ -115,7 +115,6 @@ func TestLoadReadsTheModelGatewaySettings(t *testing.T) {
 	require.Equal(t, 2, cfg.Llm.ChainLimit)
 }
 
-
 // TestTextOnlyModelsComeFromTheEnvironment: which models cannot see a picture is a
 // deployment fact, because a workspace points the gateway at whatever its provider
 // serves. The list can only take vision away — a model it does not name is assumed

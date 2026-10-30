@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	approvaldomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/domain"
-	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
+	approvaldomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/approval/domain"
+	integrationdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
 )
 
 // integrationExecutor carries an approved action out.

@@ -14,9 +14,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/container"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/temporal"
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	"github.com/anakbolu/timbolu/apps/backend/internal/container"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/temporal"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 func main() {

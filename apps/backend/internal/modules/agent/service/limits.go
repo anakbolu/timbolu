@@ -1,6 +1,6 @@
 package service
 
-import "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
+import "github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/domain"
 
 // UsePlanLimits installs the workspace's package as the registry's cap.
 //

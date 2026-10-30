@@ -3,7 +3,7 @@
 package mocks
 
 import (
-	domain "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain"
+	domain "github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/domain"
 	mock "github.com/stretchr/testify/mock"
 
 	time "time"

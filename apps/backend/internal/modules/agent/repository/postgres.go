@@ -14,9 +14,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/repository/sqlcgen"
-	"github.com/robzlabz/employeebot/packages/platform/database"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/repository/sqlcgen"
+	"github.com/anakbolu/timbolu/packages/platform/database"
 )
 
 // Repository is the Postgres-backed implementation of domain.Repository.

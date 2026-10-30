@@ -7,7 +7,7 @@ import (
 
 	"go.temporal.io/sdk/activity"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/task/domain"
 )
 
 // The task runtime's own measures: how much work the deployment accepted, what it cost, and how

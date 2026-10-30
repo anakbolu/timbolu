@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/oauth/google"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/oauth/google"
 )
 
 // googleStub stands in for Google's endpoints, so the sign-in flow can be driven

@@ -5,9 +5,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/vision"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/llm"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/llm/vision"
 )
 
 // picture is a request carrying one, which is what a capability check is asked

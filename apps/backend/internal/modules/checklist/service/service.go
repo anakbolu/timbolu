@@ -19,7 +19,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/checklist/domain"
 )
 
 // Deps are the service dependencies.

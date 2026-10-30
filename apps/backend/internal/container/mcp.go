@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/mcp"
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	integrationdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/mcp"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 // mcpClients builds a client for one MCP server.

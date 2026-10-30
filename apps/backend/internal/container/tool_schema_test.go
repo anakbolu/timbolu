@@ -8,8 +8,8 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
 
-	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
-	integrationservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/service"
+	integrationdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
+	integrationservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/service"
 )
 
 // schemaAdapter is an adapter that declares one tool with a required field, so

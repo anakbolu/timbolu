@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/health/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/health/domain"
 )
 
 // TestPingWithoutAPool keeps the "not configured" state an error rather than a

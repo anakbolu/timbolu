@@ -8,8 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/workflow"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/memory/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/memory/workflow"
 )
 
 // stubService is the memory service the activity drives.

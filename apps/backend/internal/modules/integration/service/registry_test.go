@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
 )
 
 // fakeAdapter is a stand-in for a real application. It exists so the registry

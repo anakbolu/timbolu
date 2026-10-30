@@ -9,16 +9,16 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	ghconnector "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/adapters/github"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/adapters/gmail"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/adapters/slack"
-	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
-	integrationservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/service"
-	routinedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/oauthstate"
-	"github.com/robzlabz/employeebot/packages/platform/config"
-	"github.com/robzlabz/employeebot/packages/platform/crypto"
-	"github.com/robzlabz/employeebot/packages/platform/kms"
+	ghconnector "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/adapters/github"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/adapters/gmail"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/adapters/slack"
+	integrationdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
+	integrationservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/service"
+	routinedomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/routine/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/oauthstate"
+	"github.com/anakbolu/timbolu/packages/platform/config"
+	"github.com/anakbolu/timbolu/packages/platform/crypto"
+	"github.com/anakbolu/timbolu/packages/platform/kms"
 )
 
 // openIntegration builds the integration hub: the connected accounts, the key

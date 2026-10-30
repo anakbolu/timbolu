@@ -8,8 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/health/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/health/repository/sqlcgen"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/health/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/health/repository/sqlcgen"
 )
 
 // Repository is the Postgres-backed implementation of domain.Repository.

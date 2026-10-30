@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
 )
 
 // TestCheckEnforcesTheDailyCostCeiling is the second bound: a workspace with

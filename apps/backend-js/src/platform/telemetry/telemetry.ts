@@ -37,7 +37,7 @@ export const EXPORTER_OTLP = "otlp";
 export const SHUTDOWN_TIMEOUT = 5_000;
 
 /** The instrumentation scope every span this codebase starts is filed under. */
-export const SCOPE_NAME = "github.com/robzlabz/employeebot";
+export const SCOPE_NAME = "github.com/anakbolu/timbolu";
 
 /** How a process is traced. */
 export interface Config {

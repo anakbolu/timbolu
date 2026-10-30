@@ -1,6 +1,6 @@
 package service
 
-import "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
+import "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
 
 // UseAuditor installs the trail writer a model configuration change is recorded through.
 //

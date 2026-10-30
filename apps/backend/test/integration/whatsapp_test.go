@@ -9,17 +9,17 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/container"
-	agentdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
-	agentrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/repository"
-	agentservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/service"
-	authrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository"
-	whatsapprepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/repository"
-	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
-	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	"github.com/robzlabz/employeebot/packages/platform/config"
-	"github.com/robzlabz/employeebot/packages/platform/database"
-	whatsappdomain "github.com/robzlabz/employeebot/packages/whatsapp/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/container"
+	agentdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/domain"
+	agentrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/repository"
+	agentservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/service"
+	authrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/repository"
+	whatsapprepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/whatsapp/repository"
+	workspacedomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain"
+	workspacerepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/repository"
+	"github.com/anakbolu/timbolu/packages/platform/config"
+	"github.com/anakbolu/timbolu/packages/platform/database"
+	whatsappdomain "github.com/anakbolu/timbolu/packages/whatsapp/domain"
 )
 
 // This file is EPIC 9's proof against a real Postgres. The claims are the ones a

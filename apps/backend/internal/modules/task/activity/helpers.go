@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/task/workflow"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/task/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/task/workflow"
 )
 
 // HandoffTool is the tool that asks another Bolu to do part of the work.

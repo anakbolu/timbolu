@@ -11,10 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
-	chatservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/service"
-	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/attachtext"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
+	chatservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/service"
+	llmdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/attachtext"
 )
 
 // unusedGateway answers the gateway questions the reply path never asks. It

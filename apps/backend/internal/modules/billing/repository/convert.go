@@ -1,8 +1,8 @@
 package repository
 
 import (
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/repository/sqlcgen"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/billing/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/billing/repository/sqlcgen"
 )
 
 // The rows the generated code produces are turned into domain values here and

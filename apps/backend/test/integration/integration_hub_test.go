@@ -9,15 +9,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/container"
-	approvalrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/repository"
-	authrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository"
-	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
-	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
-	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	"github.com/robzlabz/employeebot/packages/platform/config"
-	"github.com/robzlabz/employeebot/packages/platform/crypto"
-	"github.com/robzlabz/employeebot/packages/platform/database"
+	"github.com/anakbolu/timbolu/apps/backend/internal/container"
+	approvalrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/approval/repository"
+	authrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/repository"
+	integrationdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
+	workspacedomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain"
+	workspacerepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/repository"
+	"github.com/anakbolu/timbolu/packages/platform/config"
+	"github.com/anakbolu/timbolu/packages/platform/crypto"
+	"github.com/anakbolu/timbolu/packages/platform/database"
 )
 
 // These tests cover the E8.1 gate: a stored token is never readable from the

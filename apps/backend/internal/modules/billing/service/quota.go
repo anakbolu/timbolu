@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/billing/domain"
 )
 
 // The quota half: what a workspace may spend, and the reconciliation that keeps the

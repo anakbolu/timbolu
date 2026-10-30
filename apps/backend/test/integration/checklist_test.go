@@ -7,17 +7,17 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	agentdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
-	agentrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/repository"
-	agentservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/service"
-	authrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository"
-	checklistadapter "github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/adapter"
-	checklistdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/domain"
-	checklistrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/repository"
-	checklistservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/service"
-	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
-	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	"github.com/robzlabz/employeebot/packages/platform/database"
+	agentdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/domain"
+	agentrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/repository"
+	agentservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/service"
+	authrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/repository"
+	checklistadapter "github.com/anakbolu/timbolu/apps/backend/internal/modules/checklist/adapter"
+	checklistdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/checklist/domain"
+	checklistrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/checklist/repository"
+	checklistservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/checklist/service"
+	workspacedomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain"
+	workspacerepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/repository"
+	"github.com/anakbolu/timbolu/packages/platform/database"
 )
 
 // This file is EPIC 15's proof against a real Postgres. The claims are the ones a mock would only

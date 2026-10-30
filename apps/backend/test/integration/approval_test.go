@@ -9,15 +9,15 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	approvaldomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/domain"
-	approvalrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/repository"
-	approvalservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/service"
-	authrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository"
-	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	taskrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/repository"
-	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
-	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	"github.com/robzlabz/employeebot/packages/platform/database"
+	approvaldomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/approval/domain"
+	approvalrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/approval/repository"
+	approvalservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/approval/service"
+	authrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/repository"
+	taskdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/domain"
+	taskrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/repository"
+	workspacedomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain"
+	workspacerepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/repository"
+	"github.com/anakbolu/timbolu/packages/platform/database"
 )
 
 // approvalFixture is one onboarded workspace with the approval runtime.

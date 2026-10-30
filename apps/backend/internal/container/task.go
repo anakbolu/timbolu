@@ -9,17 +9,17 @@ import (
 
 	"github.com/google/uuid"
 
-	agentdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
-	billingdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/domain"
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
-	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
-	taskactivity "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/activity"
-	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	taskservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/service"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/task/workflow"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/pubsub"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/temporal"
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	agentdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/domain"
+	billingdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/billing/domain"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
+	llmdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
+	taskactivity "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/activity"
+	taskdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/domain"
+	taskservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/service"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/task/workflow"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/pubsub"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/temporal"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 // openTask builds the task runtime: the repository, the service that opens a

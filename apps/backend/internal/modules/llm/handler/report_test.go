@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
 )
 
 // stubReporter answers with a scripted report and records what it was asked.

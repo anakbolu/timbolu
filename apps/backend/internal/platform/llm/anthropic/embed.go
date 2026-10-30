@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
 )
 
 // Embed reports that this API has no embedding endpoint.

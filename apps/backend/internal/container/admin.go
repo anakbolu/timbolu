@@ -3,8 +3,8 @@ package container
 import (
 	"context"
 
-	adminservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/admin/service"
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	adminservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/admin/service"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 // openAdmin builds the operator surface's service.

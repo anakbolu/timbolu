@@ -6,15 +6,15 @@ import (
 	"strings"
 	"time"
 
-	agentservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/service"
-	authdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain"
-	authservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/service"
-	workspaceservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/service"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/authn"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/mail"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/oauth/google"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/ratelimit"
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	agentservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/service"
+	authdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/domain"
+	authservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/service"
+	workspaceservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/service"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/authn"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/mail"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/oauth/google"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/ratelimit"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 // Access-token defaults, used when the configuration omits a value.

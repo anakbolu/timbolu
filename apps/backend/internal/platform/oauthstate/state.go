@@ -23,7 +23,7 @@ import (
 
 	"github.com/google/uuid"
 
-	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
+	integrationdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
 )
 
 // minKeySize is the shortest signing key accepted. A short key is a key somebody

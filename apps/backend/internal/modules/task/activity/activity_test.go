@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/task/workflow"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/task/workflow"
 )
 
 // TestEveryActivityNameHasAMethod is the contract between the workflow and the

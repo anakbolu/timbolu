@@ -8,9 +8,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/adapter"
-	whatsappdomain "github.com/robzlabz/employeebot/packages/whatsapp/domain"
+	integrationdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/whatsapp/adapter"
+	whatsappdomain "github.com/anakbolu/timbolu/packages/whatsapp/domain"
 )
 
 // The adapter is where the approval gate's involvement is decided, so that is what

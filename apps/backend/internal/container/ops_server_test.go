@@ -11,10 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	healthdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/domain"
-	healthservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/service"
-	"github.com/robzlabz/employeebot/packages/platform/config"
-	"github.com/robzlabz/employeebot/packages/platform/metrics"
+	healthdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/health/domain"
+	healthservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/health/service"
+	"github.com/anakbolu/timbolu/packages/platform/config"
+	"github.com/anakbolu/timbolu/packages/platform/metrics"
 )
 
 // The operations listener, which is what an orchestrator probes: a worker has no HTTP API, so without

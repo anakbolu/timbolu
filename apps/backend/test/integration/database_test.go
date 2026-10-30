@@ -20,8 +20,8 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/migrate"
-	"github.com/robzlabz/employeebot/packages/platform/database"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/migrate"
+	"github.com/anakbolu/timbolu/packages/platform/database"
 )
 
 // latestMigration is the version of the newest migration file.

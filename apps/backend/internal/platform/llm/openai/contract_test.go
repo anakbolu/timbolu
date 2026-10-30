@@ -8,9 +8,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/llmtest"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/openai"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/llm/llmtest"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/llm/openai"
 )
 
 const testModel = "gpt-4o-mini"

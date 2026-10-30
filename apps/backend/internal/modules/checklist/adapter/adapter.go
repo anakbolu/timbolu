@@ -20,8 +20,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/domain"
-	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/checklist/domain"
+	integrationdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
 )
 
 // App is the application key this adapter answers for.

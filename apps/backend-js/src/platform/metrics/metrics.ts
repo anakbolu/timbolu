@@ -37,7 +37,7 @@ export const EXPORTER_OTLP = "otlp";
 export const EXPORTER_CONSOLE = "console";
 
 /** The instrumentation scope the instruments are filed under. */
-export const SCOPE_NAME = "github.com/robzlabz/employeebot";
+export const SCOPE_NAME = "github.com/anakbolu/timbolu";
 
 /** The SDK's default export interval, in milliseconds. */
 const DEFAULT_INTERVAL_MS = 60_000;

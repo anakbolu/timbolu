@@ -26,8 +26,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/whatsapp-gw/internal/container"
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	"github.com/anakbolu/timbolu/apps/whatsapp-gw/internal/container"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 // shutdownGrace is how long in-flight requests get after a signal. A drain tick

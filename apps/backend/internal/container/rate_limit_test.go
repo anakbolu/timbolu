@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/ratelimit"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/ratelimit"
 )
 
 // TestAMalformedCeilingIsRefusedAtStartup is why the pairs are parsed rather than

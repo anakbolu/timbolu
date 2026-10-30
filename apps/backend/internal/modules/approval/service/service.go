@@ -18,7 +18,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/approval/domain"
 )
 
 // SummaryMaxRunes bounds the one-line description a card shows.

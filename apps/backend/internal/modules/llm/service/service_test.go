@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain/mocks"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain/mocks"
 )
 
 // fakeBox is a reversible stand-in for the real AES-GCM box: the tests care

@@ -8,9 +8,9 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/attachtext"
+	llmdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/task/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/attachtext"
 )
 
 // errNoAttachmentReader is what a file's note says when this deployment has

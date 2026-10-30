@@ -8,12 +8,12 @@ import (
 
 	"github.com/google/uuid"
 
-	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
-	orderadapter "github.com/robzlabz/employeebot/apps/backend/internal/modules/order/adapter"
-	orderdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/order/domain"
-	orderservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/order/service"
-	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	integrationdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
+	orderadapter "github.com/anakbolu/timbolu/apps/backend/internal/modules/order/adapter"
+	orderdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/order/domain"
+	orderservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/order/service"
+	taskdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/domain"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 // openOrder builds the module that holds the workspace's own commerce data: the catalogue a person

@@ -10,9 +10,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/task/workflow"
+	llmdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/task/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/task/workflow"
 )
 
 // The activity tests cover what the workflow's own tests script away: the gate

@@ -13,9 +13,9 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
-	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/attachtext"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
+	llmdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/attachtext"
 )
 
 // attachmentMessage builds a stored user message carrying the given files, the

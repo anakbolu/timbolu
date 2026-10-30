@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	sdktemporal "go.temporal.io/sdk/temporal"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/vcomputer/domain"
 )
 
 // stubClient is the control plane as an activity sees it: every call answers the same error,

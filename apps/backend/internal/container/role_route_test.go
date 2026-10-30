@@ -11,13 +11,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	agentdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
-	agentmocks "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain/mocks"
-	agenthandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/handler"
-	authmocks "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain/mocks"
-	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
-	workspacemocks "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain/mocks"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
+	agentdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/domain"
+	agentmocks "github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/domain/mocks"
+	agenthandler "github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/handler"
+	authmocks "github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/domain/mocks"
+	workspacedomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain"
+	workspacemocks "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain/mocks"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/middleware"
 )
 
 // The wiring test for the role groups: which role a route needs is decided by where it is registered,

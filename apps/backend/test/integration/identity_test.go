@@ -14,10 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/container"
-	authhandler "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/handler"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/mail"
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	"github.com/anakbolu/timbolu/apps/backend/internal/container"
+	authhandler "github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/handler"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/mail"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 // These tests drive the real API over a real Postgres: the container assembles

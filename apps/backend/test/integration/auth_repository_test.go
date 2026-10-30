@@ -8,9 +8,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain"
-	authrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository"
-	"github.com/robzlabz/employeebot/packages/platform/database"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/domain"
+	authrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/repository"
+	"github.com/anakbolu/timbolu/packages/platform/database"
 )
 
 // newAuthRepo opens a repository against a migrated database.

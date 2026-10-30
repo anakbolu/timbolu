@@ -14,8 +14,8 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/quota"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/ratelimit"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/quota"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/ratelimit"
 )
 
 // redisURL returns a URL to a database of its own inside the package's Redis

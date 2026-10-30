@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/robzlabz/employeebot/apps/virtual-computer/control/internal/sandbox"
+	"github.com/anakbolu/timbolu/apps/virtual-computer/control/internal/sandbox"
 )
 
 // testToken is the secret every test request presents. It is not a real secret: the

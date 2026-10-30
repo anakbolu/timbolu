@@ -8,8 +8,8 @@ import (
 
 	"github.com/google/uuid"
 
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
-	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
+	llmdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
 )
 
 func TestProbeHTMLStream(t *testing.T) {

@@ -7,13 +7,13 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
-	retentiondomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/retention/domain"
-	retentionrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/retention/repository"
-	retentionservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/retention/service"
-	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
+	retentiondomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/retention/domain"
+	retentionrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/retention/repository"
+	retentionservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/retention/service"
+	taskdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/domain"
+	workspacerepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/repository"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 // openRetention builds the retention job: how long the deployment keeps what a customer said

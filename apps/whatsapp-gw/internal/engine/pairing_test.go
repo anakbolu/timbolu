@@ -12,7 +12,7 @@ import (
 	"go.mau.fi/whatsmeow/types"
 	waLog "go.mau.fi/whatsmeow/util/log"
 
-	whatsappdomain "github.com/robzlabz/employeebot/packages/whatsapp/domain"
+	whatsappdomain "github.com/anakbolu/timbolu/packages/whatsapp/domain"
 )
 
 // The pairing flow is this file: what the engine does with each item WhatsApp

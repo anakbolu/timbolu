@@ -12,13 +12,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	billingdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/domain/mocks"
-	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
-	llmmocks "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain/mocks"
-	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
-	workspacemocks "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain/mocks"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/mail"
+	billingdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/billing/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/billing/domain/mocks"
+	llmdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
+	llmmocks "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain/mocks"
+	workspacedomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain"
+	workspacemocks "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain/mocks"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/mail"
 )
 
 // The billing module's adapters are this file: the four translations between its ports and

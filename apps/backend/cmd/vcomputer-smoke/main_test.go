@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	vcomputerservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/service"
+	vcomputerservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/vcomputer/service"
 )
 
 // TestControlTimeoutFallsBackToTheDefault: the command reads VCOMPUTER_CONTROL_TIMEOUT the way

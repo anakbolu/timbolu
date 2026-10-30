@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/approval/domain"
 )
 
 // The service tests cover the rule the epic exists for: an action that reaches

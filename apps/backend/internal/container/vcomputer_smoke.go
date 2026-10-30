@@ -12,10 +12,10 @@ package container
 import (
 	temporalworkflow "go.temporal.io/sdk/workflow"
 
-	vcomputerdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/domain"
-	vcomputerservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/service"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/workflow"
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	vcomputerdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/vcomputer/domain"
+	vcomputerservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/vcomputer/service"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/vcomputer/workflow"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 // VComputerSmokeInput is the input the smoke workflow takes, and VComputerSmokeResult is what

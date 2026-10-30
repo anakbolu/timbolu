@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/task/domain"
 )
 
 // The service tests cover the three triggers the epic names — chat, routine, and

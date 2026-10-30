@@ -9,7 +9,7 @@ package pricing
 import (
 	"strings"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
 )
 
 // Price is the cost of one million tokens, in micro-rupiah (1 rupiah =

@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
 )
 
 // zipEntry and zipOf build a zip in memory, entries in the order they are given.

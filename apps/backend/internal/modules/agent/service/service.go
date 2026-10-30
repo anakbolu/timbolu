@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/domain"
 )
 
 // PersonaMaxLength bounds the persona field. A persona is injected into every

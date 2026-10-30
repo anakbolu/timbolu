@@ -20,9 +20,9 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/response"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/middleware"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/response"
 )
 
 // Handler serves the conversation endpoints.

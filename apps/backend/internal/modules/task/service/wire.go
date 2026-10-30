@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/task/domain"
 )
 
 // Payload is the wire shape of a task event, and of the task endpoints.

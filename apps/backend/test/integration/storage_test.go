@@ -10,7 +10,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 
-	"github.com/robzlabz/employeebot/packages/platform/storage"
+	"github.com/anakbolu/timbolu/packages/platform/storage"
 )
 
 // s3Endpoint starts an S3-compatible server and returns its host:port.

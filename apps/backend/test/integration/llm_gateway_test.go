@@ -11,16 +11,16 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	authrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository"
-	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
-	llmrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/repository"
-	llmservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/service"
-	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
-	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/pricing"
-	"github.com/robzlabz/employeebot/packages/platform/crypto"
-	"github.com/robzlabz/employeebot/packages/platform/database"
+	authrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/repository"
+	llmdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
+	llmrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/repository"
+	llmservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/service"
+	workspacedomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain"
+	workspacerepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/repository"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/llm"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/llm/pricing"
+	"github.com/anakbolu/timbolu/packages/platform/crypto"
+	"github.com/anakbolu/timbolu/packages/platform/database"
 )
 
 // gatewayFixture is one onboarded workspace whose gateway uses the real

@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
-	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
+	llmdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
 )
 
 // TestReproTheModelReadsTheAttachments is issue #187: a user message with files

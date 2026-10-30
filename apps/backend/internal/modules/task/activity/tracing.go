@@ -9,7 +9,7 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/task/domain"
 )
 
 // The task runtime's spans and its log fields.

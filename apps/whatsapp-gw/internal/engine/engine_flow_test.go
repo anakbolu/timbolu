@@ -15,7 +15,7 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
 
-	whatsappdomain "github.com/robzlabz/employeebot/packages/whatsapp/domain"
+	whatsappdomain "github.com/anakbolu/timbolu/packages/whatsapp/domain"
 )
 
 // The engine's own flow is this file: what it does with the fleet it is told to

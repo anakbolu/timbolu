@@ -8,9 +8,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/whatsapp-gw/internal/repository"
-	"github.com/robzlabz/employeebot/packages/platform/kms"
-	whatsappdomain "github.com/robzlabz/employeebot/packages/whatsapp/domain"
+	"github.com/anakbolu/timbolu/apps/whatsapp-gw/internal/repository"
+	"github.com/anakbolu/timbolu/packages/platform/kms"
+	whatsappdomain "github.com/anakbolu/timbolu/packages/whatsapp/domain"
 )
 
 // The sealer is the gateway's copy of the hub's key ring, and the claim under

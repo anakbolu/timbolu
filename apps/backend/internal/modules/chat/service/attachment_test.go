@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
 )
 
 // pngOf, pdfOf, exeOf, and textOf build content a sniffer reads as those types while

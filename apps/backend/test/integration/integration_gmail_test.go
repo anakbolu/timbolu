@@ -16,12 +16,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/container"
-	approvaldomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/adapters/gmail"
-	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
-	"github.com/robzlabz/employeebot/packages/platform/config"
-	"github.com/robzlabz/employeebot/packages/platform/database"
+	"github.com/anakbolu/timbolu/apps/backend/internal/container"
+	approvaldomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/approval/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/adapters/gmail"
+	integrationdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
+	"github.com/anakbolu/timbolu/packages/platform/config"
+	"github.com/anakbolu/timbolu/packages/platform/database"
 )
 
 // These tests cover the E8.7 gate, and with it the promise EPIC 7 was built

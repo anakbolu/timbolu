@@ -15,9 +15,9 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/order/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/response"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/order/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/middleware"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/response"
 )
 
 // Handler serves the catalogue and the orders.

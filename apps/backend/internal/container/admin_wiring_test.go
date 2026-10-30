@@ -14,12 +14,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	admindomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/admin/domain"
-	adminmocks "github.com/robzlabz/employeebot/apps/backend/internal/modules/admin/domain/mocks"
-	authdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain"
-	authmocks "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain/mocks"
-	workspacemocks "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain/mocks"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
+	admindomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/admin/domain"
+	adminmocks "github.com/anakbolu/timbolu/apps/backend/internal/modules/admin/domain/mocks"
+	authdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/domain"
+	authmocks "github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/domain/mocks"
+	workspacemocks "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain/mocks"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/middleware"
 )
 
 // The wiring tests for the operator surface cover what only the container can get

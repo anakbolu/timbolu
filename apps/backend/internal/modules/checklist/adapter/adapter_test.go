@@ -8,9 +8,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/adapter"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/domain"
-	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/checklist/adapter"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/checklist/domain"
+	integrationdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
 )
 
 // The adapter decides nothing about the plan — that is the service's job — so what this file tests is

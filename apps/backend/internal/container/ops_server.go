@@ -10,8 +10,8 @@ import (
 
 	"go.uber.org/zap"
 
-	healthdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/health/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/response"
+	healthdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/health/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/response"
 )
 
 // The operational listener: the surface a process with no HTTP API of its own answers probes and

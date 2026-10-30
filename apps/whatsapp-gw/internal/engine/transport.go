@@ -14,7 +14,7 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	"go.uber.org/zap"
 
-	whatsappdomain "github.com/robzlabz/employeebot/packages/whatsapp/domain"
+	whatsappdomain "github.com/anakbolu/timbolu/packages/whatsapp/domain"
 )
 
 // The transport half: what the product asks WhatsApp to do.

@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
-	retentiondomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/retention/domain"
-	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
+	retentiondomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/retention/domain"
+	taskdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/domain"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 // The wiring tests for retention cover what only the container can get wrong: that a deployment

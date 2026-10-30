@@ -11,15 +11,15 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	authrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository"
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
-	chatrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/repository"
-	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	taskrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/repository"
-	taskservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/service"
-	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
-	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	"github.com/robzlabz/employeebot/packages/platform/database"
+	authrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/repository"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
+	chatrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/repository"
+	taskdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/domain"
+	taskrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/repository"
+	taskservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/service"
+	workspacedomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain"
+	workspacerepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/repository"
+	"github.com/anakbolu/timbolu/packages/platform/database"
 )
 
 // taskFixture is one onboarded workspace with the task runtime.

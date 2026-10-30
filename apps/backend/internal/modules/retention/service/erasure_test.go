@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/retention/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/retention/domain"
 )
 
 // The erasure path, and the two properties that make it different from the retention pass: the bytes

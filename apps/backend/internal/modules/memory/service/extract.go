@@ -8,8 +8,8 @@ import (
 
 	"github.com/google/uuid"
 
-	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain"
+	llmdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/memory/domain"
 )
 
 // maxCandidates bounds what one pass may write, so a model that answers with

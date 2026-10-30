@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/admin/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/admin/domain/mocks"
-	adminservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/admin/service"
-	authdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/admin/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/admin/domain/mocks"
+	adminservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/admin/service"
+	authdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/domain"
 )
 
 // The service tests are about the three refusals the module exists for: who may

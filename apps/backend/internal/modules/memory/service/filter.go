@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/memory/domain"
 )
 
 // The patterns a memory must not carry. They are labels plus a value rather than

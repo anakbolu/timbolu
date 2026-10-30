@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/testsuite"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/domain"
-	vcomputertemporal "github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/temporal"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/vcomputer/domain"
+	vcomputertemporal "github.com/anakbolu/timbolu/apps/backend/internal/modules/vcomputer/temporal"
 )
 
 // smokeHarness is one test environment with every activity the smoke run calls scripted.

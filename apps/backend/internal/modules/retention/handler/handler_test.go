@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/retention/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/retention/domain"
 )
 
 // The erasure endpoints, and the two properties the handler is responsible for: who is recorded as

@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/packages/platform/crypto"
+	"github.com/anakbolu/timbolu/packages/platform/crypto"
 )
 
 // key renders a 32-byte key the way a deployment writes one in the environment.

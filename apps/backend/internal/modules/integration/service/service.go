@@ -18,7 +18,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
 )
 
 // RefreshMargin is how long before its stated expiry a token is treated as

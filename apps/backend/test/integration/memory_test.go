@@ -9,17 +9,17 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	agentdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
-	agentrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/repository"
-	agentservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/service"
-	authrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository"
-	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain"
-	memoryrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/repository"
-	memoryservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/service"
-	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
-	workspacerepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository"
-	"github.com/robzlabz/employeebot/packages/platform/database"
+	agentdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/domain"
+	agentrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/repository"
+	agentservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/service"
+	authrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/repository"
+	llmdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/memory/domain"
+	memoryrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/memory/repository"
+	memoryservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/memory/service"
+	workspacedomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain"
+	workspacerepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/repository"
+	"github.com/anakbolu/timbolu/packages/platform/database"
 )
 
 // memoryFixture is one onboarded workspace with a Bolu, ready to remember.

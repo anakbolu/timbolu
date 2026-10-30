@@ -1,4 +1,4 @@
-module github.com/robzlabz/employeebot/apps/backend
+module github.com/anakbolu/timbolu/apps/backend
 
 go 1.26.0
 
@@ -133,10 +133,10 @@ require (
 )
 
 require (
+	github.com/anakbolu/timbolu/packages v0.0.0
 	github.com/fasthttp/websocket v1.5.8
 	github.com/ledongthuc/pdf v0.0.0-20260907135840-6c8c28e0e8a0
-	github.com/robzlabz/employeebot/packages v0.0.0
 	go.yaml.in/yaml/v3 v3.0.5
 )
 
-replace github.com/robzlabz/employeebot/packages => ../../packages
+replace github.com/anakbolu/timbolu/packages => ../../packages

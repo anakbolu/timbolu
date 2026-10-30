@@ -7,13 +7,13 @@ import (
 
 	"github.com/google/uuid"
 
-	authdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain"
-	workspacedomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/authn"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/mail"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/oauth/google"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/ratelimit"
-	"github.com/robzlabz/employeebot/packages/platform/metrics"
+	authdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/domain"
+	workspacedomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/authn"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/mail"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/oauth/google"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/ratelimit"
+	"github.com/anakbolu/timbolu/packages/platform/metrics"
 )
 
 // The adapters below translate a platform implementation into the port a module

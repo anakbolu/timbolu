@@ -17,8 +17,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/repository/sqlcgen"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/repository/sqlcgen"
 )
 
 // uniqueViolation is the PostgreSQL error code for a unique constraint breach.

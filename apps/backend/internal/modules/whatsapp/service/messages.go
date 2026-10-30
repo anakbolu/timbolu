@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/packages/whatsapp/domain"
+	"github.com/anakbolu/timbolu/packages/whatsapp/domain"
 )
 
 // The message half: what arrived, what is waiting to leave, and how the two are

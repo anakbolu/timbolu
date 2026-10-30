@@ -16,9 +16,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/robzlabz/employeebot/apps/whatsapp-gw/internal/repository/sqlcgen"
-	"github.com/robzlabz/employeebot/packages/platform/database"
-	whatsappdomain "github.com/robzlabz/employeebot/packages/whatsapp/domain"
+	"github.com/anakbolu/timbolu/apps/whatsapp-gw/internal/repository/sqlcgen"
+	"github.com/anakbolu/timbolu/packages/platform/database"
+	whatsappdomain "github.com/anakbolu/timbolu/packages/whatsapp/domain"
 )
 
 // Repository reads and writes what the gateway owns.

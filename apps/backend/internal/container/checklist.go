@@ -6,11 +6,11 @@ import (
 
 	"github.com/google/uuid"
 
-	checklistadapter "github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/adapter"
-	checklistdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/domain"
-	checklistservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/checklist/service"
-	integrationdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	checklistadapter "github.com/anakbolu/timbolu/apps/backend/internal/modules/checklist/adapter"
+	checklistdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/checklist/domain"
+	checklistservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/checklist/service"
+	integrationdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 // openChecklist builds the module that holds the plan a Bolu keeps for itself: what it has to do, and

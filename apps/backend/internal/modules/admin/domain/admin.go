@@ -27,7 +27,7 @@ import (
 
 	"github.com/google/uuid"
 
-	authdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain"
+	authdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/domain"
 )
 
 // Errors this module returns. Handlers map them onto status codes, so the

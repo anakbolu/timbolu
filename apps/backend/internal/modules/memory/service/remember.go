@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/memory/domain"
 )
 
 // Remember stores what a message asked to be remembered and answers with a

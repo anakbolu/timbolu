@@ -35,8 +35,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/robzlabz/employeebot/apps/virtual-computer/control/internal/httpapi"
-	"github.com/robzlabz/employeebot/apps/virtual-computer/control/internal/sandbox"
+	"github.com/anakbolu/timbolu/apps/virtual-computer/control/internal/httpapi"
+	"github.com/anakbolu/timbolu/apps/virtual-computer/control/internal/sandbox"
 )
 
 func main() {

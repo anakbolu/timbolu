@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	whatsappdomain "github.com/robzlabz/employeebot/packages/whatsapp/domain"
+	whatsappdomain "github.com/anakbolu/timbolu/packages/whatsapp/domain"
 )
 
 // The HTTP seam between the two processes.

@@ -23,11 +23,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain/mocks"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/response"
-	"github.com/robzlabz/employeebot/packages/platform/database"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain/mocks"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/middleware"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/response"
+	"github.com/anakbolu/timbolu/packages/platform/database"
 )
 
 // streamIdentity is what the container's stream middleware stores on a request

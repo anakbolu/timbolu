@@ -11,9 +11,9 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/auth/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/middleware"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/response"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/auth/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/middleware"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/response"
 )
 
 // CookieName is the httpOnly cookie that carries the refresh token. Keeping the

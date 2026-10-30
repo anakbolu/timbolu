@@ -15,9 +15,9 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/workspace/repository/sqlcgen"
-	"github.com/robzlabz/employeebot/packages/platform/database"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/workspace/repository/sqlcgen"
+	"github.com/anakbolu/timbolu/packages/platform/database"
 )
 
 const uniqueViolation = "23505"

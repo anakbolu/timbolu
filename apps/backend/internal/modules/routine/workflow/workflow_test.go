@@ -12,7 +12,7 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/testsuite"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/routine/domain"
 )
 
 const (

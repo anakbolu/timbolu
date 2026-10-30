@@ -21,19 +21,19 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/whatsapp-gw/internal/engine"
-	"github.com/robzlabz/employeebot/apps/whatsapp-gw/internal/media"
-	"github.com/robzlabz/employeebot/apps/whatsapp-gw/internal/repository"
-	"github.com/robzlabz/employeebot/apps/whatsapp-gw/internal/sealer"
-	"github.com/robzlabz/employeebot/packages/platform/config"
-	"github.com/robzlabz/employeebot/packages/platform/database"
-	"github.com/robzlabz/employeebot/packages/platform/kms"
-	"github.com/robzlabz/employeebot/packages/platform/logger"
-	"github.com/robzlabz/employeebot/packages/platform/metrics"
-	"github.com/robzlabz/employeebot/packages/platform/redis"
-	"github.com/robzlabz/employeebot/packages/platform/storage"
-	"github.com/robzlabz/employeebot/packages/platform/telemetry"
-	"github.com/robzlabz/employeebot/packages/whatsapp/seam"
+	"github.com/anakbolu/timbolu/apps/whatsapp-gw/internal/engine"
+	"github.com/anakbolu/timbolu/apps/whatsapp-gw/internal/media"
+	"github.com/anakbolu/timbolu/apps/whatsapp-gw/internal/repository"
+	"github.com/anakbolu/timbolu/apps/whatsapp-gw/internal/sealer"
+	"github.com/anakbolu/timbolu/packages/platform/config"
+	"github.com/anakbolu/timbolu/packages/platform/database"
+	"github.com/anakbolu/timbolu/packages/platform/kms"
+	"github.com/anakbolu/timbolu/packages/platform/logger"
+	"github.com/anakbolu/timbolu/packages/platform/metrics"
+	"github.com/anakbolu/timbolu/packages/platform/redis"
+	"github.com/anakbolu/timbolu/packages/platform/storage"
+	"github.com/anakbolu/timbolu/packages/platform/telemetry"
+	"github.com/anakbolu/timbolu/packages/whatsapp/seam"
 )
 
 // Container holds everything the gateway process built.

@@ -13,7 +13,7 @@ import (
 	"go.mau.fi/whatsmeow/types"
 	waLog "go.mau.fi/whatsmeow/util/log"
 
-	whatsappdomain "github.com/robzlabz/employeebot/packages/whatsapp/domain"
+	whatsappdomain "github.com/anakbolu/timbolu/packages/whatsapp/domain"
 )
 
 // The link flow's own bounds are this file, and the first one is a defect a browser

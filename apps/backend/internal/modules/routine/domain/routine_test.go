@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/routine/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/routine/domain"
 )
 
 // nextRuns is a shorthand: the times a cadence next runs at, in one zone.

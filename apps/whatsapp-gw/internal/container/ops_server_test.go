@@ -12,10 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/packages/platform/config"
-	"github.com/robzlabz/employeebot/packages/platform/database"
-	"github.com/robzlabz/employeebot/packages/platform/metrics"
-	"github.com/robzlabz/employeebot/packages/platform/redis"
+	"github.com/anakbolu/timbolu/packages/platform/config"
+	"github.com/anakbolu/timbolu/packages/platform/database"
+	"github.com/anakbolu/timbolu/packages/platform/metrics"
+	"github.com/anakbolu/timbolu/packages/platform/redis"
 )
 
 // The operations listener is what a process with no public API answers probes

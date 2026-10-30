@@ -16,11 +16,11 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/container"
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
-	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/temporal"
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	"github.com/anakbolu/timbolu/apps/backend/internal/container"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
+	taskdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/temporal"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 // This file covers the seam issue #235 was about: the task runtime is assembled

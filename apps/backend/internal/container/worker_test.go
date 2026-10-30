@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/temporal"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/temporal"
 )
 
 // TestRunWorkerRequiresTemporal keeps a worker from starting without a workflow

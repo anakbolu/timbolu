@@ -13,11 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	billingdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/domain"
-	billingservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/billing/service"
-	llmrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/repository"
-	llmservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/service"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/quota"
+	billingdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/billing/domain"
+	billingservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/billing/service"
+	llmrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/repository"
+	llmservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/service"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/quota"
 )
 
 // E12.2's gate is this file, and it is the property of the quota that only a real Redis and

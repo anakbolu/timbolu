@@ -18,9 +18,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/sse"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/llm/vision"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/llm/sse"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/llm/vision"
 )
 
 // DefaultBaseURL is the public endpoint.

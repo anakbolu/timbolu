@@ -7,10 +7,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/domain"
-	vcomputertemporal "github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/temporal"
-	vcomputerworkflow "github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/workflow"
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/vcomputer/domain"
+	vcomputertemporal "github.com/anakbolu/timbolu/apps/backend/internal/modules/vcomputer/temporal"
+	vcomputerworkflow "github.com/anakbolu/timbolu/apps/backend/internal/modules/vcomputer/workflow"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 // TestVComputerSmokeWorkflowIsTheOneTheWorkerRegisters: the command starts the workflow by the

@@ -7,7 +7,7 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 // The wiring tests for telemetry cover what only the container can get wrong: that a deployment

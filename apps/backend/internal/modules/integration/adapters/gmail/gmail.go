@@ -26,7 +26,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/integration/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
 )
 
 // App is the application key, and the prefix of every tool this adapter declares.

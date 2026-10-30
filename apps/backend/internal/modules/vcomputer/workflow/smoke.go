@@ -26,8 +26,8 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/domain"
-	vcomputertemporal "github.com/robzlabz/employeebot/apps/backend/internal/modules/vcomputer/temporal"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/vcomputer/domain"
+	vcomputertemporal "github.com/anakbolu/timbolu/apps/backend/internal/modules/vcomputer/temporal"
 )
 
 const (

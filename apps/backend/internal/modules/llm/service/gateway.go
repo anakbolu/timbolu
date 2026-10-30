@@ -7,7 +7,7 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
 )
 
 // streamBuffer is how many events a consumer may fall behind before the

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
 )
 
 // Embed turns text into vectors, skipping the providers that have no embedding

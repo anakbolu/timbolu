@@ -5,8 +5,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/repository/sqlcgen"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/memory/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/memory/repository/sqlcgen"
 )
 
 // The conversions from the generated rows to the domain types. They are written

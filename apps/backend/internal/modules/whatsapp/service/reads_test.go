@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/whatsapp/service"
-	"github.com/robzlabz/employeebot/packages/whatsapp/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/whatsapp/service"
+	"github.com/anakbolu/timbolu/packages/whatsapp/domain"
 )
 
 // The module's reads and the smaller commands are this file.

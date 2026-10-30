@@ -157,7 +157,7 @@ func (p *Provider) Tracer() trace.Tracer {
 
 // ScopeName is the instrumentation scope every span this codebase starts is filed under, so a
 // collector's view groups this application's spans together.
-const ScopeName = "github.com/robzlabz/employeebot"
+const ScopeName = "github.com/anakbolu/timbolu"
 
 // buildExporter picks the exporter from the configuration.
 func buildExporter(ctx context.Context, config Config) (sdktrace.SpanExporter, bool, error) {

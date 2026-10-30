@@ -1,7 +1,7 @@
 # WhatsApp gateway
 
 The process that owns the WhatsApp connections. It is a Go module of its own —
-`github.com/robzlabz/employeebot/apps/whatsapp-gw` — because a WhatsApp session is
+`github.com/anakbolu/timbolu/apps/whatsapp-gw` — because a WhatsApp session is
 a socket that stays open: the API serves requests and may be replaced at any
 moment, and a linked number whose connection dies with the request that touched it
 is a number that is never online.

@@ -15,12 +15,12 @@ import (
 	sdkclient "go.temporal.io/sdk/client"
 	sdkworker "go.temporal.io/sdk/worker"
 
-	llmdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
-	taskactivity "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/activity"
-	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	taskrepo "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/repository"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/task/workflow"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/temporal"
+	llmdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
+	taskactivity "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/activity"
+	taskdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/domain"
+	taskrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/repository"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/task/workflow"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/temporal"
 )
 
 // This file is the epic's headline gate: a worker is killed in the middle of a

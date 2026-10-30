@@ -14,8 +14,8 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/workflow"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/memory/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/memory/workflow"
 )
 
 // Deps are the activity dependencies.

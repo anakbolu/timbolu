@@ -7,7 +7,7 @@ import (
 	"io"
 	"sort"
 
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/llm/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
 )
 
 // embeddingResponse is the answer of the embeddings route of this wire format.

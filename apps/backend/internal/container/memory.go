@@ -10,16 +10,16 @@ import (
 	"go.temporal.io/sdk/client"
 	"go.uber.org/zap"
 
-	agentdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/agent/domain"
-	approvaldomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/approval/domain"
-	chatdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/chat/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/activity"
-	memorydomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/domain"
-	memoryservice "github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/service"
-	"github.com/robzlabz/employeebot/apps/backend/internal/modules/memory/workflow"
-	taskdomain "github.com/robzlabz/employeebot/apps/backend/internal/modules/task/domain"
-	"github.com/robzlabz/employeebot/apps/backend/internal/platform/temporal"
-	"github.com/robzlabz/employeebot/packages/platform/config"
+	agentdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/agent/domain"
+	approvaldomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/approval/domain"
+	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/memory/activity"
+	memorydomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/memory/domain"
+	memoryservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/memory/service"
+	"github.com/anakbolu/timbolu/apps/backend/internal/modules/memory/workflow"
+	taskdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/task/domain"
+	"github.com/anakbolu/timbolu/apps/backend/internal/platform/temporal"
+	"github.com/anakbolu/timbolu/packages/platform/config"
 )
 
 // openMemory builds the memory module: what a Bolu remembers, what it knows, and
