@@ -20,7 +20,8 @@
     ],
     "paths": {
       "@/*": ["./src/*"],
-      "@timbolu/contracts/*": ["../../packages/contracts/*"]
+      "@timbolu/contracts/*": ["../../packages/contracts/*"],
+      "@timbolu/bolu-character/*": ["../../packages/bolu-character/*"]
     }
   },
   "include": [

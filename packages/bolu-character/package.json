@@ -1,0 +1,9 @@
+{
+  "name": "@timbolu/bolu-character",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./palette": "./palette.ts",
+    "./names": "./names.ts"
+  }
+}
