@@ -510,3 +510,6 @@ The virtual computer PoC is not part of `make up`: it is a compose project of it
 three `VCOMPUTER_*` settings come from `.env` through `docker-compose.yml`, and reaching a running
 control plane needs the optional overlay, which puts that worker on the PoC's network
 (`docker-compose.vcomputer.yml`, and `apps/virtual-computer/README.md` for the two commands).
+
+That PoC is being retired in #402, and the runtime direction is Daytona — see
+[ADR 0004](adr/0004-daytona.md) and #397. The instructions above stay until #402 lands.
