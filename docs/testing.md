@@ -64,9 +64,10 @@ Both Bun commands need `bun install` in `apps/backend-js` first (it reads
 the Go one. `bun test` needs no `test` script in `apps/backend-js/package.json`: it
 discovers `*.test.ts` on its own, which is why the test target calls the binary
 directly while the typecheck target goes through the `typecheck` script. That is the
-whole Bun suite today — seven files, 31 tests, covering the build fingerprint, the chat
-stream's positional contract, the container wiring, auth, task activity, and the device
-registry — so treat it as a floor, not as the coverage the Go tree has. A PR that
+whole Bun suite today — eight files, 35 tests, covering the build fingerprint, the chat
+stream's positional contract, the container wiring (including the integration hub),
+auth, task activity, and the device registry's service and handler — so treat it as a
+floor, not as the coverage the Go tree has. A PR that
 touches `apps/backend-js/**` should paste `make ci`'s output, the same way a Go change
 does.
 

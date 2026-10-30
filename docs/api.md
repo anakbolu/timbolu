@@ -463,6 +463,51 @@ integrations it was granted:
 Revoking a grant removes the tools on the next read, which is what makes the
 guardrail take effect on the next task.
 
+## Integration hub (EPIC 5)
+
+One integration links one app to one workspace; its token is stored encrypted
+and is never returned to the client. An adapter decides which apps can be
+connected and what their OAuth shape looks like, while `GET /integrations`
+returns only the connections that already exist. Every route below belongs to
+workspace members. Per-Bolu permissions are not set here: those grants live in
+the Agent registry section (`GET /agents/:id/grants`, `PUT /agents/:id/grants`).
+
+| Endpoint | Auth | Role | Notes |
+| --- | --- | --- | --- |
+| `GET /integrations` | bearer + tenant | any | apps connected in the workspace |
+| `GET /integrations/adapters` | bearer + tenant | any | available adapters, with their spec and OAuth status |
+| `GET /integrations/:integrationID` | bearer + tenant | any | one connection |
+| `POST /integrations/:integrationID/disconnect` | bearer + tenant | any | drop the connection; the token is deleted |
+| `DELETE /integrations/:integrationID` | bearer + tenant | any | delete the connection |
+| `POST /integrations/:integrationID/refresh` | bearer + tenant | any | refresh the token |
+| `GET /integrations/:app/connect` | bearer + tenant | any | start the OAuth flow: answers `302` to the provider |
+| `GET /mcp/servers` | bearer + tenant | any | MCP servers owned by the workspace |
+| `POST /mcp/servers` | bearer + tenant | any | add an MCP server |
+| `POST /mcp/servers/:serverID/refresh` | bearer + tenant | any | refresh that server's tool list |
+| `DELETE /mcp/servers/:serverID` | bearer + tenant | any | delete an MCP server |
+
+### Public routes
+
+These two routes are called by providers, not by a logged-in person, so they
+carry no session.
+
+| Endpoint | Auth | Role | Notes |
+| --- | --- | --- | --- |
+| `GET /integrations/oauth/callback` | — | — | redirect from the provider; the tenant comes from the signed, single-use `state`, and the answer is a `302` back to the app (not JSON) |
+| `POST /webhooks/:app` | — | — | sent by the provider's server; authenticated by the adapter signature, not a session |
+
+### Error
+
+| Code | Status | Meaning |
+| --- | --- | --- |
+| `invalid_input` | 400 | Unknown input, permission, status, adapter, tool, or spec |
+| `not_found` | 404 | No such row for this caller |
+| `integration_needs_relogin` | 409 | The connection has no usable token; connect again |
+| `plan_limit_reached` | 409 | The plan's limit is used up |
+| `mcp_unavailable` | 502 | The MCP server cannot be reached |
+| `integration_not_configured` | 503 | No encryption key to store tokens with |
+| `internal_error` | 500 | Unexpected failure |
+
 ## Model gateway (EPIC 4)
 
 A workspace stores its providers with a fallback order; a Bolu may pin one,
