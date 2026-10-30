@@ -11,6 +11,7 @@ import { defaultServiceName } from "../platform/config/config.ts";
 import { newContainer } from "../container/container.ts";
 import { registerRoutes } from "../container/handler.ts";
 import { newApp } from "../container/http.ts";
+import { serveOptions } from "./serve-options.ts";
 import { requestContext } from "../platform/middleware/request_context.ts";
 import { tracing } from "../platform/middleware/tracing.ts";
 
@@ -49,14 +50,9 @@ async function run(): Promise<void> {
     "starting api",
   );
 
-  const server = Bun.serve({
-    hostname: host,
-    port,
-    fetch: app.fetch,
-    // The live stream is a long-lived response: Bun's default idle timeout would
-    // cut it. 0 disables the timeout, which is what the SSE route needs.
-    idleTimeout: 0,
-  });
+  // The options carry the websocket handler the realtime routes upgrade into;
+  // without it every handshake throws and the error handler answers 500.
+  const server = Bun.serve(serveOptions({ hostname: host, port, fetch: app.fetch }));
 
   log.info({ url: `http://${host}:${port}` }, "api listening");
 
