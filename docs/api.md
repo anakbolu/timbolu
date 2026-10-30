@@ -495,6 +495,11 @@ to ignore.
 | `DELETE /agents/:id/grants/:integrationID` | bearer + tenant | owner, admin | Revoke |
 | `GET /agents/:id/tools` | bearer + tenant | any | The effective tool list |
 
+A `POST /agents` whose `template_key` names no seeded profile is refused with
+`400 invalid_input` and a message naming the key, while a `copy_from` that names
+no Bolu stays `404 agent_not_found`: the key is a value in the body, the copied
+Bolu is an object the client named.
+
 ### Display status is derived, never stored
 
 Only the rest switch is a column (`agents.status`: `active` | `resting`). The

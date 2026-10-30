@@ -1,0 +1,258 @@
+/**
+ * The Bolu create path's rules, without a database.
+ *
+ * The insert and the template lookup are SQL's job, so these cases pin the half
+ * the service owns: which profile reaches the repository, and which failures
+ * come back as a wrong body rather than a missing object. The distinction
+ * matters at the HTTP edge — the handler answers `ErrAgentNotFound` with 404
+ * `agent_not_found`, which for an unknown `template_key` would send the client
+ * hunting for a Bolu that never existed.
+ */
+
+import { describe, expect, test } from "bun:test";
+
+import {
+  ErrAgentNotFound,
+  ErrInvalidInput,
+  StoredActive,
+  errorMessage,
+  is,
+  type Activity,
+  type Agent,
+  type CreateRequest,
+  type Grant,
+  type Integration,
+  type NewAgent,
+  type Placement,
+  type Reason,
+  type Repository,
+  type Scope,
+  type Team,
+  type Template,
+  type Tool,
+  type UpdateRequest,
+} from "../domain/agent.ts";
+import { Service } from "./service.ts";
+
+const userId = "22222222-2222-2222-2222-222222222222";
+const workspaceId = "11111111-1111-1111-1111-111111111111";
+const teamId = "55555555-5555-5555-5555-555555555555";
+const missingAgentId = "66666666-6666-6666-6666-666666666666";
+
+const scope: Scope = { userId, workspaceId };
+
+/** One seeded profile, as the migration writes it. */
+const oren: Template = {
+  key: "oren",
+  name: "Oren",
+  role: "Penjualan",
+  persona: "Menangani pesanan dan menagih pelanggan dengan ramah.",
+  tone: "hangat dan ringkas",
+  shape: "circle",
+  color: "#F97316",
+  tools: ["gmail.search", "gmail.create_draft", "gmail.send"],
+  integrations: ["gmail", "whatsapp"],
+  sortOrder: 1,
+};
+
+/** A body that asks for nothing but a name, so each case varies one field. */
+const baseRequest: CreateRequest = {
+  teamId,
+  name: "Bolu Uji",
+  role: "",
+  persona: "",
+  tone: "",
+  shape: "",
+  color: "",
+  tools: null,
+  templateKey: "",
+  copyFrom: "",
+};
+
+/** Fails if `create` starts reaching for a method these cases do not model. */
+function notUsed(method: string): never {
+  throw new Error(`${method} is not part of the create path`);
+}
+
+/** Answers the create path, and records what it was asked for. */
+class RecordingRepository implements Repository {
+  readonly created: Array<{ scope: Scope; agent: NewAgent }> = [];
+  readonly sources: string[] = [];
+  readonly seeded: Record<string, Template> = { [oren.key]: oren };
+
+  async get(_received: Scope, id: string): Promise<Agent> {
+    this.sources.push(id);
+    throw ErrAgentNotFound;
+  }
+
+  async agentTemplate(key: string): Promise<NewAgent> {
+    const template = this.seeded[key];
+    if (!template) throw ErrAgentNotFound;
+
+    // A fresh object each time: the service edits the profile it is handed,
+    // and the template must survive those edits unchanged.
+    return {
+      teamId: "",
+      name: template.name,
+      role: template.role,
+      persona: template.persona,
+      tone: template.tone,
+      shape: template.shape,
+      color: template.color,
+      tools: [...template.tools],
+      templateKey: template.key,
+      defaultModel: null,
+    };
+  }
+
+  async create(received: Scope, agent: NewAgent): Promise<Agent> {
+    this.created.push({ scope: received, agent });
+    return {
+      id: "77777777-7777-7777-7777-777777777777",
+      workspaceId: received.workspaceId,
+      teamId: agent.teamId,
+      teamName: "Tim Bolu",
+      teamKind: "system",
+      name: agent.name,
+      role: agent.role,
+      persona: agent.persona,
+      tone: agent.tone,
+      shape: agent.shape,
+      color: agent.color,
+      position: 0,
+      status: StoredActive,
+      display: "",
+      reason: null,
+      memoryExtraction: true,
+      templateKey: agent.templateKey,
+      tools: agent.tools ?? [],
+      defaultModel: agent.defaultModel ?? {},
+      createdAt: new Date("2026-10-30T09:00:00Z"),
+      updatedAt: new Date("2026-10-30T09:00:00Z"),
+    };
+  }
+
+  async activityFor(): Promise<Activity> {
+    return { working: false, waiting: false };
+  }
+
+  async reasonFor(): Promise<Reason | null> {
+    return null;
+  }
+
+  list(): Promise<Agent[]> {
+    return notUsed("list");
+  }
+  update(_scope: Scope, _id: string, _req: UpdateRequest): Promise<Agent> {
+    return notUsed("update");
+  }
+  setStatus(): Promise<Agent> {
+    return notUsed("setStatus");
+  }
+  setMemoryExtraction(): Promise<Agent> {
+    return notUsed("setMemoryExtraction");
+  }
+  setPlacements(_scope: Scope, _placements: Placement[]): Promise<void> {
+    return notUsed("setPlacements");
+  }
+  delete(): Promise<void> {
+    return notUsed("delete");
+  }
+  activity(): Promise<Map<string, Activity>> {
+    return notUsed("activity");
+  }
+  runningTasks(): Promise<number> {
+    return notUsed("runningTasks");
+  }
+  countLive(): Promise<number> {
+    return notUsed("countLive");
+  }
+  teams(): Promise<Team[]> {
+    return notUsed("teams");
+  }
+  templates(): Promise<Template[]> {
+    return notUsed("templates");
+  }
+  template(): Promise<Template> {
+    return notUsed("template");
+  }
+  grants(): Promise<Grant[]> {
+    return notUsed("grants");
+  }
+  setGrant(
+    _scope: Scope,
+    _agentId: string,
+    _integrationId: string,
+    _permission: string,
+  ): Promise<Grant> {
+    return notUsed("setGrant");
+  }
+  deleteGrant(): Promise<void> {
+    return notUsed("deleteGrant");
+  }
+  allowedTools(): Promise<Tool[]> {
+    return notUsed("allowedTools");
+  }
+  toolCatalog(): Promise<Tool[]> {
+    return notUsed("toolCatalog");
+  }
+  integrations(): Promise<Integration[]> {
+    return notUsed("integrations");
+  }
+}
+
+function newService(): { repository: RecordingRepository; service: Service } {
+  const repository = new RecordingRepository();
+  return { repository, service: new Service({ repository }) };
+}
+
+describe("create", () => {
+  test("answers an unknown template key as invalid input, not a missing Bolu", async () => {
+    const { repository, service } = newService();
+
+    const err = await service.create(scope, { ...baseRequest, templateKey: "sales" }).catch((thrown: unknown) => thrown);
+
+    // A wrong body must not be reported as a missing object: the handler turns
+    // ErrAgentNotFound into 404 agent_not_found, which blames the URL.
+    expect(is(err, ErrInvalidInput)).toBe(true);
+    expect(is(err, ErrAgentNotFound)).toBe(false);
+    expect(errorMessage(err)).toContain("sales");
+    expect(repository.created).toHaveLength(0);
+  });
+
+  test("starts the Bolu from a known template and keeps its key", async () => {
+    const { repository, service } = newService();
+
+    await service.create(scope, { ...baseRequest, name: "", templateKey: "oren" });
+
+    expect(repository.created).toHaveLength(1);
+    expect(repository.created[0]?.scope).toEqual(scope);
+    expect(repository.created[0]?.agent).toEqual({
+      teamId,
+      name: oren.name,
+      role: oren.role,
+      persona: oren.persona,
+      tone: oren.tone,
+      shape: oren.shape,
+      color: oren.color,
+      tools: oren.tools,
+      templateKey: oren.key,
+      defaultModel: null,
+    });
+  });
+
+  test("keeps a copy_from that names no Bolu as a missing Bolu", async () => {
+    const { repository, service } = newService();
+
+    const err = await service
+      .create(scope, { ...baseRequest, copyFrom: missingAgentId })
+      .catch((thrown: unknown) => thrown);
+
+    // The source Bolu is a real object the client named, so its absence stays
+    // 404 agent_not_found; only the template key is a body value.
+    expect(is(err, ErrAgentNotFound)).toBe(true);
+    expect(is(err, ErrInvalidInput)).toBe(false);
+    expect(repository.sources).toEqual([missingAgentId]);
+    expect(repository.created).toHaveLength(0);
+  });
+});
