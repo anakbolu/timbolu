@@ -108,7 +108,37 @@ export class Repository implements RepositoryPort {
     });
   }
 
+  /**
+   * Every address the caller registered.
+   *
+   * Ordered by `last_seen_at` because the newest address is the one a phone is
+   * most likely still running: the order is what lets a sender stop early when
+   * it has to. There is no pagination — an account has one row per phone, and a
+   * list that needed pages would mean a registry that has already gone wrong.
+   */
+  async listTokens(scope: Scope): Promise<Device[]> {
+    const userId = scope.userId;
+    if (!userId) {
+      throw wrap(ErrInvalidInput, "user is required");
+    }
+
+    return this.read(scope, async (tx) => {
+      // name: ListDeviceTokensByUser
+      const rows = await tx<DeviceTokenRow[]>`
+        SELECT id, user_id, workspace_id, platform, token, app_version, last_seen_at, created_at
+        FROM device_tokens
+        WHERE user_id = ${userId}
+        ORDER BY last_seen_at DESC
+      `;
+      return rows.map(toDevice);
+    });
+  }
+
   // -------------------------------------------------------------- helpers
+
+  private async read<T>(scope: Scope, fn: (tx: Tx) => Promise<T>): Promise<T> {
+    return this.db.inScopeRead(databaseScope(scope), fn);
+  }
 
   private async write<T>(scope: Scope, fn: (tx: Tx) => Promise<T>): Promise<T> {
     return this.db.inScope(databaseScope(scope), fn);

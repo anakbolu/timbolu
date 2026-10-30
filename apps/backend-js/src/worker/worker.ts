@@ -107,6 +107,7 @@ export function buildActivities(deps: WorkerDeps): Record<string, Activity> {
             maxImageBytes: deps.config.attachmentContext.maxImageBytes,
           },
           outcomes: taskOutcomeSink(c.routineService),
+          notifications: c.pushService,
           limits: {
             MaxSteps: deps.config.tasks.maxSteps,
             MaxTokens: deps.config.tasks.maxTokens,

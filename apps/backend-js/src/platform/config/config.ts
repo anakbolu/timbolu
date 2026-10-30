@@ -41,10 +41,22 @@ export interface Config {
   billing: BillingConfig;
   retention: RetentionConfig;
   vComputer: VComputerConfig;
+  push: PushConfig;
   telemetry: TelemetryConfig;
   logging: LoggingConfig;
 
   warnings(): string[];
+}
+
+/**
+ * Whether this deployment may send push notifications at all.
+ *
+ * `enabled` is false unless `PUSH_ENABLED=true` says otherwise: a push leaves
+ * the process for exp.host on behalf of every registered phone, and an
+ * unset switch must mean "send nothing", not "send to everyone".
+ */
+export interface PushConfig {
+  enabled: boolean;
 }
 
 /**

@@ -30,6 +30,7 @@ const scope: Scope = { userId, workspaceId };
 class RecordingRepository implements Repository {
   readonly registered: Array<{ scope: Scope; request: RegisterRequest }> = [];
   readonly removed: Array<{ scope: Scope; token: string }> = [];
+  readonly listed: Scope[] = [];
 
   async register(received: Scope, request: RegisterRequest): Promise<Device> {
     this.registered.push({ scope: received, request });
@@ -48,6 +49,11 @@ class RecordingRepository implements Repository {
   async remove(received: Scope, token: string): Promise<void> {
     this.removed.push({ scope: received, token });
     throw ErrNotFound;
+  }
+
+  async listTokens(received: Scope): Promise<Device[]> {
+    this.listed.push(received);
+    return [];
   }
 }
 

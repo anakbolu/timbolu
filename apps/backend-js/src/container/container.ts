@@ -143,6 +143,10 @@ import { Handler as TaskHandler } from "../modules/task/handler/handler.ts";
 import { Repository as DeviceRepository } from "../modules/device/repository/postgres.ts";
 import { Service as DeviceService } from "../modules/device/service/service.ts";
 import { Handler as DeviceHandler } from "../modules/device/handler/handler.ts";
+// push
+import { buildNotifier } from "../modules/push/service/service.ts";
+import { Client as ExpoClient } from "../modules/push/expo/client.ts";
+import type { Notifier } from "../modules/push/domain/push.ts";
 // admin
 import { Repository as AdminRepository } from "../modules/admin/repository/postgres.ts";
 import { Service as AdminService } from "../modules/admin/service/service.ts";
@@ -197,6 +201,8 @@ export interface Container {
   integrationService: IntegrationService | null;
   routineService: RoutineService | null;
   taskService: TaskService | null;
+  /** Wakes a person's phones; the worker hands it to the task activities. */
+  pushService: Notifier | null;
   costs: CostTable;
   /** The two loops `cmd/api.ts` runs in-process. */
   retentionService: RetentionService | null;
@@ -472,6 +478,7 @@ export async function newContainer(
   let approval: ApprovalHandler | null = null;
   let approvalService: ApprovalService | null = null;
   let device: DeviceHandler | null = null;
+  let pushService: Notifier | null = null;
   let retention: RetentionHandler | null = null;
   let retentionService: RetentionService | null = null;
   let memory: MemoryHandler | null = null;
@@ -485,6 +492,15 @@ export async function newContainer(
   // One Temporal connection per process, shared by the task starter and the
   // routine scheduler.
   const runtime = await newTemporalStarter(config, log);
+
+  // The push kill switch says so once, at startup, so an operator asking why a
+  // finished task rang no phone finds the answer in the log rather than in the
+  // code. The device registry keeps working either way.
+  if (!config.push.enabled) {
+    log.warn(
+      "push notifications are disabled: PUSH_ENABLED is not true, so nothing is sent to exp.host",
+    );
+  }
 
   if (db) {
     // Each service takes the ports it declares and nothing more; the optional ones
@@ -617,10 +633,25 @@ export async function newContainer(
     // rather than at the workspace's own wiring, which would need it first.
     if (workspaceRepository) workspaceRepository.setSubscriptionProvisioner(billingRepository);
 
+    // Push notifications. The sender reads addresses from the device registry
+    // and hands the batches to Expo; both env values are optional, and an
+    // absent access token is the normal state for a project that has not
+    // enabled Expo's enhanced security. Built before the approval service
+    // because a new draft is the first thing worth ringing about. `enabled`
+    // comes from PUSH_ENABLED, so an off deployment gets a notifier that
+    // answers null without touching the registry or the network.
+    pushService = buildNotifier({
+      enabled: config.push.enabled,
+      devices: new DeviceRepository(db),
+      expo: new ExpoClient({ logger: log }),
+      logger: log,
+    });
+
     approvalService = new ApprovalService({
       drafts: new ApprovalRepository(db),
+      notifications: pushService,
       logger: log,
-    } as any);
+    });
     approval = new ApprovalHandler(approvalService, log);
 
     // The registry of Expo push addresses. It needs nothing but the pool: the
@@ -765,6 +796,7 @@ export async function newContainer(
     integrationService,
     routineService,
     taskService,
+    pushService,
     costs,
     retentionService,
     billingService,

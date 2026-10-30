@@ -151,6 +151,12 @@ export interface Repository {
    * reported as ErrNotFound rather than as a refusal.
    */
   remove(scope: Scope, token: string): Promise<void>;
+  /**
+   * Every address the caller registered, newest first. The policy on
+   * `device_tokens` is keyed on the user, so the scope's user is the whole of
+   * the filter; an account with no phones answers an empty list, not an error.
+   */
+  listTokens(scope: Scope): Promise<Device[]>;
 }
 
 /** Service is what the HTTP handler calls. */

@@ -304,6 +304,14 @@ Keduanya berada di grup tenant, jadi `X-Workspace-Id` yang tidak valid sudah
 dijawab `403` oleh middleware sebelum handler berjalan; sebuah deployment yang
 tidak memasang modul ini menjawab `503 device_not_configured` untuk kedua route.
 
+### Kill switch pengiriman
+
+`PUSH_ENABLED` harus bernilai `true` — tanpa peduli huruf besar-kecil, setelah
+di-trim — agar notifikasi mana pun keluar dari proses ini. Nilai lain, termasuk
+variabel yang tidak disetel, adalah default: pengirim tidak pernah memanggil
+`exp.host`. Endpoint registry perangkat tidak terpengaruh; telepon tetap bisa
+mendaftar dan mencabut alamatnya saat pengiriman dimatikan.
+
 ### Mendaftarkan sebuah alamat
 
 `POST /devices` menjawab `201` dengan envelope:

@@ -62,6 +62,7 @@ import {
   wrap,
 } from "../domain/task.ts";
 import { RenderBlocks, WireID } from "../domain/render.ts";
+import type { Notifier } from "../../push/domain/push.ts";
 import type {
   Beat,
   CompleteRequest,
@@ -129,6 +130,12 @@ export interface Deps {
   memory?: MemoryRecall | null;
   outcomes?: OutcomeSink | null;
   namer?: AgentNamer | null;
+  /**
+   * Wakes the owner's phones when a task finishes or parks on a decision.
+   * Optional and a no-op when absent, so a worker without an Expo project still
+   * runs tasks.
+   */
+  notifications?: Notifier | null;
   limits?: Limits;
   logger?: Logger | null;
   tracer?: Tracer | null;
@@ -943,6 +950,10 @@ export class Activities {
 
   /** Publishes a task event, which is how the feed sees it. */
   private async emit(scope: Scope, task: Task, eventType: string): Promise<void> {
+    // Before the sink guard: a worker with no event stream still has a phone to
+    // wake, and the two are separate promises to different readers.
+    await this.notify(scope, task, eventType);
+
     if (!this.deps.events) {
       return;
     }
@@ -971,6 +982,38 @@ export class Activities {
       taskLogger(this.deps, task).warn(
         { type: eventType, err: messageOf(err) },
         "task event published only to the store",
+      );
+    }
+  }
+
+  /**
+   * Wakes the task owner's phones for the two events a person is waiting on.
+   *
+   * The draft id is passed only for the approval wait, matching the payload: a
+   * finished task can still carry the draft it was parked on, and a notification
+   * that opened a decision which is no longer waiting would be a dead link.
+   */
+  private async notify(scope: Scope, task: Task, eventType: string): Promise<void> {
+    const notifier = this.deps.notifications;
+    if (!notifier) {
+      return;
+    }
+    if (eventType !== EventTaskFinished && eventType !== EventTaskWaiting) {
+      return;
+    }
+
+    try {
+      await notifier.send(scope, {
+        type: eventType,
+        taskId: WireID(task.id),
+        draftId: eventType === EventTaskWaiting ? WireID(task.waitingDraftId) : "",
+      });
+    } catch (err) {
+      // The notifier is documented not to throw; this guard keeps a push from
+      // ever failing an activity Temporal would then retry.
+      taskLogger(this.deps, task).warn(
+        { type: eventType, err: messageOf(err) },
+        "task notification was not sent",
       );
     }
   }
