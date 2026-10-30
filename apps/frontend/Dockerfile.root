@@ -1,0 +1,58 @@
+# syntax=docker/dockerfile:1
+#
+# Built from the *repository root* — the build context the `timbolu` Easypanel
+# service uses — because the app imports `packages/contracts` (#343). With
+# `apps/frontend` as the context nothing outside that directory exists inside
+# the image, and a cross-package import fails the build (#328, #341, reverted in
+# #342). `Dockerfile` next to this file stays the app-context build.
+#
+# The image mirrors the checkout: the app lives at `apps/frontend` and the shared
+# packages at `packages`, so the tsconfig path `../../packages/contracts/*` and
+# `outputFileTracingRoot` in `next.config.ts` resolve to the same relative depth
+# they do on a developer's machine.
+FROM node:22-slim AS deps
+WORKDIR /app/apps/frontend
+COPY apps/frontend/package.json apps/frontend/package-lock.json ./
+RUN npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm ci --no-audit --no-fund
+
+FROM node:22-slim AS builder
+WORKDIR /app
+COPY --from=deps /app/apps/frontend/node_modules ./apps/frontend/node_modules
+COPY apps/frontend ./apps/frontend
+# The shared packages the app imports. Kept at their checkout depth.
+COPY packages ./packages
+WORKDIR /app/apps/frontend
+ENV NEXT_TELEMETRY_DISABLED=1
+# Inlined into the client bundle, so it must be present at build time.
+#
+# Both of them, and the second was missing until a release pipeline was written against this file:
+# `NEXT_PUBLIC_CONTENT_ORIGIN` is where sandboxed HTML documents are framed from, and it is a
+# different origin from the app in every real deployment. A bundle built without it silently falls
+# back to the API's own URL, which is the *sandbox escape* the separate origin exists to prevent —
+# and it fails open, so nothing anywhere reports it.
+ARG NEXT_PUBLIC_API_URL=http://localhost:8080
+ARG NEXT_PUBLIC_CONTENT_ORIGIN=
+ARG NEXT_PUBLIC_GOOGLE_LOGIN_ENABLED=false
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_CONTENT_ORIGIN=$NEXT_PUBLIC_CONTENT_ORIGIN
+ENV NEXT_PUBLIC_GOOGLE_LOGIN_ENABLED=$NEXT_PUBLIC_GOOGLE_LOGIN_ENABLED
+RUN npm run build
+
+FROM node:22-slim AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+# `output: "standalone"` traces from the repository root now (`outputFileTracingRoot`
+# in next.config.ts), so the bundle is nested under `apps/frontend/`.
+COPY --from=builder --chown=nextjs:nodejs /app/apps/frontend/.next/standalone ./
+COPY --from=builder /app/apps/frontend/public ./apps/frontend/public
+COPY --from=builder --chown=nextjs:nodejs /app/apps/frontend/.next/static ./apps/frontend/.next/static
+USER nextjs
+EXPOSE 3000
+CMD ["node", "apps/frontend/server.js"]
