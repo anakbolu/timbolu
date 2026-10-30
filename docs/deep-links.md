@@ -7,9 +7,10 @@ mengira pekerjaannya hilang.
 
 Dokumen ini **kontrak, bukan implementasi**. Belum ada app Expo di repo ini, `notification.pending`
 belum punya produsen, dan `routine.run` baru ada sebagai nama. Yang ditetapkan di sini adalah bentuk
-yang harus dipenuhi saat bagian-bagian itu dibangun. Route yang disebut selalu bisa dicek dengan
-`find apps/frontend/src/app -name page.tsx`; nama event selalu bisa dicek di
-`packages/contracts/events.ts` dan `docs/api.md` (§ The stream).
+yang harus dipenuhi saat bagian-bagian itu dibangun. Route yang disebut bisa dicek di
+`apps/frontend/src/app`, tetapi daftar nama `page.tsx` saja tidak cukup: berkasnya harus dibaca.
+Sebuah `page.tsx` boleh hanya berisi `redirect()` ke layar lain, dan itu berarti layarnya tidak ada.
+Nama event selalu bisa dicek di `packages/contracts/events.ts` dan `docs/api.md` (§ The stream).
 
 Route group `(workspace)` tidak menambah segmen ke URL: `app/(workspace)/tasks/[taskID]/page.tsx`
 dilayani sebagai `/tasks/<task_id>`. Itu sebabnya tabel di bawah memakai path publik, bukan path
@@ -45,7 +46,7 @@ Perilaku per resource saat resource tidak bisa dibuka:
 
 | Resource | Jawaban API | Yang dilakukan app |
 | --- | --- | --- |
-| Tugas | `task_not_found` (404) | Layar "tugas tidak ditemukan" dengan tombol ke daftar tugas; tidak membuka tugas lain dan tidak crash |
+| Tugas | `task_not_found` (404) | Layar "tugas tidak ditemukan" dengan tombol ke Dasbor; tidak membuka tugas lain dan tidak crash |
 | Obrolan | `conversation_not_found` (404) | `/chat` tanpa parameter, dengan pemberitahuan bahwa obrolannya tidak ada |
 | Draf | `draft_not_found` (404) | Inbox persetujuan dengan pemberitahuan bahwa drafnya tidak ada |
 | Draf yang sudah diputuskan | `draft_already_decided` (409) | Tetap buka drafnya dan tampilkan keputusan yang sudah berlaku; ini bukan link rusak |
@@ -61,7 +62,7 @@ sama — lihat `docs/deployment.md`). Pemetaannya diturunkan dari route yang ben
 | `/dashboard` | Dasbor | Daftar keputusan yang menunggu, tanpa fokus ke satu draf |
 | `/chat?agent=<agent_id>` | Obrolan 1:1 | Bentuk link yang ditulis sidebar untuk thread langsung |
 | `/chat?conversation=<conversation_id>` | Obrolan | Grup dan thread; ini yang dipakai `bolu://chat/<id>` |
-| `/tasks` | Daftar tugas | |
+| `/tasks` | Dasbor | Layar daftar tugas sudah dihapus; `/tasks` hanya `redirect("/dashboard")`, jadi path ini tidak punya layar app sendiri |
 | `/tasks/<task_id>` | Detail tugas | Tujuan `bolu://task/<id>` |
 | `/routines` | Rutinitas | Daftar dan riwayat; tidak ada halaman per-run |
 | `/groups` | Grup | |
@@ -145,7 +146,6 @@ Tanpa ekstensi, satu objek JSON, tanpa signature (iOS 9 ke atas tidak meminta si
         "components": [
           { "/": "/dashboard" },
           { "/": "/chat" },
-          { "/": "/tasks" },
           { "/": "/tasks/*" },
           { "/": "/routines" },
           { "/": "/groups" },
@@ -162,6 +162,8 @@ Tanpa ekstensi, satu objek JSON, tanpa signature (iOS 9 ke atas tidak meminta si
 Field yang wajib benar: `appIDs` berisi Team ID dan bundle id yang sama dengan yang ditandatangani
 build; `components` hanya memuat path yang benar-benar dilayani app. Path yang diklaim tetapi tidak
 bisa dirender app akan membuka app ke layar kosong — lebih buruk daripada tetap di browser.
+`/tasks` sengaja tidak ada di daftar itu: path tersebut hanya redirect ke `/dashboard` di web.
+`/tasks/*` tetap ada karena detail tugas punya layar sendiri.
 
 ### `/.well-known/assetlinks.json`
 
