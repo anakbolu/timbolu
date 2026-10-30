@@ -1,6 +1,7 @@
 name: Checks
 
-# The PR-time gate for the three shared sources that a change can silently desynchronise.
+# The PR-time gate for the shared sources that a change can silently desynchronise, and for the tree
+# that serves production.
 #
 # `docs/api.md` is the source of truth for the realtime event names, and three places have to agree
 # with it: `packages/contracts/events.ts`, the Go constants, and the frontend's handlers. When they
@@ -24,6 +25,11 @@ name: Checks
 # nothing to install and no lockfile to cache: the repository has no root `package.json`, and the
 # frontend's dependencies are not involved. That is also why this workflow runs `make` rather than
 # the scripts directly — the Makefile is what a person runs locally, and the two must not drift.
+#
+# The second job applies the same rule to `apps/backend-js`, the tree `timbolu.com/api/**` is served
+# by: its typecheck and its suite also ran only when someone remembered `make ci`, and #355 is what
+# silence around this tree already cost once — a Bun-only commit went green because no filter matched
+# it. Unlike the three scripts it has dependencies, so the job installs them first.
 #
 # This is a gate, not a deploy. `deployment.yml` owns turning a push to `main` into a rollout and is
 # deliberately untouched by this file; a failing check here blocks the merge, which is the earlier
@@ -64,3 +70,30 @@ jobs:
 
       - name: Deep-link route audit agrees with apps/frontend/src/app
         run: make deep-links-check
+
+  # The gates for the tree production runs, in the same workflow and the same concurrency group so a
+  # pull request gets one answer from both.
+  backend-js:
+    name: Bun typecheck and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned rather than `latest`, so a Bun release cannot turn this gate red on its own: 1.4.4 is
+      # the version the suite was developed against and the same 1.4 line the image ships
+      # (`oven/bun:1.4-slim`, apps/backend-js/Dockerfile).
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      # The Makefile's two Bun targets never install, so this step is their prerequisite;
+      # `--frozen-lockfile` makes a lockfile that disagrees with `package.json` red here instead of
+      # resolving a tree the image does not have.
+      - name: Install
+        run: cd apps/backend-js && bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: make typecheck-backend-js
+
+      - name: Tests
+        run: make test-backend-js

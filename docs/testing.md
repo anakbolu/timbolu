@@ -7,23 +7,28 @@ Bun tree and the Bun gates say nothing about the Go one, so
 [What production runs, and which gates apply](#what-production-runs-and-which-gates-apply)
 says which of the gates below a given change actually needs.
 
-**A workflow enforces three of them, and only three.** `.github/workflows/checks.yml`
-(the workflow named **Checks**, whose job is the check run "Contracts and design
+**A workflow enforces five of them, and only five.** `.github/workflows/checks.yml`
+(the workflow named **Checks**, whose first job is the check run "Contracts and design
 tokens") runs `make contracts-check`, `make design-tokens-check` and
-`make deep-links-check` on every pull request and on every push to `main`. Those are
-the gates whose drift compiles cleanly and breaks something only later, so a change
-that desynchronises the event names, the design tokens or the route audit fails the
-**Checks** run on that pull request instead of waiting for a person to notice.
+`make deep-links-check` on every pull request and on every push to `main`. The first
+three are the gates whose drift compiles cleanly and breaks something only later, so a
+change that desynchronises the event names, the design tokens or the route audit fails
+the **Checks** run on that pull request instead of waiting for a person to notice.
+
+The same workflow's second job, the check run "Bun typecheck and tests", runs
+`make typecheck-backend-js` and `make test-backend-js` on those same triggers: that is
+the tree `timbolu.com/api/**` is served by, and until it existed those two ran only when
+someone remembered `make ci` — the silence that let a Bun-only commit go green (#355).
 
 Everything else in the table — formatting, `archcheck`, lint, generated code,
-migrations, `go test`, the race detector, coverage, and the Bun typecheck and tests —
+migrations, `go test`, the race detector, and coverage —
 is run by no workflow. `.github/workflows/deployment.yml` calls the Easypanel deploy
 webhooks on a push to `main` and runs no tests, `release.yml` is disabled, and the
 `verify` job is not an exception: it polls `/api/health` and compares the build
 fingerprint production serves against the Go and Bun fingerprints computed from the
 checked-out tree (a match to either one names the implementation serving), so it proves
 a rollout landed and says nothing about whether the code is correct. So **run `make ci`
-locally and paste its output in the pull request**; the three checks above are the only
+locally and paste its output in the pull request**; the five checks above are the only
 gates a machine runs for you.
 
 ## What production runs, and which gates apply
