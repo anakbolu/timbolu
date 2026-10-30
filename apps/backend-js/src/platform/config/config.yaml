@@ -265,6 +265,13 @@ VComputer:
   # no bound at all, so the client's own 30s default is used instead and startup warns.
   Timeout: "30s"
 
+Push:
+  # Hanya PUSH_ENABLED=true (tanpa peduli huruf besar-kecil, setelah di-trim) yang
+  # membuat sebuah notifikasi keluar dari proses ini. Nilai lain — termasuk variabel
+  # yang tidak disetel — adalah default, dan exp.host tidak pernah dipanggil.
+  # Registry perangkat tetap menerima token saat pengiriman dimatikan.
+  Enabled: false
+
 Logging:
   Level: "info"
   Format: "json"

@@ -12,8 +12,9 @@ import { describe, expect, test } from "bun:test";
 
 import { EventTaskFinished, EventTaskStarted } from "../../chat/domain/event.ts";
 import type { Device } from "../../device/domain/device.ts";
+import { Client as ExpoClient } from "../expo/client.ts";
 import type { Message, Result } from "../expo/client.ts";
-import { Service, type DeviceRegistry, type Sender } from "./service.ts";
+import { Service, buildNotifier, type DeviceRegistry, type Sender } from "./service.ts";
 
 const userId = "22222222-2222-2222-2222-222222222222";
 const workspaceId = "11111111-1111-1111-1111-111111111111";
@@ -168,5 +169,45 @@ describe("send", () => {
 
     const result = await service.send(scope, { type: EventTaskFinished, taskId });
     expect(result?.unregistered).toEqual(["ExponentPushToken[gone]"]);
+  });
+});
+
+describe("the kill switch", () => {
+  test("off reads no registry and makes no request, even with a registered phone", async () => {
+    const registry = new FakeDevices([device("ExponentPushToken[one]")]);
+    let calls = 0;
+    const expo = new ExpoClient({
+      fetch: (async () => {
+        calls += 1;
+        return new Response("{}");
+      }) as unknown as typeof fetch,
+    });
+    const notifier = buildNotifier({ enabled: false, devices: registry, expo });
+
+    const result = await notifier.send(scope, { type: EventTaskFinished, taskId });
+
+    expect(result).toBeNull();
+    expect(calls).toBe(0);
+    expect(registry.listed).toHaveLength(0);
+  });
+
+  test("on still sends through the Expo client", async () => {
+    const registry = new FakeDevices([device("ExponentPushToken[one]")]);
+    const bodies: Message[][] = [];
+    const expo = new ExpoClient({
+      fetch: (async (_url: string, init: RequestInit) => {
+        bodies.push(JSON.parse(String(init.body)) as Message[]);
+        return new Response(JSON.stringify({ data: [{ status: "ok" }] }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }) as unknown as typeof fetch,
+    });
+    const notifier = buildNotifier({ enabled: true, devices: registry, expo });
+
+    const result = (await notifier.send(scope, { type: EventTaskFinished, taskId })) as Result;
+
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0].map((message) => message.to)).toEqual(["ExponentPushToken[one]"]);
+    expect(result).toEqual({ sent: 1, rejected: 0, unregistered: [] });
   });
 });

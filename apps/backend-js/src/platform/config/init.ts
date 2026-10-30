@@ -12,6 +12,7 @@ import { join } from "node:path";
 
 import type { Config } from "./config";
 import { formatDuration, parseDuration } from "./config";
+import { parsePushEnabled } from "./push";
 import { validate } from "./validation";
 
 const LOCAL_ENV = "local";
@@ -402,6 +403,12 @@ const SECTIONS: Record<string, SectionSpec> = {
       ControlURL: { kind: "string", optional: true },
       Token: { kind: "string", optional: true },
       Timeout: { kind: "duration", optional: true },
+    },
+  },
+  Push: {
+    kind: "section",
+    fields: {
+      Enabled: { kind: "bool", optional: true },
     },
   },
   Telemetry: {
@@ -974,4 +981,9 @@ export function loadFromEnv(cfg: Config, warnings: string[] = []): void {
 
   const maxContentRunes = readEnv("MEMORY_MAX_CONTENT_RUNES", atoi);
   if (maxContentRunes !== null) cfg.memory.maxContentRunes = maxContentRunes;
+
+  // The kill switch. Only the literal `true` turns push on; see ./push.ts for
+  // why `1` and `yes` deliberately do not.
+  const pushEnabled = getenv("PUSH_ENABLED");
+  if (pushEnabled !== null) cfg.push.enabled = parsePushEnabled(pushEnabled);
 }

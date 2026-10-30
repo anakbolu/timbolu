@@ -119,6 +119,35 @@ export class Service implements Notifier {
 }
 
 /**
+ * The kill switch's answer: a notifier that reads nothing and sends nothing.
+ *
+ * It is a real notifier rather than null so every caller keeps the same
+ * optional port and the switch stays invisible below the container: a phone
+ * registry entry that nobody may send to looks exactly like an account with no
+ * phones.
+ */
+export class Disabled implements Notifier {
+  async send(_scope: Scope, _event: Event): Promise<null> {
+    return null;
+  }
+}
+
+/** The dependencies, plus the deployment's switch. */
+export interface FactoryDeps extends Deps {
+  enabled: boolean;
+}
+
+/**
+ * Builds the notifier a deployment should call.
+ *
+ * With `enabled` false the Expo client and the device registry are never
+ * touched, so no request can reach exp.host even when a token is registered.
+ */
+export function buildNotifier(deps: FactoryDeps): Notifier {
+  return deps.enabled ? new Service(deps) : new Disabled();
+}
+
+/**
  * The addresses worth sending to: trimmed, shaped like an Expo token, and
  * unique. A token that fails the shape check is skipped rather than repaired —
  * there is no way to guess what the phone meant to register.
