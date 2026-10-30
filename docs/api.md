@@ -712,7 +712,7 @@ the backend did not check.
 | `GET /attachments/:id` | bearer + tenant | any | The bytes, served inline with `nosniff` |
 | `GET /events` | bearer + tenant | any | `?after_id=&limit=`; the replay a reconnect makes |
 | `GET /events/stream` | bearer + tenant (query token) | any | Server-Sent Events; `Last-Event-ID` resumes; not bounded by `Http.WriteTimeout` |
-| `GET /events/socket` | bearer + tenant (query token) | any | WebSocket; the primary transport |
+| `GET /events/socket` | bearer + tenant (query token) | any | WebSocket; the primary transport. [realtime.md](realtime.md) has the handshake and how to verify it |
 | `GET /content/:reference` | none | — | One sandboxed document, from the content origin |
 
 A message with `reply=true` becomes a durable task (see *Task runtime*): the chat
