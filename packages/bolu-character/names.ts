@@ -1,10 +1,8 @@
 /**
  * The names a Bolu character can be given, shared by web and app.
  *
- * Only the names live here for now. The geometry behind each name is still JSX
- * in `apps/frontend/src/components/bolu/characters.tsx`; #302 replaces it with
- * an element descriptor model plus a `react-native-svg` adapter, and only then
- * does a renderer stop needing the web tree.
+ * The names live here; the geometry behind each name is in `characters.ts` as an
+ * element descriptor, so no renderer needs the web tree (#302).
  *
  * Order is part of the contract: both lists are what the shape and expression
  * pickers walk, so they stay in the reference's order.

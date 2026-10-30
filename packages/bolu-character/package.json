@@ -4,6 +4,11 @@
   "type": "module",
   "exports": {
     "./palette": "./palette.ts",
-    "./names": "./names.ts"
+    "./names": "./names.ts",
+    "./characters": "./characters.ts",
+    "./dom": "./dom.tsx"
+  },
+  "scripts": {
+    "test": "node --test palette.test.ts characters.test.ts"
   }
 }
