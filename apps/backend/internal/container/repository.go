@@ -10,6 +10,7 @@ import (
 	billingrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/billing/repository"
 	chatrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/repository"
 	checklistrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/checklist/repository"
+	devicerepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/device/repository"
 	healthrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/health/repository"
 	integrationrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/repository"
 	llmrepo "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/repository"
@@ -68,6 +69,10 @@ type Repositories struct {
 	// down and the ticks they made. It is the first repository whose subject is
 	// the Bolu's own work rather than work somebody gave it.
 	Checklist *checklistrepo.Repository
+	// Device holds the Expo push addresses phones registered. It is keyed on the
+	// account rather than the workspace, because the address is what a push sender
+	// will look up when a task finishes.
+	Device *devicerepo.Repository
 	// Billing holds the packages sold, the subscription a workspace is on, the
 	// invoices it owes, the periods its allowance is counted over, and the sweep
 	// queue. It is filled in by openBilling.
@@ -154,6 +159,11 @@ func newRepositories(pool *database.Pool) *Repositories {
 		// built here for the same reason the order module is: the hub decides which
 		// tools exist from this repository, before the module itself is assembled.
 		repositories.Checklist = checklistrepo.New(pool)
+
+		// The device registry is the address a push will be delivered to. It is
+		// built here, with the other scoped repositories, because its rows carry the
+		// user whose policy filters them.
+		repositories.Device = devicerepo.New(pool)
 
 		// The operator surface reads the account table, which is the deployment's
 		// rather than a tenant's: it opens no scope, because there is no workspace

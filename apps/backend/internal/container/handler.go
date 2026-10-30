@@ -13,6 +13,7 @@ import (
 	billinghandler "github.com/anakbolu/timbolu/apps/backend/internal/modules/billing/handler"
 	chathandler "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/handler"
 	checklisthandler "github.com/anakbolu/timbolu/apps/backend/internal/modules/checklist/handler"
+	devicehandler "github.com/anakbolu/timbolu/apps/backend/internal/modules/device/handler"
 	healthhandler "github.com/anakbolu/timbolu/apps/backend/internal/modules/health/handler"
 	integrationhandler "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/handler"
 	llmdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/llm/domain"
@@ -65,6 +66,8 @@ type Handlers struct {
 	// Checklist serves the plans Bolus keep for themselves, which is a read: the tools are how one is
 	// written and moved, and the Bolu is the only thing that moves it.
 	Checklist *checklisthandler.Handler
+	// Device serves the push addresses phones registered.
+	Device *devicehandler.Handler
 }
 
 // newHandlers builds every handler from the service set. Handlers receive the
@@ -137,6 +140,9 @@ func newHandlers(services *Services, log *zap.Logger, cfg *config.Config) *Handl
 	}
 	if services.Checklist != nil {
 		handlers.Checklist = checklisthandler.New(services.Checklist, log)
+	}
+	if services.Device != nil {
+		handlers.Device = devicehandler.New(services.Device, log)
 	}
 	if services.Billing != nil {
 		handlers.Billing = billinghandler.New(services.Billing, log)
@@ -355,6 +361,15 @@ func (c *Container) registerRoutes() {
 		checklisthandler.Routes(tenant, c.Handlers.Checklist)
 	}
 
+	// The device registry: the push address a phone registers and removes. It belongs to the
+	// person holding the phone rather than to a role, so every member may use it — the row is
+	// already filtered to the caller's own tokens by the policy.
+	if c.Handlers.Device == nil {
+		registerDeviceFallback(tenant)
+	} else {
+		devicehandler.Routes(tenant, c.Handlers.Device)
+	}
+
 	// Model configuration is read by every member, because the Bolu screens show
 	// which model a Bolu uses, and written by a managing role, because it holds
 	// the provider keys.
@@ -497,6 +512,9 @@ func (c *Container) registerUnavailableModules(api fiber.Router) {
 	if c.Handlers.Checklist == nil {
 		registerChecklistFallback(api)
 	}
+	if c.Handlers.Device == nil {
+		registerDeviceFallback(api)
+	}
 	if c.Handlers.LLM == nil {
 		registerModelFallback(api)
 	}
@@ -549,6 +567,12 @@ func registerChecklistFallback(router fiber.Router) {
 func registerOrderFallback(router fiber.Router) {
 	message := "the catalogue is not configured"
 	router.All("/orders*", unavailable(message, "order_not_configured"))
+}
+
+// registerDeviceFallback answers 503 for the device routes.
+func registerDeviceFallback(router fiber.Router) {
+	message := "the device registry is not configured"
+	router.All("/devices*", unavailable(message, "device_not_configured"))
 }
 
 // registerIntegrationFallback answers 503 for the integration routes.

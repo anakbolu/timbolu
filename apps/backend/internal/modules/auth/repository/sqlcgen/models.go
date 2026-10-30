@@ -198,6 +198,17 @@ type DataErasure struct {
 	Error            string
 }
 
+type DeviceToken struct {
+	ID          uuid.UUID
+	UserID      uuid.UUID
+	WorkspaceID *uuid.UUID
+	Platform    string
+	Token       string
+	AppVersion  *string
+	LastSeenAt  time.Time
+	CreatedAt   time.Time
+}
+
 type Draft struct {
 	ID             uuid.UUID
 	WorkspaceID    uuid.UUID

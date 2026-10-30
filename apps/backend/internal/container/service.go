@@ -8,6 +8,7 @@ import (
 	billingdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/billing/domain"
 	chatdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/chat/domain"
 	checklistdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/checklist/domain"
+	devicedomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/device/domain"
 	healthdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/health/domain"
 	healthservice "github.com/anakbolu/timbolu/apps/backend/internal/modules/health/service"
 	integrationdomain "github.com/anakbolu/timbolu/apps/backend/internal/modules/integration/domain"
@@ -74,6 +75,10 @@ type Services struct {
 	// integration adapter resolves it when a tool is called, because the adapter is
 	// registered with the hub before this module is assembled.
 	Checklist checklistdomain.Service
+	// Device is the registry of push addresses phones registered, built by
+	// openDevice. The push sender added in a later tick will read it; today it is
+	// only what the app registers with.
+	Device devicedomain.Service
 }
 
 // newServices builds every service. Optional dependencies (Redis today) are
