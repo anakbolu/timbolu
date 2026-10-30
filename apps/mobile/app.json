@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "Timbolu",
+    "slug": "timbolu",
+    "scheme": "bolu",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "ios": {
+      "supportsTablet": true
+    }
+  }
+}
