@@ -300,9 +300,22 @@ jadi klien tidak pernah menyebutkan salah satunya.
 | `POST /devices` | bearer + tenant | any | `{token, platform, app_version?}`; satu baris per akun dan token, diperbarui pada setiap peluncuran |
 | `DELETE /devices/:token` | bearer + tenant | any | `204` tanpa body; token akun lain dan token yang tidak terdaftar adalah `404` yang sama |
 
-Keduanya berada di grup tenant, jadi `X-Workspace-Id` yang tidak valid sudah
-dijawab `403` oleh middleware sebelum handler berjalan; sebuah deployment yang
-tidak memasang modul ini menjawab `503 device_not_configured` untuk kedua route.
+Keduanya berada di grup tenant, jadi `X-Workspace-Id` diperiksa middleware
+sebelum handler berjalan, dan jawabannya bergantung pada keadaan header:
+
+| Keadaan | Jawaban |
+| --- | --- |
+| Header tidak dikirim | `400`, `invalid_workspace`, `workspace id is required` |
+| Header ada, nilainya bukan UUID | `400`, `invalid_workspace`, `workspace id is not a uuid` |
+| Header UUID, pemanggil bukan anggotanya | `403`, `not_a_member` |
+| Header lolos, modul tidak terpasang | `503`, `device_not_configured` |
+
+Klien native (app Expo) harus sudah punya workspace sebelum memanggil
+`POST /devices`: route-nya ada di grup tenant, dan tidak ada jalur untuk
+mendaftarkan token tanpa header itu. Akun yang baru memasang app dan belum
+onboarding tidak punya nilai untuk header tersebut — `GET /workspaces` menjawab
+`[]` — sehingga registrasi push pertamanya selalu `400`. Celah itu dicatat
+terpisah dan tidak diperbaiki oleh #489.
 
 ### Kill switch pengiriman
 
