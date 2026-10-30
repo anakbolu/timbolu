@@ -433,6 +433,15 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Container, e
 		return nil, err
 	}
 
+	// The device registry depends on nothing above it: a token is an address, and the
+	// module neither produces the events a push is about nor sends them. It is assembled
+	// before the conversations only so the order the modules are described in matches
+	// the order they are built.
+	if err := c.openDevice(ctx, cfg); err != nil {
+		c.Close()
+		return nil, err
+	}
+
 	// Conversations come after the runtime: they answer with the gateway, address
 	// the Bolu the registry owns, and hand a message to the task runtime, so all
 	// three must be assembled first.
