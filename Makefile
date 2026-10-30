@@ -1,6 +1,7 @@
 .PHONY: help up down logs build dev frontend backend api worker-logs wa-gateway \
         test test-backend test-gateway test-packages test-integration smoke-task smoke-approval smoke-order measure-orders demo demo-stop gate-report cover cover-backend cover-gateway lint lint-backend lint-gateway archcheck contracts-check design-tokens-check deep-links-check sqlc mocks generate llm-fixtures \
-        migrate-up migrate-down migrate-create psql test-backend-js typecheck-backend-js ci
+        migrate-up migrate-down migrate-create psql test-backend-js typecheck-backend-js \
+        lint-frontend build-frontend ci
 
 COMPOSE := docker compose
 BACKEND := apps/backend
@@ -148,9 +149,16 @@ test-backend-js: ## Run the Bun port's test suite (what production runs)
 typecheck-backend-js: ## Type-check the Bun port (tsc --noEmit)
 	cd apps/backend-js && bun run typecheck
 
+lint-frontend: ## Lint the frontend (eslint)
+	cd apps/frontend && npm run lint
+
+build-frontend: ## Build the frontend (next build)
+	cd apps/frontend && npm run build
+
 fmt: ## Format the Go code of every module
 	gofmt -w $(PACKAGES)/platform $(PACKAGES)/whatsapp
 	cd $(BACKEND) && gofmt -w ./cmd ./internal ./migrations ./tools ./test
 	cd $(GATEWAY) && gofmt -w ./cmd ./internal
 
+# lint-frontend and build-frontend stay out of `ci`: a full Next build adds minutes to the local loop.
 ci: contracts-check design-tokens-check deep-links-check archcheck lint test cover test-backend-js typecheck-backend-js ## Run the same gates as CI locally
