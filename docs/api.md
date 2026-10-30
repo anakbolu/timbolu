@@ -3,6 +3,129 @@
 Base URL: `{API_URL}/api`. Every response uses the envelope
 `{"success":bool,"message":string,"data":…,"error":{…}}`.
 
+## Health and readiness
+
+Two unauthenticated probes answer the two questions a deployment asks, and they
+are deliberately not the same question. The backend's own listener also serves
+them on the bare paths `/health` and `/ready`, by the same handlers, which is what
+a container health check calls; on `timbolu.com` only `/api/**` is routed to the
+backend, so from outside the deployment they are reached under the prefix only.
+The contract is identical either way.
+
+| Endpoint | Auth | Notes |
+| --- | --- | --- |
+| `GET /api/health` | — | Liveness. `200` while the process runs, and it never touches a dependency |
+| `GET /api/ready` | — | Readiness. `200` when every configured dependency answers, `503` when one is `unavailable` |
+
+### Liveness: `GET /api/health`
+
+```json
+{
+  "success": true,
+  "message": "alive",
+  "data": {
+    "status": "ok",
+    "commit": "unknown",
+    "built_at": "2026-10-30T01:06:47Z",
+    "build": "29293ee511615089"
+  }
+}
+```
+
+**It never touches a dependency.** The handler answers from memory, so a Postgres
+outage does not turn liveness red and does not get a container that is doing
+nothing wrong restarted. There is no `components` key at all — the field is
+omitted rather than empty, because there is nothing to report.
+
+**It also says which build is answering**, and that is the part a deploy is
+proved with:
+
+| Field | Meaning | Go (`apps/backend`) | Bun (`apps/backend-js`) |
+| --- | --- | --- | --- |
+| `data.status` | always `"ok"` | — | — |
+| `data.commit` | git revision the image was built from, when the build was told it | `-ldflags -X …Commit` | `BUILD_COMMIT` in the environment |
+| `data.built_at` | RFC3339 timestamp of the image build, when the build was told it | `-ldflags -X …BuiltAt` | `BUILT_AT` in the environment, else `/app/.build-built-at` |
+| `data.build` | the deploy identity: first 16 hex characters of a SHA-256 over the source | every `.go` file of `apps/backend` and the shared `packages` module, hashed in the image and baked in with `-ldflags` | every TypeScript file of `apps/backend-js/src`, hashed in the image into `/app/.build-fingerprint` |
+
+`commit` answers `"unknown"` in production for a structural reason rather than a
+missing feature: `.git` is excluded from the build context and Easypanel has no
+per-build build-argument field, so nothing can name a commit that only exists
+after a push. `build` is what changes with every commit and therefore what proves
+a deploy — recompute it from the tree you merged and compare it with the live
+value, and note that the two implementations hash different trees, so a match also
+names which one is serving. [deployment.md](deployment.md#proving-the-deploy-actually-landed)
+has both commands.
+
+**`"unknown"` is not a broken probe.** A value the build was not told stays
+`"unknown"` rather than empty, so the shape never changes and an absent value
+cannot be read as a missing field. A local `go run ./cmd/api` or
+`bun run src/cmd/api.ts` answers `"unknown"` for all three, which is why these
+probes are evidence about a *container* build only.
+
+### Readiness: `GET /api/ready`
+
+```json
+{
+  "success": true,
+  "message": "ready",
+  "data": {
+    "status": "ok",
+    "components": [
+      { "name": "database", "status": "ok" },
+      { "name": "redis", "status": "ok" }
+    ]
+  }
+}
+```
+
+Every configured dependency is pinged, and the components always appear in the
+order `database`, `redis`:
+
+| Component status | Meaning | Effect on the probe |
+| --- | --- | --- |
+| `ok` | the ping answered | ready |
+| `unavailable` | the ping failed; the component's `error` carries the reason | `503`, and `status` becomes `unavailable` |
+| `not_configured` | the dependency is not wired in this deployment (no database handle, no Redis) | ready — an absent dependency is not a failing one |
+
+When a component is `unavailable` the per-component detail is kept, so an operator
+sees which dependency is down without reading logs — but it sits in the error
+envelope rather than in `data`, because the request as a whole failed:
+
+```json
+{
+  "success": false,
+  "message": "not ready",
+  "error": {
+    "code": "not_ready",
+    "details": {
+      "status": "unavailable",
+      "components": [
+        { "name": "database", "status": "unavailable", "error": "dial tcp …: connect: connection refused" },
+        { "name": "redis", "status": "ok" }
+      ]
+    }
+  }
+}
+```
+
+`not_ready` is the code a failed probe returns. The Bun implementation adds one
+more case: a container with no health service wired answers
+`health_not_configured` (`503`) on both paths instead, which the Go tree never
+does because it always wires the service (with `not_configured` components when a
+dependency is missing).
+
+### Why the two probes are separate
+
+Liveness is the restart question, readiness is the traffic question. A liveness
+probe that went red because Postgres was down would restart a process that is
+doing nothing wrong, and a restart does not bring Postgres back — it only adds an
+outage of its own. Readiness is allowed to say no, because the caller decides what
+to do about it: a rollout waits, a load balancer stops sending traffic. The same
+split decides which endpoint proves a deploy: `/api/ready` is answered by the
+previous image just as well, so `/api/health` is the one that names the build.
+[deployment.md](deployment.md#proving-the-deploy-actually-landed) has the
+procedure.
+
 ## Authentication
 
 | Endpoint | Auth | Body | Success | Errors |
