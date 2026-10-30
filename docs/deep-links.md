@@ -370,11 +370,18 @@ Aturan yang harus dipegang app, dalam urutan yang sama:
    tetapi itu detail transport, bukan contoh untuk link yang ditulis ke notifikasi dan log.
 4. **Workspace tetap yang aktif.** Login tidak mengubah workspace demi sebuah link; kalau resource
    ada di workspace lain, jawabannya 404 dan app menampilkan layar "tidak ditemukan".
-5. **Web hari ini belum memenuhi aturan ini.** `apps/frontend/src/components/dashboard/workspace-data.tsx`
-   mengalihkan ke `/login?sesi=berakhir` tanpa menyimpan tujuan, dan
-   `apps/frontend/src/components/auth/credentials-form.tsx` selalu menuju `/dashboard` atau
-   `/onboarding`. Artinya universal link yang dibuka saat sesi habis kehilangan tujuannya. Ini celah
-   yang harus ditutup sebelum universal link diumumkan, bukan perilaku yang boleh ditiru app.
+5. **Web sudah memenuhi aturan ini untuk tautan workspace.** Gate di
+   `apps/frontend/src/proxy.ts` membawa layar yang diminta sebagai
+   `/login?next=<path+query>` ketika tidak ada sesi, dan
+   `apps/frontend/src/components/auth/credentials-form.tsx` (`safeNextPath`) hanya menerima path
+   internal — diawali satu `/`, tanpa skema, tanpa `//`, tanpa backslash — lalu mengembalikan orang ke
+   layar itu setelah login berhasil; nilai yang tidak lolos dibuang seluruhnya, bukan diperbaiki
+   menjadi tujuan lain. Sesi yang habis saat halaman sedang terbuka mengalihkan lewat
+   `apps/frontend/src/components/dashboard/workspace-data.tsx` ke
+   `/login?sesi=berakhir&next=<halaman itu>`, sehingga penjelasan sesi berakhir dan tujuannya
+   terbawa bersama. Yang masih menjadi kontrak app, bukan perilaku web: membaca link sebelum sesi
+   dan menyimpan link tertunda ketika login berpindah ke browser (butir 1–2); aturan 3–4 sudah
+   berlaku di web karena tidak ada token di URL dan login tidak berpindah workspace.
 
 ## Cara memverifikasi
 

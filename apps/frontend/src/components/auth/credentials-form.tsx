@@ -20,6 +20,34 @@ import { googleStartURL, login, register } from "@/lib/api";
 const GOOGLE_LOGIN_ENABLED = process.env.NEXT_PUBLIC_GOOGLE_LOGIN_ENABLED === "true";
 
 /**
+ * The screen a visitor was on before the gate sent them here — if the value can
+ * be navigated to at all.
+ *
+ * `next` arrives in the URL, so it is as much an attacker's parameter as ours:
+ * `//evil.example`, `https://evil.example`, `javascript:alert(1)` and
+ * `/\evil.example` all read as a navigation away from this site, and a login
+ * form that forwards one of them hands a link to whoever composed it. Only a
+ * path inside this site is accepted: a single leading slash, no scheme before
+ * the first slash, no doubled slash, no backslash. Everything else is dropped
+ * whole — repairing it would be a second guess at a destination the author did
+ * not write.
+ */
+export function safeNextPath(value: string | null): string | null {
+  if (!value) return null;
+  // The URL parser strips TAB, LF and CR (and DEL is not a legal path octet),
+  // so `/\n/evil.example` would survive the `//` test below and reach the
+  // router as `//evil.example` — a navigation off this site. Reject any value
+  // carrying one of these bytes before looking at its shape.
+  if (/[\u0000-\u001f\u007f]/.test(value)) return null;
+  const colon = value.indexOf(":");
+  const slash = value.indexOf("/");
+  if (colon !== -1 && (slash === -1 || colon < slash)) return null;
+  if (!value.startsWith("/") || value.startsWith("//")) return null;
+  if (value.includes("\\")) return null;
+  return value;
+}
+
+/**
  * One page for both entry points, because they share every field and only
  * differ in which endpoint they call and where they land afterwards.
  */
@@ -83,7 +111,10 @@ export function CredentialsForm({ mode }: { mode: "signup" | "login" }) {
             setError(session.message);
             return;
           }
-          router.push(session.data.user.onboarded ? "/dashboard" : "/onboarding");
+          router.push(
+            safeNextPath(params.get("next")) ??
+              (session.data.user.onboarded ? "/dashboard" : "/onboarding"),
+          );
           return;
         }
 
@@ -104,7 +135,14 @@ export function CredentialsForm({ mode }: { mode: "signup" | "login" }) {
         setNotice("Emailmu belum diverifikasi. Cek tautan yang kami kirim.");
         return;
       }
-      router.push(result.data.user.onboarded ? "/dashboard" : "/onboarding");
+      // The gate carries the screen that was open as `next`, and honouring it is
+      // the point of the parameter: a task opened from a notification while the
+      // session was gone must not end on the dashboard. An unsafe value is
+      // dropped by `safeNextPath` and the account's own screen stands in.
+      router.push(
+        safeNextPath(params.get("next")) ??
+          (result.data.user.onboarded ? "/dashboard" : "/onboarding"),
+      );
     } finally {
       setPending(false);
     }

@@ -17,9 +17,16 @@ import { SESSION_HINT_COOKIE } from "@/lib/session-hint";
  */
 export default function proxy(request: NextRequest) {
   if (!request.cookies.has(SESSION_HINT_COOKIE)) {
+    // The screen being asked for is the point of the visit — a task or a draft
+    // opened from a notification is the ordinary way a workspace URL arrives
+    // without a session — so the door carries it as `next`. The form reads that
+    // parameter back and returns the person there after signing in; without it
+    // they land on the dashboard, which is exactly where the notification was
+    // trying not to send them.
     const door = request.nextUrl.clone();
     door.pathname = "/login";
     door.search = "";
+    door.searchParams.set("next", `${request.nextUrl.pathname}${request.nextUrl.search}`);
     return NextResponse.redirect(door);
   }
 
