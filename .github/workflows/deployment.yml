@@ -5,13 +5,14 @@ name: Deployment
 # separate concern, and this workflow owns one thing — turning "these paths changed" into "the
 # services that build from those paths are redeployed".
 #
-# The mapping is path -> service. Every service builds from the repository root, because each Go
-# module imports the shared `packages/` module and a Docker build does not read `go.work`, and
-# because the Bun Dockerfile copies `apps/backend-js/` out of that same root, so what a service is
-# configured with in Easypanel is:
+# The mapping is path -> service. Every service builds from the repository root: each Go module
+# imports the shared `packages/` module and a Docker build does not read `go.work`, the Bun
+# Dockerfile copies `apps/backend-js/` out of that same root, and the web image copies
+# `apps/frontend/` and `packages/` out of it so the app's package imports resolve (#379). What a
+# service is configured with in Easypanel is:
 #
 #   service                      source path      Dockerfile                    build arg
-#   timbolu                      /apps/frontend   Dockerfile                    —
+#   timbolu                      /                apps/frontend/Dockerfile.root —
 #   timbolu-backend              /                apps/backend-js/Dockerfile    APP=api
 #   timbolu-agent-worker         /                apps/backend-js/Dockerfile    APP=agent-worker
 #   timbolu-integration-worker   /                apps/backend-js/Dockerfile    APP=integration-worker
@@ -30,6 +31,8 @@ name: Deployment
 # Which paths therefore redeploy which service:
 #
 #   apps/frontend/**            -> timbolu                     (the web app)
+#   packages/contracts/**       -> timbolu                     (compiled into the web bundle)
+#   packages/bolu-character/**  -> timbolu                     (same)
 #   apps/backend/**             -> timbolu-backend             (rolls the Bun image; no Go change ships)
 #                                  timbolu-agent-worker        (same)
 #                                  timbolu-integration-worker  (same)
@@ -43,14 +46,27 @@ name: Deployment
 #
 # The gateway is its own module and its own image, so it is triggered by its own path rather than by
 # `apps/backend/**`. `packages/` is two things: the Go module the Go images import, and TypeScript
-# packages that belong to the web app. Only the Go half enters a Go image — the Go images' build
-# fingerprint hashes `*.go` and nothing else (apps/backend/Dockerfile) — so the Go triggers match the
-# module's `.go` files and its manifests, not `packages/**`. A TypeScript-only change there is not a
-# change to either Go image, and the `timbolu` image builds from `apps/frontend` alone (#330 kept the
-# stream's event names local so it would build without `packages/`), so such a change rolls nothing.
-# When the web app starts consuming a package at build time, that package's path goes in the
-# `frontend` filter, where the image that would rebuild is named. A `packages/**` here again would
-# roll the three backend services and the gateway for a change none of them builds.
+# packages the web app imports. Only the Go half enters a Go image — the Go images' build fingerprint
+# hashes `*.go` and nothing else (apps/backend/Dockerfile) — so the Go triggers match the module's
+# `.go` files and its manifests, not `packages/**`. A TypeScript-only change there is not a change to
+# either Go image, so it stays out of those filters.
+#
+# It is not a change to nothing, either. Since #379 the `timbolu` image builds from the repository
+# root (`apps/frontend/Dockerfile.root`, `outputFileTracingRoot` in `next.config.ts`) precisely so the
+# app can import `packages/` at build time, and it does: `@timbolu/contracts/events` (the stream's
+# event names) and `@timbolu/bolu-character/{names,palette}` (the palette) are compiled into its
+# bundle (#343, #385). Those packages are therefore in the `frontend` filter. Before they were, a
+# commit touching only them matched no filter, every deploy job was skipped and the run stayed green
+# while the code users see had changed — the #322/#345 hole, moved into TypeScript. The rule is
+# "imported by the web app at build time", not "under `packages/`": a `packages/**` here would roll
+# the three backend services and the gateway for a change none of them builds.
+#
+# `packages/design-tokens` is the case that rule excludes. The web app never imports it: `tokens.json`
+# is mirrored into the `@theme` block of `apps/frontend/src/app/globals.css`, and `make
+# design-tokens-check` fails when the two disagree (checks.yml), so a token change reaches the site
+# only alongside a change under `apps/frontend/**`, which already rolls the frontend. Listing it here
+# would roll the image for a file no build reads. The next package gets the same test: imported at
+# build time, or not in this filter.
 #
 # `apps/backend-js/**` is the second implementation of those same three backend services: the Bun
 # port, which `apps/backend-js/Dockerfile` builds into one image and selects with `APP=api`,
@@ -130,8 +146,12 @@ jobs:
         id: filter
         with:
           filters: |
+            # `packages/contracts` and `packages/bolu-character` are compiled into the web bundle, so
+            # the web image is stale when only they change — see the note at the top of this file.
             frontend:
               - 'apps/frontend/**'
+              - 'packages/contracts/**'
+              - 'packages/bolu-character/**'
             backend:
               - 'apps/backend/**'
               - 'packages/**/*.go'
@@ -297,7 +317,8 @@ jobs:
   # pass on it — but it must not call the image stale either, because it cannot see which one it is.
   #
   # That fingerprint says nothing about the frontend, which is the service most likely to ship alone:
-  # a commit that only touches `apps/frontend/**` skips the fingerprint step entirely and leaves
+  # a commit that only touches a frontend input (`apps/frontend/**`, or an imported package under
+  # `packages/`) skips the fingerprint step entirely and leaves
   # "the site answers 200" as the only check — which the previous image passes just as well. What the
   # frontend does expose is the mtime of the assets it serves: Next writes content-hashed chunks, so
   # the HTML of a build names only that build's chunks, and each chunk's `Last-Modified` is the
@@ -445,14 +466,18 @@ jobs:
 
       - name: Wait for production to serve this tree's frontend build
         # The fingerprint step above covers the backend only, and the frontend is the service that
-        # ships on its own most often: for a commit that touches only `apps/frontend/**` this step is
-        # the only thing between a green run and a build that never landed (#322).
+        # ships on its own most often: for a commit that touches only a frontend input this step is
+        # the only thing between a green run and a build that never landed (#322). Those inputs are
+        # `apps/frontend/**` and the packages compiled into its bundle (`packages/contracts`,
+        # `packages/bolu-character`) — see the note at the top of this file.
         #
         # Two different questions reach this one step, and answering both with one rule is what made
         # it lie (#357):
         #
-        #   frontend changed (`apps/frontend/**`) — the image has to be new, so a served chunk must
+        #   frontend changed (one of those paths) — the image has to be new, so a served chunk must
         #     postdate the commit. This is the #322 case, and it stays exactly as strict as it was.
+        #     A package change is the same question: its source is compiled into the bundle, so the
+        #     chunks differ and their mtime is this build's.
         #
         #   build filter only (`.github/workflows/**`, `Makefile`, `.dockerignore`, `go.work`,
         #     `go.work.sum`, `docker-compose*.yml`) — the frontend is redeployed, but `RUN npm run
@@ -480,7 +505,7 @@ jobs:
           deadline=$((SECONDS + 480))
 
           if [ "$CHANGED_FRONTEND" = "true" ]; then
-            echo "judging this deploy as: frontend changed (apps/frontend/**) — the served assets must postdate the commit"
+            echo "judging this deploy as: frontend changed (apps/frontend/** or an imported packages/ input) — the served assets must postdate the commit"
             if [ -z "$COMMIT_TIMESTAMP" ]; then
               echo "::error::github.event.head_commit.timestamp is empty, so there is nothing to compare the frontend build against" >&2
               exit 1
@@ -532,7 +557,7 @@ jobs:
             done
           fi
 
-          echo "judging this deploy as: build filter only (no apps/frontend/** change) — the image is rebuilt from cached layers, so its assets keep the old layer's mtime and their age proves nothing"
+          echo "judging this deploy as: build filter only (no frontend input changed) — the image is rebuilt from cached layers, so its assets keep the old layer's mtime and their age proves nothing"
           while :; do
             problem=""
             # `--fail` so a 5xx from a container mid-rollout is not parsed as a page with no chunks.
@@ -561,7 +586,7 @@ jobs:
               fi
             fi
             if [ "$SECONDS" -ge "$deadline" ]; then
-              echo "::error::build filter only (no apps/frontend/** change): $problem after 8 minutes — the frontend image serving production is unreachable or incomplete. The age of the build is deliberately not part of this check: a build-only commit reuses the cached build layer, so its assets keep the old layer's timestamp by design" >&2
+              echo "::error::build filter only (no frontend input changed): $problem after 8 minutes — the frontend image serving production is unreachable or incomplete. The age of the build is deliberately not part of this check: a build-only commit reuses the cached build layer, so its assets keep the old layer's timestamp by design" >&2
               exit 1
             fi
             echo "$problem; retrying"

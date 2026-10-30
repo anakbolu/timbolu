@@ -231,6 +231,7 @@ There are no tests in it — the gates are a separate concern — and the mappin
 | Changed | Redeployed |
 | --- | --- |
 | `apps/frontend/**` | `timbolu` (the web app) |
+| `packages/contracts/**`, `packages/bolu-character/**` | `timbolu` — imported and compiled into the web bundle, so a change here changes what users see (`packages/design-tokens` is not imported: it is mirrored into `globals.css` and gated by `make design-tokens-check`) |
 | `apps/backend-js/**` | `timbolu-backend`, `timbolu-agent-worker`, `timbolu-integration-worker` — the Bun images production runs, so a commit here changes the code users run |
 | `apps/backend/**` | `timbolu-backend`, `timbolu-agent-worker`, `timbolu-integration-worker` — the trigger fires, but those services build the Bun tree, so the rebuild carries no Go change; it only costs a rollout until #350 decides the Go backend's fate |
 | `apps/whatsapp-gw/**` | `timbolu-wa-gateway` |
@@ -241,10 +242,11 @@ There are no tests in it — the gates are a separate concern — and the mappin
 `apps/whatsapp-gw` is a module of its own, so a change to it rolls only the gateway; `packages/` is
 the Go module the gateway imports (and the Go backend images, which production does not run), so a
 change there rolls the gateway and triggers the three backend services, whose Bun image does not
-import it. The root build files belong to no app, which is why they used to match nothing and a
-commit touching only `.dockerignore` finished green with every deploy job skipped. They shape every
-image — `.dockerignore` decides what enters every build context, and a wrong line there is what broke
-the gateway build — so they roll everything, the frontend included.
+import it. The TypeScript half goes the other way: only the packages the web app imports roll
+`timbolu`, because only they enter its image. The root build files belong to no app, which is why they
+used to match nothing and a commit touching only `.dockerignore` finished green with every deploy job
+skipped. They shape every image — `.dockerignore` decides what enters every build context, and a
+wrong line there is what broke the gateway build — so they roll everything, the frontend included.
 
 ### What each Easypanel service is configured with
 
