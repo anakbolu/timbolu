@@ -10,6 +10,7 @@
  */
 
 import { ArrowRight, Check, FileText, MessageSquare, MessagesSquare, PanelRight, Paperclip, X } from "lucide-react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -20,6 +21,7 @@ import { useIsWide } from "@/hooks/use-wide";
 import { uploadStagedAttachment, type Agent, type ApiError, type ChatConversation, type ChatMessage } from "@/lib/api";
 import { allBot, type CrewMember } from "@/lib/crew";
 import { crewFor, expressionOf, stateOf } from "@/lib/dashboard-view";
+import { CONVERSATION_NOT_FOUND, friendlyLoadFailure } from "@/lib/friendly-error";
 
 import { Block } from "./blocks";
 import { ThreadPanel } from "./thread-panel";
@@ -222,6 +224,21 @@ export function ChatView({
 
   const waiting = useWaiting(chat, agents);
 
+  // A deep link to a Bolu the API refused: the whole error is kept so the banner
+  // can say what happened without printing the server's status label, and can
+  // offer a retry only when repeating the request could help.
+  const openFailure =
+    agentId && chat.openError ? friendlyLoadFailure(chat.openError, "conversation") : null;
+
+  // An id the loaded list does not hold is a link this workspace cannot open. It
+  // waits for that first read, and for a read that succeeded: an empty list left
+  // by a failed load is not evidence that the conversation is gone.
+  const missingConversation =
+    conversationId !== undefined &&
+    chat.loaded &&
+    !chat.error &&
+    !chat.conversations.some((conversation) => conversation.id === conversationId);
+
   return (
     <div className="flex h-full min-h-0 flex-1">
       <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col bg-bolu-surface shadow-[-4px_0_15px_-3px_rgba(0,0,0,0.03)]">
@@ -293,6 +310,26 @@ export function ChatView({
         {chat.error ? (
           <p role="alert" className="mx-6 mt-3 rounded-md border border-bolu-belum/30 bg-bolu-belum/8 px-3 py-2 text-sm text-bolu-belum">
             {chat.error}
+          </p>
+        ) : null}
+
+        {openFailure ? (
+          <p role="alert" className="mx-6 mt-3 rounded-md border border-bolu-belum/30 bg-bolu-belum/8 px-3 py-2 text-sm text-bolu-belum">
+            {openFailure.message}
+            {openFailure.retryable && agentId ? (
+              <button type="button" onClick={() => void chat.openByAgent(agentId)} className="ml-2 cursor-pointer underline">
+                Coba lagi
+              </button>
+            ) : null}
+          </p>
+        ) : null}
+
+        {missingConversation ? (
+          <p role="alert" className="mx-6 mt-3 rounded-md border border-bolu-border bg-bolu-hover/40 px-3 py-2 text-sm text-bolu-ink">
+            {CONVERSATION_NOT_FOUND}{" "}
+            <Link href="/chat" className="underline">
+              Kembali ke obrolan
+            </Link>
           </p>
         ) : null}
 

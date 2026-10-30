@@ -14,7 +14,7 @@
 
 import type { ApiError } from "@/lib/api";
 
-export type DeepLinkKind = "task" | "draft";
+export type DeepLinkKind = "task" | "draft" | "conversation";
 
 export type LoadFailure = {
   /** The sentence the screen shows. Never the API's own wording for a broken id. */
@@ -26,17 +26,31 @@ export type LoadFailure = {
 const INVALID_LINK: Record<DeepLinkKind, string> = {
   task: "Tautan tidak valid — id tugas di tautan ini tidak dikenali. Buka dasbor lalu pilih tugas dari kartunya.",
   draft: "Tautan tidak valid — id draf di tautan ini tidak dikenali. Buka daftar draf lalu pilih dari sana.",
+  conversation:
+    "Tautan tidak valid — id obrolan di tautan ini tidak dikenali. Buka daftar obrolan lalu pilih dari sana.",
 };
 
 const NOT_FOUND: Record<DeepLinkKind, string> = {
   task: "Tugas tidak ditemukan — mungkin sudah dihapus, atau tautannya berasal dari ruang kerja lain.",
   draft: "Draf tidak ditemukan — mungkin sudah dihapus, atau tautannya berasal dari ruang kerja lain.",
+  conversation:
+    "Obrolan tidak ditemukan — mungkin sudah dihapus, atau tautannya berasal dari ruang kerja lain.",
 };
 
 const RETRY: Record<DeepLinkKind, string> = {
   task: "Tugas gagal dimuat — server atau jaringannya sedang bermasalah. Coba lagi.",
   draft: "Draf gagal dimuat — server atau jaringannya sedang bermasalah. Coba lagi.",
+  conversation: "Obrolan gagal dimuat — server atau jaringannya sedang bermasalah. Coba lagi.",
 };
+
+/**
+ * The sentence for a conversation the workspace's list does not hold.
+ *
+ * The chat screen finds a conversation by looking it up in that list rather than
+ * by asking the API, so a missing id never arrives as a 404 to map. It shares the
+ * sentence with the 404 case instead of writing a second one that could drift.
+ */
+export const CONVERSATION_NOT_FOUND = NOT_FOUND.conversation;
 
 /**
  * The API's message is only shown when it reads like prose rather than a status
