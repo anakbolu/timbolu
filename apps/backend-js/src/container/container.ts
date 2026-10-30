@@ -94,15 +94,23 @@ import { Handler as ChatHandler } from "../modules/chat/handler/handler.ts";
 // integration
 import { PostgresRepository as IntegrationRepository } from "../modules/integration/repository/postgres.ts";
 import { IntegrationService } from "../modules/integration/service/service.ts";
+import { newRegistry } from "../modules/integration/service/registry.ts";
 import { Handler as IntegrationHandler } from "../modules/integration/handler/handler.ts";
+import type { Adapter as IntegrationAdapter } from "../modules/integration/domain/adapter.ts";
+import { errorMessage } from "../modules/integration/domain/integration.ts";
+import { GmailAdapter } from "../modules/integration/adapters/gmail/gmail.ts";
+import { SlackAdapter } from "../modules/integration/adapters/slack/slack.ts";
+import { GithubAdapter } from "../modules/integration/adapters/github/github.ts";
 // checklist
 import { PostgresRepository as ChecklistRepository } from "../modules/checklist/repository/postgres.ts";
 import { ChecklistService } from "../modules/checklist/service/service.ts";
+import { ChecklistAdapter } from "../modules/checklist/adapter/adapter.ts";
 import { Handler as ChecklistHandler } from "../modules/checklist/handler/handler.ts";
 // order
 import { PostgresRepository as OrderRepository } from "../modules/order/repository/postgres.ts";
 import { Service as OrderService } from "../modules/order/service/service.ts";
 import { Handler as OrderHandler } from "../modules/order/handler/handler.ts";
+import { Adapter as OrderAdapter } from "../modules/order/adapter/adapter.ts";
 // billing
 import { PostgresRepository as BillingRepository } from "../modules/billing/repository/postgres.ts";
 import { BillingService } from "../modules/billing/service/service.ts";
@@ -540,8 +548,48 @@ export async function newContainer(
       } as any);
     chat = new ChatHandler(chatService, log);
 
+    // The modules the hub's own adapters serve. They are built before the hub
+    // because an adapter hands its tools straight to its module; the Go tree
+    // resolves them at call time only because there the hub is assembled first.
+    const orderService = new OrderService({ repository: new OrderRepository(db), logger: log });
+    const checklistService = new ChecklistService({ repository: new ChecklistRepository(db), logger: log });
+
     const integrationRepo = new IntegrationRepository(db);
-    integrationService = new IntegrationService({ repository: integrationRepo, box, kms, logger: log } as any);
+
+    // The adapters are what declare the tools, their labels, and their schemas,
+    // so the registry is built before anything reads the hub. A refusal here is a
+    // bug in one adapter, and it is said while the process is starting rather
+    // than left for the first model call.
+    const registry = newRegistry();
+    for (const adapter of integrationAdapters(config, log, orderService, checklistService)) {
+      try {
+        registry.register(adapter);
+      } catch (err) {
+        throw new Error(`integration: register the ${adapter.app()} adapter: ${errorMessage(err)}`);
+      }
+    }
+
+    integrationService = new IntegrationService({
+      repository: integrationRepo,
+      // Nothing else is wired yet: tokens, schemas, state and triggers are ports
+      // this deployment has not filled, and the service refuses those paths
+      // rather than pretending they work.
+      cipher: null,
+      registry,
+      logger: log,
+      clock: null,
+      limits: null,
+      auditor: null,
+      validator: null,
+      states: null,
+      stateStore: null,
+      refs: null,
+      queue: null,
+      triggers: null,
+      limiter: null,
+      mcp: null,
+      mcpClients: null,
+    });
     integration = new IntegrationHandler(
       integrationService,
       log,
@@ -551,15 +599,8 @@ export async function newContainer(
       },
     );
 
-    checklist = new ChecklistHandler(
-      new ChecklistService({ repository: new ChecklistRepository(db), logger: log } as any),
-      log,
-    );
-
-    order = new OrderHandler(
-      new OrderService({ repository: new OrderRepository(db), logger: log } as any),
-      log,
-    );
+    checklist = new ChecklistHandler(checklistService, log);
+    order = new OrderHandler(orderService, log);
 
     const billingRepository = new BillingRepository(db);
     billingService = new BillingService({
@@ -729,6 +770,85 @@ export async function newContainer(
     billingService,
     close,
   };
+}
+
+/**
+ * Lists the applications this deployment speaks.
+ *
+ * It is the only place an application is named: adding one is adding a line
+ * here, and the agent worker, the approval gate, and the tool registry never
+ * learn that it happened. Ported from `integrationAdapters` in
+ * apps/backend/internal/container/integration.go.
+ *
+ * A deployment that has not registered an OAuth application for Gmail, Slack, or
+ * GitHub simply does not offer it, rather than offering it and failing at the
+ * consent screen.
+ */
+function integrationAdapters(
+  config: Config,
+  log: Logger,
+  orders: OrderService,
+  plans: ChecklistService,
+): IntegrationAdapter[] {
+  // The workspace's own data and the plan a Bolu keeps for itself are the
+  // applications that are not accounts somebody connected: there is no provider,
+  // no token, and nothing outside this deployment to reach. They are offered
+  // whenever there is storage to answer from, which is what this block runs under.
+  const adapters: IntegrationAdapter[] = [new OrderAdapter(orders), new ChecklistAdapter(plans)];
+
+  const { integrations } = config;
+
+  if (integrations.gmailClientId.trim() !== "" && integrations.gmailClientSecret.trim() !== "") {
+    try {
+      adapters.push(
+        new GmailAdapter({
+          clientId: integrations.gmailClientId,
+          clientSecret: integrations.gmailClientSecret,
+          apiBase: integrations.gmailApiBase,
+          authEndpoint: integrations.gmailAuthEndpoint,
+          tokenEndpoint: integrations.gmailTokenEndpoint,
+        }),
+      );
+    } catch (err) {
+      // Said rather than fatal: the rest of the hub works without Gmail, and a
+      // deployment that mistyped a credential should still serve.
+      log.error({ err }, "the Gmail adapter is disabled");
+    }
+  }
+
+  if (integrations.slackClientId.trim() !== "" && integrations.slackClientSecret.trim() !== "") {
+    try {
+      adapters.push(
+        new SlackAdapter({
+          clientId: integrations.slackClientId,
+          clientSecret: integrations.slackClientSecret,
+          apiBase: integrations.slackApiBase,
+          authEndpoint: integrations.slackAuthEndpoint,
+          tokenEndpoint: integrations.slackTokenEndpoint,
+        }),
+      );
+    } catch (err) {
+      log.error({ err }, "the Slack adapter is disabled");
+    }
+  }
+
+  if (integrations.gitHubClientId.trim() !== "" && integrations.gitHubClientSecret.trim() !== "") {
+    try {
+      adapters.push(
+        new GithubAdapter({
+          clientId: integrations.gitHubClientId,
+          clientSecret: integrations.gitHubClientSecret,
+          apiBase: integrations.gitHubApiBase,
+          authEndpoint: integrations.gitHubAuthEndpoint,
+          tokenEndpoint: integrations.gitHubTokenEndpoint,
+        }),
+      );
+    } catch (err) {
+      log.error({ err }, "the GitHub adapter is disabled");
+    }
+  }
+
+  return adapters;
 }
 
 /**
