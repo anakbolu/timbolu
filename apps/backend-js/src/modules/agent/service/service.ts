@@ -10,6 +10,7 @@ import {
   DisplayWorking,
   ErrAgentHasRunningTask,
   ErrAgentLimitReached,
+  ErrAgentNotFound,
   ErrInvalidInput,
   ErrInvalidPermission,
   ErrInvalidStatus,
@@ -21,6 +22,7 @@ import {
   StoredResting,
   acceptsNewTasks as storedAcceptsNewTasks,
   deriveStatus,
+  is,
   isZeroScope,
   wrap,
   type Agent,
@@ -313,7 +315,17 @@ export class Service implements ServicePort {
         defaultModel: source.defaultModel,
       };
     } else if (req.templateKey.trim() !== "") {
-      input = await this.repo.agentTemplate(req.templateKey);
+      try {
+        input = await this.repo.agentTemplate(req.templateKey);
+      } catch (err) {
+        // A template key names one of the seeded profiles, so a key that names
+        // none is a wrong body rather than a missing Bolu. The repository
+        // reports the lookup miss with ErrAgentNotFound, which the handler
+        // would otherwise answer as 404 agent_not_found and send the client
+        // looking for an object that never existed.
+        if (!is(err, ErrAgentNotFound)) throw err;
+        throw wrap(ErrInvalidInput, `template "${req.templateKey}" is not one of the agent templates`);
+      }
     }
 
     // Explicit request fields win over the copied profile.
