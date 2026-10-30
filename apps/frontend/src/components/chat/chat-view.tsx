@@ -170,6 +170,11 @@ export function ChatView({
     return agents.find((agent) => agent.id === participant.agent_id) ?? null;
   }, [chat.active, agents]);
 
+  // The face every Bolu message in this conversation wears: the one its state
+  // poses, computed once so the header and the messages cannot disagree. A group
+  // has no single partner, so its messages keep the neutral face.
+  const partnerExpression = partner ? expressionOf(stateOf(partner)) : undefined;
+
   // The work threads opened from this conversation, newest first.
   const threads = useMemo(
     () =>
@@ -226,7 +231,7 @@ export function ChatView({
             {partner ? (
               <Bolu
                 member={crewFor(partner)}
-                expression={expressionOf(stateOf(partner))}
+                expression={partnerExpression}
                 color={partner.color || undefined}
                 size={24}
                 className="flex-none"
@@ -322,6 +327,7 @@ export function ChatView({
                   name={nameOf(chat.active, item.message)}
                   face={authorFace(chat.active, item.message, agents)}
                   color={colorOf(item.message, agents)}
+                  expression={partnerExpression}
                 />
               ) : (
                 <ThreadMarker
@@ -1008,12 +1014,15 @@ export function MessageRow({
   name,
   face,
   color,
+  expression,
   compact = false,
 }: {
   message: ChatMessage;
   name: string;
   face: CrewMember | null;
   color?: string;
+  /** The face the Bolu's current state poses; absent keeps the neutral face. */
+  expression?: BoluExpressionName;
   /** The thread panel's smaller row. */
   compact?: boolean;
 }) {
@@ -1082,7 +1091,7 @@ export function MessageRow({
 
   return (
     <article className={`group flex ${compact ? "gap-3" : "gap-4"}`}>
-      <Avatar face={face ?? allBot("Oren")} color={color} compact={compact} />
+      <Avatar face={face ?? allBot("Oren")} color={color} expression={expression} compact={compact} />
       <div className={`min-w-0 flex-1 leading-relaxed text-bolu-body ${compact ? "text-[14px]" : "text-[15px]"}`}>
         <p className="sr-only">{name}</p>
         {body}

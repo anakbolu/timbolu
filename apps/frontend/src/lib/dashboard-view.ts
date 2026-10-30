@@ -29,15 +29,19 @@ export const TIMEZONES = [
 export const ACCENT = "var(--color-bolu-accent)";
 
 /**
- * The look each derived state is posed with.
+ * The face each derived state is posed with, read as what the Bolu is doing.
  *
- * These are the generator's own expressions, so a Bolu reading as "waiting"
- * wears the same face the character sheet drew for it rather than a one-off.
+ * `working` is "senang" because work going well is the happy face; `thinking`
+ * is "mikir"; `waiting` is "kaget" because the state means a draft is waiting on
+ * a person, which is the "butuh izin" face, not the playful "iseng" it used to
+ * wear; `idle` is "bosan" and `resting` is "capek", the two quiet faces. Every
+ * row is one of the generator's own expressions, so no state needs a face drawn
+ * for it alone.
  */
 export const STATE_EXPRESSION: Record<string, BoluExpressionName> = {
   working: "senang",
   thinking: "mikir",
-  waiting: "iseng",
+  waiting: "kaget",
   idle: "bosan",
   resting: "capek",
 };
