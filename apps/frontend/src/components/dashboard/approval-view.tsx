@@ -214,9 +214,14 @@ export function ApprovalView({ draftID }: { draftID: string }) {
     <div className="flex flex-col gap-6 p-[24px_28px_48px] max-[760px]:p-[18px_14px_36px]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <Link href="/dashboard" className="text-[14px] text-bolu-muted no-underline hover:underline">
-            ← Dasbor
-          </Link>
+          <div className="flex flex-wrap items-center gap-3 text-[14px] text-bolu-muted">
+            <Link href="/approval" className="no-underline hover:underline">
+              ← Semua draf
+            </Link>
+            <Link href="/dashboard" className="no-underline hover:underline">
+              Dasbor
+            </Link>
+          </div>
           <h1 className={`${HEADING} mt-1`}>{draft.title || "Draf menunggu persetujuan"}</h1>
           <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[15px] text-bolu-muted">
             <span className="size-6 flex-none">

@@ -13,6 +13,7 @@ import {
   Bot,
   ChevronDown,
   Clock,
+  Inbox,
   LayoutGrid,
   Menu,
   MessageCircle,
@@ -53,6 +54,13 @@ const NAV = [
     icon: LayoutGrid,
     /** matches reports whether a route is this entry, rather than a screen below it. */
     matches: (pathname: string) => pathname === "/dashboard",
+  },
+  {
+    href: "/approval",
+    label: "Persetujuan",
+    icon: Inbox,
+    /** The inbox covers the draft pages below it, so a decision keeps the entry lit. */
+    matches: (pathname: string) => pathname.startsWith("/approval"),
   },
   {
     href: "/routines",
