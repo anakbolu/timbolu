@@ -14,6 +14,7 @@ import type { Logger } from "../../../platform/logger.ts";
 import { isUuid, scope as requestScope, type AppContext, type AppEnv } from "../../../platform/context.ts";
 import { AppError } from "../../../platform/errors.ts";
 import { error as errorEnvelope, ok, success, unavailable } from "../../../platform/response.ts";
+import { ErrAgentNotFound } from "../../agent/domain/agent.ts";
 import {
   ErrAgentNotInConversation,
   ErrAttachmentNotFound,
@@ -595,6 +596,12 @@ export class Handler {
     }
     if (is(err, ErrAttachmentNotFound)) {
       return errorEnvelope(c, 404, "attachment not found", "attachment_not_found");
+    }
+    if (is(err, ErrAgentNotFound)) {
+      // 404 rather than 403: the directory already filters by workspace, so a
+      // Bolu owned by another tenant is indistinguishable from one that never
+      // existed. A 403 would confirm the id is real and leak that tenant's roster.
+      return errorEnvelope(c, 404, "that Bolu is not in this workspace", "agent_not_found");
     }
     if (is(err, ErrAgentNotInConversation)) {
       return errorEnvelope(c, 400, "that Bolu is not in this conversation", "agent_not_in_conversation");
