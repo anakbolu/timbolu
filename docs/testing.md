@@ -1,8 +1,9 @@
 # Testing and quality gates
 
 Everything in this document is enforced by `make ci` locally, over the Go tree
-(`apps/backend`, `apps/whatsapp-gw`) and the shared `packages/` module. `make ci` does
-not read `apps/backend-js` — the Bun port, which is what production runs — so
+(`apps/backend`, `apps/whatsapp-gw`), the shared `packages/` module, and the Bun port
+under `apps/backend-js` that production runs. The Go gates still say nothing about the
+Bun tree and the Bun gates say nothing about the Go one, so
 [What production runs, and which gates apply](#what-production-runs-and-which-gates-apply)
 says which of the gates below a given change actually needs.
 
@@ -27,8 +28,9 @@ and [#350](https://github.com/anakbolu/timbolu/issues/350) is where the Go tree'
 is decided. Three cases follow from that:
 
 - **A change under `apps/backend-js/**` changes the code a user runs.** Its gates are
-  the Bun ones in the table below. Nothing in `make ci` covers this tree, so passing
-  `make ci` is not evidence about it.
+  the Bun ones in the table below, and `make ci` runs them, so a green `make ci` does
+  cover this tree — but only as far as those two commands reach, which is a seven-file
+  suite rather than the coverage the Go tree has.
 - **A change under `apps/backend/**` alone changes nothing a user can see today.** The
   Go gates still apply — it is where the contract, the migrations and the fixes live,
   and it is what would return if #350 says so — but a green Go suite does not mean the
@@ -53,17 +55,20 @@ skipped, and the run went green while production kept serving the previous image
 | Tests | `make test` (`go test ./...`) | Unit and integration tests |
 | Race detector | `go test ./... -race` | Data races |
 | Coverage | `make cover` (`scripts/coverage.sh`) | Total coverage ≥ 80% |
-| Types (Bun port) | `cd apps/backend-js && bun run typecheck` | `tsc --noEmit` over `apps/backend-js/src/**/*.ts`: no type error in the tree production runs |
-| Tests (Bun port) | `cd apps/backend-js && bun test` | `src/platform/buildinfo/buildinfo.test.ts` (the build fingerprint `/api/health` reports) and `src/modules/chat/service/stream.test.ts` (the stream's positional contract with its publisher) |
+| Types (Bun port) | `make typecheck-backend-js` (`cd apps/backend-js && bun run typecheck`) | `tsc --noEmit` over `apps/backend-js/src/**/*.ts`: no type error in the tree production runs; `make ci` runs it |
+| Tests (Bun port) | `make test-backend-js` (`cd apps/backend-js && bun test`) | `bun test` over `apps/backend-js/src/**/*.test.ts`: the build fingerprint `/api/health` reports, the stream's positional contract with its publisher, the container wiring, auth, task activity, and the device registry; `make ci` runs it |
 
 Both Bun commands need `bun install` in `apps/backend-js` first (it reads
-`bun.lock`). Neither is wired to `make ci`: `make ci` has no Bun target, and
-`apps/backend-js/package.json` defines `typecheck` but no `test` script, so
-`bun test` is run by hand. That is the whole Bun suite today — two files, four tests —
-so treat it as a floor, not as the coverage the Go tree has. Adding a `test` script
-and a `make` target would make it enforceable; until then, a PR that touches
-`apps/backend-js/**` should paste both commands' output, the same way a Go change
-pastes `make ci`.
+`bun.lock`). Both are wired to `make ci` through `make typecheck-backend-js` and
+`make test-backend-js`, so one `make ci` now covers the tree production runs as well as
+the Go one. `bun test` needs no `test` script in `apps/backend-js/package.json`: it
+discovers `*.test.ts` on its own, which is why the test target calls the binary
+directly while the typecheck target goes through the `typecheck` script. That is the
+whole Bun suite today — seven files, 31 tests, covering the build fingerprint, the chat
+stream's positional contract, the container wiring, auth, task activity, and the device
+registry — so treat it as a floor, not as the coverage the Go tree has. A PR that
+touches `apps/backend-js/**` should paste `make ci`'s output, the same way a Go change
+does.
 
 ## Linting
 
