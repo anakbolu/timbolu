@@ -41,6 +41,13 @@ name: Checks
 # deliberately untouched by this file; a failing check here blocks the merge, which is the earlier
 # and cheaper place to stop a bad commit.
 
+# The fourth job applies it to `apps/mobile`, the Expo client. Its only gate was `npx tsc --noEmit`
+# run by whoever remembered, while `docs/mobile.md` already calls a green typecheck a PR
+# requirement — the same silence #483 and #355 cost in the other two trees. It installs with
+# `npm install`, never `npm ci`: `apps/mobile/.gitignore` leaves every lockfile out on purpose (see
+# docs/mobile.md), so there is no lockfile for `ci` to install from and it would fail on the first
+# step. That is deliberate, not a bug to fix.
+
 on:
   pull_request:
   push:
@@ -125,3 +132,24 @@ jobs:
 
       - name: Build
         run: make build-frontend
+
+  # The Expo client; its typecheck only matters if a machine runs it pre-merge.
+  mobile:
+    name: Expo typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22, the major of the `packages` and `frontend` jobs.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # `npm install`, not `npm ci`: `apps/mobile/.gitignore` deliberately keeps every lockfile out
+      # of the repo (docs/mobile.md), so there is no lockfile to install from and `ci` would fail
+      # immediately. `--no-audit --no-fund` keeps it to the tree.
+      - name: Install
+        run: cd apps/mobile && npm install --no-audit --no-fund
+
+      - name: Typecheck
+        run: make typecheck-mobile

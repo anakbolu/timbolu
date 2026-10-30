@@ -1,7 +1,7 @@
 .PHONY: help up down logs build dev frontend backend api worker-logs wa-gateway \
         test test-backend test-gateway test-packages test-integration smoke-task smoke-approval smoke-order measure-orders demo demo-stop gate-report cover cover-backend cover-gateway lint lint-backend lint-gateway archcheck contracts-check design-tokens-check deep-links-check sqlc mocks generate llm-fixtures \
         migrate-up migrate-down migrate-create psql test-backend-js typecheck-backend-js \
-        lint-frontend build-frontend ci
+        lint-frontend build-frontend typecheck-mobile ci
 
 COMPOSE := docker compose
 BACKEND := apps/backend
@@ -154,6 +154,9 @@ lint-frontend: ## Lint the frontend (eslint)
 
 build-frontend: ## Build the frontend (next build)
 	cd apps/frontend && npm run build
+
+typecheck-mobile: ## Type-check the Expo app (tsc --noEmit)
+	cd apps/mobile && npm run typecheck
 
 fmt: ## Format the Go code of every module
 	gofmt -w $(PACKAGES)/platform $(PACKAGES)/whatsapp
