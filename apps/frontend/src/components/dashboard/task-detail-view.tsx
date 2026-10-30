@@ -201,7 +201,7 @@ export function TaskDetailView({ taskID }: { taskID: string }) {
             </button>
           ) : null}
           {task.status === "waiting_approval" && task.waiting_draft_id ? (
-            <Link href="/dashboard" className={`${BUTTON} no-underline`}>
+            <Link href={`/approval/${task.waiting_draft_id}`} className={`${BUTTON} no-underline`}>
               Lihat drafnya
             </Link>
           ) : null}

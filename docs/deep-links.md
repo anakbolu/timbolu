@@ -57,7 +57,7 @@ terhadap `apps/frontend/src/app`.
 | `/settings/data` | `(workspace)/settings/data/page.tsx` | ada |
 | `/settings/usage` | `(workspace)/settings/usage/page.tsx` | ada |
 | `/settings/subscription` | `(workspace)/settings/subscription/page.tsx` | ada |
-| `/approval/<draft_id>` | — | tidak ada |
+| `/approval/<draft_id>` | `(workspace)/approval/[draftID]/page.tsx` | ada |
 | `/chat/<conversation_id>` | — | tidak ada |
 | `/routines/<run_id>` | — | tidak ada |
 | `/routines/<routine_id>` | — | tidak ada |
@@ -72,7 +72,7 @@ baris-baris `/settings/...`; tidak ada path lain di bawah keduanya yang dilayani
 | --- | --- | --- | --- |
 | `bolu://task/<task_id>` | `tasks.id` (UUID) | Detail tugas: keadaan, alasan berhenti, langkah, hasil serahan | `/tasks/<task_id>` |
 | `bolu://chat/<conversation_id>` | `conversations.id` (UUID) | Obrolan itu: 1:1 dengan Bolu, grup, atau thread | `/chat?conversation=<conversation_id>` |
-| `bolu://approval/<draft_id>` | `drafts.id` (UUID) | Inbox persetujuan, dibuka pada draf itu (Fase 1) | **belum ada di web** — lihat [Celah](#celah) |
+| `bolu://approval/<draft_id>` | `drafts.id` (UUID) | Inbox persetujuan, dibuka pada draf itu (Fase 1) | `/approval/<draft_id>` |
 | `bolu://routine/<routine_id>` | `routines.id` (UUID) | Daftar rutinitas, dibuka pada rutin itu | **belum ada di web** — `/routines` hanya daftar dan riwayat |
 
 Aturan yang mengikat keempatnya:
@@ -116,6 +116,7 @@ sama — lihat `docs/deployment.md`). Pemetaannya diturunkan dari route yang ben
 | `/chat?conversation=<conversation_id>` | Obrolan | Grup dan thread; ini yang dipakai `bolu://chat/<id>` |
 | `/tasks` | Dasbor | Layar daftar tugas sudah dihapus; `/tasks` hanya `redirect("/dashboard")`, jadi path ini tidak punya layar app sendiri |
 | `/tasks/<task_id>` | Detail tugas | Tujuan `bolu://task/<id>` |
+| `/approval/<draft_id>` | Draf persetujuan | Tujuan `bolu://approval/<id>`; satu draf beserta tombol putusnya |
 | `/routines` | Rutinitas | Daftar dan riwayat; tidak ada halaman per-run |
 | `/groups` | Grup | |
 | `/bolu/new` | Bolu baru | |
@@ -148,13 +149,6 @@ atau di app nanti.
 
 ### Layar web yang belum ada
 
-- **`/approval/<draft_id>` tidak ada.** Web hari ini punya tiga tempat yang mendekati, dan ketiganya
-  bukan layar draf: panel "Menunggu persetujuanmu" di `/dashboard` (tombol setujui ada di sana,
-  tetapi drafnya tidak bisa dialamatkan), tombol "Lihat drafnya" di `/tasks/<task_id>` yang justru menuju
-  `/dashboard`, dan blok `draft` di dalam thread `/chat?conversation=<id>`. Karena itu
-  `bolu://approval/<draft_id>` sementara hanya bisa dibuka oleh app Fase 1 (inbox persetujuan);
-  universal link `https://timbolu.com/approval/<draft_id>` **tidak boleh** diumumkan sampai layar
-  itu ada.
 - **`/chat/<conversation_id>` tidak ada.** Obrolan dialamatkan lewat query (`?agent=` atau
   `?conversation=`), bukan segmen path.
 - **`/routines/<run_id>` tidak ada.** `/routines` adalah daftar dan riwayat; satu run tidak punya

@@ -193,11 +193,18 @@ export function DashView() {
                       />
                     ) : null}
                   </div>
-                  <div className="flex min-w-0 flex-[1_1_200px] flex-col">
+                  {/* The card opens the draft itself, because a decision made from a
+                      one-line summary is a decision made without the payload. The
+                      approve button stays beside it for the drafts that need no
+                      second look. */}
+                  <Link
+                    href={`/approval/${row.draft.draft_id}`}
+                    className="flex min-w-0 flex-[1_1_200px] flex-col text-bolu-ink no-underline hover:text-bolu-ink"
+                  >
                     <div className="text-[13px] font-semibold text-bolu-muted">{row.kind}</div>
                     <div className="truncate font-semibold">{row.title}</div>
                     <div className="text-[14px] text-bolu-muted">{row.meta}</div>
-                  </div>
+                  </Link>
                   <div className="flex flex-none gap-1.5">
                     <Link
                       href="/chat"
