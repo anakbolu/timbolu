@@ -267,8 +267,11 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       if (getAccessToken() === null) {
         // There is no session to load a screen against, so the door is where the
         // person belongs — and the door is the screen that can say why: it reads
-        // `sesi` off the URL and explains above the form.
-        router.replace("/login?sesi=berakhir");
+        // `sesi` off the URL and explains above the form. It also carries this
+        // screen as `next`, so signing in again returns here rather than to the
+        // dashboard: a task opened from a notification must survive the expiry.
+        const here = `${window.location.pathname}${window.location.search}`;
+        router.replace(`/login?sesi=berakhir&next=${encodeURIComponent(here)}`);
         return;
       }
       // The session is alive, so the account simply has no workspace yet. Nothing
@@ -298,9 +301,11 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       // The API rejected the token, so the session in hand is not one. Dropping it
       // clears the gate's hint with it — the cookie write is synchronous, so it has
       // landed before the navigation below — and the person is sent to the door
-      // with the reason, rather than left on a screen they may no longer read.
+      // with the reason and this screen, rather than left on a screen they may no
+      // longer read or returned to the dashboard after signing in.
       setAccessToken(null);
-      router.replace("/login?sesi=berakhir");
+      const here = `${window.location.pathname}${window.location.search}`;
+      router.replace(`/login?sesi=berakhir&next=${encodeURIComponent(here)}`);
       return;
     }
 
