@@ -10,7 +10,6 @@
  */
 
 import { ArrowRight, Check, FileText, MessageSquare, MessagesSquare, PanelRight, Paperclip, X } from "lucide-react";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -1025,8 +1024,7 @@ export function MessageRow({
   const empty =
     message.blocks.length === 0 &&
     message.attachments.length === 0 &&
-    notice === null &&
-    !message.task_id;
+    notice === null;
   if (empty) {
     return null;
   }
@@ -1075,7 +1073,6 @@ export function MessageRow({
         >
           {body}
         </div>
-        {message.task_id ? <TaskLink taskId={message.task_id} align="end" /> : null}
       </article>
     );
   }
@@ -1088,23 +1085,9 @@ export function MessageRow({
         {body}
         <div className="mt-1.5 flex items-center gap-3 text-xs text-bolu-muted">
           {time ? <span>{time}</span> : null}
-          {/* A message that opened a task says so, and the way in is the task itself: the work
-              behind an answer is the reason the answer can be trusted. */}
-          {message.task_id ? <TaskLink taskId={message.task_id} /> : null}
         </div>
       </div>
     </article>
-  );
-}
-
-function TaskLink({ taskId, align = "start" }: { taskId: string; align?: "start" | "end" }) {
-  return (
-    <Link
-      href={`/tasks/${taskId}`}
-      className={`text-xs text-bolu-muted no-underline hover:underline ${align === "end" ? "text-right" : ""}`}
-    >
-      Lihat tugasnya →
-    </Link>
   );
 }
 
