@@ -1,7 +1,11 @@
 # ADR 0003 — Virtual Computer: satu sandbox Docker per bot untuk PoC
 
-- Status: **Diterima (PoC)**
+> **Digantikan oleh [ADR 0004](0004-daytona.md)** sejak 2026-10-30. Isi di bawah adalah catatan
+> historis keputusan 2026-10-16; runtime yang dipakai sekarang adalah Daytona.
+
+- Status: **Digantikan oleh [ADR 0004](0004-daytona.md)**
 - Tanggal: 2026-10-16
+- Digantikan: 2026-10-30
 - Isu: #4 — *Virtual computer per bot: persistent session, terminal, browser*
 - Riset: [riset-microvm.md](../riset-microvm.md) — rekomendasinya "jangan sekarang"; bila ditempuh, **gVisor + Kubernetes**
 - Terkait: [ADR 0001](0001-temporal-dan-region.md) (region Jakarta, *claim check*), [ADR 0002](0002-kepatuhan-uu-pdp.md) (rahasia & data pelanggan), EPIC 7 (#59) approval & draf, EPIC 8 (#66) integration hub

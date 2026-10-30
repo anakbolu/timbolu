@@ -39,6 +39,9 @@ packages/        Shared Go libraries and service contracts
 docs/            Architecture, deployment, product flows, and screenshots
 ```
 
+`apps/virtual-computer/` is a proof of concept that is being retired (#402). The runtime
+direction is Daytona — see [ADR 0004](docs/adr/0004-daytona.md) and #397.
+
 | Component | Main technologies |
 | --- | --- |
 | Backend | Go, Fiber, PostgreSQL + pgvector, Redis, Temporal |
