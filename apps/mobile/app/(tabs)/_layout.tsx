@@ -34,6 +34,10 @@ export default function TabsLayout() {
         name="tasks"
         options={{ title: "Tugas", tabBarLabel: "Tugas" }}
       />
+      <Tabs.Screen
+        name="routine"
+        options={{ title: "Rutinitas", tabBarLabel: "Rutinitas" }}
+      />
     </Tabs>
   );
 }

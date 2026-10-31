@@ -815,6 +815,117 @@ export async function listTaskSteps(taskID: string): Promise<ApiResult<TaskStep[
   return request<TaskStep[]>(`/tasks/${taskID}/steps`, { workspace: workspaceId });
 }
 
+/** The cadences a routine may have, matching `routine.kind` in the database. */
+export type RoutineKind = "daily" | "hourly_range" | "weekly" | "trigger";
+
+/**
+ * One schedule a Bolu keeps for itself.
+ *
+ * The times are wall-clock times in the workspace's zone, not the phone's:
+ * `schedule` is the server's own sentence ("setiap hari 06:00"), and `next_runs`
+ * are instants, so a device in another zone still shows what the engine will
+ * actually do. `scheduled` is false for a trigger routine, which has no clock at
+ * all rather than an empty set of times.
+ */
+export type Routine = {
+  id: string;
+  agent_id: string;
+  name: string;
+  kind: RoutineKind;
+  minute: number;
+  hour_start: number;
+  hour_end: number;
+  day_of_week?: number;
+  trigger_source?: string;
+  instruction: string;
+  enabled: boolean;
+  /** Why the engine stopped it, in the workspace's words; absent when it did not. */
+  paused_reason?: string;
+  schedule: string;
+  scheduled: boolean;
+  next_runs: string[];
+  created_at: string;
+};
+
+/** How one routine run ended, matching `routine_runs.status`. */
+export type RoutineRunStatus = "running" | "succeeded" | "failed" | "skipped";
+
+/**
+ * One execution of a routine: the task it opened and how that task ended.
+ *
+ * `routine_id` is absent once the routine was deleted, because the run keeps its
+ * history; the name was snapshotted with the run, so such a history still reads.
+ */
+export type RoutineRun = {
+  run_id: string;
+  routine_id?: string;
+  routine_name: string;
+  task_id?: string;
+  status: RoutineRunStatus;
+  summary: string;
+  started_at: string;
+  finished_at?: string;
+};
+
+/**
+ * The workspace's routines, with the times each will next run at.
+ *
+ * `enabled` is passed through only when a screen actually filters: the API
+ * treats an absent filter as "all", which is what the Rutinitas tab shows.
+ */
+export async function listRoutines(
+  options: { agent_id?: string; enabled?: boolean } = {},
+): Promise<ApiResult<Routine[]>> {
+  const workspaceId = await ensureWorkspace();
+  if (!workspaceId) return NO_WORKSPACE;
+
+  const params: string[] = [];
+  if (options.agent_id !== undefined && options.agent_id !== "") {
+    params.push(`agent_id=${encodeURIComponent(options.agent_id)}`);
+  }
+  if (options.enabled !== undefined) params.push(`enabled=${options.enabled ? "true" : "false"}`);
+  const query = params.length > 0 ? `?${params.join("&")}` : "";
+  return request<Routine[]>(`/routines${query}`, { workspace: workspaceId });
+}
+
+/** One routine by id. A routine outside this workspace answers `routine_not_found`. */
+export async function getRoutine(routineID: string): Promise<ApiResult<Routine>> {
+  const workspaceId = await ensureWorkspace();
+  if (!workspaceId) return NO_WORKSPACE;
+  return request<Routine>(`/routines/${routineID}`, { workspace: workspaceId });
+}
+
+/**
+ * Pauses the schedule; the routine stays listed, with its history.
+ *
+ * Both answers carry the routine itself, so a row is replaced from the server's
+ * state rather than patching `enabled` and hoping the new `next_runs` agree.
+ */
+export async function pauseRoutine(routineID: string): Promise<ApiResult<Routine>> {
+  const workspaceId = await ensureWorkspace();
+  if (!workspaceId) return NO_WORKSPACE;
+  return request<Routine>(`/routines/${routineID}/pause`, { method: "POST", workspace: workspaceId });
+}
+
+/** Puts a paused routine back on the same schedule. */
+export async function resumeRoutine(routineID: string): Promise<ApiResult<Routine>> {
+  const workspaceId = await ensureWorkspace();
+  if (!workspaceId) return NO_WORKSPACE;
+  return request<Routine>(`/routines/${routineID}/resume`, { method: "POST", workspace: workspaceId });
+}
+
+/** One routine's history, newest first. */
+export async function listRoutineRuns(
+  routineID: string,
+  limit = 20,
+): Promise<ApiResult<RoutineRun[]>> {
+  const workspaceId = await ensureWorkspace();
+  if (!workspaceId) return NO_WORKSPACE;
+  return request<RoutineRun[]>(`/routines/${routineID}/runs?limit=${limit}`, {
+    workspace: workspaceId,
+  });
+}
+
 /**
  * The readable text of one message.
  *
