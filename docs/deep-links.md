@@ -6,9 +6,11 @@ notifikasi yang membuka layar salah lebih buruk daripada notifikasi yang tidak d
 mengira pekerjaannya hilang.
 
 Dokumen ini **kontrak, bukan implementasi**. App Expo-nya sudah ada sejak #488: `apps/mobile`
-memakai Expo SDK 57 dan `expo-router`, dengan layar `index` (gerbang sesi), `login`, `(tabs)/bolu`,
-dan `chat/[agentID]`; detailnya di `docs/mobile.md`. `scheme` `bolu` juga sudah dideklarasikan di
-`apps/mobile/app.json`.
+memakai Expo SDK 57 dan `expo-router`, dengan layar `index` (gerbang sesi), `login`, empat tab
+`(tabs)/bolu`, `(tabs)/approval`, `(tabs)/tasks`, `(tabs)/routine`
+(`apps/mobile/app/(tabs)/_layout.tsx`), dan layar per id `chat/[agentID]`, `task/[taskID]`,
+`draft/[draftID]`, serta `routine/[routineID]`; detailnya di `docs/mobile.md`. `scheme` `bolu` juga
+sudah dideklarasikan di `apps/mobile/app.json`.
 
 Link masuk `bolu://` sudah dibaca app sejak #500. `app/+native-intent.tsx` (`redirectSystemPath`)
 mengembalikan `null` untuk URL `bolu://`, sehingga router berhenti dan tidak mencocokkan
@@ -20,13 +22,28 @@ tautan yang datang sebelum sesi siap, dan `src/lib/link-destination.ts` (`destin
 menentukan tujuan beserta kalimatnya. `app/+not-found.tsx` menangani path yang tidak punya berkas
 layar.
 
-Yang belum ada hari ini: layar `task`, `approval`, `routine`, dan obrolan per id. Setiap target
-yang dikenali karena itu mendarat di daftar Bolu `/(tabs)/bolu` dengan notis "Layar yang dituju
-tautan ini belum ada di app…", dan link tak dikenal mendapat `UNKNOWN_LINK_NOTICE`. Selain itu
-`notification.pending` belum punya produsen, `routine.run` baru ada sebagai nama, dan universal
-link `timbolu.com/...` belum dipasang: belum ada `apple-app-site-association` maupun
-`assetlinks.json`, dan `app.json` belum mendeklarasikan associated domains. Yang ditetapkan di sini
-adalah bentuk yang harus dipenuhi saat bagian-bagian itu dibangun. Nama event selalu bisa dicek di
+Layar tujuannya sudah ada untuk `task`, `approval`, dan `routine`:
+`apps/mobile/app/task/[taskID].tsx` (detail tugas, dibuka dari tab `apps/mobile/app/(tabs)/tasks.tsx`),
+`apps/mobile/app/draft/[draftID].tsx` (satu draf, dibuka dari tab
+`apps/mobile/app/(tabs)/approval.tsx`), dan `apps/mobile/app/routine/[routineID].tsx` (satu rutin
+beserta 20 run terakhir, dibuka dari tab `apps/mobile/app/(tabs)/routine.tsx`).
+
+Yang belum: pemetaan target link untuk `approval` dan `routine`.
+`apps/mobile/src/lib/link-destination.ts` (`destinationFor`) baru memetakan `task` ke
+`task/[taskID]`, jadi `bolu://approval/<id>` dan `bolu://routine/<id>` masih mendarat di daftar
+Bolu `/(tabs)/bolu` dengan notis "Layar yang dituju tautan ini belum ada di app…". Obrolan per id
+juga belum: `bolu://chat/<id>` membawa `conversations.id`, sedangkan
+`apps/mobile/app/chat/[agentID].tsx` membuka thread dari id Bolu
+(`openDirectConversation(agentID)`), jadi link chat tidak dicocokkan ke layar itu dan tetap
+mendarat di daftar Bolu. `apps/mobile/src/lib/deep-link.ts` (`parseIncomingLink`) sudah memisahkan
+`chat` dari resource lain, dan `apps/mobile/app/+native-intent.tsx` menahan seluruh `bolu://` dari
+router. Link tak dikenal mendapat `UNKNOWN_LINK_NOTICE`.
+
+Selain itu `notification.pending` belum punya produsen, `routine.run` baru ada sebagai nama, dan
+universal link `timbolu.com/...` belum dipasang: belum ada `apple-app-site-association` maupun
+`assetlinks.json`, `apps/mobile/app.json` belum mendeklarasikan associated domains, dan
+`apps/mobile/app/+native-intent.tsx` hanya menahan URL `bolu://`. Yang ditetapkan di sini adalah
+bentuk yang harus dipenuhi saat bagian-bagian itu dibangun. Nama event selalu bisa dicek di
 `packages/contracts/events.ts` dan `docs/api.md` (§ The stream).
 
 Route group `(workspace)` tidak menambah segmen ke URL: `app/(workspace)/tasks/[taskID]/page.tsx`
@@ -131,7 +148,10 @@ Aturan yang mengikat semua layar yang dibuka dari tautan:
    dan menampilkan keputusan yang berlaku — lihat tabel perilaku per resource di § Skema `bolu://`.
 
 Padanan app untuk keadaan yang sama ada di tabel "Perilaku per resource saat resource tidak bisa
-dibuka" (§ Skema `bolu://`); aturan di atas adalah sisi web-nya, dan app memakai kalimat yang sama.
+dibuka" (§ Skema `bolu://`); aturan di atas adalah sisi web-nya. Layar app yang sudah ada memakai
+kalimat yang sama — `app/task/[taskID].tsx`, `app/draft/[draftID].tsx`, dan
+`app/routine/[routineID].tsx` — sedangkan target `chat` belum punya layar, jadi belum ada kalimat
+app untuk `conversation_not_found`.
 
 `/tasks/*` dan `/approval/<id bukan UUID>` sekarang memenuhi aturan 1–4: `ApiError.message` tidak
 dirender, 404 dan id yang tidak lolos validasi memakai layar yang sama, kalimatnya Bahasa Indonesia
@@ -162,10 +182,10 @@ Keadaan `apps/mobile` hari ini, dicocokkan ke berkas:
 
 - App ada sejak #488: `apps/mobile` memakai Expo SDK 57 dan `expo-router` (`apps/mobile/package.json`, `main` `expo-router/entry`), dengan `scheme` `bolu` dan plugin `expo-router` di `apps/mobile/app.json`. Ringkasannya di `docs/mobile.md`.
 - `app/index.tsx` bukan layar berisi: ia gerbang yang menunggu pemulihan sesi lalu mengalihkan ke `(tabs)/bolu` atau `/login`.
-- `app/login.tsx` form masuk; `app/(tabs)/bolu.tsx` daftar Bolu; `app/chat/[agentID].tsx` satu obrolan.
+- `app/login.tsx` form masuk; `app/(tabs)/_layout.tsx` menyusun empat tab — `app/(tabs)/bolu.tsx` daftar Bolu, `app/(tabs)/approval.tsx` draf yang menunggu keputusan, `app/(tabs)/tasks.tsx` riwayat tugas, `app/(tabs)/routine.tsx` rutinitas — dan layar per id: `app/chat/[agentID].tsx` satu obrolan, `app/task/[taskID].tsx` detail tugas, `app/draft/[draftID].tsx` satu draf, `app/routine/[routineID].tsx` satu rutin beserta riwayat run.
 - Token: refresh token disimpan di `expo-secure-store` (`apps/mobile/src/lib/tokens.ts`), access token hanya di memori, dan refresh dikirim lewat body `POST /auth/refresh` tanpa cookie (`apps/mobile/src/lib/api.ts`, `refreshSession`).
 - Gate CI: job `mobile` di `.github/workflows/checks.yml` menjalankan `make typecheck-mobile` (#493).
-- Link masuk `bolu://` (#500): `app/+native-intent.tsx` mengembalikan `null` untuk `bolu://` supaya router tidak mencocokkan path, `app/_layout.tsx` (`IncomingLinks`) membaca `Linking.getInitialURL()` dan `Linking.addEventListener("url")`, lalu `src/lib/deep-link.ts` (`parseIncomingLink`), `src/lib/pending-link.ts`, dan `src/lib/link-destination.ts` (`destinationFor`) menerjemahkan, menahan, dan menentukan tujuan. `app/+not-found.tsx` adalah layar cadangan untuk path yang tidak punya berkas layar. Keempat target berakhir di `/(tabs)/bolu` dengan notis karena layar tujuannya belum ada.
+- Link masuk `bolu://` (#500): `app/+native-intent.tsx` mengembalikan `null` untuk `bolu://` supaya router tidak mencocokkan path, `app/_layout.tsx` (`IncomingLinks`) membaca `Linking.getInitialURL()` dan `Linking.addEventListener("url")`, lalu `src/lib/deep-link.ts` (`parseIncomingLink`), `src/lib/pending-link.ts`, dan `src/lib/link-destination.ts` (`destinationFor`) menerjemahkan, menahan, dan menentukan tujuan. `app/+not-found.tsx` adalah layar cadangan untuk path yang tidak punya berkas layar. Target `task` dibuka di `app/task/[taskID].tsx`; target `chat`, `approval`, dan `routine` berakhir di `/(tabs)/bolu` dengan notis karena `destinationFor` belum memetakannya (lihat § Skema `bolu://`).
 - Belum: push notification dan registrasi `POST /devices`; endpoint-nya ada, kliennya belum.
 - Obrolan hidup (#505, #514): layar chat membuka satu koneksi SSE ke `/events/stream` lewat `src/lib/chat-stream.ts` selama layar itu tampil, `AppState` menutupnya saat app masuk latar, dan koneksi berikutnya membawa kursor `last_event_id` yang tetap di memori sehingga server memutar ulang frame yang terlewat. Frame `message.new`/`message.updated` masuk langsung ke daftar tanpa memuat ulang layar; satu pembacaan ulang 5 detik setelah kirim dan tombol "Muat ulang" tetap ada sebagai jaring (tarik-untuk-menyegarkan baru ada di daftar Bolu). `/events/socket` (WebSocket) tidak dipakai app, dan status transport belum ditampilkan (`docs/mobile.md` § Obrolan hidup dari `/api/events/stream`).
 
@@ -178,9 +198,14 @@ Keadaan `apps/mobile` hari ini, dicocokkan ke berkas:
 | `bolu://approval/<draft_id>` | `drafts.id` (UUID) | Inbox persetujuan, dibuka pada draf itu (Fase 1) | `/approval/<draft_id>` |
 | `bolu://routine/<routine_id>` | `routines.id` (UUID) | Daftar rutinitas, dibuka pada rutin itu | `/routines/<routine_id>` |
 
-Kolom "Layar yang dibuka" adalah tujuan kontrak. Hari ini keempat target mendarat di daftar Bolu
-`/(tabs)/bolu` dengan notis "Layar yang dituju tautan ini belum ada di app…", karena layar
-tujuannya belum ada.
+Kolom "Layar yang dibuka" adalah tujuan kontrak. Hari ini `bolu://task/<id>` sudah memenuhi
+barisnya: `destinationFor` mengembalikan target `task` dan `app/_layout.tsx` membuka
+`task/[taskID]`. Tiga target lain belum. `approval` dan `routine` belum dipetakan di
+`destinationFor` meskipun layarnya ada (`app/draft/[draftID].tsx`,
+`app/routine/[routineID].tsx`), dan `chat` tidak punya layar per `conversations.id` —
+`app/chat/[agentID].tsx` membuka dari id Bolu. Ketiganya mendarat di `/(tabs)/bolu` dengan notis
+"Layar yang dituju tautan ini belum ada di app…", yang untuk `approval` dan `routine` benar tentang
+pemetaan link-nya, bukan tentang layarnya.
 
 Aturan yang mengikat keempatnya:
 
@@ -202,16 +227,20 @@ Aturan yang mengikat keempatnya:
 
 Perilaku per resource saat resource tidak bisa dibuka:
 
-Tabel ini berlaku setelah layar tujuannya ada. Hari ini setiap target mendarat di daftar Bolu
-dengan notis, jadi jawaban API di bawah belum sampai ke layar resource mana pun.
+Tabel ini menggambarkan layar resource-nya, bukan jalur link ke sana. `app/task/[taskID].tsx`
+sudah memenuhinya untuk tugas: 404 dan `invalid_input` sama-sama menjadi "Tugas tidak ditemukan."
+dengan tombol kembali. `app/draft/[draftID].tsx` dan `app/routine/[routineID].tsx` juga sudah punya
+layar "Draf tidak ditemukan." dan "Rutinitas tidak ditemukan.", tetapi baru bisa dicapai lewat tab,
+belum lewat `bolu://approval/...` atau `bolu://routine/...`. Target `chat` tetap mendarat di daftar
+Bolu, jadi barisnya belum pernah sampai ke layar resource.
 
 | Resource | Jawaban API | Yang dilakukan app |
 | --- | --- | --- |
-| Tugas | `task_not_found` (404) | Layar "tugas tidak ditemukan" dengan tombol ke Dasbor; tidak membuka tugas lain dan tidak crash |
-| Obrolan | `conversation_not_found` (404) | `/chat` tanpa parameter, dengan pemberitahuan bahwa obrolannya tidak ada |
-| Draf | `draft_not_found` (404) | Inbox persetujuan dengan pemberitahuan bahwa drafnya tidak ada |
-| Rutinitas | `routine_not_found` (404) | `/routines` tanpa fokus, dengan pemberitahuan bahwa rutinnya tidak ada |
-| Draf yang sudah diputuskan | `draft_already_decided` (409) | Tetap buka drafnya dan tampilkan keputusan yang sudah berlaku; ini bukan link rusak |
+| Tugas | `task_not_found` (404), `invalid_input` (400) | Layar "Tugas tidak ditemukan." dengan tombol "Kembali ke daftar tugas"; tidak membuka tugas lain, tidak menawarkan coba lagi, dan tidak crash |
+| Obrolan | `conversation_not_found` (404) | Belum ada layar: link `bolu://chat/<id>` mendarat di daftar Bolu dengan notis |
+| Draf | `draft_not_found` (404) | Layar "Draf tidak ditemukan." dengan tombol "Kembali" (`router.back()`) |
+| Rutinitas | `routine_not_found` (404), `invalid_input` (400) | Layar "Rutinitas tidak ditemukan." dengan tombol "Kembali ke daftar rutinitas" |
+| Draf yang sudah diputuskan | `draft_already_decided` (409) | Draf yang dibuka menampilkan keputusan yang berlaku tanpa kontrol putus; kalau keputusan dikirim setelah orang lain memutuskan, app menampilkan "Draf ini sudah diputuskan orang lain." lalu kembali ke daftar |
 
 ## Universal link
 
@@ -262,8 +291,8 @@ rutin yang difokus (kartu rutin disorot, riwayatnya tersaring). Notifikasi run r
 
 ## Celah
 
-Bagian ini mencatat target yang **belum punya layar**, supaya tidak ada URL karangan di dokumen ini
-atau di app nanti.
+Bagian ini mencatat target yang **belum punya layar web** atau **belum bisa dicapai dari link**,
+supaya tidak ada URL karangan di dokumen ini atau di app.
 
 ### Layar web yang belum ada
 
