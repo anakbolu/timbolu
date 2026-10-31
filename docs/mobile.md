@@ -1,9 +1,10 @@
 # Aplikasi mobile (Expo)
 
 `apps/mobile` adalah klien iOS + Android dari satu codebase: Expo SDK 57,
-`expo-router` (file-based routing), TypeScript. Potongan pertama ini hanya
-menyediakan alur **masuk → daftar Bolu → satu obrolan**, sesuai
-[#487](https://github.com/anakbolu/timbolu/issues/487).
+`expo-router` (file-based routing), TypeScript. Alur yang sudah ada: **masuk →
+daftar Bolu → satu obrolan**, lalu **kotak masuk persetujuan → satu draf**;
+potongan pertama sesuai [#487](https://github.com/anakbolu/timbolu/issues/487),
+kotak masuknya sesuai [#515](https://github.com/anakbolu/timbolu/issues/515).
 
 ## Menjalankan di Expo Go
 
@@ -110,13 +111,13 @@ Alurnya:
    `app/(tabs)/bolu.tsx` menampilkannya sebagai banner yang bisa ditutup.
 
 Hari ini **setiap** target berakhir di daftar Bolu `/(tabs)/bolu` dengan
-pemberitahuan, karena layarnya belum ada di app:
+pemberitahuan, karena `destinationFor` belum memetakan satu pun ke layarnya:
 
 | Link | Target `parseIncomingLink` | Yang terjadi sekarang |
 | --- | --- | --- |
 | `bolu://chat/<conversation_id>` | `{ kind: "chat" }` | daftar Bolu + "Layar yang dituju tautan ini belum ada di app. …" — `chat/[agentID]` butuh id Bolu, bukan id obrolan, jadi tidak dibuka |
 | `bolu://task/<task_id>` | `{ kind: "task" }` | daftar Bolu + kalimat yang sama; belum ada layar detail tugas |
-| `bolu://approval/<draft_id>` | `{ kind: "approval" }` | daftar Bolu + kalimat yang sama; belum ada layar draf |
+| `bolu://approval/<draft_id>` | `{ kind: "approval" }` | daftar Bolu + kalimat yang sama; layar draf `/draft/[draftID]` sudah ada, tetapi tujuan link ini belum dipetakan ke sana |
 | `bolu://routine/<routine_id>` | `{ kind: "routine" }` | daftar Bolu + kalimat yang sama; belum ada layar rutinitas |
 | `bolu://` dengan path lain, segmen ekstra, atau id bukan UUID | `{ kind: "fallback" }` | daftar Bolu + "Tautan ini tidak dikenal. Pilih Bolu di bawah untuk melanjutkan." |
 
@@ -173,6 +174,25 @@ sana (`requireStreamAuth`), bukan dari header.
 dan arti setiap frame ada di [realtime.md](realtime.md) dan
 [api.md](api.md#the-stream).
 
+## Persetujuan
+
+Tab kedua, **Persetujuan**, adalah kotak masuk draf yang menunggu keputusan:
+`GET /drafts?status=pending&limit=50` (terbaru dulu) lewat `listDrafts` di
+`api.ts`, dan tiap baris menampilkan jenis aksi, judul, ringkasan, serta umur
+drafnya. Menekan satu baris membuka `app/draft/[draftID].tsx`, yang membaca
+`GET /drafts/:id` dan menampilkan judul, ringkasan, isi `payload` (`key: value`
+per baris), serta `blocked_reason`/`not_before` bila aksinya ditahan jam kerja.
+Keputusannya memakai `POST /drafts/:id/{approve,revise,cancel}`
+(`approveDraft`, `rejectDraft`, `cancelDraft`): **Tolak** wajib beralasan
+(tombolnya nonaktif sampai isian tidak kosong, karena Bolu tanpa catatan akan
+menulis draf yang sama lagi), **Batalkan** minta konfirmasi singkat, dan jawaban
+`draft_already_decided` (409) tampil sebagai kalimat lalu kembali ke daftar —
+bukan sebagai galat mentah. Daftar dibaca ulang setiap kali tab difokuskan, dan
+badge angka di tab memakai `meta.count` dari respons yang sama (tanpa endpoint
+hitungan baru dan tanpa polling). Layar ini **belum dilihat di HP atau
+simulator**: yang terbukti baru `npx tsc --noEmit` dan `npx expo export
+--platform ios`.
+
 ## Yang belum ada
 
 Semua ini sengaja di luar potongan pertama:
@@ -181,9 +201,12 @@ Semua ini sengaja di luar potongan pertama:
 - **Universal link** `timbolu.com/…` — app hanya membaca skema `bolu://`, dan
   `app.json` belum mendeklarasikan associated domains; bentuk dan syaratnya ada
   di [deep-links.md](deep-links.md) § Universal link.
-- **Layar untuk target `bolu://`** — `task`, `approval`, `routine`, dan
-  `chat/<conversation_id>` belum punya layar, jadi semuanya berakhir di daftar
-  Bolu dengan pemberitahuan (§ Link masuk `bolu://`).
+- **Layar untuk target `bolu://`** — `task` dan `routine` belum punya layar, dan
+  `chat/<conversation_id>` masih belum bisa dibedakan dari `chat/<id Bolu>`. Layar
+  draf sekarang ada (`/draft/[draftID]`, § Persetujuan), tetapi tautan
+  `bolu://approval/<draft_id>` **belum** diarahkan ke sana: `link-destination.ts`
+  masih mengembalikan daftar Bolu dengan pemberitahuan (§ Link masuk `bolu://`),
+  karena memetakan tujuan link adalah pekerjaan terpisah dari layarnya.
 - **WebSocket `/events/socket`** dan status transport di layar. App memakai SSE
   (`/events/stream`) — lihat bagian di atas.
 - **Offline cache** dan antrean kirim.
@@ -195,5 +218,6 @@ Semua ini sengaja di luar potongan pertama:
   `metro.config.js` monorepo — paketnya sendiri tidak diubah.
 - **Blok pesan selain `text`** (tabel, draft, chart, mermaid, html): dihitung dan
   disebutkan jumlahnya, belum dirender.
-- **Pemilih workspace**, pengaturan, dan layar lain di tab selain `Bolu`.
+- **Pemilih workspace**, pengaturan, dan tab lain di luar `Bolu` dan
+  `Persetujuan`.
 - **Tab bar berikon** — scaffold ini tidak menambah paket ikon.
