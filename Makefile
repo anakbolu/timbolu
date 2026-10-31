@@ -1,5 +1,5 @@
 .PHONY: help up down logs build dev frontend backend api worker-logs wa-gateway \
-        test test-backend test-gateway test-packages test-integration smoke-task smoke-approval smoke-order measure-orders demo demo-stop gate-report cover cover-backend cover-gateway lint lint-backend lint-gateway archcheck contracts-check design-tokens-check deep-links-check sqlc mocks generate llm-fixtures \
+        test test-backend test-gateway test-packages test-integration smoke-task smoke-approval smoke-order measure-orders demo demo-stop gate-report cover cover-backend cover-gateway lint lint-backend lint-gateway archcheck contracts-check design-tokens-check deep-links-check well-known-check sqlc mocks generate llm-fixtures \
         migrate-up migrate-down migrate-create psql test-backend-js typecheck-backend-js \
         lint-frontend build-frontend typecheck-mobile ci
 
@@ -142,6 +142,9 @@ design-tokens-check: ## Fail when tokens.json drifts from the @theme block in gl
 
 deep-links-check: ## Fail when the route audit in docs/deep-links.md drifts from apps/frontend/src/app
 	node scripts/deep-links-check.mjs
+
+well-known-check: ## Cek berkas well-known di prod; STRICT=1 untuk gagal saat klaim masih kosong
+	node scripts/well-known-check.mjs $(if $(STRICT),--strict,)
 
 test-backend-js: ## Run the Bun port's test suite (what production runs)
 	cd apps/backend-js && bun test

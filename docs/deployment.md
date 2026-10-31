@@ -523,3 +523,28 @@ control plane needs the optional overlay, which puts that worker on the PoC's ne
 
 That PoC is being retired in #402, and the runtime direction is Daytona — see
 [ADR 0004](adr/0004-daytona.md) and #397. The instructions above stay until #402 lands.
+
+## Identitas universal link
+
+Dua berkas di `/.well-known/` yang membuat tautan `https://timbolu.com/<path>` membuka app alih-alih
+browser dibangun dari environment, bukan dari kode (`apps/frontend/src/lib/app-links.ts`). Tanpa
+identitas, keduanya tetap menjawab `200` tetapi mengklaim kosong — universal link tidak hidup, dan
+tidak ada error di mana pun yang menunjukkannya. Tiga variabel yang harus diisi di environment
+frontend produksi:
+
+| Variabel | Isi |
+| --- | --- |
+| `APPLE_APP_ID` | `<TEAMID>.<bundle id>`, mis. `ABCDE12345.com.timbolu.app` |
+| `ANDROID_PACKAGE_NAME` | package Android, mis. `com.timbolu.app` |
+| `ANDROID_CERT_SHA256` | SHA-256 sertifikat signing, koma-pisah; lebih dari satu selama rotasi Play App Signing |
+
+Memeriksanya:
+
+```bash
+make well-known-check            # informatif: cetak status + apakah klaimnya kosong
+make well-known-check STRICT=1   # gagal kalau masih kosong
+```
+
+Apple dan Google menyimpan jawabannya di cache (Apple menariknya lewat CDN-nya sendiri), jadi setelah
+identitas diisi, perubahan bisa terlihat beberapa jam kemudian — bukan tanda deploy gagal. Daftar
+path yang diklaim ada di `docs/deep-links.md` § Universal link; jangan menyalinnya ke sini.
