@@ -11,7 +11,27 @@
       "expo-secure-store"
     ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "associatedDomains": ["applinks:timbolu.com"]
+    },
+    "android": {
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "category": ["BROWSABLE", "DEFAULT"],
+          "autoVerify": true,
+          "data": [
+            { "scheme": "https", "host": "timbolu.com", "pathPrefix": "/dashboard" },
+            { "scheme": "https", "host": "timbolu.com", "pathPrefix": "/chat" },
+            { "scheme": "https", "host": "timbolu.com", "pathPrefix": "/tasks/" },
+            { "scheme": "https", "host": "timbolu.com", "pathPrefix": "/approval/" },
+            { "scheme": "https", "host": "timbolu.com", "pathPrefix": "/routines" },
+            { "scheme": "https", "host": "timbolu.com", "pathPrefix": "/groups" },
+            { "scheme": "https", "host": "timbolu.com", "pathPrefix": "/bolu/new" },
+            { "scheme": "https", "host": "timbolu.com", "pathPrefix": "/settings" }
+          ]
+        }
+      ]
     }
   }
 }

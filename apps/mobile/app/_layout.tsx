@@ -4,7 +4,7 @@ import { StatusBar } from "expo-status-bar";
 import * as Linking from "expo-linking";
 
 import { AuthProvider, useAuth } from "@/lib/auth";
-import { parseIncomingLink } from "@/lib/deep-link";
+import { isAppLink, parseIncomingLink } from "@/lib/deep-link";
 import { destinationFor } from "@/lib/link-destination";
 import {
   getPendingLink,
@@ -64,9 +64,11 @@ function IncomingLinks() {
   // (`docs/deep-links.md` § Auth saat cold start, rule 1).
   useEffect(() => {
     const capture = (url: string | null) => {
-      // Anything that is not this app's scheme belongs to the router (a web
-      // URL, Expo Go's dev URL); only `bolu://` needs translating.
-      if (!url || !url.toLowerCase().startsWith("bolu://")) return;
+      // Only this app's own URLs are translated here: `bolu://`, and the
+      // `https://timbolu.com/...` paths the universal-link table claims. A web
+      // page from another host, or one of the browser-owned timbolu.com paths,
+      // belongs to the router.
+      if (!url || !isAppLink(url)) return;
       setPendingLink(parseIncomingLink(url));
     };
     const subscription = Linking.addEventListener("url", ({ url }) => capture(url));
