@@ -49,8 +49,9 @@ Sisi app dari universal link sudah ada sejak #540: `apps/mobile/app.json` mendek
 host `timbolu.com`), `apps/mobile/src/lib/deep-link.ts` (`parseIncomingLink`) menerima
 `https://timbolu.com/...` sebagai sumber kedua dan memetakan path yang punya tujuan di app ke
 `LinkTarget` yang sama dengan `bolu://`, dan `apps/mobile/app/+native-intent.tsx` tidak lagi
-menyerahkan URL itu ke router. Yang masih menunggu: kedua berkas well-known belum disajikan di prod,
-jadi mengetuk link masih membuka browser, dan link belum pernah dibuktikan membuka app di perangkat
+menyerahkan URL itu ke router. Yang masih menunggu: route well-known di `apps/frontend` (#546) dan
+identitas app yang diisi lewat environment — produksi masih `404` untuk kedua berkas itu, jadi
+mengetuk link masih membuka browser, dan link belum pernah dibuktikan membuka app di perangkat
 sungguhan. Nama event selalu bisa dicek di `packages/contracts/events.ts` dan `docs/api.md`
 (§ The stream).
 
@@ -266,12 +267,14 @@ sedangkan target link harus menyebut id obrolan, jadi `parseUniversalLink` menge
 `bolu://chat/<id>`. `apps/mobile/app/+native-intent.tsx` mengembalikan `null` untuk URL itu supaya
 router tidak memetakan path web ke berkas layar; URL https lain tetap ditangani router.
 
-Yang belum: kedua berkas well-known belum disajikan `timbolu.com`, jadi platform belum
-memverifikasi app sebagai pemilik domain itu dan mengetuk link masih membuka browser. Identitas app
-yang dibutuhkan kedua berkas itu belum ada di repo (§ Identitas app yang belum diketahui), dan link
-belum pernah dibuktikan membuka app di perangkat sungguhan; § Cara memverifikasi adalah langkah yang
-harus dijalankan setelah berkas dan identitas itu ada. Tabel berikut adalah tujuan tiap path di app,
-bukan bukti bahwa link sudah hidup.
+Yang belum: sisi web. Saat dokumen ini diperbarui (31 Oktober 2026) belum ada route di
+`apps/frontend` yang menyajikan kedua berkas well-known (#546), dan `curl` ke kedua URL-nya masih
+`404`; tanpa berkas itu platform belum memverifikasi app sebagai pemilik domain, jadi mengetuk link
+masih membuka browser. Identitas app yang dibutuhkan kedua berkas itu juga belum diisi (§ Identitas
+app yang belum diketahui) — nilainya dibaca dari environment, dan berkas yang belum dikonfigurasi
+sengaja tidak mengklaim app. Link belum pernah dibuktikan membuka app di perangkat sungguhan;
+§ Cara memverifikasi adalah langkah yang harus dijalankan setelah berkas tersaji dan identitasnya
+diisi. Tabel berikut adalah tujuan tiap path di app, bukan bukti bahwa link sudah hidup.
 
 | Universal link | Layar app | Catatan |
 | --- | --- | --- |
@@ -350,17 +353,33 @@ ini. `apps/mobile/app.json` sekarang mendeklarasikan `ios.associatedDomains` dan
 `android.intentFilters` (#540), tetapi tidak mendeklarasikan `ios.bundleIdentifier` maupun
 `android.package`, dan belum ada `eas.json`. Nilai itulah yang mengisi `appIDs` di
 `apple-app-site-association` serta `package_name` dan `sha256_cert_fingerprints` di
-`assetlinks.json`, jadi tanpa nilai itu kedua berkas belum bisa dibuat dengan benar. Apple Team ID
-dan bundle id menunggu akun Apple Developer; package name dan SHA-256 menunggu Play Console atau
-keystore rilis. Lihat bagian berikut.
+`assetlinks.json`.
+
+Nilai itu tidak ditulis ke repo. Jalur aktivasi yang ditetapkan untuk route penyajiannya adalah
+environment, bukan konstanta di kode:
+
+- `APPLE_APP_ID` — Team ID dan bundle id dalam satu string, bentuknya `<TEAM_ID>.<BUNDLE_ID>`
+  (contoh bentuk saja, bukan nilai yang dipakai repo); mengisi `appIDs`.
+- `ANDROID_PACKAGE_NAME` — mengisi `target.package_name`.
+- `ANDROID_CERT_SHA256` — mengisi `target.sha256_cert_fingerprints`.
+
+Selama ketiganya kosong, berkasnya tetap `200` dan tetap `application/json`, tetapi tidak mengklaim
+app apa pun: `details` kosong dan array `assetlinks` kosong — bukan `404`, bukan berkas kosong, dan
+bukan appID karangan. Itu disengaja: berkas yang mengklaim app yang salah membuat verifikasi
+platform gagal diam-diam, dan kegagalan seperti itu lebih buruk daripada berkas yang jujur belum
+mengklaim. Mengisi ketiganya adalah perubahan konfigurasi di lingkungan deploy, bukan perubahan
+kode. Apple Team ID dan bundle id menunggu akun Apple Developer; package name dan SHA-256 menunggu
+Play Console atau keystore rilis. Lihat bagian berikut.
 
 ## Berkas well-known
 
-Dua berkas ini yang membuat universal link dipercaya platform. Keduanya belum ada di repo ini dan
-belum disajikan `timbolu.com` — `curl` ke kedua URL di bawah masih `404` saat #540 diperiksa — jadi
-deklarasi domain di `apps/mobile/app.json` belum cukup untuk membuka app. Yang ditetapkan di sini
-adalah bentuk dan syarat penyajiannya; isinya harus memakai identitas app di § Identitas app yang
-belum diketahui.
+Dua berkas ini yang membuat universal link dipercaya platform. Bentuk dan syarat penyajiannya
+ditetapkan di sini; isinya memakai identitas app di § Identitas app yang belum diketahui. Saat
+dokumen ini diperbarui (31 Oktober 2026), penyajiannya belum ada: tidak ada route di
+`apps/frontend` yang melayani kedua URL itu (#546 masih terbuka) dan produksi menjawab `404` untuk
+keduanya, jadi deklarasi domain di `apps/mobile/app.json` belum cukup untuk membuka app. Begitu
+route-nya mendarat dan di-deploy, URL yang sama harus menyajikan JSON di bawah ini; yang menentukan
+apakah universal link hidup adalah status produksi sesudah deploy, bukan isi repo.
 
 ### `/.well-known/apple-app-site-association`
 
@@ -425,6 +444,13 @@ bukan sertifikat debug, dan bukan sertifikat upload jika Play App Signing memaka
   `application/json`.
 - Apple mengambil AASA lewat CDN-nya sendiri, jadi perubahan tidak langsung terlihat. Saat menguji,
   jangan menyimpulkan "salah" hanya dari satu percobaan setelah deploy.
+- Daftar `components` (dan pasangan path untuk `assetlinks.json`) tidak ditulis ulang di tiap route:
+  satu modul di `apps/frontend` memegang daftar itu dan mengikuti tabel § Universal link, supaya
+  dokumen ini tetap satu acuan dan tidak ada dua daftar yang bisa berselisih.
+- `appIDs`/`package_name`/`sha256_cert_fingerprints` dibaca dari environment (`APPLE_APP_ID`,
+  `ANDROID_PACKAGE_NAME`, `ANDROID_CERT_SHA256`), bukan ditulis di kode. Selama ketiganya kosong,
+  respons tetap `200` dengan `application/json` tetapi tidak mengklaim app — lihat § Identitas app
+  yang belum diketahui.
 
 ## Aturan pemetaan notifikasi → layar
 
@@ -492,19 +518,25 @@ Butir 6 ditutup hanya kalau pemeriksaan ini punya bukti. Semua dijalankan pada b
 ditandatangani (TestFlight/internal track), bukan build debug, karena asosiasi domain bergantung pada
 tanda tangan.
 
-1. **Berkas well-known.**
+1. **Berkas well-known tersaji, dan isinya JSON.**
    ```bash
-   curl -sS -D- -o /dev/null https://timbolu.com/.well-known/apple-app-site-association
-   curl -sS -D- -o /dev/null https://timbolu.com/.well-known/assetlinks.json
+   curl -D- https://timbolu.com/.well-known/apple-app-site-association
+   curl -D- https://timbolu.com/.well-known/assetlinks.json
    ```
-   Harapan: `200`, `content-type: application/json`, tanpa `location`.
-2. **Apple melihat berkas yang sama.**
+   Harapan: `200`, `content-type: application/json`, tanpa `location`, badan AASA satu objek JSON,
+   `assetlinks.json` satu array. Saat dokumen ini diperbarui (31 Oktober 2026) kedua URL masih
+   `404` karena route-nya (#546) belum mendarat, jadi langkah ini baru bisa lulus setelah route-nya
+   di-deploy. `200` saja belum cukup: selama `APPLE_APP_ID`, `ANDROID_PACKAGE_NAME`, dan
+   `ANDROID_CERT_SHA256` kosong, `details` dan array `assetlinks` kosong dan berkasnya tidak
+   mengklaim app. Langkah 2–3 baru membuktikan klaim setelah ketiganya diisi.
+2. **Apple melihat berkas yang sama.** Jalankan setelah langkah 1 menunjukkan `appIDs` terisi.
    ```bash
    curl -sS https://app-site-association.cdn-apple.com/a/v1/timbolu.com
    ```
    Harapan: JSON yang sama dengan langkah 1. Kalau kosong, tunggu propagasi CDN sebelum menyalahkan
    konfigurasi.
-3. **Android sudah memverifikasi domain.**
+3. **Android sudah memverifikasi domain.** Jalankan setelah `ANDROID_PACKAGE_NAME` diisi dan build
+   bertanda tangan terpasang.
    ```bash
    adb shell pm get-app-links <package_name>
    ```
