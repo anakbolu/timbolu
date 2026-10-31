@@ -38,12 +38,19 @@ import {
   type Tool,
   type UpdateRequest,
 } from "../domain/agent.ts";
+import { BOLU_SHAPE_NAMES, DEFAULT_BOLU_SHAPE, isValidBoluShape } from "./shape.ts";
 
 /** Bounds the persona field. A persona is injected into every prompt. */
 export const PersonaMaxLength = 4000;
 
 /** Bounds the display name. */
 export const NameMaxLength = 60;
+
+/**
+ * The refusal for a body `shape` outside the 16 the character package draws.
+ * Storing one would hand every renderer a name it cannot draw (#564).
+ */
+const SHAPE_NOT_KNOWN = `shape must be one of: ${BOLU_SHAPE_NAMES.join(", ")}`;
 
 /** The service settings. */
 export interface Config {
@@ -128,6 +135,11 @@ export class Service implements ServicePort {
       throw wrap(ErrInvalidInput, `persona is longer than ${PersonaMaxLength} characters`);
     }
 
+    // An edit carries the shape it wants or nothing at all; a name the
+    // character package cannot draw must not reach the row (#564).
+    const shape = req.shape.trim();
+    if (shape !== "" && !isValidBoluShape(shape)) throw wrap(ErrInvalidInput, SHAPE_NOT_KNOWN);
+
     let tools = req.tools;
     if (tools === null || tools === undefined) {
       // An omitted tool list keeps the current one, so an edit that only
@@ -140,7 +152,7 @@ export class Service implements ServicePort {
       role: req.role.trim(),
       persona: req.persona.trim(),
       tone: req.tone.trim(),
-      shape: req.shape.trim(),
+      shape,
       color: req.color.trim(),
       tools,
       defaultModel: req.defaultModel,
@@ -349,7 +361,9 @@ export class Service implements ServicePort {
       input.tone = req.tone.trim();
     }
     if (req.shape !== "") {
-      input.shape = req.shape.trim();
+      const shape = req.shape.trim();
+      if (!isValidBoluShape(shape)) throw wrap(ErrInvalidInput, SHAPE_NOT_KNOWN);
+      input.shape = shape;
     }
     if (req.color !== "") {
       input.color = req.color.trim();
@@ -358,7 +372,7 @@ export class Service implements ServicePort {
       input.tools = req.tools;
     }
     if (input.shape === "") {
-      input.shape = "circle";
+      input.shape = DEFAULT_BOLU_SHAPE;
     }
 
     if (charLength(input.persona) > PersonaMaxLength) {

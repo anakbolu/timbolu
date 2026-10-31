@@ -11,6 +11,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  BOLU_DEFAULT_EXPRESSION,
+  BOLU_DEFAULT_SHAPE,
   BOLU_EXPRESSIONS,
   BOLU_HEIGHT,
   BOLU_SHAPES,
@@ -150,6 +152,30 @@ test("clip ids are per instance and follow the prefix", () => {
   );
   assert.equal(first.blush.id, "ag");
   assert.equal(second.blush.id, "bg");
+});
+
+test("an unknown shape draws the default Bolu instead of throwing", () => {
+  const fallback = charSVG({ shape: "circle" as never, expression: "senang", color: "#F28C4E" });
+  const expected = charSVG({
+    shape: BOLU_DEFAULT_SHAPE,
+    expression: "senang",
+    color: "#F28C4E",
+  });
+
+  // Rows written before #564 hold "circle"; one of them must not take a whole
+  // screen down, so it renders as `kacang`.
+  assert.deepEqual(fallback, expected);
+});
+
+test("an unknown expression draws the default expression instead of throwing", () => {
+  const fallback = charSVG({ shape: "kacang", expression: "terkejut" as never, color: "#F28C4E" });
+  const expected = charSVG({
+    shape: "kacang",
+    expression: BOLU_DEFAULT_EXPRESSION,
+    color: "#F28C4E",
+  });
+
+  assert.deepEqual(fallback, expected);
 });
 
 test("the core imports no React and renders no JSX", () => {

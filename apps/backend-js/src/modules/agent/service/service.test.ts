@@ -48,7 +48,7 @@ const oren: Template = {
   role: "Penjualan",
   persona: "Menangani pesanan dan menagih pelanggan dengan ramah.",
   tone: "hangat dan ringkas",
-  shape: "circle",
+  shape: "kacang",
   color: "#F97316",
   tools: ["gmail.search", "gmail.create_draft", "gmail.send"],
   integrations: ["gmail", "whatsapp"],
@@ -254,5 +254,62 @@ describe("create", () => {
     expect(is(err, ErrInvalidInput)).toBe(false);
     expect(repository.sources).toEqual([missingAgentId]);
     expect(repository.created).toHaveLength(0);
+  });
+
+  test("gives a Bolu created without a shape the shape the characters default to", async () => {
+    const { repository, service } = newService();
+
+    await service.create(scope, baseRequest);
+
+    // "circle" used to be stored here; no renderer draws it (#564).
+    expect(repository.created).toHaveLength(1);
+    expect(repository.created[0]?.agent.shape).toBe("kacang");
+  });
+
+  test("refuses a shape the character package cannot draw", async () => {
+    const { repository, service } = newService();
+
+    const err = await service
+      .create(scope, { ...baseRequest, shape: "circle" })
+      .catch((thrown: unknown) => thrown);
+
+    expect(is(err, ErrInvalidInput)).toBe(true);
+    expect(errorMessage(err)).toContain("kacang");
+    expect(repository.created).toHaveLength(0);
+  });
+
+  test("stores any of the 16 shapes the client asks for", async () => {
+    const { repository, service } = newService();
+
+    await service.create(scope, { ...baseRequest, shape: "kucing" });
+
+    expect(repository.created[0]?.agent.shape).toBe("kucing");
+  });
+});
+
+/** An edit that asks for nothing but a name, so each case varies one field. */
+const baseUpdate: UpdateRequest = {
+  name: "Bolu Uji",
+  role: "",
+  persona: "",
+  tone: "",
+  shape: "",
+  color: "",
+  tools: [],
+  defaultModel: null,
+};
+
+describe("update", () => {
+  test("refuses a shape the character package cannot draw", async () => {
+    const { service } = newService();
+
+    const err = await service
+      .update(scope, missingAgentId, { ...baseUpdate, shape: "circle" })
+      .catch((thrown: unknown) => thrown);
+
+    // The body is wrong, so it is not reported as a missing Bolu.
+    expect(is(err, ErrInvalidInput)).toBe(true);
+    expect(is(err, ErrAgentNotFound)).toBe(false);
+    expect(errorMessage(err)).toContain("kucing");
   });
 });
