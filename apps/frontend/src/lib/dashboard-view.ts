@@ -118,9 +118,16 @@ export function stateOf(agent: Agent): string {
   return agent.display_status || agent.status || "idle";
 }
 
-/** expressionOf is the face a state is posed with. */
+/**
+ * expressionOf is the face a state is posed with.
+ *
+ * A state the client does not know is drawn as `idle`'s face, not the happy one:
+ * the quiet face admits "I cannot classify this", while a smile claims the Bolu
+ * is doing well on a state nobody has taught the screen yet. Read through the
+ * map so the fallback and the `idle` row cannot drift apart.
+ */
 export function expressionOf(state: string): BoluExpressionName {
-  return STATE_EXPRESSION[state] ?? "senang";
+  return STATE_EXPRESSION[state] ?? STATE_EXPRESSION.idle;
 }
 
 /**
