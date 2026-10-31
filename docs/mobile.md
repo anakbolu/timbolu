@@ -81,6 +81,9 @@ tempat menyimpannya.
 
 ## Link masuk `bolu://`
 
+Skema `bolu` dideklarasikan di `apps/mobile/app.json`; kontrak lengkapnya ada di
+[deep-links.md](deep-links.md) § Skema `bolu://`.
+
 App membaca link `bolu://` sejak #500. Router tidak dipakai untuk memetakannya:
 `bolu://chat/<id obrolan>` akan cocok dengan `chat/[agentID]`, yang mengharapkan
 id Bolu, dan akan membuka thread yang tidak disebut link. Karena itu
@@ -161,9 +164,10 @@ sana (`requireStreamAuth`), bukan dari header.
 - **Stream mati bukan jalan buntu.** Sebuah koneksi baru dihitung sehat setelah
   bertahan 5 detik; yang gagal lebih cepat menaikkan hitungan gagal dan
   dicoba ulang dengan jeda 0,5 → 1 → 2 → 4 → 8 detik, lalu 30 detik plus jitter.
-  Tidak ada polling: satu pembacaan ulang 5 detik setelah kirim, tombol "Muat
-  ulang", dan tarik-untuk-menyegarkan tetap ada dan tetap bekerja walau stream
-  tidak pernah tersambung.
+  Tidak ada polling: satu pembacaan ulang 5 detik setelah kirim, satu halaman
+  saat app kembali aktif, dan tombol "Muat ulang" tetap bekerja walau stream
+  tidak pernah tersambung. Tarik-untuk-menyegarkan baru ada di daftar Bolu,
+  belum di layar chat.
 
 `/events/socket` tidak dipakai app ini. Kontrak kedua transport, status klien,
 dan arti setiap frame ada di [realtime.md](realtime.md) dan
