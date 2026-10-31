@@ -47,13 +47,13 @@ interface createAgentRequest {
 
 interface updateAgentRequest {
   name: string;
-  role: string;
-  persona: string;
-  tone: string;
-  shape: string;
-  color: string;
-  tools: string[] | null;
-  default_model: Record<string, unknown> | null;
+  role?: string | null;
+  persona?: string | null;
+  tone?: string | null;
+  shape?: string | null;
+  color?: string | null;
+  tools?: string[] | null;
+  default_model?: Record<string, unknown> | null;
 }
 
 interface setStatusRequest {
@@ -269,11 +269,11 @@ export class Handler {
     try {
       const agent = await this.service.update(scope(c), id, {
         name: body.name ?? "",
-        role: body.role ?? "",
-        persona: body.persona ?? "",
-        tone: body.tone ?? "",
-        shape: body.shape ?? "",
-        color: body.color ?? "",
+        role: body.role ?? null,
+        persona: body.persona ?? null,
+        tone: body.tone ?? null,
+        shape: body.shape ?? null,
+        color: body.color ?? null,
         tools: body.tools ?? null,
         defaultModel: body.default_model ?? null,
       });

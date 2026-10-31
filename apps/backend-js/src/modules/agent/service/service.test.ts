@@ -77,11 +77,15 @@ function notUsed(method: string): never {
 /** Answers the create path, and records what it was asked for. */
 class RecordingRepository implements Repository {
   readonly created: Array<{ scope: Scope; agent: NewAgent }> = [];
+  readonly updated: Array<{ scope: Scope; id: string; req: UpdateRequest }> = [];
   readonly sources: string[] = [];
   readonly seeded: Record<string, Template> = { [oren.key]: oren };
+  readonly agents: Record<string, Agent> = {};
 
   async get(_received: Scope, id: string): Promise<Agent> {
     this.sources.push(id);
+    const found = this.agents[id];
+    if (found) return found;
     throw ErrAgentNotFound;
   }
 
@@ -132,6 +136,34 @@ class RecordingRepository implements Repository {
     };
   }
 
+  async update(received: Scope, id: string, req: UpdateRequest): Promise<Agent> {
+    this.updated.push({ scope: received, id, req });
+    const existing = this.agents[id];
+    return {
+      id,
+      workspaceId: received.workspaceId,
+      teamId: existing?.teamId ?? teamId,
+      teamName: existing?.teamName ?? "Tim Bolu",
+      teamKind: existing?.teamKind ?? "system",
+      name: req.name,
+      role: req.role ?? "",
+      persona: req.persona ?? "",
+      tone: req.tone ?? "",
+      shape: req.shape ?? "",
+      color: req.color ?? "",
+      position: existing?.position ?? 0,
+      status: existing?.status ?? StoredActive,
+      display: "",
+      reason: null,
+      memoryExtraction: existing?.memoryExtraction ?? true,
+      templateKey: existing?.templateKey ?? "",
+      tools: req.tools ?? [],
+      defaultModel: req.defaultModel ?? {},
+      createdAt: existing?.createdAt ?? new Date("2026-10-30T09:00:00Z"),
+      updatedAt: new Date("2026-10-30T09:00:00Z"),
+    };
+  }
+
   async activityFor(): Promise<Activity> {
     return { working: false, waiting: false };
   }
@@ -142,9 +174,6 @@ class RecordingRepository implements Repository {
 
   list(): Promise<Agent[]> {
     return notUsed("list");
-  }
-  update(_scope: Scope, _id: string, _req: UpdateRequest): Promise<Agent> {
-    return notUsed("update");
   }
   setStatus(): Promise<Agent> {
     return notUsed("setStatus");
@@ -288,28 +317,100 @@ describe("create", () => {
 });
 
 /** An edit that asks for nothing but a name, so each case varies one field. */
-const baseUpdate: UpdateRequest = {
-  name: "Bolu Uji",
-  role: "",
-  persona: "",
-  tone: "",
-  shape: "",
-  color: "",
-  tools: [],
-  defaultModel: null,
+const existingAgentId = "44444444-4444-4444-4444-444444444444";
+
+const existingBolu: Agent = {
+  id: existingAgentId,
+  workspaceId,
+  teamId,
+  teamName: "Tim Bolu",
+  teamKind: "system",
+  name: "Bolu Asli",
+  role: "Pemandu",
+  persona: "Menjelaskan fitur dengan sabar.",
+  tone: "tenang",
+  shape: "hati",
+  color: "#EC4899",
+  position: 0,
+  status: StoredActive,
+  display: "",
+  reason: null,
+  memoryExtraction: true,
+  templateKey: "",
+  tools: ["gmail.search", "gmail.send"],
+  defaultModel: { provider: "openai", model: "gpt-4o" },
+  createdAt: new Date("2026-10-30T09:00:00Z"),
+  updatedAt: new Date("2026-10-30T09:00:00Z"),
 };
 
 describe("update", () => {
+  test("refuses an update without a name", async () => {
+    const { service } = newService();
+
+    const err = await service
+      // @ts-expect-error test invalid caller input without name
+      .update(scope, existingAgentId, { shape: "kucing" })
+      .catch((thrown: unknown) => thrown);
+
+    expect(is(err, ErrInvalidInput)).toBe(true);
+    expect(errorMessage(err)).toContain("name is required");
+  });
+
   test("refuses a shape the character package cannot draw", async () => {
     const { service } = newService();
 
     const err = await service
-      .update(scope, missingAgentId, { ...baseUpdate, shape: "circle" })
+      .update(scope, missingAgentId, { name: "Bolu Uji", shape: "circle" })
       .catch((thrown: unknown) => thrown);
 
     // The body is wrong, so it is not reported as a missing Bolu.
     expect(is(err, ErrInvalidInput)).toBe(true);
     expect(is(err, ErrAgentNotFound)).toBe(false);
     expect(errorMessage(err)).toContain("kucing");
+  });
+
+  test("keeps stored profile fields when the patch only sends name", async () => {
+    const { repository, service } = newService();
+    repository.agents[existingAgentId] = { ...existingBolu };
+
+    await service.update(scope, existingAgentId, { name: "Nama Baru" });
+
+    expect(repository.updated).toHaveLength(1);
+    const call = repository.updated[0];
+    expect(call?.id).toBe(existingAgentId);
+    expect(call?.req).toEqual({
+      name: "Nama Baru",
+      role: existingBolu.role,
+      persona: existingBolu.persona,
+      tone: existingBolu.tone,
+      shape: "hati",
+      color: existingBolu.color,
+      tools: existingBolu.tools,
+      defaultModel: existingBolu.defaultModel,
+    });
+  });
+
+  test("forwards an explicit shape when provided", async () => {
+    const { repository, service } = newService();
+    repository.agents[existingAgentId] = { ...existingBolu };
+
+    await service.update(scope, existingAgentId, { name: existingBolu.name, shape: "kucing" });
+
+    expect(repository.updated).toHaveLength(1);
+    expect(repository.updated[0]?.req.shape).toBe("kucing");
+    expect(repository.updated[0]?.req.color).toBe(existingBolu.color);
+  });
+
+  test("overwrites default_model when sent explicitly as empty object", async () => {
+    const { repository, service } = newService();
+    repository.agents[existingAgentId] = { ...existingBolu };
+
+    await service.update(scope, existingAgentId, {
+      name: existingBolu.name,
+      defaultModel: {},
+    });
+
+    expect(repository.updated).toHaveLength(1);
+    expect(repository.updated[0]?.req.defaultModel).toEqual({});
   });
 });

@@ -124,38 +124,56 @@ export class Service implements ServicePort {
   async update(scope: Scope, id: string, req: UpdateRequest): Promise<Agent> {
     requireScope(scope);
 
-    const name = req.name.trim();
+    const name = (req.name ?? "").trim();
     if (name === "") {
       throw wrap(ErrInvalidInput, "name is required");
     }
     if (charLength(name) > NameMaxLength) {
       throw wrap(ErrInvalidInput, `name is longer than ${NameMaxLength} characters`);
     }
-    if (charLength(req.persona) > PersonaMaxLength) {
+
+    if (req.persona !== undefined && req.persona !== null && charLength(req.persona) > PersonaMaxLength) {
       throw wrap(ErrInvalidInput, `persona is longer than ${PersonaMaxLength} characters`);
     }
 
     // An edit carries the shape it wants or nothing at all; a name the
     // character package cannot draw must not reach the row (#564).
-    const shape = req.shape.trim();
-    if (shape !== "" && !isValidBoluShape(shape)) throw wrap(ErrInvalidInput, SHAPE_NOT_KNOWN);
-
-    let tools = req.tools;
-    if (tools === null || tools === undefined) {
-      // An omitted tool list keeps the current one, so an edit that only
-      // changes the persona does not silently strip the agent's tools.
-      tools = (await this.repo.get(scope, id)).tools;
+    if (req.shape !== undefined && req.shape !== null) {
+      const shape = req.shape.trim();
+      if (shape !== "" && !isValidBoluShape(shape)) throw wrap(ErrInvalidInput, SHAPE_NOT_KNOWN);
     }
+
+    // Single read-modify-write pattern: load the existing row once so any
+    // field omitted by the patch keeps its stored profile value instead of
+    // being wiped out with empty defaults (#568).
+    const existing = await this.repo.get(scope, id);
+
+    const shape =
+      req.shape !== undefined && req.shape !== null ? req.shape.trim() : existing.shape;
+    const role =
+      req.role !== undefined && req.role !== null ? req.role.trim() : existing.role;
+    const persona =
+      req.persona !== undefined && req.persona !== null ? req.persona.trim() : existing.persona;
+    const tone =
+      req.tone !== undefined && req.tone !== null ? req.tone.trim() : existing.tone;
+    const color =
+      req.color !== undefined && req.color !== null ? req.color.trim() : existing.color;
+    const tools =
+      req.tools !== undefined && req.tools !== null ? req.tools : existing.tools;
+    const defaultModel =
+      req.defaultModel !== undefined && req.defaultModel !== null
+        ? req.defaultModel
+        : existing.defaultModel;
 
     const updated = await this.repo.update(scope, id, {
       name,
-      role: req.role.trim(),
-      persona: req.persona.trim(),
-      tone: req.tone.trim(),
+      role,
+      persona,
+      tone,
       shape,
-      color: req.color.trim(),
+      color,
       tools,
-      defaultModel: req.defaultModel,
+      defaultModel,
     });
 
     return this.decorate(scope, updated);

@@ -213,13 +213,13 @@ export interface CreateRequest {
 /** Edits a Bolu profile. */
 export interface UpdateRequest {
   name: string;
-  role: string;
-  persona: string;
-  tone: string;
-  shape: string;
-  color: string;
-  tools: string[] | null;
-  defaultModel: Record<string, unknown> | null;
+  role?: string | null;
+  persona?: string | null;
+  tone?: string | null;
+  shape?: string | null;
+  color?: string | null;
+  tools?: string[] | null;
+  defaultModel?: Record<string, unknown> | null;
 }
 
 /** One team's row of the sidebar, in order. */
