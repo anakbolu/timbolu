@@ -224,7 +224,7 @@ otherwise hold every outbound action forever.
 | Endpoint | Auth | Role | Notes |
 | --- | --- | --- | --- |
 | `GET /workspaces` | bearer | any | Every workspace the account belongs to, with its role |
-| `POST /workspaces/onboard` | bearer + verified | any | Creates workspace + owner + Tim Bolu; **idempotent** |
+| `POST /workspaces/onboard` | bearer + verified | any | Creates the workspace with its `owner` membership and the `Tim Bolu` team, **but no Bolu**; **idempotent** |
 | `POST /invitations/accept` | bearer + verified | any | Joins the invited workspace; the signed-in email must match |
 | `GET /workspaces/current` | bearer + tenant | any | The active workspace |
 | `PATCH /workspaces/current` | bearer + tenant | owner | Name, business field, timezone, language, working hours and days |
@@ -235,6 +235,26 @@ otherwise hold every outbound action forever.
 | `GET /workspaces/current/invitations` | bearer + tenant | any | Pending invitations |
 | `POST /workspaces/current/invitations` | bearer + tenant | owner, admin | `{email, role}` |
 | `DELETE /workspaces/current/invitations/:invitationID` | bearer + tenant | owner, admin | Revoke |
+
+Onboarding takes `{"name": "...", "business_field": "...", "timezone": "Asia/Jakarta"}`:
+`name` is required, while `business_field` and `timezone` may be empty. A `200`
+answers with `data` = `{"workspace": {...}, "teams": [{"name": "Tim Bolu", "kind": "bolu"}], "created": true}`.
+It does not create a Bolu — the new workspace starts with an empty Bolu list, and
+the first Bolu is created afterwards through `POST /agents` with a `template_key`.
+Naming the workspace `business_name` instead of `name` is refused with `400` and
+`error.code` `invalid_input`:
+
+```bash
+curl -X POST "{API_URL}/api/workspaces/onboard" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name": "Tim Bolu", "business_field": "Consulting", "timezone": "Asia/Jakarta"}'
+# 200 data {"workspace": {...}, "teams": [{"name": "Tim Bolu", "kind": "bolu"}], "created": true}
+
+curl -X POST "{API_URL}/api/workspaces/onboard" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"business_name": "Tim Bolu"}'
+# 400 {"message":"workspace: invalid input: business name is required","error":{"code":"invalid_input"}}
+```
 
 ## Role matrix
 
