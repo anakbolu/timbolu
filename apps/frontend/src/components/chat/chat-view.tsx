@@ -171,9 +171,8 @@ export function ChatView({
     return agents.find((agent) => agent.id === participant.agent_id) ?? null;
   }, [chat.active, agents]);
 
-  // The face every Bolu message in this conversation wears: the one its state
-  // poses, computed once so the header and the messages cannot disagree. A group
-  // has no single partner, so its messages keep the neutral face.
+  // The partner's face, computed once so the header and the direct thread cannot
+  // disagree. A group has no single partner, so its rows resolve each author.
   const partnerExpression = partner ? expressionOf(stateOf(partner)) : undefined;
 
   // The work threads opened from this conversation, newest first.
@@ -368,25 +367,34 @@ export function ChatView({
           ) : null}
 
           <div ref={content} className="mx-auto mt-auto flex w-full max-w-3xl flex-col gap-6">
-            {timeline.map((item) =>
-              item.kind === "message" ? (
+            {timeline.map((item) => {
+              if (item.kind !== "message") {
+                return (
+                  <ThreadMarker
+                    key={item.thread.id}
+                    thread={item.thread}
+                    open={selected?.id === item.thread.id}
+                    onOpen={() => showThread(item.thread.id)}
+                  />
+                );
+              }
+              // A group's messages come from several Bolu, so each row wears its own
+              // author's state rather than the neutral face; a direct thread's only
+              // author is the partner, whose state the header already shows.
+              const author = item.message.agent_id
+                ? agents.find((agent) => agent.id === item.message.agent_id) ?? null
+                : null;
+              return (
                 <MessageRow
                   key={item.message.message_id}
                   message={item.message}
                   name={nameOf(chat.active, item.message)}
                   face={authorFace(chat.active, item.message, agents)}
                   color={colorOf(item.message, agents)}
-                  expression={partnerExpression}
+                  expression={author ? expressionOf(stateOf(author)) : partnerExpression}
                 />
-              ) : (
-                <ThreadMarker
-                  key={item.thread.id}
-                  thread={item.thread}
-                  open={selected?.id === item.thread.id}
-                  onOpen={() => showThread(item.thread.id)}
-                />
-              ),
-            )}
+              );
+            })}
 
             {waiting.map((row) => (
               <TypingRow key={row.key} name={row.name} face={row.face} text={row.text} />

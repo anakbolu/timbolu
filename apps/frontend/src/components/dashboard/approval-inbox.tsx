@@ -109,7 +109,7 @@ export function ApprovalInbox() {
         <div className={`${CARD} flex flex-col items-center gap-2.5 px-3 py-10 text-center`}>
           <Bolu
             member={agents[0] ? crewFor(agents[0]) : allBot("Pinky")}
-            expression="senang"
+            expression={expressionOf(agents[0] ? stateOf(agents[0]) : "idle")}
             color={agents[0]?.color || undefined}
             size={90}
           />
