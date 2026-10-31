@@ -28,16 +28,19 @@ Layar tujuannya sudah ada untuk `task`, `approval`, dan `routine`:
 `apps/mobile/app/(tabs)/approval.tsx`), dan `apps/mobile/app/routine/[routineID].tsx` (satu rutin
 beserta 20 run terakhir, dibuka dari tab `apps/mobile/app/(tabs)/routine.tsx`).
 
-Yang belum: pemetaan target link untuk `approval` dan `routine`.
-`apps/mobile/src/lib/link-destination.ts` (`destinationFor`) baru memetakan `task` ke
-`task/[taskID]`, jadi `bolu://approval/<id>` dan `bolu://routine/<id>` masih mendarat di daftar
-Bolu `/(tabs)/bolu` dengan notis "Layar yang dituju tautan ini belum ada di app…". Obrolan per id
-juga belum: `bolu://chat/<id>` membawa `conversations.id`, sedangkan
+Sejak #532 `apps/mobile/src/lib/link-destination.ts` (`destinationFor`) memetakan `task`,
+`approval`, dan `routine` berturut-turut ke `task/[taskID]`, `draft/[draftID]`, dan
+`routine/[routineID]`, dan `apps/mobile/app/_layout.tsx` membukanya dengan `router.replace`. Jadi
+`bolu://task/<id>`, `bolu://approval/<id>`, dan `bolu://routine/<id>` masing-masing mendarat di
+layarnya sendiri.
+
+Hanya obrolan per id yang belum: `bolu://chat/<id>` membawa `conversations.id`, sedangkan
 `apps/mobile/app/chat/[agentID].tsx` membuka thread dari id Bolu
 (`openDirectConversation(agentID)`), jadi link chat tidak dicocokkan ke layar itu dan tetap
-mendarat di daftar Bolu. `apps/mobile/src/lib/deep-link.ts` (`parseIncomingLink`) sudah memisahkan
-`chat` dari resource lain, dan `apps/mobile/app/+native-intent.tsx` menahan seluruh `bolu://` dari
-router. Link tak dikenal mendapat `UNKNOWN_LINK_NOTICE`.
+mendarat di daftar Bolu dengan notis. `apps/mobile/src/lib/deep-link.ts` (`parseIncomingLink`)
+sudah memisahkan `chat` dari resource lain, dan `apps/mobile/app/+native-intent.tsx` menahan
+seluruh `bolu://` dari router. Path tak dikenal mendarat di daftar Bolu dengan
+`UNKNOWN_LINK_NOTICE`.
 
 Selain itu `notification.pending` belum punya produsen, `routine.run` baru ada sebagai nama, dan
 universal link `timbolu.com/...` belum dipasang: belum ada `apple-app-site-association` maupun
@@ -185,7 +188,7 @@ Keadaan `apps/mobile` hari ini, dicocokkan ke berkas:
 - `app/login.tsx` form masuk; `app/(tabs)/_layout.tsx` menyusun empat tab — `app/(tabs)/bolu.tsx` daftar Bolu, `app/(tabs)/approval.tsx` draf yang menunggu keputusan, `app/(tabs)/tasks.tsx` riwayat tugas, `app/(tabs)/routine.tsx` rutinitas — dan layar per id: `app/chat/[agentID].tsx` satu obrolan, `app/task/[taskID].tsx` detail tugas, `app/draft/[draftID].tsx` satu draf, `app/routine/[routineID].tsx` satu rutin beserta riwayat run.
 - Token: refresh token disimpan di `expo-secure-store` (`apps/mobile/src/lib/tokens.ts`), access token hanya di memori, dan refresh dikirim lewat body `POST /auth/refresh` tanpa cookie (`apps/mobile/src/lib/api.ts`, `refreshSession`).
 - Gate CI: job `mobile` di `.github/workflows/checks.yml` menjalankan `make typecheck-mobile` (#493).
-- Link masuk `bolu://` (#500): `app/+native-intent.tsx` mengembalikan `null` untuk `bolu://` supaya router tidak mencocokkan path, `app/_layout.tsx` (`IncomingLinks`) membaca `Linking.getInitialURL()` dan `Linking.addEventListener("url")`, lalu `src/lib/deep-link.ts` (`parseIncomingLink`), `src/lib/pending-link.ts`, dan `src/lib/link-destination.ts` (`destinationFor`) menerjemahkan, menahan, dan menentukan tujuan. `app/+not-found.tsx` adalah layar cadangan untuk path yang tidak punya berkas layar. Target `task` dibuka di `app/task/[taskID].tsx`; target `chat`, `approval`, dan `routine` berakhir di `/(tabs)/bolu` dengan notis karena `destinationFor` belum memetakannya (lihat § Skema `bolu://`).
+- Link masuk `bolu://` (#500): `app/+native-intent.tsx` mengembalikan `null` untuk `bolu://` supaya router tidak mencocokkan path, `app/_layout.tsx` (`IncomingLinks`) membaca `Linking.getInitialURL()` dan `Linking.addEventListener("url")`, lalu `src/lib/deep-link.ts` (`parseIncomingLink`), `src/lib/pending-link.ts`, dan `src/lib/link-destination.ts` (`destinationFor`) menerjemahkan, menahan, dan menentukan tujuan. `app/+not-found.tsx` adalah layar cadangan untuk path yang tidak punya berkas layar. Target `task`, `approval`, dan `routine` dibuka di `app/task/[taskID].tsx`, `app/draft/[draftID].tsx`, dan `app/routine/[routineID].tsx` (#532); hanya target `chat` yang berakhir di `/(tabs)/bolu` dengan notis karena id-nya id obrolan, bukan id Bolu (lihat § Skema `bolu://`).
 - Belum: push notification dan registrasi `POST /devices`; endpoint-nya ada, kliennya belum.
 - Obrolan hidup (#505, #514): layar chat membuka satu koneksi SSE ke `/events/stream` lewat `src/lib/chat-stream.ts` selama layar itu tampil, `AppState` menutupnya saat app masuk latar, dan koneksi berikutnya membawa kursor `last_event_id` yang tetap di memori sehingga server memutar ulang frame yang terlewat. Frame `message.new`/`message.updated` masuk langsung ke daftar tanpa memuat ulang layar; satu pembacaan ulang 5 detik setelah kirim dan tombol "Muat ulang" tetap ada sebagai jaring (tarik-untuk-menyegarkan baru ada di daftar Bolu). `/events/socket` (WebSocket) tidak dipakai app, dan status transport belum ditampilkan (`docs/mobile.md` § Obrolan hidup dari `/api/events/stream`).
 
@@ -195,17 +198,16 @@ Keadaan `apps/mobile` hari ini, dicocokkan ke berkas:
 | --- | --- | --- | --- |
 | `bolu://task/<task_id>` | `tasks.id` (UUID) | Detail tugas: keadaan, alasan berhenti, langkah, hasil serahan | `/tasks/<task_id>` |
 | `bolu://chat/<conversation_id>` | `conversations.id` (UUID) | Obrolan itu: 1:1 dengan Bolu, grup, atau thread | `/chat?conversation=<conversation_id>` |
-| `bolu://approval/<draft_id>` | `drafts.id` (UUID) | Inbox persetujuan, dibuka pada draf itu (Fase 1) | `/approval/<draft_id>` |
-| `bolu://routine/<routine_id>` | `routines.id` (UUID) | Daftar rutinitas, dibuka pada rutin itu | `/routines/<routine_id>` |
+| `bolu://approval/<draft_id>` | `drafts.id` (UUID) | Draf persetujuan itu: keputusan yang berlaku dan tombol putusnya | `/approval/<draft_id>` |
+| `bolu://routine/<routine_id>` | `routines.id` (UUID) | Rutin itu beserta 20 run terakhir | `/routines/<routine_id>` |
 
-Kolom "Layar yang dibuka" adalah tujuan kontrak. Hari ini `bolu://task/<id>` sudah memenuhi
-barisnya: `destinationFor` mengembalikan target `task` dan `app/_layout.tsx` membuka
-`task/[taskID]`. Tiga target lain belum. `approval` dan `routine` belum dipetakan di
-`destinationFor` meskipun layarnya ada (`app/draft/[draftID].tsx`,
-`app/routine/[routineID].tsx`), dan `chat` tidak punya layar per `conversations.id` —
-`app/chat/[agentID].tsx` membuka dari id Bolu. Ketiganya mendarat di `/(tabs)/bolu` dengan notis
-"Layar yang dituju tautan ini belum ada di app…", yang untuk `approval` dan `routine` benar tentang
-pemetaan link-nya, bukan tentang layarnya.
+Kolom "Layar yang dibuka" adalah tujuan kontrak, dan sejak #532 baris `task`, `approval`, dan
+`routine` sudah memenuhinya di app: `destinationFor` mengembalikan target `task`, `draft`, dan
+`routine`, lalu `app/_layout.tsx` membuka `task/[taskID]`, `draft/[draftID]`, dan
+`routine/[routineID]`. Hanya `chat` yang belum: tidak ada layar per `conversations.id` —
+`app/chat/[agentID].tsx` membuka dari id Bolu — jadi `bolu://chat/<id>` mendarat di `/(tabs)/bolu`
+dengan notis "Layar yang dituju tautan ini belum ada di app…". Path yang tidak dikenal juga
+mendarat di daftar Bolu, dengan `UNKNOWN_LINK_NOTICE`.
 
 Aturan yang mengikat keempatnya:
 
@@ -230,9 +232,9 @@ Perilaku per resource saat resource tidak bisa dibuka:
 Tabel ini menggambarkan layar resource-nya, bukan jalur link ke sana. `app/task/[taskID].tsx`
 sudah memenuhinya untuk tugas: 404 dan `invalid_input` sama-sama menjadi "Tugas tidak ditemukan."
 dengan tombol kembali. `app/draft/[draftID].tsx` dan `app/routine/[routineID].tsx` juga sudah punya
-layar "Draf tidak ditemukan." dan "Rutinitas tidak ditemukan.", tetapi baru bisa dicapai lewat tab,
-belum lewat `bolu://approval/...` atau `bolu://routine/...`. Target `chat` tetap mendarat di daftar
-Bolu, jadi barisnya belum pernah sampai ke layar resource.
+layar "Draf tidak ditemukan." dan "Rutinitas tidak ditemukan.", dan sejak #532 keduanya juga bisa
+dicapai lewat `bolu://approval/...` dan `bolu://routine/...`, bukan hanya lewat tab. Target `chat`
+tetap mendarat di daftar Bolu, jadi barisnya belum pernah sampai ke layar resource.
 
 | Resource | Jawaban API | Yang dilakukan app |
 | --- | --- | --- |
