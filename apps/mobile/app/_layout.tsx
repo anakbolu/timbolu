@@ -16,8 +16,8 @@ import {
 
 /**
  * The root: one stack, holding the gate (`index`), the sign-in form, the tabbed
- * workspace, and the chat, draft and task screens opened from it, plus the reader
- * that turns an incoming link into a destination.
+ * workspace, and the chat, draft, task and routine screens opened from it, plus
+ * the reader that turns an incoming link into a destination.
  */
 export default function RootLayout() {
   return (
@@ -89,11 +89,23 @@ function IncomingLinks() {
     // The id travels as a route param rather than through the path string, so
     // the screen reads it from `useLocalSearchParams` like every other screen
     // opened by id in this app.
-    if (destination.kind === "task") {
-      router.replace({ pathname: "/task/[taskID]", params: { taskID: destination.taskID } });
-      return;
+    switch (destination.kind) {
+      case "task":
+        router.replace({ pathname: "/task/[taskID]", params: { taskID: destination.taskID } });
+        return;
+      case "draft":
+        router.replace({ pathname: "/draft/[draftID]", params: { draftID: destination.draftID } });
+        return;
+      case "routine":
+        router.replace({
+          pathname: "/routine/[routineID]",
+          params: { routineID: destination.routineID },
+        });
+        return;
+      case "list":
+        router.replace("/(tabs)/bolu");
+        return;
     }
-    router.replace("/(tabs)/bolu");
   }, [status, pending]);
 
   return null;
