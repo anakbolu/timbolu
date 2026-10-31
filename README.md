@@ -27,11 +27,12 @@ The screenshots below show the workspace and operator console. More screens and 
 
 ## Architecture
 
-This repository is a Go and Next.js monorepo. The backend owns product APIs and durable agent work; the separate WhatsApp gateway owns WhatsApp sessions and media. Shared contracts and platform libraries live in `packages/`.
+Production runs a Bun/TypeScript backend and a Next.js frontend; the original Go backend is kept as the reference and is not deployed ([#422](https://github.com/anakbolu/timbolu/issues/422)). The backend owns product APIs and durable agent work; the separate WhatsApp gateway owns WhatsApp sessions and media. Shared contracts and platform libraries live in `packages/`.
 
 ```text
 apps/
-  backend/       Go API and Temporal workers
+  backend-js/    Bun API and Temporal workers (what production runs)
+  backend/       Go API and Temporal workers — reference only, not deployed (#422)
   whatsapp-gw/   WhatsApp connection gateway
   frontend/      Next.js web application
   virtual-computer/  Virtual-computer proof of concept
@@ -44,7 +45,7 @@ direction is Daytona — see [ADR 0004](docs/adr/0004-daytona.md) and #397.
 
 | Component | Main technologies |
 | --- | --- |
-| Backend | Go, Fiber, PostgreSQL + pgvector, Redis, Temporal |
+| Backend | Bun + TypeScript in production (`apps/backend-js`); Go reference tree in `apps/backend` (#422); PostgreSQL + pgvector, Redis, Temporal |
 | WhatsApp gateway | Go, whatsmeow, Redis, PostgreSQL, object storage |
 | Frontend | Next.js App Router, TypeScript, Tailwind CSS v4 |
 | Local infrastructure | Docker Compose |
@@ -121,7 +122,7 @@ Useful Make targets:
 - [Data policy](docs/kebijakan-data.md)
 - [Architecture decision records](docs/adr/)
 - [Frontend documentation](apps/frontend/README.md)
-- [Backend documentation](apps/backend/README.md)
+- [Backend documentation](apps/backend-js/README.md)
 - [WhatsApp gateway documentation](apps/whatsapp-gw/README.md)
 - [Dashboard screenshots and capture notes](docs/dashboard/README.md)
 - [Admin screenshots and capture notes](docs/admin/README.md)
