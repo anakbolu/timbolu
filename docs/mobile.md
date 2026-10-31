@@ -147,6 +147,17 @@ sana (`requireStreamAuth`), bukan dari header.
 - **Cursor di memori.** Setiap id yang maju disimpan di ref layar dan dikirim
   sebagai `last_event_id` saat koneksi dibuka lagi, jadi reconnect tidak
   melewatkan pesan dan tidak memutar ulang seluruh riwayat workspace.
+- **Latar berhenti, depan menyambung langsung.** Socket tidak bertahan saat app
+  masuk latar — iOS dan Android memutusnya dalam beberapa detik — jadi stream
+  membaca `AppState`: `background`/`inactive` menutup koneksi dan menghentikan
+  loop reconnect, karena percobaan di sana hanya menghabiskan baterai dan kuota
+  untuk layar yang tidak dilihat siapa pun. Kursor `last_event_id` tetap di
+  memori, dan saat app kembali `active` koneksi baru dibuka segera — bukan
+  menunggu backoff 30 detik, sebab tidur bukan tanda route sedang sakit — dengan
+  cursor yang sama supaya server memutar ulang frame yang terlewat. Karena
+  server boleh membatasi replay dan cursor bisa tertinggal, layar juga membaca
+  ulang satu halaman pesan saat kembali aktif; fokus layar tetap pemilik tunggal
+  koneksi, jadi app di depan dan layar di fokus tidak pernah membuka dua.
 - **Stream mati bukan jalan buntu.** Sebuah koneksi baru dihitung sehat setelah
   bertahan 5 detik; yang gagal lebih cepat menaikkan hitungan gagal dan
   dicoba ulang dengan jeda 0,5 → 1 → 2 → 4 → 8 detik, lalu 30 detik plus jitter.
