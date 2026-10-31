@@ -83,16 +83,17 @@ header `X-Workspace-Id`. Scaffold ini tidak punya storage selain keystore, jadi
 pilihan workspace tidak diingat antar-jalan; begitu pemilih workspace masuk, itu
 tempat menyimpannya.
 
-## Link masuk `bolu://`
+## Link masuk
 
-Skema `bolu` dideklarasikan di `apps/mobile/app.json`; kontrak lengkapnya ada di
-[deep-links.md](deep-links.md) § Skema `bolu://`.
+Skema `bolu` dan host universal link `timbolu.com` dideklarasikan di `apps/mobile/app.json`
+(`scheme`, `ios.associatedDomains`, `android.intentFilters`); kontrak lengkapnya ada di
+[deep-links.md](deep-links.md) § Skema `bolu://` dan § Universal link.
 
-App membaca link `bolu://` sejak #500. Router tidak dipakai untuk memetakannya:
-`bolu://chat/<id obrolan>` akan cocok dengan `chat/[agentID]`, yang mengharapkan
+App membaca link `bolu://` sejak #500 dan `https://timbolu.com/...` sejak #540. Router tidak dipakai
+untuk memetakannya: `bolu://chat/<id obrolan>` akan cocok dengan `chat/[agentID]`, yang mengharapkan
 id Bolu, dan akan membuka thread yang tidak disebut link. Karena itu
-`app/+native-intent.tsx` (`redirectSystemPath`) mengembalikan `null` untuk URL
-`bolu://` — router tetap di tempatnya — dan `app/_layout.tsx` yang memutuskan
+`app/+native-intent.tsx` (`redirectSystemPath`) mengembalikan `null` untuk URL `bolu://` dan untuk
+URL https yang diklaim app — router tetap di tempatnya — dan `app/_layout.tsx` yang memutuskan
 tujuan sebenarnya.
 
 Alurnya:
@@ -100,9 +101,11 @@ Alurnya:
 1. `app/_layout.tsx` (`IncomingLinks`) membaca URL peluncuran lewat
    `Linking.getInitialURL()` **sebelum** sesi diketahui — notifikasi paling
    sering membuka app yang sudah mati — lalu URL berikutnya lewat
-   `Linking.addEventListener("url", …)`. Hanya `bolu://` yang diambil; URL lain
-   tetap ditangani router.
-2. `src/lib/deep-link.ts` (`parseIncomingLink`) menerjemahkan URL menjadi target
+   `Linking.addEventListener("url", …)`. Yang diambil adalah `bolu://` dan URL
+   `https://timbolu.com/...` yang path-nya punya tujuan di app; URL lain tetap
+   ditangani router.
+2. `src/lib/deep-link.ts` (`parseIncomingLink`) menerjemahkan URL — `bolu://`
+   maupun `https://timbolu.com/...` — menjadi target
    `chat`/`task`/`approval`/`routine`, atau `fallback` dengan alasan
    `unknown-path`, `invalid-id`, atau `not-a-link`. Id wajib UUID; query dan
    fragment diabaikan, segmen path tambahan tidak.
@@ -133,7 +136,8 @@ daftar Bolu `/(tabs)/bolu` dengan pemberitahuan:
 | `bolu://` dengan path lain, segmen ekstra, atau id bukan UUID | `{ kind: "fallback" }` | daftar Bolu + "Tautan ini tidak dikenal. Pilih Bolu di bawah untuk melanjutkan." |
 
 `app/+not-found.tsx` adalah layar cadangan expo-router untuk path yang tidak
-punya berkas layar (URL non-`bolu://`): isinya `UNKNOWN_LINK_NOTICE`
+punya berkas layar (URL di luar `bolu://` dan `https://timbolu.com/...` yang
+diklaim app): isinya `UNKNOWN_LINK_NOTICE`
 ("Tautan ini tidak dikenal.") dan tombol "Kembali ke daftar Bolu". Target
 `bolu://` yang dikenali tidak diarahkan ke sana: `destinationFor` membuka layar
 ber-id untuk target `task`, `approval`, dan `routine`, serta daftar Bolu untuk
@@ -233,9 +237,12 @@ dengan tombol "Kembali ke daftar tugas".
 Semua ini sengaja di luar potongan pertama:
 
 - **Push notification** dan registrasi `POST /devices` (endpoint-nya sudah ada).
-- **Universal link** `timbolu.com/…` — app hanya membaca skema `bolu://`, dan
-  `app.json` belum mendeklarasikan associated domains; bentuk dan syaratnya ada
-  di [deep-links.md](deep-links.md) § Universal link.
+- **Universal link yang hidup** — app sudah mendeklarasikan `timbolu.com` dan
+  membaca URL `https://timbolu.com/...` sejak #540, tetapi kedua berkas
+  well-known (`apple-app-site-association`, `assetlinks.json`) belum disajikan
+  di prod dan identitas app belum ada di repo. Selama itu mengetuk link masih
+  membuka browser, dan link belum pernah dibuktikan di perangkat. Bentuk dan
+  syaratnya ada di [deep-links.md](deep-links.md) § Universal link.
 - **Layar untuk target `bolu://`** — `chat/<conversation_id>` masih belum bisa
   dibedakan dari `chat/<id Bolu>`, jadi tautan obrolan tetap mendarat di daftar
   Bolu dengan pemberitahuan (§ Link masuk `bolu://`). `task`, `approval`, dan

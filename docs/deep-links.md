@@ -12,8 +12,9 @@ memakai Expo SDK 57 dan `expo-router`, dengan layar `index` (gerbang sesi), `log
 `draft/[draftID]`, serta `routine/[routineID]`; detailnya di `docs/mobile.md`. `scheme` `bolu` juga
 sudah dideklarasikan di `apps/mobile/app.json`.
 
-Link masuk `bolu://` sudah dibaca app sejak #500. `app/+native-intent.tsx` (`redirectSystemPath`)
-mengembalikan `null` untuk URL `bolu://`, sehingga router berhenti dan tidak mencocokkan
+Link masuk sudah dibaca app: `bolu://` sejak #500 dan `https://timbolu.com/...` sejak #540.
+`app/+native-intent.tsx` (`redirectSystemPath`) mengembalikan `null` untuk URL `bolu://` maupun URL
+https yang path-nya punya tujuan di app, sehingga router berhenti dan tidak mencocokkan
 `bolu://chat/<id>` ke `chat/[agentID]` — berkas itu mengharapkan id Bolu, dan mencocokkannya akan
 membuka thread yang tidak disebut link. Yang memutuskan tujuan adalah `app/_layout.tsx`
 (`IncomingLinks`): URL peluncuran dibaca sebelum sesi diketahui, `src/lib/deep-link.ts`
@@ -39,15 +40,19 @@ Hanya obrolan per id yang belum: `bolu://chat/<id>` membawa `conversations.id`, 
 (`openDirectConversation(agentID)`), jadi link chat tidak dicocokkan ke layar itu dan tetap
 mendarat di daftar Bolu dengan notis. `apps/mobile/src/lib/deep-link.ts` (`parseIncomingLink`)
 sudah memisahkan `chat` dari resource lain, dan `apps/mobile/app/+native-intent.tsx` menahan
-seluruh `bolu://` dari router. Path tak dikenal mendarat di daftar Bolu dengan
-`UNKNOWN_LINK_NOTICE`.
+seluruh `bolu://` serta URL `https://timbolu.com/...` yang diklaim app dari router. Path tak dikenal
+mendarat di daftar Bolu dengan `UNKNOWN_LINK_NOTICE`.
 
-Selain itu `notification.pending` belum punya produsen, `routine.run` baru ada sebagai nama, dan
-universal link `timbolu.com/...` belum dipasang: belum ada `apple-app-site-association` maupun
-`assetlinks.json`, `apps/mobile/app.json` belum mendeklarasikan associated domains, dan
-`apps/mobile/app/+native-intent.tsx` hanya menahan URL `bolu://`. Yang ditetapkan di sini adalah
-bentuk yang harus dipenuhi saat bagian-bagian itu dibangun. Nama event selalu bisa dicek di
-`packages/contracts/events.ts` dan `docs/api.md` (§ The stream).
+Selain itu `notification.pending` belum punya produsen dan `routine.run` baru ada sebagai nama.
+Sisi app dari universal link sudah ada sejak #540: `apps/mobile/app.json` mendeklarasikan
+`ios.associatedDomains` (`applinks:timbolu.com`) dan `android.intentFilters` (`autoVerify: true`,
+host `timbolu.com`), `apps/mobile/src/lib/deep-link.ts` (`parseIncomingLink`) menerima
+`https://timbolu.com/...` sebagai sumber kedua dan memetakan path yang punya tujuan di app ke
+`LinkTarget` yang sama dengan `bolu://`, dan `apps/mobile/app/+native-intent.tsx` tidak lagi
+menyerahkan URL itu ke router. Yang masih menunggu: kedua berkas well-known belum disajikan di prod,
+jadi mengetuk link masih membuka browser, dan link belum pernah dibuktikan membuka app di perangkat
+sungguhan. Nama event selalu bisa dicek di `packages/contracts/events.ts` dan `docs/api.md`
+(§ The stream).
 
 Route group `(workspace)` tidak menambah segmen ke URL: `app/(workspace)/tasks/[taskID]/page.tsx`
 dilayani sebagai `/tasks/<task_id>`. Itu sebabnya tabel di bawah memakai path publik, bukan path
@@ -188,7 +193,7 @@ Keadaan `apps/mobile` hari ini, dicocokkan ke berkas:
 - `app/login.tsx` form masuk; `app/(tabs)/_layout.tsx` menyusun empat tab — `app/(tabs)/bolu.tsx` daftar Bolu, `app/(tabs)/approval.tsx` draf yang menunggu keputusan, `app/(tabs)/tasks.tsx` riwayat tugas, `app/(tabs)/routine.tsx` rutinitas — dan layar per id: `app/chat/[agentID].tsx` satu obrolan, `app/task/[taskID].tsx` detail tugas, `app/draft/[draftID].tsx` satu draf, `app/routine/[routineID].tsx` satu rutin beserta riwayat run.
 - Token: refresh token disimpan di `expo-secure-store` (`apps/mobile/src/lib/tokens.ts`), access token hanya di memori, dan refresh dikirim lewat body `POST /auth/refresh` tanpa cookie (`apps/mobile/src/lib/api.ts`, `refreshSession`).
 - Gate CI: job `mobile` di `.github/workflows/checks.yml` menjalankan `make typecheck-mobile` (#493).
-- Link masuk `bolu://` (#500): `app/+native-intent.tsx` mengembalikan `null` untuk `bolu://` supaya router tidak mencocokkan path, `app/_layout.tsx` (`IncomingLinks`) membaca `Linking.getInitialURL()` dan `Linking.addEventListener("url")`, lalu `src/lib/deep-link.ts` (`parseIncomingLink`), `src/lib/pending-link.ts`, dan `src/lib/link-destination.ts` (`destinationFor`) menerjemahkan, menahan, dan menentukan tujuan. `app/+not-found.tsx` adalah layar cadangan untuk path yang tidak punya berkas layar. Target `task`, `approval`, dan `routine` dibuka di `app/task/[taskID].tsx`, `app/draft/[draftID].tsx`, dan `app/routine/[routineID].tsx` (#532); hanya target `chat` yang berakhir di `/(tabs)/bolu` dengan notis karena id-nya id obrolan, bukan id Bolu (lihat § Skema `bolu://`).
+- Link masuk (#500, #540): `app/+native-intent.tsx` mengembalikan `null` untuk `bolu://` dan untuk URL `https://timbolu.com/...` yang diklaim app supaya router tidak mencocokkan path, `app/_layout.tsx` (`IncomingLinks`) membaca `Linking.getInitialURL()` dan `Linking.addEventListener("url")`, lalu `src/lib/deep-link.ts` (`parseIncomingLink`), `src/lib/pending-link.ts`, dan `src/lib/link-destination.ts` (`destinationFor`) menerjemahkan, menahan, dan menentukan tujuan. `apps/mobile/app.json` mendeklarasikan `ios.associatedDomains` (`applinks:timbolu.com`) dan `android.intentFilters` untuk host yang sama, dan `parseIncomingLink` menerima `https://timbolu.com/...` selain `bolu://` (#540). `app/+not-found.tsx` adalah layar cadangan untuk path yang tidak punya berkas layar. Target `task`, `approval`, dan `routine` dibuka di `app/task/[taskID].tsx`, `app/draft/[draftID].tsx`, dan `app/routine/[routineID].tsx` (#532); hanya target `chat` yang berakhir di `/(tabs)/bolu` dengan notis karena id-nya id obrolan, bukan id Bolu (lihat § Skema `bolu://`).
 - Belum: push notification dan registrasi `POST /devices`; endpoint-nya ada, kliennya belum.
 - Obrolan hidup (#505, #514): layar chat membuka satu koneksi SSE ke `/events/stream` lewat `src/lib/chat-stream.ts` selama layar itu tampil, `AppState` menutupnya saat app masuk latar, dan koneksi berikutnya membawa kursor `last_event_id` yang tetap di memori sehingga server memutar ulang frame yang terlewat. Frame `message.new`/`message.updated` masuk langsung ke daftar tanpa memuat ulang layar; satu pembacaan ulang 5 detik setelah kirim dan tombol "Muat ulang" tetap ada sebagai jaring (tarik-untuk-menyegarkan baru ada di daftar Bolu). `/events/socket` (WebSocket) tidak dipakai app, dan status transport belum ditampilkan (`docs/mobile.md` § Obrolan hidup dari `/api/events/stream`).
 
@@ -250,12 +255,23 @@ Universal link adalah jalur yang dipakai notifikasi. Bentuknya `https://timbolu.
 yang sama dengan web hari ini (`apps/frontend` dilayani di `timbolu.com`, dan API-nya di host yang
 sama — lihat `docs/deployment.md`). Pemetaannya diturunkan dari route yang benar-benar ada:
 
-Yang terpasang hari ini baru skema `bolu://`. Universal link belum dipasang: `app.json` belum
-mendeklarasikan associated domains, `app/+native-intent.tsx` hanya menahan URL `bolu://` sehingga
-URL `https://timbolu.com/...` tetap ditangani router (dipetakan ke path berkas layar, atau ke
-`+not-found` kalau tidak ada berkasnya), dan kedua berkas well-known di bawah belum ada di repo.
-Tabel berikut adalah target universal link yang harus dipenuhi app, bukan deskripsi perilakunya
-sekarang.
+Sisi app dari universal link sudah terpasang sejak #540: `apps/mobile/app.json` mendeklarasikan
+`ios.associatedDomains` (`applinks:timbolu.com`) dan `android.intentFilters` dengan
+`autoVerify: true` untuk host `timbolu.com`, dan `apps/mobile/src/lib/deep-link.ts`
+(`parseIncomingLink`) menerima URL `https://timbolu.com/...` yang punya tujuan di app — bentuk
+`/tasks/<id>`, `/approval/<id>`, `/routines/<id>`, dan `/chat?conversation=<id>` — sebagai sumber
+kedua di samping `bolu://`. `/chat?agent=<id>` belum dipetakan: `?agent=` menyebut id Bolu,
+sedangkan target link harus menyebut id obrolan, jadi `parseUniversalLink` mengembalikan
+`fallback("unknown-path")` dan link itu mendarat di daftar Bolu dengan notis, sama seperti
+`bolu://chat/<id>`. `apps/mobile/app/+native-intent.tsx` mengembalikan `null` untuk URL itu supaya
+router tidak memetakan path web ke berkas layar; URL https lain tetap ditangani router.
+
+Yang belum: kedua berkas well-known belum disajikan `timbolu.com`, jadi platform belum
+memverifikasi app sebagai pemilik domain itu dan mengetuk link masih membuka browser. Identitas app
+yang dibutuhkan kedua berkas itu belum ada di repo (§ Identitas app yang belum diketahui), dan link
+belum pernah dibuktikan membuka app di perangkat sungguhan; § Cara memverifikasi adalah langkah yang
+harus dijalankan setelah berkas dan identitas itu ada. Tabel berikut adalah tujuan tiap path di app,
+bukan bukti bahwa link sudah hidup.
 
 | Universal link | Layar app | Catatan |
 | --- | --- | --- |
@@ -330,14 +346,21 @@ supaya tidak ada URL karangan di dokumen ini atau di app.
 ### Identitas app yang belum diketahui
 
 Apple Team ID, bundle id iOS, package name Android, dan SHA-256 sertifikat Android belum ada di repo
-ini. `apps/mobile/app.json` sudah ada, tetapi tidak mendeklarasikan `ios.bundleIdentifier` maupun
-`android.package`, dan belum ada `eas.json`. Apple Team ID dan bundle id menunggu akun Apple
-Developer; package name dan SHA-256 menunggu Play Console atau keystore rilis. Lihat bagian berikut.
+ini. `apps/mobile/app.json` sekarang mendeklarasikan `ios.associatedDomains` dan
+`android.intentFilters` (#540), tetapi tidak mendeklarasikan `ios.bundleIdentifier` maupun
+`android.package`, dan belum ada `eas.json`. Nilai itulah yang mengisi `appIDs` di
+`apple-app-site-association` serta `package_name` dan `sha256_cert_fingerprints` di
+`assetlinks.json`, jadi tanpa nilai itu kedua berkas belum bisa dibuat dengan benar. Apple Team ID
+dan bundle id menunggu akun Apple Developer; package name dan SHA-256 menunggu Play Console atau
+keystore rilis. Lihat bagian berikut.
 
 ## Berkas well-known
 
-Dua berkas ini yang membuat universal link dipercaya platform. Keduanya **belum dibuat** oleh
-dokumen ini; yang ditetapkan hanya bentuk dan syarat penyajiannya.
+Dua berkas ini yang membuat universal link dipercaya platform. Keduanya belum ada di repo ini dan
+belum disajikan `timbolu.com` — `curl` ke kedua URL di bawah masih `404` saat #540 diperiksa — jadi
+deklarasi domain di `apps/mobile/app.json` belum cukup untuk membuka app. Yang ditetapkan di sini
+adalah bentuk dan syarat penyajiannya; isinya harus memakai identitas app di § Identitas app yang
+belum diketahui.
 
 ### `/.well-known/apple-app-site-association`
 
