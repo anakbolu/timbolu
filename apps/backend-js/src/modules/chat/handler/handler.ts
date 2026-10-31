@@ -55,6 +55,18 @@ export interface ContentConfig {
   frameAncestors: string[];
 }
 
+/**
+ * Where one SSE response's bytes go.
+ *
+ * It is an interface rather than the stream controller itself so the pump has
+ * no way to write after the response was closed, and so the failure of a single
+ * write is decided in one place.
+ */
+interface SseSink {
+  write(text: string): boolean;
+  close(): void;
+}
+
 /** Serves the conversation endpoints. */
 export class Handler {
   private contentConfig: ContentConfig = { frameAncestors: ["'self'"] };
@@ -376,62 +388,59 @@ export class Handler {
       return this.fail(c, "open stream", err);
     }
 
-    const heartbeat = this.heartbeat;
-    const log = this.log;
-    const encoder = new TextEncoder();
+    let sink: ReadableStreamDefaultController<Uint8Array> | null = null;
 
     const body = new ReadableStream<Uint8Array>({
-      async start(stream) {
-        let closed = false;
-        const write = (text: string): void => {
-          if (closed) return;
-          try {
-            stream.enqueue(encoder.encode(text));
-          } catch {
-            closed = true;
-          }
-        };
-
-        // The head goes out on its own, before there is an event to carry it: a
-        // client that resumes with nothing to replay would otherwise wait for
-        // the first heartbeat before its EventSource reported itself open. A
-        // comment is not an event, so a client ignores the line.
-        write(": connected\n\n");
-
-        // A comment keeps an idle connection alive through a proxy without being
-        // an event the client must ignore by type.
-        const timer = setInterval(() => write(": keep-alive\n\n"), heartbeat);
-
-        try {
-          for await (const event of events) {
-            if (signal.aborted) break;
-            write(`id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify(toEventPayload(event))}\n\n`);
-          }
-        } catch (err) {
-          // A client that went away aborts the signal, and that is not a
-          // failure. Anything else is the reason the stream ended early; a
-          // silent catch is what once left "closes right after `: connected`"
-          // with no trace to diagnose it.
-          if (!signal.aborted) {
-            log.error({ err }, "event stream ended");
-          }
-        } finally {
-          clearInterval(timer);
-          closed = true;
-          // The client disconnecting must release the Redis subscription, and
-          // aborting the signal is what closes it.
-          controller.abort();
-          try {
-            stream.close();
-          } catch {
-            // Already closed by the runtime when the client went away.
-          }
-        }
+      // `start` returns at once and only captures the controller. It used to be
+      // an `async` callback that stayed pending for the life of the stream, and
+      // a pending `start()` promises nothing about later chunks: when the
+      // stream died after one frame there was no error to look at, only
+      // silence. Writing from a task of its own keeps the response's
+      // construction and the stream's lifetime independent.
+      start(stream) {
+        sink = stream;
       },
+      // A client that goes away is the one signal Bun delivers for a response
+      // nobody reads any more, and aborting is what releases the Redis
+      // subscription.
       cancel() {
         controller.abort();
       },
     });
+
+    // The controller is captured synchronously by `start`, so it is set before
+    // any write below runs.
+    const log = this.log;
+    const encoder = new TextEncoder();
+    let failed = false;
+    const sinkWriter: SseSink = {
+      write(text) {
+        if (failed || sink === null) return false;
+        try {
+          sink.enqueue(encoder.encode(text));
+          return true;
+        } catch (err) {
+          failed = true;
+          // A client that went away is not a failure worth a line, but anything
+          // else here is the reason a stream stopped, and swallowing it is what
+          // once left the live view silent with nothing to read.
+          if (!signal.aborted) {
+            log.warn({ err: (err as Error).message }, "event stream write failed");
+          }
+          return false;
+        }
+      },
+      close() {
+        if (failed || sink === null) return;
+        try {
+          sink.close();
+        } catch {
+          // Already closed by the runtime when the client went away.
+        }
+      },
+    };
+
+    void this.pumpSse(sinkWriter, events, controller);
 
     return new Response(body, {
       status: 200,
@@ -484,6 +493,76 @@ export class Handler {
     });
   };
 
+  /**
+   * Writes the SSE frames until the client goes away or the stream ends.
+   *
+   * It runs as its own task rather than inside the stream's `start`, so a
+   * source that is slow to produce its first event cannot hold the response
+   * hostage: the head and the keep-alive go out on their own.
+   */
+  private async pumpSse(
+    sink: SseSink,
+    events: AsyncIterable<Event>,
+    controller: AbortController,
+  ): Promise<void> {
+    const signal = controller.signal;
+    const log = this.log;
+
+    // The head goes out before there is an event to carry it: a client that
+    // resumes with nothing to replay would otherwise wait for the first
+    // heartbeat before its EventSource reported itself open. A comment is not
+    // an event, so a client ignores the line.
+    if (!sink.write(": connected\n\n")) {
+      controller.abort();
+      return;
+    }
+
+    // A comment keeps an idle connection alive through a proxy without being an
+    // event the client must ignore by type.
+    const timer = setInterval(() => {
+      if (!signal.aborted) sink.write(": keep-alive\n\n");
+    }, this.heartbeat);
+
+    let skipped = 0;
+    try {
+      for await (const event of events) {
+        if (signal.aborted) break;
+
+        let frame: string;
+        try {
+          frame = sseFrame(event);
+        } catch (err) {
+          // One frame that cannot be serialised must not cost the client every
+          // event after it. It is still worth a line: a frame that always fails
+          // is a broken producer, not a fluke.
+          skipped++;
+          if (skipped === 1) {
+            log.warn(
+              { err: (err as Error).message, id: event.id, type: event.type },
+              "event skipped: it could not be serialised",
+            );
+          }
+          continue;
+        }
+
+        if (!sink.write(frame)) break;
+      }
+    } catch (err) {
+      // A client that went away aborts the signal, and that is not a failure.
+      // Anything else is the reason the stream ended early.
+      if (!signal.aborted) {
+        log.error({ err }, "event stream ended");
+      }
+    } finally {
+      clearInterval(timer);
+      if (skipped > 0) {
+        log.warn({ skipped }, "event stream skipped unreadable events");
+      }
+      controller.abort();
+      sink.close();
+    }
+  }
+
   /** Pumps the workspace stream onto one open socket. */
   private async pump(
     ws: WSContext,
@@ -492,30 +571,61 @@ export class Handler {
     heartbeat: number,
     controller: AbortController,
   ): Promise<void> {
-    let events: AsyncIterable<Event>;
-    try {
-      events = await this.service.stream(streamScope, afterId, controller.signal);
-    } catch (err) {
-      ws.send(JSON.stringify({ type: "error", message: (err as Error).message }));
-      ws.close();
-      return;
-    }
-
-    const timer = setInterval(() => {
-      if (ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: "ping" }));
+    let warned = false;
+    const send = (text: string): boolean => {
+      if (controller.signal.aborted) return false;
+      try {
+        ws.send(text);
+        return true;
+      } catch (err) {
+        if (!warned) {
+          warned = true;
+          this.log.warn({ err: (err as Error).message }, "websocket send failed");
+        }
+        return false;
       }
+    };
+
+    // The heartbeat is installed before the stream is opened: a ping says the
+    // socket is alive, which does not depend on a subscription that has not
+    // resolved yet.
+    const timer = setInterval(() => {
+      if (ws.readyState === 1) send(JSON.stringify({ type: "ping" }));
     }, heartbeat);
 
     try {
+      let events: AsyncIterable<Event>;
+      try {
+        events = await this.service.stream(streamScope, afterId, controller.signal);
+      } catch (err) {
+        send(JSON.stringify({ type: "error", message: (err as Error).message }));
+        return;
+      }
+
+      let skipped = 0;
       for await (const event of events) {
         if (controller.signal.aborted || ws.readyState !== 1) {
           break;
         }
-        ws.send(JSON.stringify(toEventPayload(event)));
+
+        let frame: string;
+        try {
+          frame = JSON.stringify(toEventPayload(event));
+        } catch (err) {
+          skipped++;
+          if (skipped === 1) {
+            this.log.warn(
+              { err: (err as Error).message, id: event.id, type: event.type },
+              "event skipped: it could not be serialised",
+            );
+          }
+          continue;
+        }
+
+        if (!send(frame)) break;
       }
     } catch {
-      // The connection went away; the loop below releases the subscription.
+      // The connection went away; the cleanup below releases the subscription.
     } finally {
       clearInterval(timer);
       controller.abort();
@@ -762,6 +872,16 @@ function toSendPayload(result: SendResult): SendPayload {
     payload.responders = result.responders.map(toParticipantPayloadAgent);
   }
   return payload;
+}
+
+/**
+ * One SSE frame: the id a reconnect resumes from, the event name, and the JSON
+ * body. The three lines are the client's contract — `apps/frontend/src/lib/realtime.ts`
+ * and `apps/mobile/src/lib/chat-stream.ts` read exactly them — so the shape does
+ * not move even when the writer does.
+ */
+function sseFrame(event: Event): string {
+  return `id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify(toEventPayload(event))}\n\n`;
 }
 
 function toEventPayload(event: Event): EventPayload {
