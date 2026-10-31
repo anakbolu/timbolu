@@ -23,6 +23,14 @@ import { useAuth } from "@/lib/auth";
  */
 const ONBOARDING_URL = "https://timbolu.com/onboarding";
 
+/**
+ * Where the first Bolu is created. The app has no create-Bolu screen yet, so the
+ * page lives on the web; the address is written out for the same reason as
+ * `ONBOARDING_URL` — a development `API_URL` is a LAN address a phone's browser
+ * could not open.
+ */
+const NEW_BOLU_URL = "https://timbolu.com/bolu/new";
+
 /** The display status, in the app's language. Unknown values are shown as-is. */
 const STATUS_LABEL: Record<string, string> = {
   working: "sedang bekerja",
@@ -42,8 +50,12 @@ type ListState =
   | { kind: "no-workspace" }
   | { kind: "error"; message: string };
 
-/** Initial load, pull-to-refresh, or the button that must re-ask `/workspaces`. */
-type LoadMode = "initial" | "pull" | "retry";
+/**
+ * Initial load, pull-to-refresh, or one of the two retry buttons. "retry" is the
+ * no-workspace button and must re-ask `/workspaces`; "retry-agents" is the empty
+ * list's button and must only re-ask `/agents`.
+ */
+type LoadMode = "initial" | "pull" | "retry" | "retry-agents";
 
 /**
  * The Bolu in this workspace, read from `GET /agents`: the flat registry list,
@@ -58,12 +70,13 @@ export default function BoluScreen() {
 
   const load = useCallback(async (mode: LoadMode) => {
     if (mode === "pull") setRefreshing(true);
-    if (mode === "retry") setChecking(true);
+    if (mode === "retry" || mode === "retry-agents") setChecking(true);
 
     // Only "retry" re-asks `GET /workspaces`. The person pressing it has just
     // been told the workspace is made in a browser, so this run's cached answer
-    // is exactly what must not be trusted; a pull refresh keeps the workspace it
-    // already has.
+    // is exactly what must not be trusted. Every other mode keeps the workspace
+    // it already has: the empty list's retry is about a Bolu made in a browser,
+    // not about a workspace that may have appeared.
     const result = await listAgents({ refreshWorkspace: mode === "retry" });
 
     if (result.kind === "agents") {
@@ -148,7 +161,35 @@ export default function BoluScreen() {
       {list.kind === "agents" && list.agents.length === 0 ? (
         <View style={styles.centered}>
           <Text style={styles.empty}>Belum ada Bolu di workspace ini.</Text>
-          <Text style={styles.emptyHint}>Buat yang pertama dari web, lalu tarik ke bawah untuk memuat ulang.</Text>
+          <Text style={styles.emptyHint}>
+            Bolu dibuat di web, bukan di app ini. Buka timbolu.com, buat Bolu pertamamu, lalu kembali
+            ke sini dan tekan “Coba lagi”.
+          </Text>
+          <Pressable
+            onPress={() => {
+              // A phone with no browser handler rejects; the sentence names the
+              // address so it can still be typed on another device.
+              void Linking.openURL(NEW_BOLU_URL).catch(() => {
+                setList({
+                  kind: "error",
+                  message: `Tidak bisa membuka browser. Buka ${NEW_BOLU_URL} di perangkat lain.`,
+                });
+              });
+            }}
+            accessibilityRole="button"
+            style={styles.primary}
+          >
+            <Text style={styles.primaryText}>Buat Bolu pertama di web</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => void load("retry-agents")}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: checking }}
+            disabled={checking}
+            style={({ pressed }) => [styles.secondary, (pressed || checking) && styles.buttonPressed]}
+          >
+            <Text style={styles.secondaryText}>{checking ? "Memeriksa…" : "Coba lagi"}</Text>
+          </Pressable>
         </View>
       ) : null}
 
