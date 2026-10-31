@@ -197,11 +197,11 @@ export class PostgresRepository implements Repository {
       const rows = await tx<{ id: string }[]>`
         UPDATE agents
         SET name = ${req.name},
-            role = ${req.role},
-            persona = ${req.persona},
-            tone = ${req.tone},
-            shape = ${req.shape},
-            color = ${req.color},
+            role = ${req.role ?? ""},
+            persona = ${req.persona ?? ""},
+            tone = ${req.tone ?? ""},
+            shape = ${req.shape ?? ""},
+            color = ${req.color ?? ""},
             tools = ${tx.json((req.tools ?? []) as never)},
             default_model = ${tx.json((req.defaultModel ?? {}) as never)},
             updated_at = now()
