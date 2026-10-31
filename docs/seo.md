@@ -31,15 +31,19 @@ nama tim, model, dan pemakaian token satu workspace.
 
 | Berkas | Yang dideklarasikan |
 | --- | --- |
-| `apps/frontend/src/lib/metadata.ts` | `SITE_URL = "https://timbolu.com"` (privat), `SITE_NAME = "Timbolu"`, `openGraphCard()`, `pageMetadata()`; kartu memuat `locale: "id_ID"`, `type: "website"`, `og:url` absolut, dan `twitter.card: "summary"` |
+| `apps/frontend/src/lib/metadata.ts` | `SITE_URL = "https://timbolu.com"` (di-export; diimpor `app/robots.ts` dan `app/sitemap.ts`), `SITE_NAME = "Timbolu"`, `openGraphCard()`, `pageMetadata()`; kartu memuat `locale: "id_ID"`, `type: "website"`, `og:url` absolut, dan `twitter.card: "summary"` |
+| `apps/frontend/src/app/robots.ts` | metadata route `/robots.txt`: `userAgent: "*"`, `allow: "/"`, `disallow` untuk rute sesi (`/dashboard`, `/approval`, `/approval/`, `/chat`, `/groups`, `/routines`, `/tasks`, `/settings`, `/onboarding`, `/bolu`, `/admin`, `/api`), dan `sitemap: "${SITE_URL}/sitemap.xml"` |
+| `apps/frontend/src/app/sitemap.ts` | metadata route `/sitemap.xml`: lima halaman publik (`/`, `/pricing`, `/privacy`, `/terms`, `/contact`) dengan URL absolut dari `SITE_URL`, `lastModified` tetap `2026-10-31` |
+| `apps/frontend/src/app/seo-routes.test.ts` | 4 kasus: sitemap memuat persis lima halaman publik, sitemap tidak memuat halaman sesi, `lastModified` tidak berubah antar build, dan `robots.txt` mengizinkan situs, menutup rute workspace, serta menyebut sitemap. Dijalankan `cd apps/frontend && bun test src/app/seo-routes.test.ts` |
 | `apps/frontend/src/app/layout.tsx` | kartu bawaan seluruh app: `title.default`, template `%s · Timbolu`, `description`, `openGraph.title`/`description`/`siteName`/`locale`/`type`; `<html lang="id">` |
 | `apps/frontend/src/app/page.tsx` | memanggil `openGraphCard()` dengan `path: "/"` |
 | `apps/frontend/src/app/pricing/page.tsx`, `privacy/page.tsx`, `terms/page.tsx`, `contact/page.tsx`, `join/page.tsx` | memanggil `pageMetadata()` dengan path masing-masing |
 | 14 halaman `(workspace)`, `admin/dashboard/page.tsx`, `admin/users/page.tsx`, `not-found.tsx` | `robots: { index: false }` |
 
 `openGraphCard()` mengembalikan `openGraph` dan `twitter`; `pageMetadata()` menambahkan `title` dan
-`description` di atasnya. `SITE_URL` privat karena app tidak menyetel `metadataBase`, jadi satu-satunya
-tempat asal absolut `og:url` adalah modul itu. `twitter.card` bernilai `summary` karena belum ada
+`description` di atasnya. `SITE_URL` di-export karena app tidak menyetel `metadataBase`: modul itu
+satu-satunya tempat asal absolut, dan `app/robots.ts` serta `app/sitemap.ts` mengimpornya supaya tidak
+ada salinan origin kedua yang bisa menyimpang. `twitter.card` bernilai `summary` karena belum ada
 `og:image`; komentar di `metadata.ts` menyebut `summary_large_image` akan merender kartu kosong
 tanpa gambar.
 
@@ -52,23 +56,33 @@ lewat `openGraphCard()`/`pageMetadata()`, bukan mengandalkan warisan layout.
 `admin/dashboard/page.tsx`, `admin/users/page.tsx`, dan `not-found.tsx`. `(workspace)/tasks/page.tsx`
 hanya berisi `redirect("/dashboard")`, jadi tidak punya metadata sendiri.
 
-Tidak ada yang menyajikan `/robots.txt` atau `/sitemap.xml`: `apps/frontend/next.config.ts` hanya
-me-rewrite dua berkas well-known (Apple dan Android), dan satu-satunya route handler di `app/` adalah
-`api/well-known/apple-app-site-association/route.ts` serta `api/well-known/assetlinks.json/route.ts`.
+`/robots.txt` dan `/sitemap.xml` disajikan oleh `apps/frontend/src/app/robots.ts` dan
+`apps/frontend/src/app/sitemap.ts` sejak #555 merge ke `main`. `apps/frontend/next.config.ts` tetap
+hanya me-rewrite dua berkas well-known (Apple dan Android); metadata route tidak lewat rewrite.
+Route handler lain di `app/` adalah `api/well-known/apple-app-site-association/route.ts` dan
+`api/well-known/assetlinks.json/route.ts`.
 
 ## Celah hari ini, dengan bukti
 
-| Yang diperiksa | Hasil 31 Oktober 2026 | Bukti di repo |
-| --- | --- | --- |
-| `GET https://timbolu.com/robots.txt` | `404` | tidak ada route `robots.txt`; `next.config.ts` hanya me-rewrite dua berkas well-known |
-| `GET https://timbolu.com/sitemap.xml` | `404` | tidak ada `sitemap.ts` maupun route handler sitemap |
-| `GET https://timbolu.com/` | `200`, tanpa `<meta name="robots">` | `page.tsx` hanya memanggil `openGraphCard()`; `layout.tsx` tidak menyetel `robots` |
-| `GET https://timbolu.com/pricing` | `200`, tanpa `<meta name="robots">` | `pricing/page.tsx` memanggil `pageMetadata()`; helper itu tidak menyetel `robots` |
-| `og:image` | tidak ada | `openGraphCard()` dan `layout.tsx` tidak punya field `images`; `metadata.ts` mencatat ketiadaannya |
+`/robots.txt` dan `/sitemap.xml` sudah tertutup: dibuat #555, dan diperiksa langsung di produksi
+31 Oktober 2026 pukul 10:43 UTC — keduanya `200`, berturut-turut `content-type: text/plain` dan
+`content-type: application/xml`. Isi `robots.txt` cocok dengan `app/robots.ts` (disallow rute sesi
+plus baris `Sitemap` mengarah ke `https://timbolu.com/sitemap.xml`), dan `sitemap.xml` memuat persis
+lima `loc`: `/`, `/pricing`, `/privacy`, `/terms`, `/contact`. Dua berkas sumbernya
+`apps/frontend/src/app/robots.ts` dan `apps/frontend/src/app/sitemap.ts`.
 
-`robots.txt` dan `sitemap.xml` dikerjakan #553. Dokumen ini mencatat keadaan **sebelum** #553
-mendarat. Setelah #553 masuk, tabel di atas, § Apa yang dirayapi, dan § Cara memverifikasi harus
-diperbarui; sampai saat itu kedua URL tetap `404` dan dokumen ini tidak menganggap keduanya sudah ada.
+Tiga celah yang masih terbuka:
+
+| Yang diperiksa | Hasil | Bukti di repo |
+| --- | --- | --- |
+| `GET https://timbolu.com/` | `200`, tanpa `<meta name="robots">` — **masih terbuka** | `page.tsx` hanya memanggil `openGraphCard()`; `layout.tsx` tidak menyetel `robots` |
+| `GET https://timbolu.com/pricing` | `200`, tanpa `<meta name="robots">` — **masih terbuka** | `pricing/page.tsx` memanggil `pageMetadata()`; helper itu tidak menyetel `robots` |
+| `og:image` | tidak ada — **masih terbuka** | `openGraphCard()` dan `layout.tsx` tidak punya field `images`; `metadata.ts` mencatat ketiadaannya |
+
+`robots.txt` dan `sitemap.xml` dikerjakan #555, yang sudah merge ke `main` dan terbukti melayani
+`200` di `https://timbolu.com` pada pemeriksaan produksi 31 Oktober 2026 (`text/plain` dan
+`application/xml`). #555 hanya menutup dua URL itu: halaman publik tetap tanpa
+`<meta name="robots">`, dan `og:image` tetap tidak ada.
 
 ### Halaman aplikasi yang belum menyatakan `noindex`
 
@@ -80,9 +94,10 @@ Sembilan berkas mendeklarasikan `metadata` tanpa `robots`:
   `forgot-password/page.tsx`, `onboarding/page.tsx`, dan `join/page.tsx` — `metadata` tanpa `robots`.
 
 `apps/frontend/src/app/admin/page.tsx` hanya `redirect("/admin/dashboard")`; halaman tujuan redirect
-itu punya `robots: { index: false }`. Konsekuensinya: sampai `robots.txt` dari #553 ada, atau
-sembilan berkas di atas diberi `robots: { index: false }`, tidak ada deklarasi di repo yang melarang
-perayap mengindeks halaman login, onboarding, maupun tiga halaman pengaturan itu.
+itu punya `robots: { index: false }`. Konsekuensinya: `robots.txt` dari #555 men-disallow `/settings`
+dan `/onboarding`, tetapi tidak menyebut `/login`, `/signup`, `/verify`, `/forgot-password`, maupun
+`/join`; selama sembilan berkas di atas belum diberi `robots: { index: false }`, tidak ada deklarasi
+di repo yang melarang perayap mengindeks lima halaman itu.
 
 ## Yang tidak bisa dikerjakan dari repo
 
@@ -90,7 +105,7 @@ perayap mengindeks halaman login, onboarding, maupun tiga halaman pengaturan itu
 | --- | --- | --- |
 | Verifikasi Google Search Console | butuh akun pemilik `timbolu.com`; nilai verifikasi (DNS TXT atau meta tag) keluar dari akun itu, bukan dari kode | Robby |
 | Verifikasi Bing Webmaster Tools | sama: butuh akun pemilik domain dan nilainya tidak ada di repo | Robby |
-| Mengirim `sitemap.xml` ke Google/Bing | butuh properti yang sudah terverifikasi dan sitemap yang benar-benar ada; hari ini sitemap masih `404` (#553) | Robby |
+| Mengirim `sitemap.xml` ke Google/Bing | butuh properti milik Robby yang sudah terverifikasi; `app/sitemap.ts` sudah `200` di produksi sejak 31 Oktober 2026, jadi yang kurang hanya akun pemilik domain | Robby |
 | Memutuskan dan menyediakan gambar OG | `og:image` butuh aset gambar yang tidak ada di repo; setelah asetnya ada, perubahan kodenya adalah menambah `images` di `openGraphCard()`/`layout.tsx` dan menaikkan `twitter.card` dari `summary` | Robby (aset dan keputusan), lalu perubahan kode |
 
 Verifikasi kepemilikan domain adalah pekerjaan Robby karena hanya pemilik akun yang bisa menghasilkan
@@ -99,16 +114,21 @@ nilainya ada; dokumen ini tidak mengarang nilai placeholder.
 
 ## Cara memverifikasi sendiri
 
-Empat perintah di bawah adalah yang dipakai untuk tabel § Celah hari ini.
+Perintah di bawah adalah yang dipakai untuk § Celah hari ini dan untuk memeriksa dua URL yang sudah
+`200`.
 
 ```bash
 curl -sS -o /dev/null -w '%{http_code}\n' https://timbolu.com/robots.txt
 curl -sS -o /dev/null -w '%{http_code}\n' https://timbolu.com/sitemap.xml
 curl -sS https://timbolu.com/ | grep -o '<meta name="robots"[^>]*>' || echo 'tanpa meta robots'
 curl -sS https://timbolu.com/pricing | grep -o '<meta name="robots"[^>]*>' || echo 'tanpa meta robots'
+cd apps/frontend && bun test src/app/seo-routes.test.ts
 ```
 
-Hasil yang diharapkan sebelum #553: `404`, `404`, `tanpa meta robots`, `tanpa meta robots`.
+Hasil yang diharapkan hari ini: `200`, `200`, `tanpa meta robots`, `tanpa meta robots`. Dua URL
+pertama `200` — bukan `404` seperti sebelum #555 — `/robots.txt` `text/plain`, `/sitemap.xml`
+`application/xml`; dua hasil `tanpa meta robots` adalah dua celah yang masih terbuka. Uji
+`seo-routes.test.ts` harus lulus 4 kasus dan tidak butuh jaringan.
 
 Gambar OG diperiksa dengan pola yang sama:
 
