@@ -593,10 +593,10 @@ export function charSVG({
   still = false,
   idPrefix = "bolu",
 }: BoluDescriptionOptions): BoluDescription {
-  const body = BOLU_SHAPES[shape];
-  if (!body) throw new Error(`Unknown bolu shape: ${shape}`);
-  const expressionBody = BOLU_EXPRESSIONS[expression];
-  if (!expressionBody) throw new Error(`Unknown bolu expression: ${expression}`);
+  // Data lama atau data asing dari luar tidak boleh menjatuhkan seluruh layar (#564).
+  // Jika shape atau expression tidak dikenali, jatuh ke default yang sah.
+  const body = BOLU_SHAPES[shape] ?? BOLU_SHAPES[BOLU_DEFAULT_SHAPE];
+  const expressionBody = BOLU_EXPRESSIONS[expression] ?? BOLU_EXPRESSIONS[BOLU_DEFAULT_EXPRESSION];
 
   const restingLook = expressionBody.look ?? [0, 0];
   const clipPaths: BoluClipPath[] = [];
