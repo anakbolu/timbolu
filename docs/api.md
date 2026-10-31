@@ -999,6 +999,47 @@ cannot be the web app's build-time source yet: the frontend image is built with
 the build (#343). Until that changes, this section is the shared contract — a
 change to a constant there is a change to this document in the same pull request.
 
+#### Status Bolu: agent.state
+
+A Bolu's state is derived, not set by the screen that draws it: the server reads it
+from the workspace's tasks and drafts, publishes `agent.state` when it changes, and
+stores no coordinate anywhere. Five values exist, and each one already has a face
+in the character generator, so a client poses the face the state means instead of
+drawing a new one. `working` wears the happy face because work going well is what a
+person wants to see; `waiting` wears the startled one because it means a draft is
+holding on a decision, which is a request, not play.
+
+| `state` | Label | Expression | Eyes | Mouth | Motion |
+| --- | --- | --- | --- | --- | --- |
+| `working` | bekerja | `senang` | Closed upward arcs, the smile's own eyes | Open, with a tongue | A small bounce (`a-bounce`) |
+| `thinking` | berpikir | `mikir` | Open, one brow raised, gaze up and aside | A wavy line, with three thought bubbles overhead | Calm, blinking (`a-calm`) |
+| `waiting` | menunggu kamu | `kaget` | Wide open | Round and open, with three startle lines overhead | A jump (`a-jump`) |
+| `idle` | santai | `bosan` | Half-lidded, gaze to the side | A flat, slanted line | A slow sway (`a-sway`) |
+| `resting` | istirahat | `capek` | Heavy, drooping lids | A small oval, with a sweat drop | A slump (`a-sag`) |
+
+`reason` is the sentence the Bolu wrote for itself — "mengerjakan tugas", "membaca
+pesanmu" — and it is meaningful only while the state is `thinking` or `working`.
+For the other three the state already says everything, so a client ignores the
+field rather than print a line that no longer describes anything. The sentence is
+kept per `agent_id`, never as one line for the screen: the stream is the
+workspace's, so a state from another thread's Bolu must not be read as this
+thread's, and one Bolu going `idle` must not erase a sentence another Bolu is
+still showing.
+
+A `state` the client does not recognise is drawn as `idle`. A server may add a
+value before every client knows it, and a missing or blank face reads as a broken
+screen; the quiet face is the honest fallback, because a Bolu nobody can classify
+is not doing anything the screen can promise.
+
+`AGENT_STATES` and `AgentStateEvent` in `packages/contracts/events.ts` transcribe
+this section; `docs/api.md` is the source, and a value added here is added to both.
+Today the web client reads the state in
+`apps/frontend/src/components/chat/use-chat.ts` (the per-Bolu `reason` line) and
+`apps/frontend/src/components/dashboard/workspace-data.tsx` (a roster reload on
+every `agent.state`), with the face chosen by `STATE_EXPRESSION` in
+`apps/frontend/src/lib/dashboard-view.ts`. The Expo app still draws one fixed
+friendly face until #534 gives it these five.
+
 ### The content origin
 
 `GET /content/:reference` serves one agent-written HTML document. The reference
