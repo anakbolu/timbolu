@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { Task } from "@/lib/api";
-import { buildStats } from "./dashboard-view";
+import { buildStats, expressionOf, STATE_EXPRESSION } from "./dashboard-view";
 
 const now = new Date(2026, 9, 30, 12, 0, 0);
 
@@ -63,4 +63,25 @@ test("buildStats does not count a task that succeeded yesterday", () => {
     doneToday([task({ finished_at: new Date(2026, 9, 29, 9, 0, 30).toISOString() })]),
     "0",
   );
+});
+
+test("expressionOf draws an unknown state as idle", () => {
+  // The server may publish a state before this client knows it. A smile would
+  // tell a person the Bolu is fine on a state the screen cannot classify, so
+  // the quiet face is the honest answer.
+  for (const state of ["", "unknown", "WORKING"]) {
+    assert.equal(
+      expressionOf(state),
+      STATE_EXPRESSION.idle,
+      `state ${JSON.stringify(state)} should not be drawn as a known face`,
+    );
+  }
+});
+
+test("expressionOf keeps the face each known state already has", () => {
+  assert.equal(expressionOf("working"), "senang");
+  assert.equal(expressionOf("thinking"), "mikir");
+  assert.equal(expressionOf("waiting"), "kaget");
+  assert.equal(expressionOf("idle"), "bosan");
+  assert.equal(expressionOf("resting"), "capek");
 });
