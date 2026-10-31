@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -15,6 +15,7 @@ import { BoluFace } from "@/components/bolu-face";
 import { listAgents } from "@/lib/api";
 import type { Agent } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { getLinkNotice, setLinkNotice, subscribeLinkNotice } from "@/lib/pending-link";
 
 /**
  * Where a workspace is created. Onboarding is a web flow with no app screen yet,
@@ -67,6 +68,10 @@ export default function BoluScreen() {
   const [list, setList] = useState<ListState>({ kind: "loading" });
   const [refreshing, setRefreshing] = useState(false);
   const [checking, setChecking] = useState(false);
+  // The sentence a link left behind when its own screen does not exist yet.
+  // Dismissible rather than permanent: it is news about one tap, and a banner
+  // still sitting here an hour later would describe a link nobody remembers.
+  const notice = useSyncExternalStore(subscribeLinkNotice, getLinkNotice);
 
   const load = useCallback(async (mode: LoadMode) => {
     if (mode === "pull") setRefreshing(true);
@@ -102,6 +107,19 @@ export default function BoluScreen() {
 
   return (
     <View style={styles.page}>
+      {notice !== null ? (
+        <View style={styles.notice}>
+          <Text style={styles.noticeText}>{notice}</Text>
+          <Pressable
+            accessibilityRole="button"
+            hitSlop={12}
+            onPress={() => setLinkNotice(null)}
+          >
+            <Text style={styles.noticeClose}>Tutup</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       {list.kind === "loading" ? (
         <View style={styles.centered}>
           <ActivityIndicator />
@@ -224,6 +242,19 @@ export default function BoluScreen() {
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: "#FBF7F2" },
+  notice: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginHorizontal: 16,
+    marginTop: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: "#FFF1E4",
+  },
+  noticeText: { flex: 1, fontSize: 13, color: "#6B3A16" },
+  noticeClose: { fontSize: 13, fontWeight: "700", color: "#B4531E" },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32, gap: 10 },
   list: { padding: 16, gap: 10 },
   row: {

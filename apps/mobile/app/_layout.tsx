@@ -1,11 +1,23 @@
-import { Stack } from "expo-router";
+import { useEffect, useSyncExternalStore } from "react";
+import { Stack, router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import * as Linking from "expo-linking";
 
-import { AuthProvider } from "@/lib/auth";
+import { AuthProvider, useAuth } from "@/lib/auth";
+import { parseIncomingLink } from "@/lib/deep-link";
+import { destinationFor } from "@/lib/link-destination";
+import {
+  getPendingLink,
+  setLinkNotice,
+  setPendingLink,
+  subscribePendingLink,
+  takePendingLink,
+} from "@/lib/pending-link";
 
 /**
  * The root: one stack, holding the gate (`index`), the sign-in form, the tabbed
- * workspace, and the chat screen opened from it.
+ * workspace, and the chat screen opened from it, plus the reader that turns an
+ * incoming link into a destination.
  */
 export default function RootLayout() {
   return (
@@ -19,6 +31,51 @@ export default function RootLayout() {
           options={{ headerShown: true, headerTitle: "Obrolan", headerBackTitle: "Bolu" }}
         />
       </Stack>
+      <IncomingLinks />
     </AuthProvider>
   );
+}
+
+/**
+ * Reads links and spends them once the session allows it.
+ *
+ * Sits after the stack on purpose: a link is the last word about which screen
+ * opens, so its navigation must commit after the gate's or the sign-in form's
+ * own redirect, not race them.
+ */
+function IncomingLinks() {
+  const { status } = useAuth();
+  const pending = useSyncExternalStore(subscribePendingLink, getPendingLink);
+
+  // The launch URL is read before the session is answered, because a link that
+  // arrives while the app is dead is the common case for notifications
+  // (`docs/deep-links.md` § Auth saat cold start, rule 1).
+  useEffect(() => {
+    const capture = (url: string | null) => {
+      // Anything that is not this app's scheme belongs to the router (a web
+      // URL, Expo Go's dev URL); only `bolu://` needs translating.
+      if (!url || !url.toLowerCase().startsWith("bolu://")) return;
+      setPendingLink(parseIncomingLink(url));
+    };
+    const subscription = Linking.addEventListener("url", ({ url }) => capture(url));
+    void Linking.getInitialURL().then(capture, () => {
+      // A launch URL the platform refuses to answer is no link at all; the app
+      // starts at the gate as usual.
+    });
+    return () => subscription.remove();
+  }, []);
+
+  // A signed-out link stays pending: `signIn` flips the status, and this effect
+  // runs again then, which is what lands the person on the link's destination
+  // instead of the Bolu list.
+  useEffect(() => {
+    if (status !== "signed-in" || pending === null) return;
+    const target = takePendingLink();
+    if (target === null) return;
+    const destination = destinationFor(target);
+    setLinkNotice(destination.notice);
+    router.replace(destination.pathname);
+  }, [status, pending]);
+
+  return null;
 }
