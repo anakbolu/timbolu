@@ -25,7 +25,7 @@ import { AsyncSender } from "../platform/mail/async.ts";
 import { SMTPSender } from "../platform/mail/smtp.ts";
 import { Limiter } from "../platform/ratelimit/ratelimit.ts";
 import { Counter as QuotaCounter } from "../platform/quota/counter.ts";
-import { Publisher } from "../platform/pubsub/pubsub.ts";
+import { Publisher, probeRoundTrip } from "../platform/pubsub/pubsub.ts";
 import { Codec as OAuthStateCodec } from "../platform/oauthstate/state.ts";
 import { Client as GoogleClient, DefaultAuthURL, DefaultTokenURL, DefaultUserInfoURL } from "../platform/oauth/google/google.ts";
 import { Table as CostTable, defaults as defaultPrices, DefaultFallback } from "../platform/llm/pricing/table.ts";
@@ -334,8 +334,14 @@ export async function newContainer(
     : null;
 
   // --- handlers -------------------------------------------------------------
+  // The realtime probe rides the same publisher the live stream uses, so
+  // /api/ready reports the path the stream actually takes.
   const health = new HealthHandler(
-    new HealthService(db ? new HealthRepository(db) : null, redis),
+    new HealthService(
+      db ? new HealthRepository(db) : null,
+      redis,
+      redis === null ? null : { probe: () => probeRoundTrip(publisher) },
+    ),
     log,
   );
 
