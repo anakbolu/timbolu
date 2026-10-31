@@ -62,7 +62,10 @@ test("the claimed paths are the universal-link table, with the excluded pages ab
     );
   }
   // `/tasks` alone is only a redirect; the detail screen is what the app opens.
-  assert.ok(!UNIVERSAL_LINK_PATHS.includes("/tasks"));
+  // Widen for this check: on the literal tuple `includes` rejects a value it can
+  // prove absent at compile time, which is exactly what the assertion states.
+  const claimed: readonly string[] = UNIVERSAL_LINK_PATHS;
+  assert.ok(!claimed.includes("/tasks"));
   assert.ok(UNIVERSAL_LINK_PATHS.includes("/tasks/*"));
   // A draft is the object a notification points at, and it has its own screen.
   assert.ok(UNIVERSAL_LINK_PATHS.includes("/approval/*"));
