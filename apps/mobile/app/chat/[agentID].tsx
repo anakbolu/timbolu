@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  AppState,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -108,6 +109,28 @@ export default function ChatScreen() {
     setMessages((current) => applyPage(current, page.data.messages));
     setError(null);
   }, [agentID]);
+
+  /**
+   * One page read when the app comes back to the foreground.
+   *
+   * The stream resumes from `last_event_id` on its own, but the server may bound
+   * how far back it replays, and a cursor that never advanced while the socket
+   * was gone cannot show that it fell behind. A single page is the net under
+   * that; it is tied to focus so a screen behind another one does not spend a
+   * request it cannot show.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      if (status !== "signed-in") return;
+      let previous = AppState.currentState;
+      const subscription = AppState.addEventListener("change", (state) => {
+        const returned = state === "active" && previous !== "active";
+        previous = state;
+        if (returned) void reload();
+      });
+      return () => subscription.remove();
+    }, [status, reload]),
+  );
 
   useEffect(() => {
     if (status !== "signed-in") return;
