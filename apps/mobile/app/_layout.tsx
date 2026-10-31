@@ -30,6 +30,10 @@ export default function RootLayout() {
           name="chat/[agentID]"
           options={{ headerShown: true, headerTitle: "Obrolan", headerBackTitle: "Bolu" }}
         />
+        <Stack.Screen
+          name="draft/[draftID]"
+          options={{ headerShown: true, headerTitle: "Draf", headerBackTitle: "Persetujuan" }}
+        />
       </Stack>
       <IncomingLinks />
     </AuthProvider>

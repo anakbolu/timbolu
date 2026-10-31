@@ -148,6 +148,36 @@ export type SendMessageResult = {
   routed: boolean;
 };
 
+/**
+ * One draft: an action that reaches outside Bolu and waits for a person.
+ *
+ * The API names the id `draft_id`, not `id`, because the card in a message
+ * carries the same key; one name for one thing is what lets the list hand an id
+ * to the detail screen without a translation.
+ */
+export type ApprovalDraft = {
+  draft_id: string;
+  task_id: string;
+  agent_id: string;
+  conversation_id?: string;
+  action_kind: string;
+  title: string;
+  summary?: string;
+  status: "pending" | "approved" | "revise" | "sent" | "canceled";
+  revision: number;
+  /** The action's own shape; the detail screen lists it rather than interpreting it. */
+  payload: Record<string, unknown>;
+  decided_by?: string;
+  decided_at?: string;
+  decision_note?: string;
+  blocked_reason?: string;
+  not_before?: string;
+  sent_at?: string;
+  card_message_id?: string;
+  idempotency_key?: string;
+  created_at: string;
+};
+
 type Envelope<T> = {
   success: boolean;
   message: string;
@@ -603,6 +633,68 @@ export async function sendMessage(conversationId: string, text: string): Promise
     timeoutMs: 20_000,
     timeoutMessage: "Server terlalu lama menjawab. Pesanmu mungkin sudah terkirim — cek obrolannya.",
   });
+}
+
+/**
+ * The drafts waiting for a person, newest first.
+ *
+ * `meta.count` on the answer is what the tab badge shows. It is the count of
+ * the page the API just returned, so the badge and the list cannot disagree —
+ * and a separate count route would be a second answer that could.
+ */
+export async function listDrafts(
+  options: { status?: string; limit?: number } = {},
+): Promise<ApiResult<ApprovalDraft[]>> {
+  const workspaceId = await ensureWorkspace();
+  if (!workspaceId) return NO_WORKSPACE;
+  const status = options.status ?? "pending";
+  const limit = options.limit ?? 50;
+  return request<ApprovalDraft[]>(`/drafts?status=${encodeURIComponent(status)}&limit=${limit}`, {
+    workspace: workspaceId,
+  });
+}
+
+/** One draft, with the payload its detail screen lists. */
+export async function getDraft(draftId: string): Promise<ApiResult<ApprovalDraft>> {
+  const workspaceId = await ensureWorkspace();
+  if (!workspaceId) return NO_WORKSPACE;
+  return request<ApprovalDraft>(`/drafts/${draftId}`, { workspace: workspaceId });
+}
+
+/**
+ * Records one answer. The decision is a path segment rather than a body field,
+ * so the three functions below cannot send a verb the API does not have.
+ */
+async function decideDraft(
+  draftId: string,
+  decision: "approve" | "revise" | "cancel",
+  note: string,
+): Promise<ApiResult<ApprovalDraft>> {
+  const workspaceId = await ensureWorkspace();
+  if (!workspaceId) return NO_WORKSPACE;
+  return request<ApprovalDraft>(`/drafts/${draftId}/${decision}`, {
+    method: "POST",
+    body: { note },
+    workspace: workspaceId,
+  });
+}
+
+/** Allows the action; the server carries it out, or holds it outside working hours. */
+export function approveDraft(draftId: string, note = ""): Promise<ApiResult<ApprovalDraft>> {
+  return decideDraft(draftId, "approve", note);
+}
+
+/**
+ * Sends the draft back to its Bolu. The note is required here and in the API:
+ * an agent sent back with nothing to change would produce the same draft again.
+ */
+export function rejectDraft(draftId: string, note: string): Promise<ApiResult<ApprovalDraft>> {
+  return decideDraft(draftId, "revise", note);
+}
+
+/** Stops the draft. Nothing will be sent. */
+export function cancelDraft(draftId: string, note = ""): Promise<ApiResult<ApprovalDraft>> {
+  return decideDraft(draftId, "cancel", note);
 }
 
 /**

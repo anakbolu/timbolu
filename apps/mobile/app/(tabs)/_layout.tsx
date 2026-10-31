@@ -4,12 +4,10 @@ import { Tabs } from "expo-router";
 import { useAuth } from "@/lib/auth";
 
 /**
- * The workspace's tabs. One tab today — the list of Bolu — because the rest of
- * the screens are the next issues; the group exists now so a second tab is a
- * file, not a restructure.
- *
+ * The workspace's tabs: the list of Bolu and the drafts waiting for a decision.
  * There are no icons: the only icon source this scaffold could use is a package
- * the issue deliberately leaves out.
+ * the issue deliberately leaves out. The approval tab's badge is set by that
+ * screen from the count its own list answered with.
  */
 export default function TabsLayout() {
   const { signOut } = useAuth();
@@ -27,6 +25,10 @@ export default function TabsLayout() {
             </Pressable>
           ),
         }}
+      />
+      <Tabs.Screen
+        name="approval"
+        options={{ title: "Persetujuan", tabBarLabel: "Persetujuan" }}
       />
     </Tabs>
   );
