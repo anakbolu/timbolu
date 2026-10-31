@@ -638,7 +638,6 @@ where the platform default is used only when the workspace configured nothing.
 | `POST /llm/providers/:id/test` | bearer + tenant | owner, admin | Calls the provider once and returns its capabilities; the call is recorded |
 | `GET /llm/usage?days=30` | bearer + tenant | any | Per-day totals: calls, tokens, cache tokens, cost (micro-rupiah) |
 | `GET /llm/usage/report?days=30&limit=25` | bearer + tenant | any | One window read three ways: `totals`, `by_agent`, `by_task`. `format=csv` returns the same read as a file |
-| `GET /tasks/attention?limit=50` | bearer + tenant | any | The tasks that need a person — `failed`, `stuck`, `waiting` — each with a `temporal_url` |
 | `GET /agents/:id/model` | bearer + tenant | any | The Bolu's override, never the key itself |
 | `PUT /agents/:id/model` | bearer + tenant | owner, admin | `{provider_id?, adapter?, base_url?, model?, api_key?, max_tokens?}` |
 
@@ -1089,25 +1088,35 @@ and records every round. It runs as a Temporal workflow, so it survives a worker
 restart, waits for an approval for hours without holding a connection, and stops
 on a bound with a reason a person can read.
 
-```
-POST /api/tasks            — not exposed: a task is opened by chat, a routine,
-                             a webhook, or another task, never by a browser
-GET  /api/tasks            — the workspace history, newest first
-GET  /api/tasks/:id        — one task
-GET  /api/tasks/:id/steps  — the recorded rounds, in order
-GET  /api/tasks/:id/children — the tasks this one handed work to
-GET  /api/tasks/attention  — the work that needs a person, with a Temporal link
-POST /api/tasks/:id/cancel — stop a task that has not finished
-```
+`POST /tasks` is not exposed: a task is opened by chat, a routine, a webhook, or
+another task, never by a browser. A client that could open one directly could
+claim a trigger that never happened.
 
-All of them need a bearer token and an active workspace; the routes answer 503
-with `task_not_configured` when the runtime is not wired.
+| Endpoint | Auth | Role | Notes |
+| --- | --- | --- | --- |
+| `GET /tasks` | bearer + tenant | any | The workspace history, newest first (`created_at DESC, id DESC`); `meta.count` |
+| `GET /tasks/:taskID` | bearer + tenant | any | One task |
+| `GET /tasks/:taskID/steps` | bearer + tenant | any | The recorded rounds in `seq` order; `meta.count` |
+| `GET /tasks/:taskID/children` | bearer + tenant | any | The tasks this one handed work to, oldest first |
+| `POST /tasks/:taskID/cancel` | bearer + tenant | any | No body; stops a task that has not finished, and a finished one is `400 invalid_input` (`tugas sudah selesai`) |
+| `GET /tasks/attention?limit=50` | bearer + tenant | any | The tasks that need a person — `failed`, `stuck`, `waiting` — each with a `temporal_url` |
 
-`GET /api/tasks` filters: `status`, `live=true` (queued, running, or waiting),
+Every one of them sits on the tenant group, so the guards are the tenant's: a
+bearer token, an active workspace, and **any workspace role** — reading the
+history or stopping a task is not an owner's decision. The routes answer `503
+task_not_configured` when the runtime is not wired.
+
+An id that is not a uuid is `400 invalid_input`. `GET /tasks/:taskID`,
+`POST /tasks/:taskID/cancel` and `GET /tasks/:taskID/steps` answer `404
+task_not_found` for an id that does not exist in this workspace; `steps` reads
+the task first for exactly that reason. `children` does not read the parent, so
+an unknown or foreign id answers `[]` rather than `404`.
+
+`GET /tasks` filters: `status`, `live=true` (queued, running, or waiting),
 `agent_id`, `parent_task_id`, `limit` (default 50, max 200). An unknown status is
 refused with `invalid_input` rather than ignored.
 
-`GET /api/tasks/attention` is one question — "what is waiting on me?" — rather
+`GET /tasks/attention` is one question — "what is waiting on me?" — rather
 than three, because a person who asked for the stuck, the parked, and the failed
 separately would read three lists that disagreed about their own paging. It reads
 the failures and the live tasks, and keeps only the live ones that are not going to
@@ -1125,18 +1134,79 @@ break in production. It is absent when the deployment named no UI, and on a task
 that never reached the engine — a link to a workflow that does not exist would be
 worse than no link.
 
-A task payload carries `trigger` (`chat`, `routine`, `webhook`, `handoff`),
-`status`, and a derived `health`:
+### What one task looks like
+
+| Field | Meaning |
+| --- | --- |
+| `task_id` | The task |
+| `agent_id` | The Bolu that runs it |
+| `parent_task_id` | Present only on a handoff child |
+| `conversation_id` | Present when a chat message opened the task |
+| `trigger` | `chat`, `routine`, `webhook`, or `handoff` |
+| `title` | The label the feed shows |
+| `status` | The stored state, below |
+| `health` | The state a screen shows, derived below |
+| `depth` | `0` for a root task, one more per handoff |
+| `summary` | The answer, once the task has one |
+| `stopped_reason` | Why it stopped, in Indonesian, on a `failed` or `canceled` task |
+| `waiting_reason`, `waiting_draft_id` | Why it is parked and which draft the decision is about |
+| `workflow_id`, `temporal_run_id` | The Temporal identity, once the engine has the task |
+| `step_count`, `input_tokens`, `output_tokens`, `cost_micros` | What it recorded and spent; cost is micro-rupiah |
+| `started_at`, `finished_at`, `heartbeat_at` | RFC3339Nano, each absent until it happens |
+| `created_at` | When it was opened |
+
+Optional fields are omitted rather than sent empty, so a missing field is a fact:
+a task without `workflow_id` never reached the engine, and one without
+`waiting_draft_id` is not parked on a draft.
+
+`status` is stored; only `queued`, `running` and `waiting_approval` are live,
+which is what `live=true` selects:
+
+| Status | Meaning |
+| --- | --- |
+| `queued` | Accepted, no worker has picked it up |
+| `running` | A worker is doing it |
+| `waiting_approval` | Parked on a human decision |
+| `succeeded` | Finished with an answer |
+| `failed` | Stopped without one; `stopped_reason` says why |
+| `canceled` | Stopped by a person through `POST /tasks/:taskID/cancel` |
+
+`health` is derived, never stored:
 
 | `health` | Stored status | Meaning |
 | --- | --- | --- |
 | `running` | `queued`, `running` | Working, and its heartbeat is fresh |
 | `waiting` | `waiting_approval` | Parked on a human decision |
 | `stuck` | `queued`, `running` | No heartbeat for five minutes: the worker died |
+| `done` | `succeeded`, `failed`, `canceled` | Finished; it occupies no Bolu |
 
-`health` is derived from `heartbeat_at`, never stored: the status alone cannot
-tell a working task from one whose worker was evicted, because both read
-`running`.
+`health` is derived from `heartbeat_at` because the status alone cannot tell a
+working task from one whose worker was evicted, and both read `running`.
+`display_status` is not part of this payload: it belongs to the agent
+(`GET /agents`), where it folds the Bolu's own state together with the tasks and
+drafts that reference it.
+
+### What one step looks like
+
+| Field | Meaning |
+| --- | --- |
+| `step_id` | The step |
+| `seq` | Its position in the task, from 1; rounds are read in this order |
+| `kind` | `think`, `tool_call`, `tool_result`, `draft`, or `final` |
+| `tool_name`, `tool_label` | Present on a tool round; the label is `read`, `write_internal`, or `write_external` |
+| `input`, `output` | The document the runtime recorded, verbatim |
+| `pruned` | The retention job removed `input` and `output`; the step keeps its shape |
+| `created_at` | RFC3339Nano |
+| `input_tokens`, `output_tokens` | What the round spent; only a `think` round carries output tokens |
+
+### Why `/tasks/attention` is registered before `/tasks/:taskID`
+
+Both routers match in registration order, so the order in `routes` is
+load-bearing rather than cosmetic. With `/tasks/:taskID` registered first, it
+would claim `/tasks/attention` and the list would be unreachable: `"attention"`
+would be parsed as an id and refused with `400 invalid_input` before the
+attention handler ever ran. The registration order in the handler, and the
+comment beside it, exist for that reason in both trees.
 
 ### What one task may spend
 
