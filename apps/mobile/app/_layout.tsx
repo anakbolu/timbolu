@@ -16,8 +16,8 @@ import {
 
 /**
  * The root: one stack, holding the gate (`index`), the sign-in form, the tabbed
- * workspace, and the chat screen opened from it, plus the reader that turns an
- * incoming link into a destination.
+ * workspace, and the chat, draft and task screens opened from it, plus the reader
+ * that turns an incoming link into a destination.
  */
 export default function RootLayout() {
   return (
@@ -33,6 +33,10 @@ export default function RootLayout() {
         <Stack.Screen
           name="draft/[draftID]"
           options={{ headerShown: true, headerTitle: "Draf", headerBackTitle: "Persetujuan" }}
+        />
+        <Stack.Screen
+          name="task/[taskID]"
+          options={{ headerShown: true, headerTitle: "Tugas", headerBackTitle: "Tugas" }}
         />
       </Stack>
       <IncomingLinks />
@@ -78,7 +82,14 @@ function IncomingLinks() {
     if (target === null) return;
     const destination = destinationFor(target);
     setLinkNotice(destination.notice);
-    router.replace(destination.pathname);
+    // The id travels as a route param rather than through the path string, so
+    // the screen reads it from `useLocalSearchParams` like every other screen
+    // opened by id in this app.
+    if (destination.kind === "task") {
+      router.replace({ pathname: "/task/[taskID]", params: { taskID: destination.taskID } });
+      return;
+    }
+    router.replace("/(tabs)/bolu");
   }, [status, pending]);
 
   return null;
