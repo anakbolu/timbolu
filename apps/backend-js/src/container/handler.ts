@@ -18,7 +18,7 @@ import type { MiddlewareHandler } from "hono";
 import type { AppEnv } from "../platform/context.ts";
 import { error as errorEnvelope } from "../platform/response.ts";
 import type { Container } from "./container.ts";
-import { requirePlatformAdmin, requireRole, requireStreamAuth, requireTenant, requireUser, requireVerified, type GuardDeps } from "./middleware-auth.ts";
+import { requireActiveSubscription, requirePlatformAdmin, requireRole, requireStreamAuth, requireTenant, requireUser, requireVerified, type GuardDeps } from "./middleware-auth.ts";
 import { isAdminRole } from "../modules/admin/domain/admin.ts";
 
 import { routes as healthRoutes } from "../modules/health/handler/handler.ts";
@@ -60,6 +60,7 @@ function guards(c: Container): GuardDeps {
   return {
     auth: c.authService as any,
     workspace: c.workspaceService as any,
+    billing: c.billingService,
     requireEmailVerification: c.config.auth.requireEmailVerification,
     isPlatformAdmin: isAdminRole,
   };
@@ -172,6 +173,13 @@ export function registerRoutes(app: Hono<AppEnv>, c: Container): void {
   if (!c.checklist) pending.push(["/checklists*", "checklists are not configured", "checklist_not_configured"]);
   if (!c.device) pending.push(["/devices*", "devices are not configured", "device_not_configured"]);
 
+  // Active workspace required. The subscription guard runs here rather than
+  // inside each service, because "everything that writes stops" is one decision
+  // about the workspace rather than thirty about its endpoints — and thirty
+  // copies would be thirty places for a new endpoint to forget. The billing
+  // routes stay reachable because `requireActiveSubscription` exempts them by
+  // path; see its comment for why a workspace that cannot pay must be able to
+  // reach the call that fixes it.
   const tenant = withGuards((g) => {
     if (c.workspace) workspaceTenant(g, c.workspace);
     if (c.agent) agentRoutes(g, c.agent);
@@ -190,7 +198,7 @@ export function registerRoutes(app: Hono<AppEnv>, c: Container): void {
     // Modules not wired answer 503 on their documented paths rather than 404, so a
     // screen that asks for one says "not configured" instead of looking like a typo.
     for (const [path, message, code] of pending) g.all(path, unavailable(message, code));
-  }, requireUser(deps), requireTenant(deps));
+  }, requireUser(deps), requireTenant(deps), requireActiveSubscription(deps, prefix));
 
   // --- role groups, registered last -----------------------------------------
   const managers = withGuards((g) => {
@@ -200,12 +208,12 @@ export function registerRoutes(app: Hono<AppEnv>, c: Container): void {
     if (c.chat) chatManager(g, c.chat);
     if (c.order) orderManager(g, c.order);
     if (c.approval) approvalManager(g, c.approval);
-  }, requireUser(deps), requireTenant(deps), requireRole("owner", "admin"));
+  }, requireUser(deps), requireTenant(deps), requireActiveSubscription(deps, prefix), requireRole("owner", "admin"));
 
   const owners = withGuards((g) => {
     if (c.workspace) workspaceOwner(g, c.workspace);
     if (c.retention) retentionOwner(g, c.retention);
-  }, requireUser(deps), requireTenant(deps), requireRole("owner"));
+  }, requireUser(deps), requireTenant(deps), requireActiveSubscription(deps, prefix), requireRole("owner"));
 
   // The live stream carries its own authentication because a browser cannot set
   // a header on a WebSocket or an EventSource: the token and the workspace travel
