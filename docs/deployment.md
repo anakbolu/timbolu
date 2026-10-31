@@ -308,6 +308,16 @@ The gateway's environment carries the seam in the direction it does not already 
 gateway with. `INTERNAL_ADDRESS=:8091` on `timbolu-backend` is what makes that listener exist; it is
 never published, and leaving it empty is what a deployment without a gateway wants.
 
+**The push kill switch is a separate value on every service that can send one.** `apps/backend-js`
+reads `PUSH_ENABLED` once, in each process, so setting it on one service is not enough: a finished
+task is announced by the agent worker, a new draft by whichever process recorded it, and a value that
+lives only on `timbolu-backend` leaves the worker's notifications silent. Set it on
+`timbolu-backend` and on the worker that sends the event.
+
+| Variable | Value | Why |
+| --- | --- | --- |
+| `PUSH_ENABLED` | `true` to send — off when unset | Only the literal `true`, case-insensitive and trimmed, lets a notification leave the process for `exp.host`; unset, empty, `1` and `yes` all keep it silent, and the process logs that at startup so a phone that never rang has an explanation. The device registry is unaffected: `POST /devices` still stores and revokes addresses while sending is off. The contract is [api.md](./api.md), § Kill switch pengiriman. |
+
 The migration job runs before the others and they wait for it, so the schema is applied before a new
 image serves traffic — the same order as the release flow, and for the same reason. Note what the wait
 covers: the workflow waits for the migration to be *triggered*, not for it to finish, because the
