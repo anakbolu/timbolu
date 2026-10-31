@@ -5,10 +5,15 @@ terbuka, dan dengan id apa. Tanpa kontrak, app Expo dan web akan menebak URL sen
 notifikasi yang membuka layar salah lebih buruk daripada notifikasi yang tidak datang: orang
 mengira pekerjaannya hilang.
 
-Dokumen ini **kontrak, bukan implementasi**. Belum ada app Expo di repo ini, `notification.pending`
-belum punya produsen, dan `routine.run` baru ada sebagai nama. Yang ditetapkan di sini adalah bentuk
-yang harus dipenuhi saat bagian-bagian itu dibangun. Nama event selalu bisa dicek di
-`packages/contracts/events.ts` dan `docs/api.md` (§ The stream).
+Dokumen ini **kontrak, bukan implementasi**. App Expo-nya sudah ada sejak #488: `apps/mobile`
+memakai Expo SDK 57 dan `expo-router`, dengan layar `index` (gerbang sesi), `login`, `(tabs)/bolu`,
+dan `chat/[agentID]`; detailnya di `docs/mobile.md`. `scheme` `bolu` juga sudah dideklarasikan di
+`apps/mobile/app.json`. Yang belum ada adalah penanganan link masuk: tidak ada `+not-found` di
+`apps/mobile/app` dan tidak ada listener `Linking`/`useURL` yang memetakan URL masuk ke layar, jadi
+hari ini app tidak membuka link apa pun. `notification.pending` juga belum punya produsen, dan
+`routine.run` baru ada sebagai nama. Yang ditetapkan di sini adalah bentuk yang harus dipenuhi saat
+bagian-bagian itu dibangun. Nama event selalu bisa dicek di `packages/contracts/events.ts` dan
+`docs/api.md` (§ The stream).
 
 Route group `(workspace)` tidak menambah segmen ke URL: `app/(workspace)/tasks/[taskID]/page.tsx`
 dilayani sebagai `/tasks/<task_id>`. Itu sebabnya tabel di bawah memakai path publik, bukan path
@@ -137,6 +142,19 @@ ada di `apps/frontend/src/lib/friendly-error.ts` (`INVALID_LINK.agent`, `NOT_FOU
 dipakai `components/chat/chat-view.tsx` (`openFailure`); 404 untuk Bolu asing ditutup #455, layar
 keadaannya #456.
 
+## Status implementasi app
+
+Keadaan `apps/mobile` hari ini, dicocokkan ke berkas:
+
+- App ada sejak #488: `apps/mobile` memakai Expo SDK 57 dan `expo-router` (`apps/mobile/package.json`, `main` `expo-router/entry`), dengan `scheme` `bolu` dan plugin `expo-router` di `apps/mobile/app.json`. Ringkasannya di `docs/mobile.md`.
+- `app/index.tsx` bukan layar berisi: ia gerbang yang menunggu pemulihan sesi lalu mengalihkan ke `(tabs)/bolu` atau `/login`.
+- `app/login.tsx` form masuk; `app/(tabs)/bolu.tsx` daftar Bolu; `app/chat/[agentID].tsx` satu obrolan.
+- Token: refresh token disimpan di `expo-secure-store` (`apps/mobile/src/lib/tokens.ts`), access token hanya di memori, dan refresh dikirim lewat body `POST /auth/refresh` tanpa cookie (`apps/mobile/src/lib/api.ts`, `refreshSession`).
+- Gate CI: job `mobile` di `.github/workflows/checks.yml` menjalankan `make typecheck-mobile` (#493).
+- Belum: penanganan link masuk. Tidak ada `+not-found` di `apps/mobile/app`, dan tidak ada listener `Linking`/`useURL` yang memetakan URL ke layar; satu-satunya pemakaian `expo-linking` adalah `openURL` ke `/onboarding` di `app/(tabs)/bolu.tsx`.
+- Belum: push notification dan registrasi `POST /devices`; endpoint-nya ada, kliennya belum.
+- Belum: streaming SSE/WebSocket (`/events/stream`, `/events/socket`); obrolan memuat ulang setelah kirim (`docs/mobile.md`).
+
 ## Skema `bolu://`
 
 | Link | `<id>` | Layar yang dibuka | Padanan web hari ini |
@@ -179,6 +197,13 @@ Perilaku per resource saat resource tidak bisa dibuka:
 Universal link adalah jalur yang dipakai notifikasi. Bentuknya `https://timbolu.com/<path>`, host
 yang sama dengan web hari ini (`apps/frontend` dilayani di `timbolu.com`, dan API-nya di host yang
 sama — lihat `docs/deployment.md`). Pemetaannya diturunkan dari route yang benar-benar ada:
+
+App hari ini belum memetakan link apa pun, baik `bolu://` maupun universal link. Selama penanganan
+link masuk belum ditulis, yang berlaku bila sebuah link membuka app adalah perilaku bawaan
+`expo-router`: URL dipetakan ke path berkas layar (`/chat/<id>` ke `app/chat/[agentID].tsx`, dan
+seterusnya), tanpa penerjemahan ke tabel di bawah dan tanpa penanganan link tertunda. Path yang tidak
+punya berkas layar tidak punya tujuan, karena repo ini belum punya `+not-found`. Tabel berikut adalah
+target yang harus dipenuhi app, bukan deskripsi perilakunya sekarang.
 
 | Universal link | Layar app | Catatan |
 | --- | --- | --- |
@@ -250,9 +275,9 @@ atau di app nanti.
 ### Identitas app yang belum diketahui
 
 Apple Team ID, bundle id iOS, package name Android, dan SHA-256 sertifikat Android belum ada di repo
-ini (tidak ada proyek Expo, `app.json`, atau `eas.json`). Apple Team ID dan bundle id menunggu akun
-Apple Developer; package name dan SHA-256 menunggu Play Console atau keystore rilis. Lihat bagian
-berikut.
+ini. `apps/mobile/app.json` sudah ada, tetapi tidak mendeklarasikan `ios.bundleIdentifier` maupun
+`android.package`, dan belum ada `eas.json`. Apple Team ID dan bundle id menunggu akun Apple
+Developer; package name dan SHA-256 menunggu Play Console atau keystore rilis. Lihat bagian berikut.
 
 ## Berkas well-known
 
