@@ -540,7 +540,7 @@ to ignore.
 | `GET /agents/tool-catalog` | bearer | any | Every known tool with its label |
 | `GET /agents/integrations` | bearer + tenant | any | The workspace's connected apps |
 | `GET /agents/:id` | bearer + tenant | any | One Bolu with its derived status and the reason |
-| `POST /agents` | bearer + tenant | owner, admin | `{team_id, name?, template_key?, copy_from?, persona?, role?}` |
+| `POST /agents` | bearer + tenant | owner, admin | `{team_id, name?, template_key?, copy_from?, persona?, role?, shape?}` |
 | `PATCH /agents/:id` | bearer + tenant | owner, admin | Profile: name, role, persona, tone, shape, color, tools, default_model |
 | `PUT /agents/order` | bearer + tenant | owner, admin | The sidebar's layout: `{teams: [{team_id, agent_ids}]}`, every live Bolu exactly once. Answers with the stored teams |
 | `PATCH /agents/:id/status` | bearer + tenant | owner, admin | `{status: "active" \| "resting"}` |
@@ -554,6 +554,28 @@ A `POST /agents` whose `template_key` names no seeded profile is refused with
 `400 invalid_input` and a message naming the key, while a `copy_from` that names
 no Bolu stays `404 agent_not_found`: the key is a value in the body, the copied
 Bolu is an object the client named.
+
+### A Bolu's body is one of sixteen shapes
+
+`shape` is the name of the body the renderer draws, and the sixteen valid names
+are, in the reference's order:
+
+```
+kacang  hantu  gumpal  awan  daun  percik  bintang  genangan
+melambai  tetes  mochi  bulat  kotak  segitiga  hati  kucing
+```
+
+A Bolu created without a `shape` gets `kacang`. A `PATCH /agents/:id` carrying any
+other value is refused with `400 invalid_input` and a message naming the value, so
+a typo surfaces on the write that made it instead of turning into a body nobody
+drew. Reads stay forgiving: a stored value that is not in this list — an older
+row, or a value written before this rule — is drawn as `kacang`
+(`charSVG()` falls back to the default), because one stale row must not take a
+whole screen down.
+
+The names have one source, `packages/bolu-character/names.ts`, shared by web and
+app; the geometry for each name lives beside it in `characters.ts`. Adding or
+renaming a shape means changing that list, not a copy of it.
 
 ### Display status is derived, never stored
 
