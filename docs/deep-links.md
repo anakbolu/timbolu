@@ -259,10 +259,12 @@ Sisi app dari universal link sudah terpasang sejak #540: `apps/mobile/app.json` 
 `ios.associatedDomains` (`applinks:timbolu.com`) dan `android.intentFilters` dengan
 `autoVerify: true` untuk host `timbolu.com`, dan `apps/mobile/src/lib/deep-link.ts`
 (`parseIncomingLink`) menerima URL `https://timbolu.com/...` yang punya tujuan di app — bentuk
-`/tasks/<id>`, `/approval/<id>`, `/routines/<id>`, dan `/chat` dengan `?agent=` atau
-`?conversation=` — sebagai sumber kedua di samping `bolu://`. `apps/mobile/app/+native-intent.tsx`
-mengembalikan `null` untuk URL itu supaya router tidak memetakan path web ke berkas layar; URL
-https lain tetap ditangani router.
+`/tasks/<id>`, `/approval/<id>`, `/routines/<id>`, dan `/chat?conversation=<id>` — sebagai sumber
+kedua di samping `bolu://`. `/chat?agent=<id>` belum dipetakan: `?agent=` menyebut id Bolu,
+sedangkan target link harus menyebut id obrolan, jadi `parseUniversalLink` mengembalikan
+`fallback("unknown-path")` dan link itu mendarat di daftar Bolu dengan notis, sama seperti
+`bolu://chat/<id>`. `apps/mobile/app/+native-intent.tsx` mengembalikan `null` untuk URL itu supaya
+router tidak memetakan path web ke berkas layar; URL https lain tetap ditangani router.
 
 Yang belum: kedua berkas well-known belum disajikan `timbolu.com`, jadi platform belum
 memverifikasi app sebagai pemilik domain itu dan mengetuk link masih membuka browser. Identitas app
