@@ -28,8 +28,17 @@ Perintah lain:
 
 ```bash
 npx tsc --noEmit   # typecheck; hijau adalah syarat PR
+npm run export:ios # membentuk bundle iOS; membuktikan babel.config.js, plugin, dan app.json masih bisa dipakai
 npx expo-doctor    # memeriksa versi paket terhadap SDK
 ```
+
+`babel-preset-expo` ditulis eksplisit di `devDependencies` walaupun `expo` sudah
+bergantung padanya: npm bisa memasang salinannya di bawah
+`node_modules/expo/node_modules/` alih-alih di root,
+sementara Babel menyelesaikan nama preset dari `apps/mobile/babel.config.js` —
+tanpa deklarasi sendiri, `npx expo export` berhenti dengan `Cannot find module
+'babel-preset-expo'` (#545). Versinya `~57.0.16`, lini yang sama dengan
+`expo ~57.0.31`; `babel-preset-expo` 58.x sejalan dengan SDK 58, bukan SDK ini.
 
 `bun install` menulis lockfile, dan lockfile-nya sengaja tidak masuk repo
 (lihat `.gitignore`) supaya diff scaffold ini bisa dibaca. Setiap orang yang
