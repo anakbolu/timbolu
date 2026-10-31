@@ -38,6 +38,10 @@ export default function RootLayout() {
           name="task/[taskID]"
           options={{ headerShown: true, headerTitle: "Tugas", headerBackTitle: "Tugas" }}
         />
+        <Stack.Screen
+          name="routine/[routineID]"
+          options={{ headerShown: true, headerTitle: "Rutinitas", headerBackTitle: "Rutinitas" }}
+        />
       </Stack>
       <IncomingLinks />
     </AuthProvider>
