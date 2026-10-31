@@ -34,7 +34,9 @@ that instant without waiting for the clock (#475) — but it does not reset the 
 `EventSource` `onopen` proves only a `200`: production answered that and closed 32 ms later (#314), so
 SSE earns `live` only after surviving `HEALTHY_AFTER_MS = 5000`, or earlier if it delivers a frame
 first. Either way a transport that dies before the clock is a failure, and the retry budget is not
-reset. The five `RealtimeStatus` values and the labels the chat screen renders are documented in
+reset. None of this says an event will arrive — `live` is a claim about the transport, not about the
+path — so [`live` bukan bukti event sampai](#live-bukan-bukti-event-sampai) below is how to test the
+path itself. The five `RealtimeStatus` values and the labels the chat screen renders are documented in
 [api.md](./api.md#status-realtime-di-klien).
 
 **Why a reconnect is cheap.** Both URLs carry `last_event_id`, taken from `readLastEventId()` in the
@@ -158,6 +160,90 @@ the transport survives `HEALTHY_AFTER_MS` or delivers one frame (there is no han
 this path), and events keep arriving. If the page instead stays on `reconnecting` or goes `slow`
 while `/events/stream` answers `: connected`, the problem is on the SSE side rather than the socket.
 
+## `live` bukan bukti event sampai
+
+`live` hanya berarti transport-nya terbuka. Status itu tidak membuktikan jalur publish→subscribe
+hidup.
+
+`: connected` adalah komentar pertama SSE, `: keep-alive` dikirim setiap `Heartbeat = 25_000` dari
+`apps/backend-js/src/modules/chat/domain/event.ts`, dan `{"type":"ping"}` adalah heartbeat socket.
+Ketiganya ditulis server ke koneksi yang sudah ada, dan tidak satu pun melewati publish ke channel
+`ws:{workspace_id}` — `publisher.publish()` yang dipanggil `emit()` di
+`apps/backend-js/src/modules/chat/service/service.ts`. Handshake `101` juga tidak: ia membuktikan
+route terpasang dan `Bun.serve` punya `websocket`, bukan bahwa event berikutnya akan tiba. Karena itu
+stream bisa terbuka, `: connected` tercetak, heartbeat tetap datang, klien tetap `live`, dan pesan
+yang dikirim setelah stream terbuka tetap tidak pernah muncul — 25 detik pada SSE, 12 detik pada
+WebSocket (#504).
+
+## Membuktikan event benar-benar sampai
+
+Handshake hanya membuktikan koneksi. Jalur publish→subscribe dibuktikan dengan membuka stream di
+ujung feed, mengirim satu pesan dari terminal lain, lalu menunggu frame `message.new`-nya.
+
+Ambil id terakhir lebih dulu, supaya yang ditunggu hanya event yang baru dipublikasikan dan bukan
+replay backlog — backfill yang ikut terbaca akan lulus tanpa membuktikan publish. Variabel `BASE`,
+`TOKEN`, dan `WORKSPACE` sama seperti bagian handshake di atas; `CONVERSATION` adalah id obrolan yang
+bisa ditulis akun itu. `GET /events` membaca halaman maju dari `after_id`, jadi halaman harus
+dihabiskan dulu:
+
+```bash
+CONVERSATION=…
+LAST=0
+while :; do
+  PAGE=$(curl -s \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-Workspace-Id: $WORKSPACE" \
+    "$BASE/events?after_id=$LAST&limit=200" | jq -c '.data // []')
+  [ "$(printf '%s' "$PAGE" | jq 'length')" -eq 0 ] && break
+  LAST=$(printf '%s' "$PAGE" | jq 'map(.id) | max')
+done
+```
+
+Terminal 1 — buka SSE setelah id itu, dibatasi 25 detik:
+
+```bash
+curl -N -s --max-time 25 \
+  "$BASE/events/stream?workspace_id=$WORKSPACE&token=$TOKEN&last_event_id=$LAST"
+```
+
+Terminal 2 — kirim satu pesan tanpa meminta jawaban, supaya satu POST menghasilkan satu event:
+
+```bash
+curl -s -X POST "$BASE/conversations/$CONVERSATION/messages" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Workspace-Id: $WORKSPACE" \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"probe","reply":false}'
+```
+
+Body kirim yang dibaca handler adalah `text`, bukan `blocks` (`send` di
+`apps/backend-js/src/modules/chat/handler/handler.ts` membangun blok teks dari field itu). `reply:false`
+menahan balasan Bolu, jadi satu POST menambah tepat satu `message.new`.
+
+Lulus kalau terminal 1 mencetak frame bernama dalam 2 detik setelah POST, dengan `id:` lebih besar
+dari `$LAST`:
+
+```text
+id: 12347
+event: message.new
+data: {…}
+```
+
+Gagal kalau 25 detik habis tanpa frame bernama — walaupun `: connected` tercetak, backlog-nya datang,
+dan `: keep-alive` sempat muncul. Replay dari `activity_events` selalu benar meski publish mati, jadi
+backlog yang rapi tidak membuktikan apa pun soal live.
+
+Untuk socket, ulangi dengan klien WebSocket; `curl` di bagian handshake hanya bisa menunjukkan `101`,
+bukan frame:
+
+```bash
+WS=${BASE/http/ws}
+websocat "$WS/events/socket?workspace_id=$WORKSPACE&token=$TOKEN&last_event_id=$LAST"
+```
+
+`{"type":"ping"}` yang datang lebih dulu bukan bukti. Yang dicari tetap event dengan id di atas
+`$LAST`, dalam 2 detik setelah POST yang sama.
+
 ## Where the rest lives
 
 - [api.md](./api.md#the-stream) — the event types, what a frame carries, and the `after_id` replay.
@@ -167,3 +253,5 @@ while `/events/stream` answers `: connected`, the problem is on the SSE side rat
   and how to tell it apart from the Go tree.
 - [`apps/frontend/src/lib/realtime.ts`](../apps/frontend/src/lib/realtime.ts) — the client, which is
   the authority for every constant named here.
+- [Membuktikan event benar-benar sampai](#membuktikan-event-benar-benar-sampai) — dua terminal, satu
+  POST, dan frame `message.new` sebagai bukti; status `live` bukan bukti.
