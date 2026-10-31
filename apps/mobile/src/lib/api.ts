@@ -178,6 +178,84 @@ export type ApprovalDraft = {
   created_at: string;
 };
 
+/**
+ * The stored state of one task, matching the check constraint on `tasks.status`.
+ *
+ * `waiting_approval` is a state, not a health: the task is parked on a draft
+ * that a person has to decide, and it will not move until they do.
+ */
+export type TaskStatus =
+  | "queued"
+  | "running"
+  | "waiting_approval"
+  | "succeeded"
+  | "failed"
+  | "canceled";
+
+/** How a live task looks right now; the server derives it from the heartbeat. */
+export type TaskHealth = "running" | "waiting" | "stuck" | "done";
+
+/** What opened the task. A task is never created by a client. */
+export type TaskTrigger = "chat" | "routine" | "webhook" | "handoff";
+
+/**
+ * One unit of work a Bolu ran.
+ *
+ * `status` and `health` are deliberately separate: a worker that died leaves
+ * `running` stored while the heartbeat says `stuck`, and a screen that showed
+ * only the status would present abandoned work as work in progress.
+ */
+export type Task = {
+  task_id: string;
+  agent_id: string;
+  parent_task_id?: string;
+  conversation_id?: string;
+  trigger: TaskTrigger;
+  title: string;
+  status: TaskStatus;
+  health: TaskHealth;
+  depth: number;
+  summary?: string;
+  stopped_reason?: string;
+  waiting_reason?: string;
+  waiting_draft_id?: string;
+  workflow_id?: string;
+  temporal_run_id?: string;
+  step_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_micros: number;
+  started_at?: string;
+  finished_at?: string;
+  heartbeat_at?: string;
+  created_at: string;
+};
+
+/** One recorded round, matching the check constraint on `task_steps.kind`. */
+export type TaskStepKind = "think" | "tool_call" | "tool_result" | "draft" | "final";
+
+/**
+ * One round of a task: the model thinking, a tool being called or answering, a
+ * draft it parked on, or its answer.
+ *
+ * `pruned` means the retention job removed `input`/`output`; the round's shape
+ * stays so the history still reads as a history. Empty and pruned are different
+ * facts and the screen says which one it is looking at.
+ */
+export type TaskStep = {
+  step_id: string;
+  seq: number;
+  kind: TaskStepKind;
+  tool_name?: string;
+  tool_label?: string;
+  input?: unknown;
+  output?: unknown;
+  pruned: boolean;
+  created_at: string;
+  input_tokens: number;
+  output_tokens: number;
+};
+
 type Envelope<T> = {
   success: boolean;
   message: string;
@@ -695,6 +773,46 @@ export function rejectDraft(draftId: string, note: string): Promise<ApiResult<Ap
 /** Stops the draft. Nothing will be sent. */
 export function cancelDraft(draftId: string, note = ""): Promise<ApiResult<ApprovalDraft>> {
   return decideDraft(draftId, "cancel", note);
+}
+
+/**
+ * The workspace's task history, newest first.
+ *
+ * A task is opened by chat, a routine, a webhook, or another task — never by a
+ * client — so this reads what already happened rather than starting anything.
+ * `limit` is left to the server when absent, whose default is 50 and whose cap
+ * is 200.
+ */
+export async function listTasks(
+  options: { agent_id?: string; limit?: number } = {},
+): Promise<ApiResult<Task[]>> {
+  const workspaceId = await ensureWorkspace();
+  if (!workspaceId) return NO_WORKSPACE;
+
+  // Query parts are built by hand rather than with `URLSearchParams`: React
+  // Native ships a partial polyfill whose `toString()` has been unreliable, and
+  // the ids and limits here are simple enough to encode one at a time.
+  const params: string[] = [];
+  if (options.agent_id !== undefined && options.agent_id !== "") {
+    params.push(`agent_id=${encodeURIComponent(options.agent_id)}`);
+  }
+  if (options.limit !== undefined) params.push(`limit=${options.limit}`);
+  const query = params.length > 0 ? `?${params.join("&")}` : "";
+  return request<Task[]>(`/tasks${query}`, { workspace: workspaceId });
+}
+
+/** One task by id. A task outside this workspace answers `task_not_found`. */
+export async function getTask(taskID: string): Promise<ApiResult<Task>> {
+  const workspaceId = await ensureWorkspace();
+  if (!workspaceId) return NO_WORKSPACE;
+  return request<Task>(`/tasks/${taskID}`, { workspace: workspaceId });
+}
+
+/** A task's recorded rounds, in the order they happened. */
+export async function listTaskSteps(taskID: string): Promise<ApiResult<TaskStep[]>> {
+  const workspaceId = await ensureWorkspace();
+  if (!workspaceId) return NO_WORKSPACE;
+  return request<TaskStep[]>(`/tasks/${taskID}/steps`, { workspace: workspaceId });
 }
 
 /**

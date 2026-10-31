@@ -1,10 +1,12 @@
 /**
  * Where a parsed link lands in this build, and what the landing screen says.
  *
- * Every target currently lands on the Bolu list: the app has no task, approval,
- * routine, or conversation-by-id screen yet (issue #499, "Di luar scope"). The
- * sentences live here so the same news is not written three times, and so a
- * later issue can swap one branch for a real screen without hunting for copy.
+ * A task link now has a screen of its own (`app/task/[taskID].tsx`). The other
+ * three still land on the Bolu list: chat needs a conversation-by-id screen
+ * (`chat/[agentID]` opens from an *agent* id), approval's screen exists but its
+ * link is mapped separately, and routine has no screen at all. The sentences live
+ * here so the same news is not written three times, and so a later issue can swap
+ * one branch for a real screen without hunting for copy.
  */
 
 import type { LinkTarget } from "@/lib/deep-link";
@@ -23,16 +25,25 @@ const MISSING_SCREEN_NOTICE =
 
 const UNKNOWN_LINK_HINT = `${UNKNOWN_LINK_NOTICE} Pilih Bolu di bawah untuk melanjutkan.`;
 
-export type LinkDestination = {
-  pathname: "/(tabs)/bolu";
-  notice: string;
-};
+/**
+ * A destination is either the Bolu list with a sentence, or a detail screen that
+ * reads its id from the route. `notice: null` clears a banner an earlier link
+ * left behind — the screen it lands on says everything that needs saying.
+ */
+export type LinkDestination =
+  | { kind: "list"; notice: string }
+  | { kind: "task"; taskID: string; notice: null };
 
 export function destinationFor(target: LinkTarget): LinkDestination {
   // Rule 5: an unknown path falls to the list, not to an error screen. A bad id
   // is the same news for the person holding the phone — the id is a schema
   // detail, not a state they can act on.
-  if (target.kind === "fallback") return { pathname: "/(tabs)/bolu", notice: UNKNOWN_LINK_HINT };
+  if (target.kind === "fallback") return { kind: "list", notice: UNKNOWN_LINK_HINT };
 
-  return { pathname: "/(tabs)/bolu", notice: MISSING_SCREEN_NOTICE };
+  // The screen decides what a missing or foreign task reads like
+  // (`task_not_found` and `invalid_input` are the same "Tugas tidak ditemukan"
+  // there), so the link itself carries no notice.
+  if (target.kind === "task") return { kind: "task", taskID: target.taskID, notice: null };
+
+  return { kind: "list", notice: MISSING_SCREEN_NOTICE };
 }
