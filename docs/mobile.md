@@ -252,17 +252,21 @@ dengan tombol "Kembali ke daftar tugas".
 Semua ini sengaja di luar potongan pertama:
 
 - **Push notification** dan registrasi `POST /devices` (endpoint-nya sudah ada).
-- **Universal link yang hidup** — app sudah mendeklarasikan `timbolu.com` dan
-  membaca URL `https://timbolu.com/...` sejak #540, tetapi kedua berkas
-  well-known (`apple-app-site-association`, `assetlinks.json`) belum disajikan
-  di prod dan identitas app belum ada di repo. Selama itu mengetuk link masih
-  membuka browser, dan link belum pernah dibuktikan di perangkat. Bentuk dan
-  syaratnya ada di [deep-links.md](deep-links.md) § Universal link.
-- **Layar untuk target `bolu://`** — `chat/<conversation_id>` masih belum bisa
-  dibedakan dari `chat/<id Bolu>`, jadi tautan obrolan tetap mendarat di daftar
-  Bolu dengan pemberitahuan (§ Link masuk `bolu://`). `task`, `approval`, dan
-  `routine` sudah punya layar dan tautannya sudah dipetakan ke sana:
-  `/task/[taskID]`, `/draft/[draftID]`, dan `/routine/[routineID]`.
+- **Universal link yang hidup** — kedua berkas well-known
+  (`apple-app-site-association`, `assetlinks.json`) sudah dilayani produksi
+  sejak #548 (`200 application/json`), tetapi isinya masih
+  `{"applinks":{"details":[]}}` dan `[]` karena identitas app (Team ID Apple /
+  SHA-256 sertifikat Android) belum diisi lewat env deployment. Selama itu link
+  `https://timbolu.com/...` belum mengklaim app apa pun, mengetuknya masih
+  membuka browser, dan universal link belum pernah dibuktikan di perangkat
+  karena belum ada build bertanda tangan. Bentuk dan syaratnya ada di
+  [deep-links.md](deep-links.md) § Universal link.
+- **Layar untuk target `bolu://`** — `task`, `approval`, `routine`, dan
+  `chat/<conversation_id>` sudah punya layar dan tautannya sudah dipetakan ke
+  sana: `/task/[taskID]`, `/draft/[draftID]`, `/routine/[routineID]`, serta
+  `/chat/thread/[conversationID]` (#557; meneruskan obrolan 1:1 ke
+  `/chat/<agent_id>`). Yang belum punya layar adalah obrolan grup/thread, jadi
+  percakapan grup berakhir di kalimat penjelas dengan tombol ke daftar Bolu.
 - **WebSocket `/events/socket`** dan status transport di layar. App memakai SSE
   (`/events/stream`) — lihat bagian di atas.
 - **Offline cache** dan antrean kirim.
