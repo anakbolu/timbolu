@@ -126,6 +126,38 @@ mengembalikan `/(tabs)/bolu`.
 `docs/deep-links.md` § Skema `bolu://` adalah kontraknya; tabel di atas
 mencatat apa yang app lakukan sekarang, bukan apa yang seharusnya.
 
+## Obrolan hidup dari `/api/events/stream`
+
+Layar chat membuka **satu** koneksi SSE ke `/api/events/stream`
+(`src/lib/chat-stream.ts`) selama layar itu yang tampil, memakai `fetch` streaming
+dari `expo/fetch` — modulnya ikut Expo, jadi tidak ada dependensi baru. Token dan
+workspace ikut di query string karena route stream memang mengautentikasi dari
+sana (`requireStreamAuth`), bukan dari header.
+
+- **Satu koneksi, bukan dua.** Koneksinya diikat ke fokus layar
+  (`useFocusEffect`), jadi cleanup-nya berjalan saat layar blur maupun unmount:
+  layar yang tertutup di belakang layar lain berhenti mendengarkan, dan kembali
+  menyambung saat dibuka lagi.
+- **Frame diparse apa adanya.** `id:`, `event:`, dan `data:` dibaca per blok;
+  baris komentar (`: connected`, `: keep-alive`) dilewati, dan satu frame yang
+  terpotong antar-chunk disatukan dulu sebelum diurai. Hanya `message.new` dan
+  `message.updated` untuk percakapan yang sedang terbuka yang masuk ke daftar —
+  pesan baru ditambahkan di ujung terbaru, pembaruan placeholder menggantikan
+  pesan yang sudah ada di tempatnya, tanpa reload penuh.
+- **Cursor di memori.** Setiap id yang maju disimpan di ref layar dan dikirim
+  sebagai `last_event_id` saat koneksi dibuka lagi, jadi reconnect tidak
+  melewatkan pesan dan tidak memutar ulang seluruh riwayat workspace.
+- **Stream mati bukan jalan buntu.** Sebuah koneksi baru dihitung sehat setelah
+  bertahan 5 detik; yang gagal lebih cepat menaikkan hitungan gagal dan
+  dicoba ulang dengan jeda 0,5 → 1 → 2 → 4 → 8 detik, lalu 30 detik plus jitter.
+  Tidak ada polling: satu pembacaan ulang 5 detik setelah kirim, tombol "Muat
+  ulang", dan tarik-untuk-menyegarkan tetap ada dan tetap bekerja walau stream
+  tidak pernah tersambung.
+
+`/events/socket` tidak dipakai app ini. Kontrak kedua transport, status klien,
+dan arti setiap frame ada di [realtime.md](realtime.md) dan
+[api.md](api.md#the-stream).
+
 ## Yang belum ada
 
 Semua ini sengaja di luar potongan pertama:
@@ -137,9 +169,8 @@ Semua ini sengaja di luar potongan pertama:
 - **Layar untuk target `bolu://`** — `task`, `approval`, `routine`, dan
   `chat/<conversation_id>` belum punya layar, jadi semuanya berakhir di daftar
   Bolu dengan pemberitahuan (§ Link masuk `bolu://`).
-- **Streaming SSE/WebSocket** (`/events/stream`, `/events/socket`): balasan Bolu
-  muncul lewat satu pembacaan ulang 5 detik setelah kirim, plus tombol "Muat
-  ulang" dan tarik-untuk-menyegarkan.
+- **WebSocket `/events/socket`** dan status transport di layar. App memakai SSE
+  (`/events/stream`) — lihat bagian di atas.
 - **Offline cache** dan antrean kirim.
 - **Adapter `react-native-svg`** untuk `packages/bolu-character`: sekarang
   karakter digambar dari warna dan bentuk di `src/lib/bolu.ts` +
