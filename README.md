@@ -118,6 +118,7 @@ Useful Make targets:
 
 - [Deployment guide](docs/deployment.md)
 - [Deep link contract](docs/deep-links.md)
+- [SEO](docs/seo.md)
 - [End-to-end MVP flow](docs/e2e-mvp.md)
 - [Data policy](docs/kebijakan-data.md)
 - [Architecture decision records](docs/adr/)
