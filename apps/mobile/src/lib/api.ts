@@ -681,6 +681,15 @@ export async function openDirectConversation(agentId: string): Promise<ApiResult
   });
 }
 
+/** One conversation by id. Answers 404 with conversation_not_found if absent or foreign. */
+export async function getConversation(conversationId: string): Promise<ApiResult<ChatConversation>> {
+  const workspaceId = await ensureWorkspace();
+  if (!workspaceId) return NO_WORKSPACE;
+  return request<ChatConversation>(`/conversations/${conversationId}`, {
+    workspace: workspaceId,
+  });
+}
+
 /** One page of history, newest first. */
 export async function listMessages(
   conversationId: string,
