@@ -22,6 +22,23 @@ const nextConfig: NextConfig = {
       },
     },
   },
+  /* Apple and Google fetch these two files from the bare `/.well-known/...` URL
+   * and do not follow a redirect. A `.well-known` folder under `app/` is a
+   * private folder to Next, so the handlers live under `app/api/well-known` and
+   * these rewrites put them at the URL the platforms actually ask for — the
+   * response is the handler's own, so it is a 200 with `application/json`. */
+  async rewrites() {
+    return [
+      {
+        source: "/.well-known/apple-app-site-association",
+        destination: "/api/well-known/apple-app-site-association",
+      },
+      {
+        source: "/.well-known/assetlinks.json",
+        destination: "/api/well-known/assetlinks.json",
+      },
+    ];
+  },
 };
 
 export default nextConfig;
