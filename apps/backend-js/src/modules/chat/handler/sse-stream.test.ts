@@ -79,7 +79,7 @@ class WirePublisher implements EventPublisher {
         }
 
         const closed = Promise.withResolvers<void>();
-        signal?.addEventListener("abort", closed.resolve, { once: true });
+        signal?.addEventListener("abort", () => closed.resolve(), { once: true });
         await closed.promise;
       },
     };
