@@ -1,10 +1,13 @@
 # Aplikasi mobile (Expo)
 
 `apps/mobile` adalah klien iOS + Android dari satu codebase: Expo SDK 57,
-`expo-router` (file-based routing), TypeScript. Alur yang sudah ada: **masuk →
-daftar Bolu → satu obrolan**, lalu **kotak masuk persetujuan → satu draf**;
-potongan pertama sesuai [#487](https://github.com/anakbolu/timbolu/issues/487),
-kotak masuknya sesuai [#515](https://github.com/anakbolu/timbolu/issues/515).
+`expo-router` (file-based routing), TypeScript. Tiga tab yang ada: **Bolu**,
+**Persetujuan**, dan **Tugas** (`apps/mobile/app/(tabs)/_layout.tsx`). Alur yang
+sudah ada: **masuk → daftar Bolu → satu obrolan**, **kotak masuk persetujuan →
+satu draf**, dan **daftar tugas → detail satu tugas**; potongan pertama sesuai
+[#487](https://github.com/anakbolu/timbolu/issues/487), kotak masuknya sesuai
+[#515](https://github.com/anakbolu/timbolu/issues/515), tab tugas dan layar
+detailnya sesuai [#523](https://github.com/anakbolu/timbolu/pull/523).
 
 ## Menjalankan di Expo Go
 
@@ -107,16 +110,21 @@ Alurnya:
    masuk tidak dibuang: `_layout.tsx` menunggu status `signed-in`, baru memanggil
    `takePendingLink()` (sekali pakai) dan `router.replace(...)`.
 4. `src/lib/link-destination.ts` (`destinationFor`) menentukan tujuan dan
-   kalimatnya; `setLinkNotice` memasang kalimat itu dan
-   `app/(tabs)/bolu.tsx` menampilkannya sebagai banner yang bisa ditutup.
+   kalimatnya. Target `task` menjadi `{ kind: "task", taskID, notice: null }`
+   dan dibuka sebagai `/task/[taskID]`; target lain menjadi daftar Bolu dengan
+   kalimat. `setLinkNotice` memasang kalimat itu — `null` menghapus banner yang
+   ditinggalkan link sebelumnya — dan `app/(tabs)/bolu.tsx` menampilkannya
+   sebagai banner yang bisa ditutup.
 
-Hari ini **setiap** target berakhir di daftar Bolu `/(tabs)/bolu` dengan
-pemberitahuan, karena `destinationFor` belum memetakan satu pun ke layarnya:
+Hari ini hanya target `task` yang dibuka ke layarnya sendiri, `/task/[taskID]`
+(`apps/mobile/app/task/[taskID].tsx`), tanpa banner karena layarnya yang
+menjelaskan keadaan tugas. Tiga target lain berakhir di daftar Bolu
+`/(tabs)/bolu` dengan pemberitahuan:
 
 | Link | Target `parseIncomingLink` | Yang terjadi sekarang |
 | --- | --- | --- |
 | `bolu://chat/<conversation_id>` | `{ kind: "chat" }` | daftar Bolu + "Layar yang dituju tautan ini belum ada di app. …" — `chat/[agentID]` butuh id Bolu, bukan id obrolan, jadi tidak dibuka |
-| `bolu://task/<task_id>` | `{ kind: "task" }` | daftar Bolu + kalimat yang sama; belum ada layar detail tugas |
+| `bolu://task/<task_id>` | `{ kind: "task" }` | layar `/task/[taskID]` — `destinationFor` mengembalikan `{ kind: "task", taskID, notice: null }`, dan `app/_layout.tsx` memanggil `router.replace({ pathname: "/task/[taskID]", params: { taskID } })` |
 | `bolu://approval/<draft_id>` | `{ kind: "approval" }` | daftar Bolu + kalimat yang sama; layar draf `/draft/[draftID]` sudah ada, tetapi tujuan link ini belum dipetakan ke sana |
 | `bolu://routine/<routine_id>` | `{ kind: "routine" }` | daftar Bolu + kalimat yang sama; belum ada layar rutinitas |
 | `bolu://` dengan path lain, segmen ekstra, atau id bukan UUID | `{ kind: "fallback" }` | daftar Bolu + "Tautan ini tidak dikenal. Pilih Bolu di bawah untuk melanjutkan." |
@@ -124,8 +132,8 @@ pemberitahuan, karena `destinationFor` belum memetakan satu pun ke layarnya:
 `app/+not-found.tsx` adalah layar cadangan expo-router untuk path yang tidak
 punya berkas layar (URL non-`bolu://`): isinya `UNKNOWN_LINK_NOTICE`
 ("Tautan ini tidak dikenal.") dan tombol "Kembali ke daftar Bolu". Target
-`bolu://` yang dikenali tidak diarahkan ke sana — `destinationFor` selalu
-mengembalikan `/(tabs)/bolu`.
+`bolu://` yang dikenali tidak diarahkan ke sana: `destinationFor` membuka
+`/task/[taskID]` untuk target `task`, dan daftar Bolu untuk target lain.
 
 `docs/deep-links.md` § Skema `bolu://` adalah kontraknya; tabel di atas
 mencatat apa yang app lakukan sekarang, bukan apa yang seharusnya.
@@ -167,8 +175,8 @@ sana (`requireStreamAuth`), bukan dari header.
   dicoba ulang dengan jeda 0,5 → 1 → 2 → 4 → 8 detik, lalu 30 detik plus jitter.
   Tidak ada polling: satu pembacaan ulang 5 detik setelah kirim, satu halaman
   saat app kembali aktif, dan tombol "Muat ulang" tetap bekerja walau stream
-  tidak pernah tersambung. Tarik-untuk-menyegarkan baru ada di daftar Bolu,
-  belum di layar chat.
+  tidak pernah tersambung. Tarik-untuk-menyegarkan ada di daftar Bolu, kotak
+  masuk Persetujuan, dan daftar Tugas, belum di layar chat.
 
 `/events/socket` tidak dipakai app ini. Kontrak kedua transport, status klien,
 dan arti setiap frame ada di [realtime.md](realtime.md) dan
@@ -193,6 +201,29 @@ hitungan baru dan tanpa polling). Layar ini **belum dilihat di HP atau
 simulator**: yang terbukti baru `npx tsc --noEmit` dan `npx expo export
 --platform ios`.
 
+## Tugas
+
+Tab ketiga, **Tugas**, adalah riwayat tugas ruang kerja:
+`GET /tasks?limit=50` lewat `listTasks` (`api.ts`), terbaru dulu, dibaca ulang
+setiap kali tab difokuskan dan bisa ditarik untuk disegarkan. Tiap baris
+menampilkan judul (atau "Tugas" bila kosong), umur, label keadaan dari
+`taskState` (`src/lib/task-view.ts`), dan nama Bolu pemiliknya. Daftar Bolu
+untuk nama itu dibaca terpisah lewat `listAgents`, jadi kegagalannya tidak
+menyembunyikan tugas: baris tanpa nama tetap tampil. Tab ini tidak memulai
+tugas — API tidak punya route untuk itu (`api.md` § Task runtime).
+
+Menekan satu baris membuka `app/task/[taskID].tsx`, yang membaca `GET /tasks/:id`
+dan `GET /tasks/:id/steps` (`getTask`, `listTaskSteps`) serta `listAgents` untuk
+nama Bolu. Layar itu menampilkan keadaan, alasan berhenti, alasan menunggu
+(hanya selama tugas masih hidup), ringkasan, jumlah langkah, waktu selesai,
+tombol "Buka hasil" untuk setiap rujukan konten (`${API_URL}/content/<ref>`),
+dan daftar langkah: urutan, jenis, nama tool, potongan `output` (atau `input`
+bila `output` belum ada), dan waktu. Langkah yang dipangkas kebijakan retensi
+disebut apa adanya, bukan digambar kosong; langkah yang gagal dimuat tidak
+menyembunyikan keadaan tugas, dan punya tombol "Muat ulang langkah". Id yang
+tidak ada dan id yang bukan UUID sama-sama berakhir di "Tugas tidak ditemukan."
+dengan tombol "Kembali ke daftar tugas".
+
 ## Yang belum ada
 
 Semua ini sengaja di luar potongan pertama:
@@ -201,12 +232,14 @@ Semua ini sengaja di luar potongan pertama:
 - **Universal link** `timbolu.com/…` — app hanya membaca skema `bolu://`, dan
   `app.json` belum mendeklarasikan associated domains; bentuk dan syaratnya ada
   di [deep-links.md](deep-links.md) § Universal link.
-- **Layar untuk target `bolu://`** — `task` dan `routine` belum punya layar, dan
-  `chat/<conversation_id>` masih belum bisa dibedakan dari `chat/<id Bolu>`. Layar
-  draf sekarang ada (`/draft/[draftID]`, § Persetujuan), tetapi tautan
-  `bolu://approval/<draft_id>` **belum** diarahkan ke sana: `link-destination.ts`
-  masih mengembalikan daftar Bolu dengan pemberitahuan (§ Link masuk `bolu://`),
-  karena memetakan tujuan link adalah pekerjaan terpisah dari layarnya.
+- **Layar untuk target `bolu://`** — `routine` belum punya layar, dan
+  `chat/<conversation_id>` masih belum bisa dibedakan dari `chat/<id Bolu>`.
+  `task` sudah punya layar dan tautannya sudah dipetakan ke sana
+  (`/task/[taskID]`, § Tugas). Layar draf sekarang ada (`/draft/[draftID]`,
+  § Persetujuan), tetapi tautan `bolu://approval/<draft_id>` **belum** diarahkan
+  ke sana: `link-destination.ts` masih mengembalikan daftar Bolu dengan
+  pemberitahuan (§ Link masuk `bolu://`), karena memetakan tujuan link adalah
+  pekerjaan terpisah dari layarnya.
 - **WebSocket `/events/socket`** dan status transport di layar. App memakai SSE
   (`/events/stream`) — lihat bagian di atas.
 - **Offline cache** dan antrean kirim.
@@ -218,6 +251,6 @@ Semua ini sengaja di luar potongan pertama:
   `metro.config.js` monorepo — paketnya sendiri tidak diubah.
 - **Blok pesan selain `text`** (tabel, draft, chart, mermaid, html): dihitung dan
   disebutkan jumlahnya, belum dirender.
-- **Pemilih workspace**, pengaturan, dan tab lain di luar `Bolu` dan
-  `Persetujuan`.
+- **Pemilih workspace**, pengaturan, dan tab lain di luar `Bolu`,
+  `Persetujuan`, dan `Tugas`.
 - **Tab bar berikon** — scaffold ini tidak menambah paket ikon.
