@@ -110,30 +110,34 @@ Alurnya:
    masuk tidak dibuang: `_layout.tsx` menunggu status `signed-in`, baru memanggil
    `takePendingLink()` (sekali pakai) dan `router.replace(...)`.
 4. `src/lib/link-destination.ts` (`destinationFor`) menentukan tujuan dan
-   kalimatnya. Target `task` menjadi `{ kind: "task", taskID, notice: null }`
-   dan dibuka sebagai `/task/[taskID]`; target lain menjadi daftar Bolu dengan
-   kalimat. `setLinkNotice` memasang kalimat itu — `null` menghapus banner yang
+   kalimatnya. Target `task`, `approval`, dan `routine` menjadi tujuan ber-id —
+   `{ kind: "task", taskID, notice: null }`, `{ kind: "draft", draftID, notice:
+   null }`, dan `{ kind: "routine", routineID, notice: null }` — lalu dibuka
+   sebagai `/task/[taskID]`, `/draft/[draftID]`, dan `/routine/[routineID]`.
+   Target `chat` dan `fallback` menjadi daftar Bolu dengan kalimat.
+   `setLinkNotice` memasang kalimat itu — `null` menghapus banner yang
    ditinggalkan link sebelumnya — dan `app/(tabs)/bolu.tsx` menampilkannya
    sebagai banner yang bisa ditutup.
 
-Hari ini hanya target `task` yang dibuka ke layarnya sendiri, `/task/[taskID]`
-(`apps/mobile/app/task/[taskID].tsx`), tanpa banner karena layarnya yang
-menjelaskan keadaan tugas. Tiga target lain berakhir di daftar Bolu
-`/(tabs)/bolu` dengan pemberitahuan:
+Hari ini target `task`, `approval`, dan `routine` dibuka ke layarnya sendiri —
+`/task/[taskID]`, `/draft/[draftID]`, dan `/routine/[routineID]` — tanpa banner
+karena layarnya yang menjelaskan keadaan resource. Dua target lain berakhir di
+daftar Bolu `/(tabs)/bolu` dengan pemberitahuan:
 
 | Link | Target `parseIncomingLink` | Yang terjadi sekarang |
 | --- | --- | --- |
 | `bolu://chat/<conversation_id>` | `{ kind: "chat" }` | daftar Bolu + "Layar yang dituju tautan ini belum ada di app. …" — `chat/[agentID]` butuh id Bolu, bukan id obrolan, jadi tidak dibuka |
 | `bolu://task/<task_id>` | `{ kind: "task" }` | layar `/task/[taskID]` — `destinationFor` mengembalikan `{ kind: "task", taskID, notice: null }`, dan `app/_layout.tsx` memanggil `router.replace({ pathname: "/task/[taskID]", params: { taskID } })` |
-| `bolu://approval/<draft_id>` | `{ kind: "approval" }` | daftar Bolu + kalimat yang sama; layar draf `/draft/[draftID]` sudah ada, tetapi tujuan link ini belum dipetakan ke sana |
-| `bolu://routine/<routine_id>` | `{ kind: "routine" }` | daftar Bolu + kalimat yang sama; belum ada layar rutinitas |
+| `bolu://approval/<draft_id>` | `{ kind: "approval" }` | layar `/draft/[draftID]` — `destinationFor` mengembalikan `{ kind: "draft", draftID, notice: null }`, dan `app/_layout.tsx` memanggil `router.replace({ pathname: "/draft/[draftID]", params: { draftID } })` |
+| `bolu://routine/<routine_id>` | `{ kind: "routine" }` | layar `/routine/[routineID]` — `destinationFor` mengembalikan `{ kind: "routine", routineID, notice: null }`, dan `app/_layout.tsx` memanggil `router.replace({ pathname: "/routine/[routineID]", params: { routineID } })` |
 | `bolu://` dengan path lain, segmen ekstra, atau id bukan UUID | `{ kind: "fallback" }` | daftar Bolu + "Tautan ini tidak dikenal. Pilih Bolu di bawah untuk melanjutkan." |
 
 `app/+not-found.tsx` adalah layar cadangan expo-router untuk path yang tidak
 punya berkas layar (URL non-`bolu://`): isinya `UNKNOWN_LINK_NOTICE`
 ("Tautan ini tidak dikenal.") dan tombol "Kembali ke daftar Bolu". Target
-`bolu://` yang dikenali tidak diarahkan ke sana: `destinationFor` membuka
-`/task/[taskID]` untuk target `task`, dan daftar Bolu untuk target lain.
+`bolu://` yang dikenali tidak diarahkan ke sana: `destinationFor` membuka layar
+ber-id untuk target `task`, `approval`, dan `routine`, serta daftar Bolu untuk
+target `chat` dan `fallback`.
 
 `docs/deep-links.md` § Skema `bolu://` adalah kontraknya; tabel di atas
 mencatat apa yang app lakukan sekarang, bukan apa yang seharusnya.
@@ -232,14 +236,11 @@ Semua ini sengaja di luar potongan pertama:
 - **Universal link** `timbolu.com/…` — app hanya membaca skema `bolu://`, dan
   `app.json` belum mendeklarasikan associated domains; bentuk dan syaratnya ada
   di [deep-links.md](deep-links.md) § Universal link.
-- **Layar untuk target `bolu://`** — `routine` belum punya layar, dan
-  `chat/<conversation_id>` masih belum bisa dibedakan dari `chat/<id Bolu>`.
-  `task` sudah punya layar dan tautannya sudah dipetakan ke sana
-  (`/task/[taskID]`, § Tugas). Layar draf sekarang ada (`/draft/[draftID]`,
-  § Persetujuan), tetapi tautan `bolu://approval/<draft_id>` **belum** diarahkan
-  ke sana: `link-destination.ts` masih mengembalikan daftar Bolu dengan
-  pemberitahuan (§ Link masuk `bolu://`), karena memetakan tujuan link adalah
-  pekerjaan terpisah dari layarnya.
+- **Layar untuk target `bolu://`** — `chat/<conversation_id>` masih belum bisa
+  dibedakan dari `chat/<id Bolu>`, jadi tautan obrolan tetap mendarat di daftar
+  Bolu dengan pemberitahuan (§ Link masuk `bolu://`). `task`, `approval`, dan
+  `routine` sudah punya layar dan tautannya sudah dipetakan ke sana:
+  `/task/[taskID]`, `/draft/[draftID]`, dan `/routine/[routineID]`.
 - **WebSocket `/events/socket`** dan status transport di layar. App memakai SSE
   (`/events/stream`) — lihat bagian di atas.
 - **Offline cache** dan antrean kirim.
