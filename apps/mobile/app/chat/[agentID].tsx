@@ -14,6 +14,8 @@ import {
 import { Redirect, useFocusEffect, useLocalSearchParams } from "expo-router";
 
 import { BoluFace } from "@/components/bolu-face";
+import { agentStateView } from "@/lib/agent-state";
+import type { AgentStateUpdate } from "@/lib/agent-state";
 import { listMessages, messageText, openDirectConversation, sendMessage } from "@/lib/api";
 import type { ChatConversation, ChatMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -55,6 +57,32 @@ export default function ChatScreen() {
   const lastEventId = useRef(0);
 
   /**
+   * What each Bolu in this workspace last said it was doing.
+   *
+   * Keyed by `agent_id` because the stream is the workspace's, not this
+   * thread's: a state from another Bolu is kept out of the record and can never
+   * be drawn beside this one. The screen's own Bolu is the only key that gets
+   * read. Empty means "nothing observed", which reads as `idle`.
+   */
+  const [states, setStates] = useState<Record<string, AgentStateUpdate>>({});
+
+  /**
+   * Keeps one Bolu's state, dropping every other Bolu's.
+   *
+   * A state event carries no conversation, so the agent id is the only thing
+   * that can tie it to this thread. The reason travels with the state rather
+   * than as a separate line, so a state without one cannot inherit the previous
+   * sentence.
+   */
+  const applyAgentState = useCallback(
+    (update: AgentStateUpdate) => {
+      if (update.agent_id !== agentID) return;
+      setStates((current) => ({ ...current, [update.agent_id]: update }));
+    },
+    [agentID],
+  );
+
+  /**
    * Puts one streamed message into the open thread.
    *
    * `insertMessage` owns the ordering and the de-duplication; this callback only
@@ -81,12 +109,16 @@ export default function ChatScreen() {
   useFocusEffect(
     useCallback(() => {
       if (status !== "signed-in" || conversationId === null) return;
-      const stream = connectChatStream(conversationId, applyStreamedMessage, lastEventId.current);
+      const stream = connectChatStream(conversationId, applyStreamedMessage, lastEventId.current, applyAgentState);
       return () => {
         lastEventId.current = stream.lastEventId();
         stream.close();
+        // Leaving the screen is the end of this observation, not a state the
+        // Bolu is in: a thread opened again must not claim the mood it had
+        // before the person left.
+        setStates({});
       };
-    }, [status, conversationId, applyStreamedMessage]),
+    }, [status, conversationId, applyStreamedMessage, applyAgentState]),
   );
 
   const reload = useCallback(async () => {
@@ -178,12 +210,20 @@ export default function ChatScreen() {
   }
 
   const bolu = conversation?.participants.find((participant) => participant.is_agent);
+  // Only this thread's Bolu is read. A record absent after a blur reads as
+  // `idle`, which is the reset the screen promises.
+  const update = agentID === undefined ? undefined : states[agentID];
+  const view = agentStateView(update?.state);
   const header = (
     <View style={styles.header}>
-      <BoluFace shape="bulat" size={36} label={bolu?.name.slice(0, 1)} />
+      <BoluFace shape="bulat" size={36} label={bolu?.name.slice(0, 1)} state={view.expression} />
       <View style={{ flex: 1 }}>
         <Text style={styles.headerName}>{bolu?.name ?? "Bolu"}</Text>
         <Text style={styles.headerRole}>{bolu?.role ?? ""}</Text>
+        <Text style={styles.headerState} numberOfLines={1}>
+          {view.label}
+          {update?.reason !== undefined ? ` · ${update.reason}` : ""}
+        </Text>
       </View>
       <Pressable onPress={() => void refresh()} accessibilityRole="button" hitSlop={10}>
         <Text style={styles.headerAction}>{refreshing ? "Memuat…" : "Muat ulang"}</Text>
@@ -291,6 +331,7 @@ const styles = StyleSheet.create({
   },
   headerName: { fontSize: 16, fontWeight: "700", color: "#1E1B2E" },
   headerRole: { fontSize: 12, color: "#5A5670" },
+  headerState: { fontSize: 12, fontWeight: "600", color: "#B4531E" },
   headerAction: { fontSize: 13, fontWeight: "600", color: "#F28C4E" },
   errorBar: { backgroundColor: "#FDECEA", paddingHorizontal: 16, paddingVertical: 10 },
   errorText: { color: "#B3261E", fontSize: 13 },

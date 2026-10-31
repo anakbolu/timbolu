@@ -22,6 +22,8 @@
 import { fetch as expoFetch } from "expo/fetch";
 import { AppState } from "react-native";
 
+import { parseAgentState } from "@/lib/agent-state";
+import type { AgentStateUpdate } from "@/lib/agent-state";
 import { API_URL, getActiveWorkspaceId, refreshSession } from "@/lib/api";
 import type { ChatMessage, MessageBlock, MessageStatus } from "@/lib/api";
 import { getAccessToken, tokenIsSpent } from "@/lib/tokens";
@@ -176,11 +178,17 @@ export type ChatStream = {
  * cursor is the workspace's position rather than this thread's. The same cursor
  * survives a background/foreground round trip inside this stream, so a screen
  * that keeps its focus never sees the connection gap.
+ *
+ * `onAgentState` is told about every `agent.state` frame, including ones for
+ * another Bolu: the stream is the workspace's, so the screen is what knows
+ * whose state belongs on it. Cursor handling is the same as for a message, so
+ * a state frame the caller ignores still advances the replay position.
  */
 export function connectChatStream(
   conversationId: string,
   onMessage: (message: ChatMessage) => void,
   startAfterId = 0,
+  onAgentState?: (update: AgentStateUpdate) => void,
 ): ChatStream {
   let lastId = startAfterId;
   let failures = 0;
@@ -459,6 +467,15 @@ export function connectChatStream(
             // or below the cursor were already applied.
             if (event.id <= lastId) continue;
             lastId = event.id;
+          }
+
+          if (event.type === "agent.state") {
+            // Parsed here so a malformed frame is dropped in one place, and the
+            // cursor has already advanced above: a state this screen cannot read
+            // is still an event no later reconnect should replay.
+            const update = onAgentState === undefined ? null : parseAgentState(event.payload);
+            if (update !== null) onAgentState?.(update);
+            continue;
           }
 
           if (event.type === undefined || MESSAGE_EVENT_TYPES[event.type] !== true) continue;

@@ -12,6 +12,7 @@ import { Redirect, router } from "expo-router";
 import * as Linking from "expo-linking";
 
 import { BoluFace } from "@/components/bolu-face";
+import { agentStateView } from "@/lib/agent-state";
 import { listAgents } from "@/lib/api";
 import type { Agent } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -223,7 +224,15 @@ export default function BoluScreen() {
               onPress={() => router.push(`/chat/${item.id}`)}
               style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
             >
-              <BoluFace color={item.color} shape={item.shape} size={44} />
+              <BoluFace
+                color={item.color}
+                shape={item.shape}
+                size={44}
+                // `GET /agents` is the last derived state the server knew. This
+                // tab opens no stream, so this is as fresh as the list it is
+                // drawn in — no polling is added for a face.
+                state={agentStateView(item.display_status).expression}
+              />
               <View style={styles.rowText}>
                 <Text style={styles.name}>{item.name}</Text>
                 <Text style={styles.role}>
