@@ -8,12 +8,26 @@ mengira pekerjaannya hilang.
 Dokumen ini **kontrak, bukan implementasi**. App Expo-nya sudah ada sejak #488: `apps/mobile`
 memakai Expo SDK 57 dan `expo-router`, dengan layar `index` (gerbang sesi), `login`, `(tabs)/bolu`,
 dan `chat/[agentID]`; detailnya di `docs/mobile.md`. `scheme` `bolu` juga sudah dideklarasikan di
-`apps/mobile/app.json`. Yang belum ada adalah penanganan link masuk: tidak ada `+not-found` di
-`apps/mobile/app` dan tidak ada listener `Linking`/`useURL` yang memetakan URL masuk ke layar, jadi
-hari ini app tidak membuka link apa pun. `notification.pending` juga belum punya produsen, dan
-`routine.run` baru ada sebagai nama. Yang ditetapkan di sini adalah bentuk yang harus dipenuhi saat
-bagian-bagian itu dibangun. Nama event selalu bisa dicek di `packages/contracts/events.ts` dan
-`docs/api.md` (§ The stream).
+`apps/mobile/app.json`.
+
+Link masuk `bolu://` sudah dibaca app sejak #500. `app/+native-intent.tsx` (`redirectSystemPath`)
+mengembalikan `null` untuk URL `bolu://`, sehingga router berhenti dan tidak mencocokkan
+`bolu://chat/<id>` ke `chat/[agentID]` — berkas itu mengharapkan id Bolu, dan mencocokkannya akan
+membuka thread yang tidak disebut link. Yang memutuskan tujuan adalah `app/_layout.tsx`
+(`IncomingLinks`): URL peluncuran dibaca sebelum sesi diketahui, `src/lib/deep-link.ts`
+(`parseIncomingLink`) menerjemahkannya menjadi `LinkTarget`, `src/lib/pending-link.ts` menahan
+tautan yang datang sebelum sesi siap, dan `src/lib/link-destination.ts` (`destinationFor`)
+menentukan tujuan beserta kalimatnya. `app/+not-found.tsx` menangani path yang tidak punya berkas
+layar.
+
+Yang belum ada hari ini: layar `task`, `approval`, `routine`, dan obrolan per id. Setiap target
+yang dikenali karena itu mendarat di daftar Bolu `/(tabs)/bolu` dengan notis "Layar yang dituju
+tautan ini belum ada di app…", dan link tak dikenal mendapat `UNKNOWN_LINK_NOTICE`. Selain itu
+`notification.pending` belum punya produsen, `routine.run` baru ada sebagai nama, dan universal
+link `timbolu.com/...` belum dipasang: belum ada `apple-app-site-association` maupun
+`assetlinks.json`, dan `app.json` belum mendeklarasikan associated domains. Yang ditetapkan di sini
+adalah bentuk yang harus dipenuhi saat bagian-bagian itu dibangun. Nama event selalu bisa dicek di
+`packages/contracts/events.ts` dan `docs/api.md` (§ The stream).
 
 Route group `(workspace)` tidak menambah segmen ke URL: `app/(workspace)/tasks/[taskID]/page.tsx`
 dilayani sebagai `/tasks/<task_id>`. Itu sebabnya tabel di bawah memakai path publik, bukan path
@@ -151,9 +165,9 @@ Keadaan `apps/mobile` hari ini, dicocokkan ke berkas:
 - `app/login.tsx` form masuk; `app/(tabs)/bolu.tsx` daftar Bolu; `app/chat/[agentID].tsx` satu obrolan.
 - Token: refresh token disimpan di `expo-secure-store` (`apps/mobile/src/lib/tokens.ts`), access token hanya di memori, dan refresh dikirim lewat body `POST /auth/refresh` tanpa cookie (`apps/mobile/src/lib/api.ts`, `refreshSession`).
 - Gate CI: job `mobile` di `.github/workflows/checks.yml` menjalankan `make typecheck-mobile` (#493).
-- Belum: penanganan link masuk. Tidak ada `+not-found` di `apps/mobile/app`, dan tidak ada listener `Linking`/`useURL` yang memetakan URL ke layar; satu-satunya pemakaian `expo-linking` adalah `openURL` ke `/onboarding` di `app/(tabs)/bolu.tsx`.
+- Link masuk `bolu://` (#500): `app/+native-intent.tsx` mengembalikan `null` untuk `bolu://` supaya router tidak mencocokkan path, `app/_layout.tsx` (`IncomingLinks`) membaca `Linking.getInitialURL()` dan `Linking.addEventListener("url")`, lalu `src/lib/deep-link.ts` (`parseIncomingLink`), `src/lib/pending-link.ts`, dan `src/lib/link-destination.ts` (`destinationFor`) menerjemahkan, menahan, dan menentukan tujuan. `app/+not-found.tsx` adalah layar cadangan untuk path yang tidak punya berkas layar. Keempat target berakhir di `/(tabs)/bolu` dengan notis karena layar tujuannya belum ada.
 - Belum: push notification dan registrasi `POST /devices`; endpoint-nya ada, kliennya belum.
-- Belum: streaming SSE/WebSocket (`/events/stream`, `/events/socket`); obrolan memuat ulang setelah kirim (`docs/mobile.md`).
+- Obrolan hidup (#505, #514): layar chat membuka satu koneksi SSE ke `/events/stream` lewat `src/lib/chat-stream.ts` selama layar itu tampil, `AppState` menutupnya saat app masuk latar, dan koneksi berikutnya membawa kursor `last_event_id` yang tetap di memori sehingga server memutar ulang frame yang terlewat. Frame `message.new`/`message.updated` masuk langsung ke daftar tanpa memuat ulang layar; satu pembacaan ulang 5 detik setelah kirim dan tombol "Muat ulang" tetap ada sebagai jaring (tarik-untuk-menyegarkan baru ada di daftar Bolu). `/events/socket` (WebSocket) tidak dipakai app, dan status transport belum ditampilkan (`docs/mobile.md` § Obrolan hidup dari `/api/events/stream`).
 
 ## Skema `bolu://`
 
@@ -163,6 +177,10 @@ Keadaan `apps/mobile` hari ini, dicocokkan ke berkas:
 | `bolu://chat/<conversation_id>` | `conversations.id` (UUID) | Obrolan itu: 1:1 dengan Bolu, grup, atau thread | `/chat?conversation=<conversation_id>` |
 | `bolu://approval/<draft_id>` | `drafts.id` (UUID) | Inbox persetujuan, dibuka pada draf itu (Fase 1) | `/approval/<draft_id>` |
 | `bolu://routine/<routine_id>` | `routines.id` (UUID) | Daftar rutinitas, dibuka pada rutin itu | `/routines/<routine_id>` |
+
+Kolom "Layar yang dibuka" adalah tujuan kontrak. Hari ini keempat target mendarat di daftar Bolu
+`/(tabs)/bolu` dengan notis "Layar yang dituju tautan ini belum ada di app…", karena layar
+tujuannya belum ada.
 
 Aturan yang mengikat keempatnya:
 
@@ -179,10 +197,13 @@ Aturan yang mengikat keempatnya:
    iOS tidak menjamin app mana yang menang kalau ada dua app mendaftarkan skema yang sama. Karena
    itu notifikasi memakai universal link (bagian berikut); `bolu://` dipakai untuk navigasi internal
    dan pengujian.
-5. **Path yang tidak dikenal jatuh ke dasbor**, bukan ke layar error. Link lama yang pathnya sudah
-   tidak ada tidak boleh membuat app berhenti.
+5. **Path yang tidak dikenal jatuh ke daftar Bolu**, bukan ke layar error. Link lama yang pathnya
+   sudah tidak ada tidak boleh membuat app berhenti.
 
 Perilaku per resource saat resource tidak bisa dibuka:
+
+Tabel ini berlaku setelah layar tujuannya ada. Hari ini setiap target mendarat di daftar Bolu
+dengan notis, jadi jawaban API di bawah belum sampai ke layar resource mana pun.
 
 | Resource | Jawaban API | Yang dilakukan app |
 | --- | --- | --- |
@@ -198,12 +219,12 @@ Universal link adalah jalur yang dipakai notifikasi. Bentuknya `https://timbolu.
 yang sama dengan web hari ini (`apps/frontend` dilayani di `timbolu.com`, dan API-nya di host yang
 sama — lihat `docs/deployment.md`). Pemetaannya diturunkan dari route yang benar-benar ada:
 
-App hari ini belum memetakan link apa pun, baik `bolu://` maupun universal link. Selama penanganan
-link masuk belum ditulis, yang berlaku bila sebuah link membuka app adalah perilaku bawaan
-`expo-router`: URL dipetakan ke path berkas layar (`/chat/<id>` ke `app/chat/[agentID].tsx`, dan
-seterusnya), tanpa penerjemahan ke tabel di bawah dan tanpa penanganan link tertunda. Path yang tidak
-punya berkas layar tidak punya tujuan, karena repo ini belum punya `+not-found`. Tabel berikut adalah
-target yang harus dipenuhi app, bukan deskripsi perilakunya sekarang.
+Yang terpasang hari ini baru skema `bolu://`. Universal link belum dipasang: `app.json` belum
+mendeklarasikan associated domains, `app/+native-intent.tsx` hanya menahan URL `bolu://` sehingga
+URL `https://timbolu.com/...` tetap ditangani router (dipetakan ke path berkas layar, atau ke
+`+not-found` kalau tidak ada berkasnya), dan kedua berkas well-known di bawah belum ada di repo.
+Tabel berikut adalah target universal link yang harus dipenuhi app, bukan deskripsi perilakunya
+sekarang.
 
 | Universal link | Layar app | Catatan |
 | --- | --- | --- |
@@ -266,11 +287,14 @@ atau di app nanti.
   dan tidak perlu membaca `GET /tasks/:id` lebih dulu.
 - `routine.run` belum punya produsen: nama itu hanya ada sebagai nama di
   `packages/contracts/events.ts`, `docs/api.md`, `apps/frontend/src/lib/realtime.ts`,
-  `apps/frontend/src/lib/dashboard-view.ts`, dan konstanta Go/Bun. Satu run membuka tepat
-  satu task (`routine_runs.task_id`), jadi kontraknya memakai `task_id`, tetapi produsennya wajib
-  membawa field itu saat event ini benar-benar dipancarkan.
-- `notification.pending` juga belum punya produsen; ia hanya konstanta dengan komentar "the hook the
-  notification worker consumes". Belum ada payload yang bisa dipakai membangun link.
+  `apps/frontend/src/lib/dashboard-view.ts`, konstanta Go/Bun, dan pemetaan push
+  (`apps/backend-js/src/modules/push/domain/push.ts`, `notificationFor`). Pemetaan itu membangun
+  `bolu://routine/<routine_id>` dari `routineId`, bukan dari `task_id` milik run, jadi produsennya
+  wajib membawa `routine_id` saat event ini benar-benar dipancarkan.
+- `notification.pending` juga belum punya produsen: konstanta Go/Bun menyebutnya "the hook the
+  notification worker consumes", dan `notificationFor` sudah memetakannya ke
+  `bolu://approval/<draft_id>` dari `draftId`, tetapi tidak ada yang memancarkannya, jadi belum ada
+  payload nyata yang bisa dipakai membangun link.
 
 ### Identitas app yang belum diketahui
 
@@ -361,8 +385,8 @@ envelope, bukan hanya dari `payload`.
 | `task.finished` | `task_id` (envelope dan payload), `conversation_id` (envelope), `status`, `trigger` | `bolu://task/<task_id>` | Layar tugas memuat ringkasan, alasan berhenti, dan langkah — satu-satunya tempat pertanyaan "apa yang tadi dikerjakan" dijawab utuh |
 | `task.waiting_approval` | `task_id` (envelope dan payload), `conversation_id` (envelope), `waiting_draft_id` (payload, hanya saat menunggu sebuah draf) | `bolu://approval/<waiting_draft_id>` | Notifikasi ini ada supaya orang bisa memutuskan; mendarat di tugas tanpa tombol putus adalah perjalanan yang sia-sia. Kalau payload tidak membawa `waiting_draft_id` (menunggu tanpa draf), tidak ada yang bisa diputuskan dan tidak ada link yang dikirim |
 | `draft.created` | `draft_id`, `task_id` (envelope dan payload), `conversation_id` (envelope), `title`, `summary`, `action_kind` | `bolu://approval/<draft_id>` | Draf adalah objek yang diputuskan; `task_id` hanya menjelaskan asalnya |
-| `routine.run` | belum ada produsen; run menyimpan `task_id` (`routine_runs.task_id`) | `bolu://task/<task_id>` | Satu run adalah satu tugas, dan hasilnya adalah ringkasan tugas itu; tidak ada halaman per-run untuk dibuka |
-| `notification.pending` | belum ada produsen; hanya konstanta "hook the notification worker consumes" | Tidak punya layar sendiri | Ini pintu masuk worker, bukan notifikasi. Worker harus menerjemahkannya ke event di atas dan memakai baris itu; mengirimnya apa adanya berarti mengirim notifikasi tanpa tujuan |
+| `routine.run` | belum ada produsen; run menyimpan `task_id` (`routine_runs.task_id`) | `bolu://routine/<routine_id>` | `notificationFor` membangun link dari `routine_id` milik rutin, jadi produsennya wajib membawa id itu; tidak ada halaman per-run yang dibuka |
+| `notification.pending` | belum ada produsen; pemetaannya memakai `draft_id` | `bolu://approval/<draft_id>` | `notificationFor` menunjuk draf yang menunggu keputusan; sampai ada pemancar, baris ini belum pernah terkirim |
 
 Aturan tambahan:
 
@@ -374,9 +398,9 @@ Aturan tambahan:
 3. **`task.finished` dengan `trigger` `routine` tetap memakai layar tugas.** Sampai `routine.run`
    punya produsen, run rutin sudah terlihat sebagai `task.finished` dengan `trigger: "routine"`;
    tidak perlu menunggu event baru untuk bisa membuka layar yang benar.
-4. **`bolu://routine/<routine_id>` bukan link notifikasi.** Ia untuk navigasi di dalam app (daftar
-   rutinitas ke satu rutin). Notifikasi run tetap membuka tugasnya, karena tugas itulah yang memuat
-   hasil run.
+4. **`bolu://routine/<routine_id>` memakai `routine_id` milik rutin, bukan `task_id` run.**
+   `notificationFor` sudah membangun bentuk itu untuk `routine.run`; produsennya wajib membawa
+   `routine_id` saat event ini dipancarkan.
 
 ## Auth saat cold start
 
