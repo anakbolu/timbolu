@@ -138,7 +138,7 @@ daftar Bolu `/(tabs)/bolu` dengan pemberitahuan:
 
 | Link | Target `parseIncomingLink` | Yang terjadi sekarang |
 | --- | --- | --- |
-| `bolu://chat/<conversation_id>` | `{ kind: "chat" }` | daftar Bolu + "Layar yang dituju tautan ini belum ada di app. …" — `chat/[agentID]` butuh id Bolu, bukan id obrolan, jadi tidak dibuka |
+| `bolu://chat/<conversation_id>` | `{ kind: "chat" }` | layar `/chat/thread/[conversationID]` — obrolan 1:1 diteruskan ke `/chat/<agent_id>`, grup/thread dan id tidak dikenal berakhir di pesan dengan tombol ke daftar Bolu |
 | `bolu://task/<task_id>` | `{ kind: "task" }` | layar `/task/[taskID]` — `destinationFor` mengembalikan `{ kind: "task", taskID, notice: null }`, dan `app/_layout.tsx` memanggil `router.replace({ pathname: "/task/[taskID]", params: { taskID } })` |
 | `bolu://approval/<draft_id>` | `{ kind: "approval" }` | layar `/draft/[draftID]` — `destinationFor` mengembalikan `{ kind: "draft", draftID, notice: null }`, dan `app/_layout.tsx` memanggil `router.replace({ pathname: "/draft/[draftID]", params: { draftID } })` |
 | `bolu://routine/<routine_id>` | `{ kind: "routine" }` | layar `/routine/[routineID]` — `destinationFor` mengembalikan `{ kind: "routine", routineID, notice: null }`, dan `app/_layout.tsx` memanggil `router.replace({ pathname: "/routine/[routineID]", params: { routineID } })` |
@@ -154,6 +154,12 @@ target `chat` dan `fallback`.
 
 `docs/deep-links.md` § Skema `bolu://` adalah kontraknya; tabel di atas
 mencatat apa yang app lakukan sekarang, bukan apa yang seharusnya.
+
+Sejak #557, `bolu://chat/<conversation_id>` dibuka ke
+`apps/mobile/app/chat/thread/[conversationID].tsx`: obrolan 1:1 diteruskan ke
+`/chat/<agent_id>` hasil `GET /conversations/:id`, grup/thread masih belum punya
+layar, dan id tidak dikenal berakhir di kalimat "Obrolan tidak ditemukan" dengan
+tombol ke daftar Bolu.
 
 ## Obrolan hidup dari `/api/events/stream`
 

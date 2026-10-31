@@ -92,6 +92,12 @@ function IncomingLinks() {
     // the screen reads it from `useLocalSearchParams` like every other screen
     // opened by id in this app.
     switch (destination.kind) {
+      case "chat":
+        router.replace({
+          pathname: "/chat/thread/[conversationID]",
+          params: { conversationID: destination.conversationID },
+        });
+        return;
       case "task":
         router.replace({ pathname: "/task/[taskID]", params: { taskID: destination.taskID } });
         return;

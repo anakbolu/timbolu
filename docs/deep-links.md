@@ -35,13 +35,16 @@ Sejak #532 `apps/mobile/src/lib/link-destination.ts` (`destinationFor`) memetaka
 `bolu://task/<id>`, `bolu://approval/<id>`, dan `bolu://routine/<id>` masing-masing mendarat di
 layarnya sendiri.
 
-Hanya obrolan per id yang belum: `bolu://chat/<id>` membawa `conversations.id`, sedangkan
-`apps/mobile/app/chat/[agentID].tsx` membuka thread dari id Bolu
-(`openDirectConversation(agentID)`), jadi link chat tidak dicocokkan ke layar itu dan tetap
-mendarat di daftar Bolu dengan notis. `apps/mobile/src/lib/deep-link.ts` (`parseIncomingLink`)
-sudah memisahkan `chat` dari resource lain, dan `apps/mobile/app/+native-intent.tsx` menahan
-seluruh `bolu://` serta URL `https://timbolu.com/...` yang diklaim app dari router. Path tak dikenal
-mendarat di daftar Bolu dengan `UNKNOWN_LINK_NOTICE`.
+Sejak #557 `apps/mobile/app/chat/thread/[conversationID].tsx` menerima id obrolan: thread 1:1
+yang hasil `GET /conversations/:id` punya tepat satu partisipan `is_agent` dengan `agent_id`
+diteruskan ke `/chat/<agent_id>`, obrolan grup atau thread lainnya ditampilkan kalimat
+"Obrolan grup belum bisa dibuka di app. Pilih Bolu di bawah untuk melanjutkan.", dan id yang
+tidak dikenal — termasuk yang dikembalikan `conversation_not_found` (404) — ditampilkan kalimat
+"Obrolan tidak ditemukan. Pilih Bolu di bawah untuk melanjutkan." dengan tombol ke daftar Bolu.
+`apps/mobile/src/lib/deep-link.ts` (`parseIncomingLink`) sudah memisahkan `chat` dari resource
+lain, dan `apps/mobile/app/+native-intent.tsx` menahan seluruh `bolu://` serta URL
+`https://timbolu.com/...` yang diklaim app dari router. Path tak dikenal mendarat di daftar
+Bolu dengan `UNKNOWN_LINK_NOTICE`.
 
 Selain itu `notification.pending` belum punya produsen dan `routine.run` baru ada sebagai nama.
 Sisi app dari universal link sudah ada sejak #540: `apps/mobile/app.json` mendeklarasikan
