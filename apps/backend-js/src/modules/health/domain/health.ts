@@ -35,6 +35,15 @@ export interface Checker {
   ping(): Promise<void>;
 }
 
+/**
+ * Proves the realtime path the live stream depends on: a ping answers "Redis is
+ * up", which stays true when publish → subscribe is broken. Implemented by the
+ * pub/sub package, which owns both halves.
+ */
+export interface RealtimeProbe {
+  probe(): Promise<void>;
+}
+
 /** Service answers liveness and readiness probes. */
 export interface Service {
   /** Liveness never touches a dependency: it answers "is this process alive". */

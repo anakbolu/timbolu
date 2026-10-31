@@ -4,7 +4,13 @@
  * Ported from internal/modules/health/service/service.go.
  */
 
-import type { Checker, Component, Report, Repository } from "../domain/health.ts";
+import type {
+  Checker,
+  Component,
+  RealtimeProbe,
+  Report,
+  Repository,
+} from "../domain/health.ts";
 import { StatusNotConfigured, StatusOK, StatusUnavailable } from "../domain/health.ts";
 
 /** What the handler calls. */
@@ -21,10 +27,16 @@ export interface ServicePort {
 export class Service implements ServicePort {
   private readonly database: Repository | null;
   private readonly redis: Checker | null;
+  private readonly realtime: RealtimeProbe | null;
 
-  constructor(database: Repository | null, redis: Checker | null) {
+  constructor(
+    database: Repository | null,
+    redis: Checker | null,
+    realtime: RealtimeProbe | null = null,
+  ) {
     this.database = database;
     this.redis = redis;
+    this.realtime = realtime;
   }
 
   /** Reports the process state without touching any dependency. */
@@ -34,16 +46,23 @@ export class Service implements ServicePort {
 
   /** Checks every configured dependency and reports per-component state. */
   async readiness(): Promise<Report> {
-    const components: Component[] = [await check("database", this.database)];
+    const database = await check("database", this.database);
+    const redis =
+      this.redis === null
+        ? { name: "redis", status: StatusNotConfigured }
+        : await check("redis", this.redis);
+    const components: Component[] = [
+      database,
+      redis,
+      await checkRealtime(this.realtime),
+    ];
 
-    if (this.redis === null) {
-      components.push({ name: "redis", status: StatusNotConfigured });
-    } else {
-      components.push(await check("redis", this.redis));
-    }
-
+    // Only database and redis decide the overall status. A dead live path must
+    // be visible, not fatal: restarting an API that still serves requests would
+    // turn a silent realtime outage into a restart loop. Realtime is reported
+    // so it can be read from /api/ready instead.
     const report: Report = { status: StatusOK, components };
-    for (const component of components) {
+    for (const component of [database, redis]) {
       if (component.status === StatusUnavailable) {
         report.status = StatusUnavailable;
         break;
@@ -63,4 +82,16 @@ async function check(name: string, checker: Checker | null): Promise<Component> 
     return { name, status: StatusUnavailable, error: (err as Error).message };
   }
   return { name, status: StatusOK };
+}
+
+async function checkRealtime(probe: RealtimeProbe | null): Promise<Component> {
+  if (probe === null) {
+    return { name: "realtime", status: StatusNotConfigured };
+  }
+  try {
+    await probe.probe();
+  } catch (err) {
+    return { name: "realtime", status: StatusUnavailable, error: (err as Error).message };
+  }
+  return { name: "realtime", status: StatusOK };
 }

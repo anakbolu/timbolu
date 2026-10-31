@@ -15,7 +15,7 @@ The contract is identical either way.
 | Endpoint | Auth | Notes |
 | --- | --- | --- |
 | `GET /api/health` | — | Liveness. `200` while the process runs, and it never touches a dependency |
-| `GET /api/ready` | — | Readiness. `200` when every configured dependency answers, `503` when one is `unavailable` |
+| `GET /api/ready` | — | Readiness. `200` when every configured dependency answers; `503` only when `database` or `redis` is `unavailable` |
 
 ### Liveness: `GET /api/health`
 
@@ -72,24 +72,44 @@ probes are evidence about a *container* build only.
     "status": "ok",
     "components": [
       { "name": "database", "status": "ok" },
-      { "name": "redis", "status": "ok" }
+      { "name": "redis", "status": "ok" },
+      { "name": "realtime", "status": "ok" }
     ]
   }
 }
 ```
 
-Every configured dependency is pinged, and the components always appear in the
-order `database`, `redis`:
+Every configured dependency is checked, and in the Bun tree the components
+always appear in the order `database`, `redis`, `realtime` (the Go tree reports
+only the first two):
 
 | Component status | Meaning | Effect on the probe |
 | --- | --- | --- |
-| `ok` | the ping answered | ready |
-| `unavailable` | the ping failed; the component's `error` carries the reason | `503`, and `status` becomes `unavailable` |
+| `ok` | the check answered | ready |
+| `unavailable` | the check failed; the component's `error` carries the reason | `503`, and `status` becomes `unavailable` — except for `realtime`, below |
 | `not_configured` | the dependency is not wired in this deployment (no database handle, no Redis) | ready — an absent dependency is not a failing one |
 
-When a component is `unavailable` the per-component detail is kept, so an operator
-sees which dependency is down without reading logs — but it sits in the error
-envelope rather than in `data`, because the request as a whole failed:
+`database` and `redis` are pinged. `realtime` is a real round trip instead: the
+probe publishes a frame on `health:probe:<uuid>` through the same `Publisher`
+the live stream uses and waits for the subscription to deliver it, bounded at
+1000 ms. A ping alone stays green when publishing and subscribing have drifted
+apart, which is exactly how a dead live path goes unnoticed — so the third
+component proves the path the stream actually takes, not just that Redis answers.
+The channel is unique per call and sits outside the `ws:` namespace, so no
+workspace subscriber ever sees the test frame.
+
+**`realtime` never turns the probe into `503`.** Only `database` and `redis`
+decide the overall `status`. A dead live path must be visible, not fatal: an
+orchestrator that restarts an API which still serves requests turns a silent
+realtime outage into a restart loop, so the failure is reported in `components`
+and left for an operator to act on. `realtime` is `not_configured` when no probe
+is wired — for example when Redis itself is not configured — and `unavailable`,
+with `error`, when the frame does not arrive within the bound.
+
+When a component that gates traffic is `unavailable` the per-component detail is
+kept, so an operator sees which dependency is down without reading logs — but it
+sits in the error envelope rather than in `data`, because the request as a whole
+failed:
 
 ```json
 {
@@ -108,11 +128,13 @@ envelope rather than in `data`, because the request as a whole failed:
 }
 ```
 
-`not_ready` is the code a failed probe returns. The Bun implementation adds one
-more case: a container with no health service wired answers
-`health_not_configured` (`503`) on both paths instead, which the Go tree never
-does because it always wires the service (with `not_configured` components when a
-dependency is missing).
+`not_ready` is the code a failed probe returns. The example above is the Go
+tree's answer, which reports the two components it checks; Bun also carries
+`realtime` in `details.components`, and a `realtime` failure alone never produces
+that envelope. The Bun implementation adds one more case: a container with no
+health service wired answers `health_not_configured` (`503`) on both paths
+instead, which the Go tree never does because it always wires the service (with
+`not_configured` components when a dependency is missing).
 
 ### Why the two probes are separate
 
