@@ -79,13 +79,64 @@ header `X-Workspace-Id`. Scaffold ini tidak punya storage selain keystore, jadi
 pilihan workspace tidak diingat antar-jalan; begitu pemilih workspace masuk, itu
 tempat menyimpannya.
 
+## Link masuk `bolu://`
+
+App membaca link `bolu://` sejak #500. Router tidak dipakai untuk memetakannya:
+`bolu://chat/<id obrolan>` akan cocok dengan `chat/[agentID]`, yang mengharapkan
+id Bolu, dan akan membuka thread yang tidak disebut link. Karena itu
+`app/+native-intent.tsx` (`redirectSystemPath`) mengembalikan `null` untuk URL
+`bolu://` — router tetap di tempatnya — dan `app/_layout.tsx` yang memutuskan
+tujuan sebenarnya.
+
+Alurnya:
+
+1. `app/_layout.tsx` (`IncomingLinks`) membaca URL peluncuran lewat
+   `Linking.getInitialURL()` **sebelum** sesi diketahui — notifikasi paling
+   sering membuka app yang sudah mati — lalu URL berikutnya lewat
+   `Linking.addEventListener("url", …)`. Hanya `bolu://` yang diambil; URL lain
+   tetap ditangani router.
+2. `src/lib/deep-link.ts` (`parseIncomingLink`) menerjemahkan URL menjadi target
+   `chat`/`task`/`approval`/`routine`, atau `fallback` dengan alasan
+   `unknown-path`, `invalid-id`, atau `not-a-link`. Id wajib UUID; query dan
+   fragment diabaikan, segmen path tambahan tidak.
+3. `src/lib/pending-link.ts` menyimpan target itu. Link yang datang saat belum
+   masuk tidak dibuang: `_layout.tsx` menunggu status `signed-in`, baru memanggil
+   `takePendingLink()` (sekali pakai) dan `router.replace(...)`.
+4. `src/lib/link-destination.ts` (`destinationFor`) menentukan tujuan dan
+   kalimatnya; `setLinkNotice` memasang kalimat itu dan
+   `app/(tabs)/bolu.tsx` menampilkannya sebagai banner yang bisa ditutup.
+
+Hari ini **setiap** target berakhir di daftar Bolu `/(tabs)/bolu` dengan
+pemberitahuan, karena layarnya belum ada di app:
+
+| Link | Target `parseIncomingLink` | Yang terjadi sekarang |
+| --- | --- | --- |
+| `bolu://chat/<conversation_id>` | `{ kind: "chat" }` | daftar Bolu + "Layar yang dituju tautan ini belum ada di app. …" — `chat/[agentID]` butuh id Bolu, bukan id obrolan, jadi tidak dibuka |
+| `bolu://task/<task_id>` | `{ kind: "task" }` | daftar Bolu + kalimat yang sama; belum ada layar detail tugas |
+| `bolu://approval/<draft_id>` | `{ kind: "approval" }` | daftar Bolu + kalimat yang sama; belum ada layar draf |
+| `bolu://routine/<routine_id>` | `{ kind: "routine" }` | daftar Bolu + kalimat yang sama; belum ada layar rutinitas |
+| `bolu://` dengan path lain, segmen ekstra, atau id bukan UUID | `{ kind: "fallback" }` | daftar Bolu + "Tautan ini tidak dikenal. Pilih Bolu di bawah untuk melanjutkan." |
+
+`app/+not-found.tsx` adalah layar cadangan expo-router untuk path yang tidak
+punya berkas layar (URL non-`bolu://`): isinya `UNKNOWN_LINK_NOTICE`
+("Tautan ini tidak dikenal.") dan tombol "Kembali ke daftar Bolu". Target
+`bolu://` yang dikenali tidak diarahkan ke sana — `destinationFor` selalu
+mengembalikan `/(tabs)/bolu`.
+
+`docs/deep-links.md` § Skema `bolu://` adalah kontraknya; tabel di atas
+mencatat apa yang app lakukan sekarang, bukan apa yang seharusnya.
+
 ## Yang belum ada
 
 Semua ini sengaja di luar potongan pertama:
 
 - **Push notification** dan registrasi `POST /devices` (endpoint-nya sudah ada).
-- **Deep link** `bolu://` — `scheme` sudah dideklarasikan, tapi belum ada
-  penanganan link tertunda saat cold start ([deep-links.md](deep-links.md)).
+- **Universal link** `timbolu.com/…` — app hanya membaca skema `bolu://`, dan
+  `app.json` belum mendeklarasikan associated domains; bentuk dan syaratnya ada
+  di [deep-links.md](deep-links.md) § Universal link.
+- **Layar untuk target `bolu://`** — `task`, `approval`, `routine`, dan
+  `chat/<conversation_id>` belum punya layar, jadi semuanya berakhir di daftar
+  Bolu dengan pemberitahuan (§ Link masuk `bolu://`).
 - **Streaming SSE/WebSocket** (`/events/stream`, `/events/socket`): balasan Bolu
   muncul lewat satu pembacaan ulang 5 detik setelah kirim, plus tombol "Muat
   ulang" dan tarik-untuk-menyegarkan.
