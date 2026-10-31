@@ -10,20 +10,22 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { Redirect, useLocalSearchParams } from "expo-router";
+import { Redirect, useFocusEffect, useLocalSearchParams } from "expo-router";
 
 import { BoluFace } from "@/components/bolu-face";
 import { listMessages, messageText, openDirectConversation, sendMessage } from "@/lib/api";
 import type { ChatConversation, ChatMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { applyPage, connectChatStream, insertMessage } from "@/lib/chat-stream";
 
 /**
- * How long after a send the reply is fetched once.
+ * How long after a send the reply is also read once, whatever the stream says.
  *
- * The answer is a durable task, and this scaffold has no event stream, so the
- * only way to show it is to ask again. One delayed read is enough for a demo and
- * cannot turn into a polling loop on a phone's battery; the pull-to-refresh and
- * the "Muat ulang" button cover the rest.
+ * The live feed is the fast path, and it is not the only one. A one-shot read
+ * covers a stream that is down, a frame that was dropped while the phone slept,
+ * and the window between tapping Kirim and the stream's next event; the
+ * pull-to-refresh and the "Muat ulang" button cover the rest. It is one read per
+ * send, so it cannot become a polling loop on the battery.
  */
 const REPLY_READ_DELAY_MS = 5_000;
 
@@ -41,6 +43,50 @@ export default function ChatScreen() {
   // is looking at. A flag rather than a cleared timer: the wait holds no handle
   // worth typing, and a pending one costs five seconds of nothing.
   const gone = useRef(false);
+  /**
+   * The last event id this screen saw.
+   *
+   * In memory only: it exists so a connection opened again after a blur resumes
+   * from here instead of asking the server to replay the whole workspace. The
+   * workspace id is what the server keys it by, and that never changes under an
+   * open screen.
+   */
+  const lastEventId = useRef(0);
+
+  /**
+   * Puts one streamed message into the open thread.
+   *
+   * `insertMessage` owns the ordering and the de-duplication; this callback only
+   * says which list it applies to. A frame for another thread never reaches
+   * here, because the stream is opened for one conversation.
+   */
+  const applyStreamedMessage = useCallback((incoming: ChatMessage) => {
+    // The first page has not landed yet; `reload` is about to read a page that
+    // already includes this message, so there is nothing to insert into.
+    setMessages((current) => (current === null ? current : insertMessage(current, incoming)));
+  }, []);
+
+  const conversationId = conversation?.id ?? null;
+
+  /**
+   * The live feed, for as long as this screen is the one on top.
+   *
+   * `useFocusEffect` rather than `useEffect` is the whole of "never two
+   * connections": the cleanup runs on blur as well as on unmount, so a screen
+   * pushed behind another one stops listening and starts again when it returns.
+   * The cursor travels through the ref, so the return resumes instead of
+   * replaying.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      if (status !== "signed-in" || conversationId === null) return;
+      const stream = connectChatStream(conversationId, applyStreamedMessage, lastEventId.current);
+      return () => {
+        lastEventId.current = stream.lastEventId();
+        stream.close();
+      };
+    }, [status, conversationId, applyStreamedMessage]),
+  );
 
   const reload = useCallback(async () => {
     if (!agentID) return;
@@ -58,7 +104,8 @@ export default function ChatScreen() {
     }
     // Kept in the API's order — newest first — because the list is `inverted`,
     // which puts index zero at the bottom where a chat's newest message belongs.
-    setMessages(page.data.messages);
+    // The merge keeps a frame that arrived while this read was in flight.
+    setMessages((current) => applyPage(current, page.data.messages));
     setError(null);
   }, [agentID]);
 
