@@ -9,7 +9,9 @@
  * renders.
  *
  * `og:url` has to be absolute: a relative value is useless to every crawler that
- * reads the card. The app sets no `metadataBase`, so the origin lives here.
+ * reads the card. The app sets no `metadataBase`, so the origin lives here and is
+ * exported for `app/robots.ts` and `app/sitemap.ts`, which need the same absolute
+ * URLs rather than a second copy of the origin that could drift.
  *
  * `openGraph.title` is written verbatim — Next's `title.template` only decorates
  * `<title>`, so the page title is passed through without the "· Timbolu" suffix.
@@ -17,7 +19,7 @@
 
 import type { Metadata } from "next";
 
-const SITE_URL = "https://timbolu.com";
+export const SITE_URL = "https://timbolu.com";
 const SITE_NAME = "Timbolu";
 
 type CardInput = {
