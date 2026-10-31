@@ -190,10 +190,11 @@ dihabiskan dulu:
 CONVERSATION=…
 LAST=0
 while :; do
-  PAGE=$(curl -s \
+  PAGE=$(curl -s -f \
     -H "Authorization: Bearer $TOKEN" \
     -H "X-Workspace-Id: $WORKSPACE" \
     "$BASE/events?after_id=$LAST&limit=200" | jq -c '.data // []')
+  if [ -z "$PAGE" ]; then echo "events unreadable"; exit 1; fi
   [ "$(printf '%s' "$PAGE" | jq 'length')" -eq 0 ] && break
   LAST=$(printf '%s' "$PAGE" | jq 'map(.id) | max')
 done
@@ -221,7 +222,8 @@ Body kirim yang dibaca handler adalah `text`, bukan `blocks` (`send` di
 menahan balasan Bolu, jadi satu POST menambah tepat satu `message.new`.
 
 Lulus kalau terminal 1 mencetak frame bernama dalam 2 detik setelah POST, dengan `id:` lebih besar
-dari `$LAST`:
+dari `$LAST`. Dua detik jauh di bawah `Heartbeat = 25_000`, jadi frame yang datang dalam jendela itu
+hanya bisa berasal dari publish, bukan dari keep-alive:
 
 ```text
 id: 12347
