@@ -194,36 +194,39 @@ async function* pump(
   attempts: number,
 ): AsyncGenerator<StreamEvent> {
   let usage: Usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+  let iteratorDone = false;
 
   try {
-    const handle = async (event: StreamEvent): Promise<boolean> => {
+    let event: StreamEvent | undefined = first;
+    while (event) {
+      if (ctx?.aborted) return;
+
       if (event.type === "usage" && event.usage) {
         // The counts arrive before the terminal event, so the ledger row can
         // carry them.
         usage = event.usage;
-        return !send(ctx, event);
       }
 
-      if (event.type !== "done" && event.type !== "error") {
-        return !send(ctx, event);
+      if (event.type === "done" || event.type === "error") {
+        try {
+          await record(s, ctx, scope, cfg, response(cfg, usage), meta);
+        } catch (err) {
+          if (!ctx?.aborted) yield { ...emptyEvent, type: "error", err };
+          return;
+        }
+        if (!ctx?.aborted) yield event;
+        return;
       }
 
-      try {
-        await record(s, ctx, scope, cfg, response(cfg, usage), meta);
-      } catch (err) {
-        send(ctx, { ...emptyEvent, type: "error", err });
-        return true;
-      }
-      send(ctx, event);
-      return true;
-    };
+      yield event;
 
-    if (await handle(first)) return;
-
-    while (true) {
+      if (ctx?.aborted) return;
       const next = await iterator.next();
-      if (next.done) break;
-      if (await handle(next.value)) return;
+      if (next.done) {
+        iteratorDone = true;
+        break;
+      }
+      event = next.value;
     }
 
     // The channel closed without a terminal event. Reporting an error is the
@@ -232,18 +235,24 @@ async function* pump(
     try {
       await record(s, ctx, scope, cfg, response(cfg, usage), meta);
     } catch (err) {
-      send(ctx, { ...emptyEvent, type: "error", err });
+      if (!ctx?.aborted) yield { ...emptyEvent, type: "error", err };
       return;
     }
-    send(ctx, {
-      ...emptyEvent,
-      type: "error",
-      err: new Error(
-        `llm: ${cfg.name} closed the stream without a final event: ${ErrProviderUnavailable.message}`,
-      ),
-    });
+    if (!ctx?.aborted) {
+      yield {
+        ...emptyEvent,
+        type: "error",
+        err: new Error(
+          `llm: ${cfg.name} closed the stream without a final event: ${ErrProviderUnavailable.message}`,
+        ),
+      };
+    }
   } finally {
-    span.finish(response(cfg, usage), attempts);
+    try {
+      if (!iteratorDone) await iterator.return?.();
+    } finally {
+      span.finish(response(cfg, usage), attempts);
+    }
   }
 }
 
@@ -258,16 +267,6 @@ function response(cfg: ProviderConfig, usage: Usage): ChatResponse {
     provider: cfg.adapter,
     rawFinishReason: "",
   };
-}
-
-/**
- * Hands one event to the consumer, giving up when the caller's context ends so
- * an abandoned stream cannot leak the pump.
- */
-function send(ctx: AbortSignal | undefined, event: StreamEvent): boolean {
-  if (ctx?.aborted) return false;
-  void event;
-  return true;
 }
 
 /**
