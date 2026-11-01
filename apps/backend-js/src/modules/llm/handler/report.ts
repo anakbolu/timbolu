@@ -246,15 +246,33 @@ function csvRows(usage: UsageReport, period: string, days: string): string[][] {
 }
 
 /** Quotes one CSV record the way encoding/csv does: only when a field needs it. */
-function encodeRow(row: string[]): string {
+export function encodeRow(row: string[]): string {
   return row.map(encodeField).join(",") + "\n";
 }
 
-function encodeField(value: string): string {
+/**
+ * Quotes one CSV field or prefixes it to prevent formula injection.
+ *
+ * Exported for testing only; reportCSV callers stream via encodeRow.
+ * When opened in spreadsheet programs, cells starting with =, +, -, @, \t, or \r
+ * can execute arbitrary formulas or exfiltrate data. We prefix such cells with
+ * a single quote (') so spreadsheets treat them as literal text.
+ */
+export function encodeField(value: string): string {
+  if (value === "") return value;
+
+  // Spreadsheet formulas start with =, +, -, @, tab, or carriage return (#654).
+  // Prefix with a single quote before the quoting rule runs so the quote stays
+  // inside enclosing double-quotes if the field also contains commas/newlines.
+  let cell = value;
+  if (/^[=+\-@\t\r]/.test(cell)) {
+    cell = "'" + cell;
+  }
+
   // encoding/csv quotes a field that holds a comma, a quote, a line break, or
   // that starts with whitespace.
-  if (value === "" || (!/[",\r\n]/.test(value) && !/^\s/.test(value))) return value;
-  return `"${value.replace(/"/g, '""')}"`;
+  if (!/[",\r\n]/.test(cell) && !/^\s/.test(cell)) return cell;
+  return `"${cell.replace(/"/g, '""')}"`;
 }
 
 /** Renders an instant the way Go's `time.RFC3339` does: no fractional seconds. */
