@@ -9,7 +9,7 @@ still say nothing about the Bun tree and the Bun gates say nothing about the Go 
 so [What production runs, and which gates apply](#what-production-runs-and-which-gates-apply)
 says which of the gates below a given change actually needs.
 
-**A workflow enforces seven of them, and only seven.** `.github/workflows/checks.yml`
+**A workflow enforces eight of them, and only eight.** `.github/workflows/checks.yml`
 (the workflow named **Checks**, whose first job is the check run "Contracts and design
 tokens") runs `make contracts-check`, `make design-tokens-check` and
 `make deep-links-check` on every pull request and on every push to `main`. The first
@@ -37,7 +37,7 @@ fingerprint production serves against the Go and Bun fingerprints computed from 
 checked-out tree (a match to either one names the implementation serving), so it proves
 a rollout landed and says nothing about whether the code is correct. So **run `make ci`
 locally, plus `make lint-frontend` and `make build-frontend` for a frontend change, and
-paste their output in the pull request**; the seven checks above are the only gates a
+paste their output in the pull request**; the eight checks above are the only gates a
 machine runs for you.
 
 ## What production runs, and which gates apply
@@ -79,6 +79,7 @@ skipped, and the run went green while production kept serving the previous image
 | Coverage | `make cover` (`scripts/coverage.sh`) | Total coverage ≥ 80% |
 | Types (Bun port) | `make typecheck-backend-js` (`cd apps/backend-js && bun run typecheck`) | `tsc --noEmit` over `apps/backend-js/src/**/*.ts`: no type error in the tree production runs; `make ci` runs it |
 | Tests (Bun port) | `make test-backend-js` (`cd apps/backend-js && bun test`) | `bun test` over `apps/backend-js/src/**/*.test.ts`: the build fingerprint `/api/health` reports, the stream's positional contract with its publisher, the container wiring, auth, task activity, and the device registry; `make ci` runs it |
+| Tests (frontend) | `make test-frontend` (`cd apps/frontend && bun test src`) | `bun test` over `apps/frontend/src/**/*.test.ts` — 19 cases for route and metadata invariants (`seo-routes`, `app-links`, `dashboard-view`, `friendly-error`); `make ci` runs it |
 | Lint (frontend) | `make lint-frontend` (`cd apps/frontend && npm run lint`) | `eslint` over `apps/frontend/src/**` with the rules in `apps/frontend/eslint.config.mjs`, including `no-unused-vars` and `react-hooks`; nothing else runs them, because `make ci` leaves the frontend out |
 | Build (frontend) | `make build-frontend` (`cd apps/frontend && npm run build`) | `next build` over the tree `timbolu.com` serves: a missing import, a server/client boundary used the wrong way, or a page that fails to prerender is red here rather than in `deployment.yml` |
 

@@ -1,7 +1,7 @@
 .PHONY: help up down logs build dev frontend backend api worker-logs wa-gateway \
         test test-backend test-gateway test-packages test-integration smoke-task smoke-approval smoke-order measure-orders demo demo-stop gate-report cover cover-backend cover-gateway lint lint-backend lint-gateway archcheck contracts-check design-tokens-check deep-links-check well-known-check sqlc mocks generate llm-fixtures \
         migrate-up migrate-down migrate-create psql test-backend-js typecheck-backend-js \
-        lint-frontend build-frontend typecheck-mobile ci
+        test-frontend lint-frontend build-frontend typecheck-mobile ci
 
 COMPOSE := docker compose
 BACKEND := apps/backend
@@ -152,6 +152,9 @@ test-backend-js: ## Run the Bun port's test suite (what production runs)
 typecheck-backend-js: ## Type-check the Bun port (tsc --noEmit)
 	cd apps/backend-js && bun run typecheck
 
+test-frontend: ## Run the frontend's test suite with Bun (resolves the @/ alias)
+	cd apps/frontend && bun test src
+
 lint-frontend: ## Lint the frontend (eslint)
 	cd apps/frontend && npm run lint
 
@@ -167,4 +170,5 @@ fmt: ## Format the Go code of every module
 	cd $(GATEWAY) && gofmt -w ./cmd ./internal
 
 # lint-frontend and build-frontend stay out of `ci`: a full Next build adds minutes to the local loop.
-ci: contracts-check design-tokens-check deep-links-check archcheck lint test cover test-backend-js typecheck-backend-js ## Run the same gates as CI locally
+# test-frontend is included: bun test runs in ~100ms and verifies route/metadata invariants locally.
+ci: contracts-check design-tokens-check deep-links-check archcheck lint test cover test-backend-js typecheck-backend-js test-frontend ## Run the same gates as CI locally
