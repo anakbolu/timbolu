@@ -37,8 +37,8 @@ nama tim, model, dan pemakaian token satu workspace.
 | `apps/frontend/src/app/seo-routes.test.ts` | 4 kasus: sitemap memuat persis lima halaman publik, sitemap tidak memuat halaman sesi, `lastModified` tidak berubah antar build, dan `robots.txt` mengizinkan situs, menutup rute workspace, serta menyebut sitemap. Dijalankan `cd apps/frontend && bun test src/app/seo-routes.test.ts` |
 | `apps/frontend/src/app/layout.tsx` | kartu bawaan seluruh app: `title.default`, template `%s · Timbolu`, `description`, `openGraph.title`/`description`/`siteName`/`locale`/`type`; `<html lang="id">` |
 | `apps/frontend/src/app/page.tsx` | memanggil `openGraphCard()` dengan `path: "/"` |
-| `apps/frontend/src/app/pricing/page.tsx`, `privacy/page.tsx`, `terms/page.tsx`, `contact/page.tsx`, `join/page.tsx` | memanggil `pageMetadata()` dengan path masing-masing |
-| 14 halaman `(workspace)`, `admin/dashboard/page.tsx`, `admin/users/page.tsx`, `not-found.tsx` | `robots: { index: false }` |
+| `apps/frontend/src/app/pricing/page.tsx`, `privacy/page.tsx`, `terms/page.tsx`, `contact/page.tsx`, `join/page.tsx` | memanggil `pageMetadata()` dengan path masing-masing (`join/page.tsx` menyertakan `robots: { index: false }`) |
+| 17 halaman `(workspace)` yang dirender, `admin/dashboard/page.tsx`, `admin/users/page.tsx`, `not-found.tsx`, `login/page.tsx`, `signup/page.tsx`, `verify/page.tsx`, `forgot-password/page.tsx`, `onboarding/page.tsx`, `join/page.tsx` | `robots: { index: false }` |
 
 `openGraphCard()` mengembalikan `openGraph` dan `twitter`; `pageMetadata()` menambahkan `title` dan
 `description` di atasnya. `SITE_URL` di-export karena app tidak menyetel `metadataBase`: modul itu
@@ -52,9 +52,11 @@ mendeklarasikan kartu sendiri, sehingga halaman yang hanya mengekspor `title` da
 akan tampil di percakapan sebagai kartu landing. Karena itu setiap halaman publik membangun kartunya
 lewat `openGraphCard()`/`pageMetadata()`, bukan mengandalkan warisan layout.
 
-`robots: { index: false }` ada di 17 berkas: 14 dari 17 halaman `(workspace)` yang dirender,
-`admin/dashboard/page.tsx`, `admin/users/page.tsx`, dan `not-found.tsx`. `(workspace)/tasks/page.tsx`
-hanya berisi `redirect("/dashboard")`, jadi tidak punya metadata sendiri.
+`robots: { index: false }` ada di 26 berkas: seluruh 17 halaman `(workspace)` yang dirender,
+`admin/dashboard/page.tsx`, `admin/users/page.tsx`, `not-found.tsx`, serta enam halaman auth/onboarding/join
+(`login/page.tsx`, `signup/page.tsx`, `verify/page.tsx`, `forgot-password/page.tsx`, `onboarding/page.tsx`, dan
+`join/page.tsx` lewat `pageMetadata()`). `(workspace)/tasks/page.tsx` hanya berisi `redirect("/dashboard")`,
+jadi tidak punya metadata sendiri.
 
 `/robots.txt` dan `/sitemap.xml` disajikan oleh `apps/frontend/src/app/robots.ts` dan
 `apps/frontend/src/app/sitemap.ts` sejak #555 merge ke `main`. `apps/frontend/next.config.ts` tetap
@@ -84,20 +86,18 @@ Tiga celah yang masih terbuka:
 `application/xml`). #555 hanya menutup dua URL itu: halaman publik tetap tanpa
 `<meta name="robots">`, dan `og:image` tetap tidak ada.
 
-### Halaman aplikasi yang belum menyatakan `noindex`
+### Halaman aplikasi dan deklarasi `noindex`
 
-Sembilan berkas mendeklarasikan `metadata` tanpa `robots`:
+Seluruh halaman aplikasi, auth, onboarding, dan undangan workspace kini sudah menyatakan `robots: { index: false }`:
 
-- `apps/frontend/src/app/(workspace)/settings/memory/page.tsx`, `settings/model/page.tsx`, dan
-  `settings/team/page.tsx` — `metadata` hanya berisi `title` dan `description`.
-- `apps/frontend/src/app/login/page.tsx`, `signup/page.tsx`, `verify/page.tsx`,
-  `forgot-password/page.tsx`, `onboarding/page.tsx`, dan `join/page.tsx` — `metadata` tanpa `robots`.
+- Seluruh 17 halaman `(workspace)` yang dirender (termasuk `settings/memory/page.tsx`, `settings/model/page.tsx`,
+  dan `settings/team/page.tsx`) dan halaman admin (`admin/dashboard/page.tsx`, `admin/users/page.tsx`).
+- `apps/frontend/src/app/login/page.tsx`, `signup/page.tsx`, `verify/page.tsx`, `forgot-password/page.tsx`,
+  dan `onboarding/page.tsx` menyatakan `robots: { index: false }` di metadata masing-masing.
+- `apps/frontend/src/app/join/page.tsx` mengoper `robots: { index: false }` ke `pageMetadata()`.
 
-`apps/frontend/src/app/admin/page.tsx` hanya `redirect("/admin/dashboard")`; halaman tujuan redirect
-itu punya `robots: { index: false }`. Konsekuensinya: `robots.txt` dari #555 men-disallow `/settings`
-dan `/onboarding`, tetapi tidak menyebut `/login`, `/signup`, `/verify`, `/forgot-password`, maupun
-`/join`; selama sembilan berkas di atas belum diberi `robots: { index: false }`, tidak ada deklarasi
-di repo yang melarang perayap mengindeks lima halaman itu.
+`apps/frontend/src/app/admin/page.tsx` dan `apps/frontend/src/app/(workspace)/tasks/page.tsx` hanya redirect
+ke halaman tujuan yang masing-masing sudah memiliki `robots: { index: false }`.
 
 ## Yang tidak bisa dikerjakan dari repo
 
@@ -122,14 +122,20 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://timbolu.com/robots.txt
 curl -sS -o /dev/null -w '%{http_code}\n' https://timbolu.com/sitemap.xml
 curl -sS https://timbolu.com/ | grep -o '<meta name="robots"[^>]*>' || echo 'tanpa meta robots'
 curl -sS https://timbolu.com/pricing | grep -o '<meta name="robots"[^>]*>' || echo 'tanpa meta robots'
+for p in login signup verify forgot-password onboarding join; do
+  echo -n "$p: "
+  curl -sS "https://timbolu.com/$p" | grep -o '<meta name="robots"[^>]*>' || echo 'tanpa meta robots'
+done
 cd apps/frontend && bun test src/app/seo-routes.test.ts
 ```
 
 Hasil yang diharapkan hari ini: `200`, `200`, `tanpa meta robots`, `tanpa meta robots`. Dua URL
 pertama `200` — bukan `404` seperti sebelum #555 — `/robots.txt` `text/plain`, `/sitemap.xml`
-`application/xml`; dua hasil `tanpa meta robots` adalah dua celah yang masih terbuka. Uji
-`seo-routes.test.ts` harus lulus 4 kasus dan tidak butuh jaringan.
-
+`application/xml`; dua hasil `tanpa meta robots` pada `/` dan `/pricing` adalah celah halaman pemasaran
+publik yang belum diatur eksplisit. Untuk enam rute auth/aplikasi publik (`/login`, `/signup`, `/verify`,
+`/forgot-password`, `/onboarding`, `/join`), keluaran yang diharapkan setelah deploy perubahan ini adalah:
+`<meta name="robots" content="noindex"/>` (atau `<meta name="robots" content="noindex, nofollow"/>` / setara).
+Uji `seo-routes.test.ts` harus lulus 4 kasus dan tidak butuh jaringan.
 Gambar OG diperiksa dengan pola yang sama:
 
 ```bash

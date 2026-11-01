@@ -29,6 +29,8 @@ type CardInput = {
   description: string;
   /** Route path, e.g. `/pricing`. The root is `/` and gets no trailing slash. */
   path: string;
+  /** Optional robots directive, e.g. `{ index: false }` for session/auth routes. */
+  robots?: Metadata["robots"];
 };
 
 export function openGraphCard({
@@ -55,6 +57,10 @@ export function openGraphCard({
   };
 }
 
-export function pageMetadata({ title, description, path }: CardInput): Metadata {
-  return { title, description, ...openGraphCard({ title, description, path }) };
+export function pageMetadata({ title, description, path, robots }: CardInput): Metadata {
+  const meta: Metadata = { title, description, ...openGraphCard({ title, description, path }) };
+  if (robots !== undefined) {
+    meta.robots = robots;
+  }
+  return meta;
 }

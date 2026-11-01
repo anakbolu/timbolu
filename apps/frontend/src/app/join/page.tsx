@@ -6,6 +6,7 @@ export const metadata = pageMetadata({
   title: "Undangan",
   description: "Terima undangan untuk bergabung ke workspace Bolu-mu.",
   path: "/join",
+  robots: { index: false },
 });
 
 // The component reads its query parameter on the client, so the page itself
