@@ -43,6 +43,7 @@ import {
 import { ALL_BOTS } from "@/lib/crew";
 import { crewFor, expressionOf, relativeAge, stateOf } from "@/lib/dashboard-view";
 
+import { normalizeWhatsAppPhone } from "@/lib/phone";
 import { AppTile } from "./apps-pill";
 import { useWorkspace } from "./workspace-data";
 
@@ -251,13 +252,14 @@ export function WhatsAppPanel() {
 
   const prepare = useCallback(async () => {
     if (!workspaceID) return;
-    if (!phone.trim()) {
+    const normalized = normalizeWhatsAppPhone(phone);
+    if (!normalized) {
       setError("Isi dulu nomor WhatsApp-nya.");
       return;
     }
 
     setBusy(true);
-    const result = await prepareWhatsAppNumber(workspaceID, { phone: phone.trim(), agent_id: chosenAgent });
+    const result = await prepareWhatsAppNumber(workspaceID, { phone: normalized, agent_id: chosenAgent });
     setBusy(false);
 
     if (!result.ok) {
@@ -430,12 +432,12 @@ export function WhatsAppPanel() {
               <input
                 type="tel"
                 value={phone}
-                placeholder="0812-3456-789"
+                placeholder="62812-3456-789"
                 onChange={(event) => setPhone(event.target.value)}
                 className={FIELD}
               />
               <span className="text-[13px] font-normal text-bolu-muted">
-                Nomor toko yang akan menjawab pelanggan.
+                Nomor toko yang akan menjawab pelanggan. Pakai kode negara, contoh 62812-3456-789 — bukan 0812-…
               </span>
             </label>
             <label className={`${LABEL} min-w-[180px] flex-[0_1_240px]`}>
