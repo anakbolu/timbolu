@@ -13,6 +13,7 @@ export type LinkTarget =
   | { kind: "task"; taskID: string }
   | { kind: "approval"; draftID: string }
   | { kind: "routine"; routineID: string }
+  | { kind: "routines" }
   | { kind: "fallback"; reason: "unknown-path" | "invalid-id" | "not-a-link" };
 
 /** `docs/deep-links.md` rule 1: the id is a UUID, in either letter case. */
@@ -36,20 +37,22 @@ const UNIVERSAL_HOST = "timbolu.com";
  * The paths this app claims under that host — the same list the Android intent
  * filter in `app.json` declares.
  *
+ * A path belongs here only if the form the contract uses opens a screen this
+ * build has. `/dashboard`, `/dashboard/integrations`, `/groups`, `/bolu/new`
+ * and `/settings` (with its whole subtree) are real web pages but have no app
+ * screen, so they stay with the browser instead of opening the app onto a
+ * notice.
+ *
  * `/tasks/` and `/approval/` keep their slash because those screens only exist
  * with an id (`/tasks` is a web redirect to `/dashboard`, not a screen); the
  * rest claim their whole subtree. The paths the contract leaves to the browser
  * — `/login`, `/signup`, `/pricing`, `/admin/**`, … — are deliberately absent.
  */
-const CLAIMED_PREFIXES = [
-  "/dashboard",
+export const CLAIMED_PREFIXES = [
   "/chat",
   "/tasks/",
   "/approval/",
   "/routines",
-  "/groups",
-  "/bolu/new",
-  "/settings",
 ] as const;
 
 /**
@@ -89,10 +92,9 @@ function parseBoluLink(parsed: URL): LinkTarget {
 /**
  * `https://timbolu.com/<path>` on the paths the app claims (§ Universal link).
  *
- * Only the forms that map onto a `LinkTarget` are honoured here. `/tasks` and
- * `/routines` without an id are list pages in the web app, and this build has
- * no list target to open; they fall back to the Bolu list with its notice
- * instead of a blank screen.
+ * Only the forms that map onto a `LinkTarget` are honoured here. `/tasks`
+ * without an id is a web redirect to `/dashboard` and has no screen in this
+ * build, so it is not claimed; `/routines` without an id is the routines tab.
  */
 function parseUniversalLink(parsed: URL): LinkTarget {
   // Empty segments dropped so `/tasks/<id>/` is the same URL as
@@ -102,8 +104,8 @@ function parseUniversalLink(parsed: URL): LinkTarget {
   if (segments.length === 2) {
     const [resource, id] = segments;
     // Only these three have a detail screen. `/settings/team`,
-    // `/admin/dashboard`, … are real web paths but not screens here, so they
-    // are an unknown path rather than a bad id.
+    // `/dashboard/integrations`, … are real web paths but not screens here, so
+    // they are an unknown path rather than a bad id.
     if (resource === "tasks" || resource === "approval" || resource === "routines") {
       if (!UUID.test(id)) return fallback("invalid-id");
       if (resource === "tasks") return { kind: "task", taskID: id };
@@ -112,6 +114,10 @@ function parseUniversalLink(parsed: URL): LinkTarget {
     }
     return fallback("unknown-path");
   }
+
+  // `/routines` on the web is the list and history; the app's Rutinitas tab is
+  // the same screen, so the bare path lands there instead of on a notice.
+  if (segments.length === 1 && segments[0] === "routines") return { kind: "routines" };
 
   // `/chat` carries its id in the query on the web (`/chat?conversation=<id>`);
   // the path form `/chat/<id>` does not exist there, so it is not invented here.
@@ -169,8 +175,8 @@ export function parseIncomingLink(url: string | null | undefined): LinkTarget {
  *
  * Everything else stays with the platform and the router: a foreign host, and
  * the timbolu.com paths the contract leaves to the browser (`/login`,
- * `/pricing`, `/admin/**`, …), which the app has no screen for.
- */
+ * `/pricing`, `/admin/**`, `/dashboard`, `/settings`, …), which the app has no
+ * screen for.
 export function isAppLink(url: string | null | undefined): boolean {
   if (!url) return false;
 

@@ -110,7 +110,9 @@ function IncomingLinks() {
           params: { routineID: destination.routineID },
         });
         return;
-      case "list":
+      case "routines":
+        router.replace("/(tabs)/routine");
+        return;
         router.replace("/(tabs)/bolu");
         return;
     }
