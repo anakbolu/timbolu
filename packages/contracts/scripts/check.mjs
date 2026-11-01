@@ -2,10 +2,11 @@
 /**
  * Fails when the realtime event names drift apart.
  *
- * `docs/api.md` is the source of truth. `packages/contracts/events.ts` and the
- * Go constants under `apps/backend/internal` must name exactly the same set.
- * The frontend may name a subset — it lists only the events its screens act on —
- * but it must not invent a name the docs do not have.
+ * `docs/api.md` is the source of truth. Three code locations must agree with it:
+ * `packages/contracts/events.ts`, the Bun constants under `apps/backend-js`
+ * (the tree that serves production), and the Go constants under `apps/backend/internal`
+ * (the reference tree). The frontend may name a subset — it lists only the events
+ * its screens act on — but it must not invent a name the docs do not have.
  *
  * The parsers deliberately key on the event-name shape (`word.word`) and ignore
  * whitespace, ordering, and comments, so reformatting a file does not fail the
@@ -91,6 +92,34 @@ function goNames() {
   return namesIn(values);
 }
 
+/**
+ * The event names declared by the Bun backend (`apps/backend-js`).
+ *
+ * Production runs this tree (timbolu.com/api/**), not the Go reference tree.
+ * Renaming or dropping an event constant here without updating docs/api.md or
+ * the contracts must fail the gate so production does not emit events the
+ * client and contracts know nothing about.
+ */
+function bunNames() {
+  const path = "apps/backend-js/src/modules/chat/domain/event.ts";
+  let source;
+  try {
+    source = read(path);
+  } catch (error) {
+    throw new Error(`cannot read ${path}: ${error.message}`);
+  }
+  const values = [];
+  for (const match of source.matchAll(
+    /^\s*export\s+const\s+Event[A-Za-z0-9_]+\s*=\s*"([^"]+)"/gm,
+  )) {
+    values.push(match[1]);
+  }
+  if (values.length === 0) {
+    throw new Error(`${path} declares no 'export const Event<Name> = "..."' constants`);
+  }
+  return namesIn(values);
+}
+
 function contractsNames() {
   const source = read("packages/contracts/events.ts");
   const chat = namesIn(tupleNames(source, "CHAT_EVENT_TYPES"));
@@ -133,12 +162,14 @@ function list(values) {
 
 let docs;
 let contracts;
+let bun;
 let go;
 let frontend;
 try {
   docs = docsNames();
   contracts = contractsNames();
   go = goNames();
+  bun = bunNames();
   frontend = frontendNames();
 } catch (error) {
   console.error(`contracts: ${error.message}`);
@@ -149,6 +180,7 @@ const failures = [];
 for (const [label, names] of [
   ["packages/contracts/events.ts", contracts],
   ["apps/backend/internal", go],
+  ["apps/backend-js/src/modules/chat/domain/event.ts", bun],
 ]) {
   const missing = difference(docs, names);
   const extra = difference(names, docs);
