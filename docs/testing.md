@@ -3,8 +3,9 @@
 Everything in this document is enforced by `make ci` locally, over the Go tree
 (`apps/backend`, `apps/whatsapp-gw`), the shared `packages/` module, the Bun port
 under `apps/backend-js` that production runs, and the Next.js tree under
-`apps/frontend` that serves `timbolu.com` — except the frontend's two gates, which
-stay out of `make ci` because a full Next build slows the local loop. The Go gates
+`apps/frontend` that serves `timbolu.com` — except the frontend's lint and build gates, which
+stay out of `make ci` because a full Next build slows the local loop (`make ci` does include
+`test-frontend`). The Go gates
 still say nothing about the Bun tree and the Bun gates say nothing about the Go one,
 so [What production runs, and which gates apply](#what-production-runs-and-which-gates-apply)
 says which of the gates below a given change actually needs.
@@ -22,11 +23,11 @@ The same workflow's second job, the check run "Bun typecheck and tests", runs
 the tree `timbolu.com/api/**` is served by, and until it existed those two ran only when
 someone remembered `make ci` — the silence that let a Bun-only commit go green (#355).
 
-Its third job, the check run "Next lint and build", runs `make lint-frontend` and
-`make build-frontend` on the same triggers: that is the tree `timbolu.com` is served by,
-and until it existed its lint rules and its production build were run by a person
-before merge or not at all. A pull request that broke `next build` went green and only
-failed in `deployment.yml`, after the merge that would have rejected it.
+Its third job, the check run "Next tests, lint and build", runs `make test-frontend`,
+`make lint-frontend` and `make build-frontend` on the same triggers: that is the tree
+`timbolu.com` is served by, and until it existed its lint rules and its production build
+were run by a person before merge or not at all. A pull request that broke `next build`
+went green and only failed in `deployment.yml`, after the merge that would have rejected it.
 
 Everything else in the table — formatting, `archcheck`, Go lint, generated code,
 migrations, `go test`, the race detector, and coverage —
@@ -50,7 +51,7 @@ is decided. Three cases follow from that:
 
 - **A change under `apps/backend-js/**` changes the code a user runs.** Its gates are
   the Bun ones in the table below, and `make ci` runs them, so a green `make ci` does
-  cover this tree — but only as far as those two commands reach, which is a seven-file
+  cover this tree — but only as far as those two commands reach, which is a twenty-one-file
   suite rather than the coverage the Go tree has.
 - **A change under `apps/backend/**` alone changes nothing a user can see today.** The
   Go gates still apply — it is where the contract, the migrations and the fixes live,
@@ -79,8 +80,8 @@ skipped, and the run went green while production kept serving the previous image
 | Coverage | `make cover` (`scripts/coverage.sh`) | Total coverage ≥ 80% |
 | Types (Bun port) | `make typecheck-backend-js` (`cd apps/backend-js && bun run typecheck`) | `tsc --noEmit` over `apps/backend-js/src/**/*.ts`: no type error in the tree production runs; `make ci` runs it |
 | Tests (Bun port) | `make test-backend-js` (`cd apps/backend-js && bun test`) | `bun test` over `apps/backend-js/src/**/*.test.ts`: the build fingerprint `/api/health` reports, the stream's positional contract with its publisher, the container wiring, auth, task activity, and the device registry; `make ci` runs it |
-| Tests (frontend) | `make test-frontend` (`cd apps/frontend && bun test src`) | `bun test` over `apps/frontend/src/**/*.test.ts` — 19 cases for route and metadata invariants (`seo-routes`, `app-links`, `dashboard-view`, `friendly-error`); `make ci` runs it |
-| Lint (frontend) | `make lint-frontend` (`cd apps/frontend && npm run lint`) | `eslint` over `apps/frontend/src/**` with the rules in `apps/frontend/eslint.config.mjs`, including `no-unused-vars` and `react-hooks`; nothing else runs them, because `make ci` leaves the frontend out |
+| Tests (frontend) | `make test-frontend` (`cd apps/frontend && bun test src`) | `bun test` over `apps/frontend/src/**/*.test.ts` — 28 cases across six files (`seo-routes`, `error-boundary`, `app-links`, `dashboard-view`, `friendly-error`, `phone`); `make ci` runs it |
+| Lint (frontend) | `make lint-frontend` (`cd apps/frontend && npm run lint`) | `eslint` over `apps/frontend/src/**` with the rules in `apps/frontend/eslint.config.mjs`, including `no-unused-vars` and `react-hooks`; nothing else runs them, because `make ci` leaves the frontend's lint and build out |
 | Build (frontend) | `make build-frontend` (`cd apps/frontend && npm run build`) | `next build` over the tree `timbolu.com` serves: a missing import, a server/client boundary used the wrong way, or a page that fails to prerender is red here rather than in `deployment.yml` |
 
 Both Bun commands need `bun install` in `apps/backend-js` first (it reads
@@ -89,7 +90,7 @@ Both Bun commands need `bun install` in `apps/backend-js` first (it reads
 the Go one. `bun test` needs no `test` script in `apps/backend-js/package.json`: it
 discovers `*.test.ts` on its own, which is why the test target calls the binary
 directly while the typecheck target goes through the `typecheck` script. That is the
-whole Bun suite today — nineteen files, 99 tests, covering the build fingerprint, the chat
+whole Bun suite today — 21 files, 118 tests, covering the build fingerprint, the chat
 stream's positional contract, the container wiring (including the integration hub),
 auth, task activity, the device registry's service and handler, and the subscription
 guard that refuses a write from a workspace past its grace window — so treat it as a
@@ -97,10 +98,11 @@ floor, not as the coverage the Go tree has. A PR that
 touches `apps/backend-js/**` should paste `make ci`'s output, the same way a Go change
 does.
 
-Both frontend commands need `npm ci` in `apps/frontend` first (it reads `package-lock.json`). They
-are the two gates `make ci` deliberately leaves out — a full Next build adds minutes to the local
-loop — so CI runs them on every pull request and a developer adds them when the change touches
-`apps/frontend/**`. Both go through the Makefile targets, so CI and a machine cannot disagree.
+The two frontend gates that `make ci` deliberately leaves out — `make lint-frontend` and
+`make build-frontend` — need `npm ci` in `apps/frontend` first (it reads `package-lock.json`). They
+stay out of `make ci` because a full Next build adds minutes to the local loop, but CI runs them
+alongside `test-frontend` on every pull request and a developer adds them when the change touches
+`apps/frontend/**`. All of them go through the Makefile targets, so CI and a machine cannot disagree.
 
 `make ci` also runs `make deep-links-check`, a dependency-free Node script that parses
 the route audit in `docs/deep-links.md` and compares it with the pages under
