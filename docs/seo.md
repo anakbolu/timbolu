@@ -34,7 +34,7 @@ nama tim, model, dan pemakaian token satu workspace.
 | `apps/frontend/src/lib/metadata.ts` | `SITE_URL = "https://timbolu.com"` (di-export; diimpor `app/robots.ts` dan `app/sitemap.ts`), `SITE_NAME = "Timbolu"`, `openGraphCard()`, `pageMetadata()`; kartu memuat `locale: "id_ID"`, `type: "website"`, `og:url` absolut, dan `twitter.card: "summary"` |
 | `apps/frontend/src/app/robots.ts` | metadata route `/robots.txt`: `userAgent: "*"`, `allow: "/"`, `disallow` untuk rute sesi (`/dashboard`, `/approval`, `/approval/`, `/chat`, `/groups`, `/routines`, `/tasks`, `/settings`, `/onboarding`, `/bolu`, `/admin`, `/api`), dan `sitemap: "${SITE_URL}/sitemap.xml"` |
 | `apps/frontend/src/app/sitemap.ts` | metadata route `/sitemap.xml`: lima halaman publik (`/`, `/pricing`, `/privacy`, `/terms`, `/contact`) dengan URL absolut dari `SITE_URL`, `lastModified` tetap `2026-10-31` |
-| `apps/frontend/src/app/seo-routes.test.ts` | 4 kasus: sitemap memuat persis lima halaman publik, sitemap tidak memuat halaman sesi, `lastModified` tidak berubah antar build, dan `robots.txt` mengizinkan situs, menutup rute workspace, serta menyebut sitemap. Dijalankan `cd apps/frontend && bun test src/app/seo-routes.test.ts` |
+| `apps/frontend/src/app/seo-routes.test.ts` | 4 kasus: sitemap memuat persis lima halaman publik, sitemap tidak memuat halaman sesi, `lastModified` tidak berubah antar build, dan `robots.txt` mengizinkan situs, menutup rute workspace, serta menyebut sitemap. Dijalankan `cd apps/frontend && bun test src/app/seo-routes.test.ts`. Perhatikan bahwa test ini hanya memeriksa fungsi `robots()` dan `sitemap()`, bukan metadata per-halaman. |
 | `apps/frontend/src/app/layout.tsx` | kartu bawaan seluruh app: `title.default`, template `%s · Timbolu`, `description`, `openGraph.title`/`description`/`siteName`/`locale`/`type`; `<html lang="id">` |
 | `apps/frontend/src/app/page.tsx` | memanggil `openGraphCard()` dengan `path: "/"` |
 | `apps/frontend/src/app/pricing/page.tsx`, `privacy/page.tsx`, `terms/page.tsx`, `contact/page.tsx`, `join/page.tsx` | memanggil `pageMetadata()` dengan path masing-masing (`join/page.tsx` menyertakan `robots: { index: false }`) |
@@ -98,6 +98,8 @@ Seluruh halaman aplikasi, auth, onboarding, dan undangan workspace kini sudah me
 
 `apps/frontend/src/app/admin/page.tsx` dan `apps/frontend/src/app/(workspace)/tasks/page.tsx` hanya redirect
 ke halaman tujuan yang masing-masing sudah memiliki `robots: { index: false }`.
+
+**Catatan status pengujian (#601):** deklarasi `robots: { index: false }` di 26 berkas di atas saat ini **tidak diuji oleh gate apa pun**. `apps/frontend/src/app/seo-routes.test.ts` hanya memverifikasi keluaran fungsi helper `robots()` dan `sitemap()`, tanpa mengimpor atau meng-assert objek `metadata` di berkas-berkas `page.tsx`. Jika deklarasi `robots: { index: false }` dihapus dari halaman-halaman tersebut, seluruh gate pengujian tetap hijau. Kebutuhan penambahan test assertion untuk `metadata.robots` dicatat pada issue #601.
 
 ## Yang tidak bisa dikerjakan dari repo
 
