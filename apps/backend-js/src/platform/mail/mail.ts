@@ -34,8 +34,11 @@ export class LogSender implements Sender {
 
   async send(message: Message, _signal?: AbortSignal): Promise<void> {
     validate(message);
+    // Secrets like reset/verification tokens must never reach the log,
+    // otherwise any log reader can take over accounts when MAIL_DRIVER=log.
+    const safeBody = redactSecrets(message.text);
     this.log(
-      formatLog("mail (not sent, log sender): to=%s subject=%q\n%s", message.to, message.subject, message.text),
+      formatLog("mail (not sent, log sender): to=%s subject=%q\n%s", message.to, message.subject, safeBody),
     );
   }
 }
@@ -70,4 +73,21 @@ export function formatLog(format: string, ...args: unknown[]): string {
         return String(value);
     }
   });
+}
+
+/**
+ * Query parameters and bearer tokens that must not be leaked to the log.
+ * Redacts query params (?token=..., &code=..., etc.) and Authorization: Bearer tokens.
+ */
+const SECRET_QUERY_PARAM_REGEX = /([?&](?:token|code|key|access_token|refresh_token)=)[^&\s]+/gi;
+const BEARER_TOKEN_REGEX = /(Bearer\s+)[^\s]+/gi;
+
+/**
+ * Redacts sensitive credentials from email text before logging.
+ * Preserves structure and query parameter keys so debug traces remain useful.
+ */
+export function redactSecrets(text: string): string {
+  return text
+    .replace(SECRET_QUERY_PARAM_REGEX, "$1***")
+    .replace(BEARER_TOKEN_REGEX, "$1***");
 }
