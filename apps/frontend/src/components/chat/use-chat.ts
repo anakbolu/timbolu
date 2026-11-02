@@ -64,6 +64,10 @@ export type ChatState = {
   conversations: ChatConversation[];
   active: ChatConversation | null;
   messages: ChatMessage[];
+  /**
+   * loading is true during the workspace store's initial read or while the
+   * active thread's messages are being fetched from the server.
+   */
   loading: boolean;
   sending: boolean;
   loadingOlder: boolean;
@@ -167,8 +171,10 @@ export function useChat(): ChatState {
       setActive(conversation);
       setMessages([]);
       // A conversation is open now, so whatever deep link failed before is not
-      // what the screen is about anymore.
+      // what the screen is about anymore, and errors from a previous thread must
+      // not stick to the new one.
       setOpenError(null);
+      setError(null);
       setRouterNotice(null);
       setResponders([]);
       setActivity(null);

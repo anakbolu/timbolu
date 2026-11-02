@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import assert from "node:assert/strict";
+import test from "node:test";
 
 import { threadPlaceholder } from "./thread-placeholder";
 
@@ -9,8 +10,18 @@ test("loading + 0 pesan yields loading (not empty)", () => {
     error: null,
     messageCount: 0,
   });
-  expect(result).toBe("loading");
+  assert.equal(result, "loading");
 });
+test("loading + error + 0 pesan yields loading (loading takes precedence)", () => {
+  const result = threadPlaceholder({
+    active: true,
+    loading: true,
+    error: "Gagal memuat pesan",
+    messageCount: 0,
+  });
+  assert.equal(result, "loading");
+});
+
 
 test("error + 0 pesan yields error", () => {
   const result = threadPlaceholder({
@@ -19,7 +30,7 @@ test("error + 0 pesan yields error", () => {
     error: "Gagal memuat pesan",
     messageCount: 0,
   });
-  expect(result).toBe("error");
+  assert.equal(result, "error");
 });
 
 test("tanpa aktif yields no-conversation", () => {
@@ -29,7 +40,7 @@ test("tanpa aktif yields no-conversation", () => {
     error: null,
     messageCount: 0,
   });
-  expect(result).toBe("no-conversation");
+  assert.equal(result, "no-conversation");
 });
 
 test("tanpa aktif yields no-conversation even if loading", () => {
@@ -39,7 +50,7 @@ test("tanpa aktif yields no-conversation even if loading", () => {
     error: null,
     messageCount: 0,
   });
-  expect(result).toBe("no-conversation");
+  assert.equal(result, "no-conversation");
 });
 
 test("0 pesan tanpa loading tanpa error yields empty", () => {
@@ -49,7 +60,7 @@ test("0 pesan tanpa loading tanpa error yields empty", () => {
     error: null,
     messageCount: 0,
   });
-  expect(result).toBe("empty");
+  assert.equal(result, "empty");
 });
 
 test("ada pesan yields messages", () => {
@@ -59,7 +70,7 @@ test("ada pesan yields messages", () => {
     error: null,
     messageCount: 5,
   });
-  expect(result).toBe("messages");
+  assert.equal(result, "messages");
 });
 
 test("ada pesan yields messages even if loading older", () => {
@@ -69,7 +80,7 @@ test("ada pesan yields messages even if loading older", () => {
     error: null,
     messageCount: 5,
   });
-  expect(result).toBe("messages");
+  assert.equal(result, "messages");
 });
 
 test("ada pesan yields messages even if error present", () => {
@@ -79,5 +90,5 @@ test("ada pesan yields messages even if error present", () => {
     error: "Ada error",
     messageCount: 5,
   });
-  expect(result).toBe("messages");
+  assert.equal(result, "messages");
 });
