@@ -22,6 +22,8 @@ import {
   clearActiveWorkspaceId,
   currentWorkspace,
   currentUser,
+  ensureActiveWorkspace,
+  getActiveWorkspaceId,
   invite,
   listWorkspaces,
   removeMember,
@@ -41,6 +43,45 @@ const originalFetch = globalThis.fetch;
 let recordedRequests: RecordedRequest[] = [];
 let fetchHandler: (url: string, init?: RequestInit) => Promise<Response> | Response;
 
+const localStorageStore = new Map<string, string>();
+const mockLocalStorage: Storage = {
+  getItem(key: string): string | null {
+    return localStorageStore.get(key) ?? null;
+  },
+  setItem(key: string, value: string): void {
+    localStorageStore.set(key, String(value));
+  },
+  removeItem(key: string): void {
+    localStorageStore.delete(key);
+  },
+  clear(): void {
+    localStorageStore.clear();
+  },
+  key(index: number): string | null {
+    return Array.from(localStorageStore.keys())[index] ?? null;
+  },
+  get length(): number {
+    return localStorageStore.size;
+  },
+};
+
+const globalWithWindow = globalThis as unknown as {
+  window?: {
+    localStorage?: Storage;
+  };
+};
+
+if (typeof globalWithWindow.window === "undefined") {
+  globalWithWindow.window = {
+    localStorage: mockLocalStorage,
+  };
+} else if (!globalWithWindow.window.localStorage) {
+  Object.defineProperty(globalWithWindow.window, "localStorage", {
+    value: mockLocalStorage,
+    writable: true,
+    configurable: true,
+  });
+}
 function setMockFetch(handler: (url: string, init?: RequestInit) => Promise<Response> | Response) {
   fetchHandler = handler;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -336,5 +377,87 @@ describe("API client headers and tenancy (#725)", () => {
       assert.equal(result.code, "workspace_read_only");
       assert.equal(result.message, "ruang kerja sedang dalam mode baca saja");
     }
+  });
+
+  it("returns stored workspace id when listWorkspaces fails (!result.ok)", async () => {
+    setActiveWorkspaceId("ws-existing");
+    setMockFetch((url) => {
+      if (url.includes("/api/auth/refresh")) {
+        return jsonResponse({
+          success: true,
+          message: "ok",
+          data: {
+            user: { id: "u-1", email: "test@example.com", name: "Test", email_verified: true, created_at: "" },
+            token: "refreshed-token",
+            expires_at: new Date(Date.now() + 600_000).toISOString(),
+          },
+        });
+      }
+      if (url.includes("/api/workspaces")) {
+        return jsonResponse({ success: false, message: "service unavailable" }, 503);
+      }
+      return jsonResponse({ success: false, message: "not found" }, 404);
+    });
+
+    const result = await ensureActiveWorkspace();
+    assert.equal(result, "ws-existing");
+    assert.equal(getActiveWorkspaceId(), "ws-existing");
+  });
+
+  it("clears stored workspace id and returns null when listWorkspaces succeeds with empty list (#637)", async () => {
+    setActiveWorkspaceId("ws-stale-deleted");
+    setMockFetch((url) => {
+      if (url.includes("/api/auth/refresh")) {
+        return jsonResponse({
+          success: true,
+          message: "ok",
+          data: {
+            user: { id: "u-1", email: "test@example.com", name: "Test", email_verified: true, created_at: "" },
+            token: "refreshed-token",
+            expires_at: new Date(Date.now() + 600_000).toISOString(),
+          },
+        });
+      }
+      if (url.includes("/api/workspaces")) {
+        return jsonResponse({ success: true, message: "ok", data: [] });
+      }
+      return jsonResponse({ success: false, message: "not found" }, 404);
+    });
+
+    const result = await ensureActiveWorkspace();
+    assert.equal(result, null);
+    assert.equal(getActiveWorkspaceId(), null);
+  });
+
+  it("returns stored workspace id when listWorkspaces contains it", async () => {
+    setActiveWorkspaceId("ws-2");
+    setMockFetch((url) => {
+      if (url.includes("/api/auth/refresh")) {
+        return jsonResponse({
+          success: true,
+          message: "ok",
+          data: {
+            user: { id: "u-1", email: "test@example.com", name: "Test", email_verified: true, created_at: "" },
+            token: "refreshed-token",
+            expires_at: new Date(Date.now() + 600_000).toISOString(),
+          },
+        });
+      }
+      if (url.includes("/api/workspaces")) {
+        return jsonResponse({
+          success: true,
+          message: "ok",
+          data: [
+            { id: "ws-1", name: "Workspace 1", business_field: "Tech", timezone: "Asia/Jakarta", language: "id", work_hours_start: "09:00", work_hours_end: "17:00", work_days: [1, 2, 3, 4, 5], created_at: "" },
+            { id: "ws-2", name: "Workspace 2", business_field: "Tech", timezone: "Asia/Jakarta", language: "id", work_hours_start: "09:00", work_hours_end: "17:00", work_days: [1, 2, 3, 4, 5], created_at: "" },
+          ],
+        });
+      }
+      return jsonResponse({ success: false, message: "not found" }, 404);
+    });
+
+    const result = await ensureActiveWorkspace();
+    assert.equal(result, "ws-2");
+    assert.equal(getActiveWorkspaceId(), "ws-2");
   });
 });

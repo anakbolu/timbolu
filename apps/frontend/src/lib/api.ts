@@ -521,10 +521,18 @@ export async function ensureActiveWorkspace(): Promise<string | null> {
   // otherwise leaves the app asking for a workspace that account is not a member
   // of, and answering with the API's own words rather than with a workspace.
   const result = await listWorkspaces();
-  if (!result.ok || result.data.length === 0) {
+  if (!result.ok) {
+    // Bila gagal membaca daftar, id yang tersimpan masih berguna sebagai tebakan terbaik
+    // agar pengguna tidak kehilangan workspace hanya karena galat sementara.
     return stored && stored !== "" ? stored : null;
   }
 
+  if (result.data.length === 0) {
+    // Daftar kosong yang BERHASIL berarti akun tidak memiliki workspace aktif lagi
+    // (misalnya setelah dihapus). Bersihkan id tersimpan agar tidak mengembalikan id basi.
+    clearActiveWorkspaceId();
+    return null;
+  }
   if (stored && result.data.some((workspace) => workspace.id === stored)) {
     return stored;
   }

@@ -24,7 +24,7 @@
 import { useCallback, useState } from "react";
 
 import { Alert } from "@/components/auth/auth-shell";
-import { ensureActiveWorkspace, eraseWorkspaceData } from "@/lib/api";
+import { clearActiveWorkspaceId, ensureActiveWorkspace, eraseWorkspaceData } from "@/lib/api";
 import { formatComplianceTimestamp } from "@/lib/jakarta-date";
 
 import { useWorkspace } from "./workspace-data";
@@ -106,6 +106,11 @@ export function ErasureView() {
 
       return;
     }
+
+    // Workspace telah berhasil dihapus dari backend. Bersihkan active workspace id di
+    // local storage agar tab atau navigasi berikutnya tidak lagi menggunakan id lama yang sudah
+    // tidak ada (404), namun jangan me-redirect paksa sekarang agar bukti di bawah tetap terlihat.
+    clearActiveWorkspaceId();
 
     setEvidence({
       workspace_id: result.data.workspace_id,
