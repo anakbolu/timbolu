@@ -64,6 +64,15 @@ const RETRY: Record<DeepLinkKind, string> = {
 export const CONVERSATION_NOT_FOUND = NOT_FOUND.conversation;
 
 /**
+ * The sentence for an action refused because the member is not the workspace owner.
+ *
+ * The backend answers 403 with `your role does not allow this action`, which
+ * must never reach the user as raw English. Both the settings view and the
+ * erasure view share this wording.
+ */
+export const FORBIDDEN_ROLE_MESSAGE = "Hanya pemilik ruang kerja yang bisa melakukan ini.";
+
+/**
  * The API's message is only shown when it reads like prose rather than a status
  * label: a screen that printed `task id is not a uuid` is the bug this module
  * exists to fix. The patterns cover the refusals these endpoints actually send;
@@ -103,6 +112,13 @@ export function friendlyLoadFailure(error: ApiError, kind: DeepLinkKind): LoadFa
   if (error.status === 404) {
     return { message: NOT_FOUND[kind], retryable: false };
   }
+  if (
+    error.status === 403 ||
+    error.code?.toLowerCase() === "forbidden" ||
+    /your role does not allow this action/i.test(error.message)
+  ) {
+    return { message: FORBIDDEN_ROLE_MESSAGE, retryable: false };
+  }
 
   // Some client-written messages already end in the same invitation the banner's
   // button carries (`Server terlalu lama menjawab. Coba lagi.`); appending that
@@ -115,4 +131,35 @@ export function friendlyLoadFailure(error: ApiError, kind: DeepLinkKind): LoadFa
     message: looksTechnical(detail) ? RETRY[kind] : `${RETRY[kind]} ${detail}`,
     retryable: true,
   };
+}
+
+/**
+ * friendlyActionError maps an API refusal from an action to a human sentence.
+ *
+ * When the server rejects a mutation because the caller lacks the required role
+ * (HTTP 403 `your role does not allow this action` / `forbidden`), it returns
+ * FORBIDDEN_ROLE_MESSAGE instead of letting the raw English or technical code leak.
+ */
+export function friendlyActionError(error: ApiError | string): string {
+  if (typeof error === "string") {
+    const text = error.trim();
+    if (
+      /your role does not allow this action/i.test(text) ||
+      /\bforbidden\b/i.test(text)
+    ) {
+      return FORBIDDEN_ROLE_MESSAGE;
+    }
+    return text;
+  }
+
+  if (
+    error.status === 403 ||
+    error.code?.toLowerCase() === "forbidden" ||
+    /your role does not allow this action/i.test(error.message) ||
+    /\bforbidden\b/i.test(error.message)
+  ) {
+    return FORBIDDEN_ROLE_MESSAGE;
+  }
+
+  return error.message;
 }

@@ -18,7 +18,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { ApiError } from "@/lib/api";
-import { CONVERSATION_NOT_FOUND, friendlyLoadFailure, type DeepLinkKind } from "./friendly-error";
+import { CONVERSATION_NOT_FOUND, FORBIDDEN_ROLE_MESSAGE, friendlyActionError, friendlyLoadFailure, type DeepLinkKind } from "./friendly-error";
 
 const KINDS: DeepLinkKind[] = ["task", "draft", "conversation", "agent"];
 
@@ -66,4 +66,27 @@ test("a readable detail is appended once, without a second invitation", () => {
 
 test("the conversation sentence is still the one the list-miss banner uses", () => {
   assert.equal(CONVERSATION_NOT_FOUND, friendlyLoadFailure(apiError({ status: 404 }), "conversation").message);
+});
+
+test("a 403 or forbidden role refusal maps to the Indonesian owner message", () => {
+  const fromCode = friendlyActionError(
+    apiError({ status: 403, code: "forbidden", message: "your role does not allow this action" }),
+  );
+  assert.equal(fromCode, FORBIDDEN_ROLE_MESSAGE);
+  assert.doesNotMatch(fromCode, /your role does not allow this action/i);
+
+  const fromMessage = friendlyActionError("your role does not allow this action");
+  assert.equal(fromMessage, FORBIDDEN_ROLE_MESSAGE);
+
+  const fromStatus = friendlyActionError(apiError({ status: 403, message: "forbidden" }));
+  assert.equal(fromStatus, FORBIDDEN_ROLE_MESSAGE);
+});
+
+test("friendlyLoadFailure maps 403 forbidden without offering retry", () => {
+  const failure = friendlyLoadFailure(
+    apiError({ status: 403, code: "forbidden", message: "your role does not allow this action" }),
+    "task",
+  );
+  assert.equal(failure.message, FORBIDDEN_ROLE_MESSAGE);
+  assert.equal(failure.retryable, false);
 });
