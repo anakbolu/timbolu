@@ -15,7 +15,7 @@
  * handler, and the handler's route is what writes the row.
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,6 +26,7 @@ import type { Database, Scope, Sql, Tx } from "../platform/database/index.ts";
 import { loadFromFile } from "../platform/config/init.ts";
 import { PostgresRepository as WorkspaceRepository } from "../modules/workspace/repository/postgres.ts";
 import { routes as deviceRoutes } from "../modules/device/handler/handler.ts";
+import { AsyncSender } from "../platform/mail/async.ts";
 import { newContainer } from "./container.ts";
 
 const userId = "22222222-2222-2222-2222-222222222222";
@@ -347,5 +348,41 @@ describe("erasure wiring", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("mail wiring", () => {
+  test("the container wires async mail error reporting to the logger", async () => {
+    const config = loadFromFile("");
+    config.logging.level = "silent";
+    config.database.url = "";
+    config.redis.url = "";
+    config.temporal.hostPort = "";
+    config.storage.localRoot = "";
+    config.kms.masterKey = "";
+    config.llm.secretEncryptionKey = "";
+    config.mail.driver = "smtp";
+    config.mail.host = "127.0.0.1";
+    config.mail.from = "test@example.com";
+
+    const container = await newContainer({ config, db: null as unknown as Database });
+    if (!container.mailer) throw new Error("the container built no mailer");
+
+    const spy = spyOn(container.log, "warn");
+
+    // Closing the async sender causes subsequent send calls to drop and report via errorf.
+    const mailer = container.mailer as AsyncSender;
+    await mailer.close();
+    await mailer.send({
+      to: "recipient@example.com",
+      subject: "Important Notice",
+      text: "Hello world",
+    });
+
+    expect(spy).toHaveBeenCalled();
+    const callArgs = spy.mock.calls.flat().join(" ");
+    expect(callArgs).toContain("mail:");
+    expect(callArgs).toContain("recipient@example.com");
+    expect(callArgs).toContain("Important Notice");
   });
 });
