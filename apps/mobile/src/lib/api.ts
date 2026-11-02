@@ -103,12 +103,25 @@ export type MessageBlock = { type: string } & Record<string, unknown>;
 
 export type MessageStatus = "complete" | "streaming" | "partial" | "failed";
 
+export type MessageAttachment = {
+  id: string;
+  filename: string;
+  content_type: string;
+  byte_size: number;
+  url: string;
+};
+
 export type ChatMessage = {
   message_id: string;
   conversation_id: string;
   agent_id?: string;
   user_id?: string;
   blocks: MessageBlock[];
+  /**
+   * Lampiran berkas pada pesan (misalnya bukti transfer atau PDF).
+   * Opsional karena payload lama dan frame streaming awal tidak menyertakan field ini.
+   */
+  attachments?: MessageAttachment[];
   task_id?: string;
   status: MessageStatus;
   finish_reason?: string;

@@ -25,7 +25,8 @@ import { AppState } from "react-native";
 import { parseAgentState } from "@/lib/agent-state";
 import type { AgentStateUpdate } from "@/lib/agent-state";
 import { API_URL, getActiveWorkspaceId, refreshSession } from "@/lib/api";
-import type { ChatMessage, MessageBlock, MessageStatus } from "@/lib/api";
+import type { ChatMessage } from "@/lib/api";
+import { isMessageStatus, readMessage } from "@/lib/chat-message";
 import { getAccessToken, tokenIsSpent } from "@/lib/tokens";
 
 /**
@@ -72,16 +73,6 @@ type OpenOutcome = { healthy: boolean; interrupted: boolean };
 /** The event types that change a thread. Everything else only moves the cursor. */
 const MESSAGE_EVENT_TYPES: Record<string, true> = { "message.new": true, "message.updated": true };
 
-const MESSAGE_STATUSES: Record<string, true> = {
-  complete: true,
-  streaming: true,
-  partial: true,
-  failed: true,
-};
-
-function isMessageStatus(value: unknown): value is MessageStatus {
-  return typeof value === "string" && MESSAGE_STATUSES[value] === true;
-}
 
 /** A message's instant, in milliseconds; unparsable or absent reads as 0. */
 function messageTime(message: ChatMessage): number {
@@ -313,41 +304,6 @@ export function connectChatStream(
     return { id, type, payload: raw.payload };
   }
 
-  /**
-   * Reads the message an event carries, or null when it is not one this screen
-   * can draw. The payload comes from the network, so every field it needs is
-   * checked rather than asserted.
-   */
-  function readMessage(value: unknown): ChatMessage | null {
-    if (typeof value !== "object" || value === null) return null;
-    const raw = value as Record<string, unknown>;
-
-    if (typeof raw.message_id !== "string" || raw.message_id === "") return null;
-    if (typeof raw.conversation_id !== "string") return null;
-    if (!isMessageStatus(raw.status)) return null;
-    if (!Array.isArray(raw.blocks)) return null;
-
-    const blocks = raw.blocks.filter((block): block is MessageBlock => {
-      return typeof block === "object" && block !== null && "type" in block && typeof block.type === "string";
-    });
-
-    return {
-      message_id: raw.message_id,
-      conversation_id: raw.conversation_id,
-      agent_id: typeof raw.agent_id === "string" && raw.agent_id !== "" ? raw.agent_id : undefined,
-      user_id: typeof raw.user_id === "string" && raw.user_id !== "" ? raw.user_id : undefined,
-      blocks,
-      task_id: typeof raw.task_id === "string" && raw.task_id !== "" ? raw.task_id : undefined,
-      status: raw.status,
-      finish_reason: typeof raw.finish_reason === "string" ? raw.finish_reason : undefined,
-      // A message without a timestamp would sort unpredictably; stamping it once,
-      // here, keeps the thread's comparator a pure function of the messages.
-      created_at:
-        typeof raw.created_at === "string" && raw.created_at !== ""
-          ? raw.created_at
-          : new Date().toISOString(),
-    };
-  }
 
   /** A token that will still be valid when the connection arrives. */
   async function accessToken(): Promise<string | null> {
