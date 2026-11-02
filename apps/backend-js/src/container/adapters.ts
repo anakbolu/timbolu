@@ -223,12 +223,31 @@ export function agentPlanLimits(maxAgents: number): AgentPlanLimits {
 // --- the task runtime, reached from chat and from routines -------------------
 
 /**
+ * Derives a task title from chat text: first non-empty line, capped at 160 runes
+ * with an ellipsis suffix if truncated, matching task module's `titleFrom`.
+ */
+function chatTaskTitle(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed === "") {
+    return "Tugas baru";
+  }
+  const newline = trimmed.indexOf("\n");
+  const line = newline >= 0 ? trimmed.slice(0, newline) : trimmed;
+  const title = line.trim();
+  const runes = Array.from(title);
+  if (runes.length <= 160) {
+    return title;
+  }
+  return `${runes.slice(0, 159).join("")}…`;
+}
+
+/**
  * Hands a chat message to the task runtime.
  *
  * The container is where the two modules meet, so it is where one module's error
  * becomes the other's: the task module's failure is returned as-is and the chat
- * handler renders it. `prompt` is the title, which is what the Go adapter does —
- * the task's own context load reads the conversation.
+ * handler renders it. `prompt` retains the full message text, while `title` is
+ * capped to 160 runes so `TaskService.dispatch` does not reject it.
  */
 export function chatTaskStarter(taskService: {
   dispatch(ctx: undefined, scope: { userId?: string; workspaceId?: string }, req: any): Promise<{ id: string }>;
@@ -240,7 +259,7 @@ export function chatTaskStarter(taskService: {
         conversationId: req.conversationId,
         replyMessageId: req.messageId,
         trigger: req.trigger,
-        title: req.title,
+        title: chatTaskTitle(req.title ?? ""),
         prompt: req.title,
         parentTaskId: "",
         depth: 0,
