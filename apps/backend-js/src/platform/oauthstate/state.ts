@@ -194,6 +194,69 @@ export class Codec {
     };
   }
 
+  /** Renders a login state value: an OAuth state with no tenant scope. */
+  signLogin(state: { app: string; nonce: string; expiresAt: Date }): string {
+    const document = marshalPayload({
+      p: STATE_PURPOSE,
+      w: "",
+      u: "",
+      a: state.app,
+      n: state.nonce,
+      e: Math.floor(state.expiresAt.getTime() / 1000),
+    });
+
+    const encoded = base64urlEncode(Buffer.from(document, "utf8"));
+    return `${encoded}.${this.signature(encoded)}`;
+  }
+
+  /**
+   * Reads a login state back, refusing anything this codec did not sign,
+   * that is incomplete, or that has expired.
+   */
+  verifyLogin(value: string): { app: string; nonce: string; expiresAt: Date } {
+    const cut = value.indexOf(".");
+    if (cut < 0) {
+      throw new InvalidStateError();
+    }
+    const encoded = value.slice(0, cut);
+    const signature = value.slice(cut + 1);
+    if (!encoded || !signature) {
+      throw new InvalidStateError();
+    }
+
+    if (!safeEqual(this.signature(encoded), signature)) {
+      throw new InvalidStateError("the signature does not match");
+    }
+
+    const document = base64urlDecode(encoded);
+    if (document === null) {
+      throw new InvalidStateError("it is not readable");
+    }
+
+    let decoded: Payload;
+    try {
+      decoded = JSON.parse(document) as Payload;
+    } catch {
+      throw new InvalidStateError("it is not readable");
+    }
+
+    if (decoded.p !== STATE_PURPOSE) {
+      throw new InvalidStateError("it was not signed as an authorization state");
+    }
+    if (!decoded.a || !decoded.n) {
+      throw new InvalidStateError("it is incomplete");
+    }
+    if (Date.now() / 1000 > decoded.e) {
+      throw new InvalidStateError("it has expired");
+    }
+
+    return {
+      app: decoded.a,
+      nonce: decoded.n,
+      expiresAt: new Date(decoded.e * 1000),
+    };
+  }
+
   /** Renders a webhook reference as the value that travels in a URL. */
   signRef(ref: WebhookRef): string {
     const document = marshalRefPayload({

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { chatTaskStarter } from "./adapters.ts";
+import { authStateSigner, chatTaskStarter } from "./adapters.ts";
+import { Codec } from "../platform/oauthstate/state.ts";
 
 interface DispatchedTask {
   agentId: string;
@@ -91,5 +92,27 @@ describe("chatTaskStarter", () => {
     const recorded = fake.dispatched[0];
     expect(recorded.title).toBe("Baris pertama yang menjadi judul");
     expect(recorded.prompt).toBe(multiLineText);
+  });
+});
+
+describe("authStateSigner", () => {
+  const secretKey = "a-very-long-signing-key-that-exceeds-32-chars";
+  const codec = Codec.create(secretKey);
+
+  test("sign() and verify() succeed with valid state", async () => {
+    const signer = authStateSigner(codec, 10);
+    expect(signer).not.toBeNull();
+    const state = await signer!.sign();
+    expect(typeof state).toBe("string");
+    await expect(signer!.verify(state)).resolves.toBeUndefined();
+  });
+
+  test("verify() throws when signature is tampered", async () => {
+    const signer = authStateSigner(codec, 10);
+    expect(signer).not.toBeNull();
+    const state = await signer!.sign();
+    const cut = state.indexOf(".");
+    const broken = state.slice(0, cut + 1) + (state[cut + 1] === "a" ? "b" : "a") + state.slice(cut + 2);
+    await expect(signer!.verify(broken)).rejects.toThrow();
   });
 });
