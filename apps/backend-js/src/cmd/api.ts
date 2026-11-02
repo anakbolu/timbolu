@@ -33,7 +33,10 @@ async function run(): Promise<void> {
 
   const app = newApp({
     log,
-    cors: { origins: config.application.corsOrigins ?? [] },
+    cors: {
+      origins: config.application.corsOrigins ?? [],
+      environment: config.application.environment,
+    },
     tracing: () => tracing(),
     requestContext: () => requestContext(log),
   });

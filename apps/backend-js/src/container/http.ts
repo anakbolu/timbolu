@@ -16,6 +16,12 @@ import type { Logger } from "../platform/logger.ts";
 
 export interface CorsConfig {
   origins: string[];
+  /**
+   * Deployment environment (e.g. "production", "staging", "local").
+   * Outside local development, an empty origin list fails closed: cross-origin
+   * browser requests are refused instead of reflected.
+   */
+  environment?: string;
 }
 
 /**
@@ -24,17 +30,31 @@ export interface CorsConfig {
  * The client sends the refresh cookie, so the response must name the caller's
  * origin exactly: browsers reject `Access-Control-Allow-Origin: *` on a
  * credentialed request. The configured origins are allowed; with none configured
- * (local development) the request origin is reflected, which is what makes
+ * in local development the request origin is reflected, which is what makes
  * `localhost:3000` and the docker frontend both work.
+ *
+ * Di luar local, bila daftar origin kosong, middleware ini gagal-tertutup (fail-closed)
+ * dengan mengembalikan null agar origin jahat tidak bisa memanggil API ber-kredensial.
  */
-export function corsMiddleware(cfg: CorsConfig) {
+export function corsMiddleware(cfg: CorsConfig, log?: Logger) {
   const allowed = new Set(cfg.origins.filter(Boolean));
+  const isLocal = (cfg.environment ?? "local") === "local";
+
+  if (allowed.size === 0 && !isLocal) {
+    // Catat log saat start / inisialisasi agar operator tahu API menolak panggilan cross-origin.
+    (log ?? console).error(
+      { environment: cfg.environment },
+      "cors: empty CORSOrigins outside local environment; refusing every cross-origin browser call",
+    );
+  }
 
   return cors({
     origin: (origin) => {
       if (!origin) return null;
-      // No configured list means local development: reflect the caller.
-      if (allowed.size === 0) return origin;
+      // Daftar kosong hanya memantulkan pemanggil pada environment local.
+      if (allowed.size === 0) {
+        return isLocal ? origin : null;
+      }
       return allowed.has(origin) ? origin : null;
     },
     allowMethods: ["GET", "POST", "HEAD", "PUT", "DELETE", "PATCH", "OPTIONS"],
@@ -97,7 +117,7 @@ export function newApp(opts: { log: Logger; cors: CorsConfig; tracing: () => any
   // and the logger the next middleware builds is the same request as the trace.
   app.use("*", opts.tracing());
   app.use("*", opts.requestContext());
-  app.use("*", corsMiddleware(opts.cors));
+  app.use("*", corsMiddleware(opts.cors, opts.log));
 
   app.onError(errorHandler(opts.log));
   app.notFound((c) =>

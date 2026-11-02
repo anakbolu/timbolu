@@ -10,9 +10,10 @@
 
 Application:
   Environment: "staging"
-
-# A staging deployment answers on one port and is reached by whoever is testing, so the browser
-# origin is named explicitly rather than reflected. Replace with the staging frontend's own host.
+  # Staging browser origins are stated explicitly: only the staging web frontend host
+  # may call the staging API across origins with credentials.
+  CORSOrigins:
+    - "https://staging.timbolu.com"
 Http:
   ApiPrefix: "/api"
 
