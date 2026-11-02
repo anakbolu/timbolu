@@ -65,7 +65,8 @@ const RETENTION = [
 
 /** ErasureView is the data policy and the erasure request. */
 export function ErasureView() {
-  const { workspace, user } = useWorkspace();
+  const { workspace, user, members } = useWorkspace();
+  const isOwner = members.some((member) => member.user_id === user?.id && member.role === "owner");
 
   const [confirmation, setConfirmation] = useState("");
   const [busy, setBusy] = useState(false);
@@ -218,9 +219,18 @@ export function ErasureView() {
           />
         </label>
 
+        <p className="mt-4 text-[13px] text-bolu-muted">
+          Tindakan ini permanen dan menghapus data seluruh anggota workspace ({members.length} anggota).
+        </p>
+        {!isOwner ? (
+          <p className="mt-1 text-[13px] text-bolu-muted">
+            Hanya pemilik ruang kerja yang bisa menghapus data workspace.
+          </p>
+        ) : null}
+
         <button
           type="button"
-          disabled={!armed || busy}
+          disabled={!isOwner || !armed || busy}
           onClick={() => void erase()}
           className={`${BUTTON} mt-4 bg-bolu-belum text-bolu-solid-ink hover:opacity-90`}
         >

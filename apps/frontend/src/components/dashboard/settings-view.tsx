@@ -94,7 +94,7 @@ const TONES = [
 /** SettingsView is the settings screen. */
 export function SettingsView() {
   const store = useWorkspace();
-  const { workspace: loaded, agents, policies: storePolicies, reloadPolicies, workspaceID } = store;
+  const { workspace: loaded, agents, policies: storePolicies, reloadPolicies, workspaceID, members, user } = store;
 
   // The field a person is editing is held here and thrown away on a refusal; every
   // other field keeps reading the store. Mirroring the whole profile into local
@@ -121,6 +121,9 @@ export function SettingsView() {
 
   /** shown is what the form displays: the field being edited, over the stored value. */
   const shown: Partial<Workspace> = { ...profile, ...edit };
+  // The API keeps workspace settings owner-only (requireRole("owner")); a form that saves anyway
+  // shows a member a value the server refused. Same expression as routines-view.tsx.
+  const isOwner = members.some((member) => member.user_id === user?.id && member.role === "owner");
   const policies: ApprovalPolicy[] = storePolicies;
 
   const save = useCallback(
@@ -188,6 +191,9 @@ export function SettingsView() {
           Atur cara tim Bolu bekerja untukmu.{" "}
           {busy ? "Menyimpan…" : notice ? notice : "Perubahan langsung tersimpan."}
         </div>
+        {!isOwner ? (
+          <p className="mt-1 text-sm text-bolu-muted">Hanya pemilik ruang kerja yang bisa mengubah pengaturan ini.</p>
+        ) : null}
       </div>
 
       {error ? (
@@ -204,20 +210,22 @@ export function SettingsView() {
             <input
               type="text"
               value={shown.name ?? ""}
+              disabled={!isOwner || busy}
               onChange={(event) => {
                 const value = event.target.value;
                 setEdit((previous) => ({ ...previous, name: value }));
               }}
               onBlur={() => void save({})}
-              className="min-h-11 rounded-md border border-bolu-border bg-bolu-surface px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
+              className="min-h-11 rounded-md border border-bolu-border bg-bolu-surface px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent disabled:opacity-50"
             />
           </label>
           <label className="flex min-w-[180px] flex-[0_1_240px] flex-col gap-1.5 text-[14px] font-semibold">
             Zona waktu
             <select
               value={shown.timezone ?? TIMEZONES[0].value}
+              disabled={!isOwner || busy}
               onChange={(event) => void save({ timezone: event.target.value })}
-              className="min-h-11 cursor-pointer rounded-md border border-bolu-border bg-bolu-surface px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
+              className="min-h-11 cursor-pointer rounded-md border border-bolu-border bg-bolu-surface px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent disabled:opacity-50"
             >
               {TIMEZONES.map((zone) => (
                 <option key={zone.value} value={zone.value}>
@@ -230,8 +238,9 @@ export function SettingsView() {
             Bahasa balasan
             <select
               value={shown.language ?? "id"}
+              disabled={!isOwner || busy}
               onChange={(event) => void save({ language: event.target.value })}
-              className="min-h-11 cursor-pointer rounded-md border border-bolu-border bg-bolu-surface px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
+              className="min-h-11 cursor-pointer rounded-md border border-bolu-border bg-bolu-surface px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent disabled:opacity-50"
             >
               {LANGUAGES.map((language) => (
                 <option key={language.value} value={language.value}>
@@ -255,8 +264,9 @@ export function SettingsView() {
             <input
               type="time"
               value={shown.work_hours_start || "08:00"}
+              disabled={!isOwner || busy}
               onChange={(event) => void save({ work_hours_start: event.target.value })}
-              className="min-h-11 rounded-md border border-bolu-border bg-bolu-surface px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
+              className="min-h-11 rounded-md border border-bolu-border bg-bolu-surface px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent disabled:opacity-50"
             />
           </label>
           <label className="flex flex-col gap-1.5 text-[14px] font-semibold">
@@ -264,8 +274,9 @@ export function SettingsView() {
             <input
               type="time"
               value={shown.work_hours_end || "21:00"}
+              disabled={!isOwner || busy}
               onChange={(event) => void save({ work_hours_end: event.target.value })}
-              className="min-h-11 rounded-md border border-bolu-border bg-bolu-surface px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent"
+              className="min-h-11 rounded-md border border-bolu-border bg-bolu-surface px-3.5 text-[15px] font-normal text-bolu-ink outline-none focus:border-bolu-accent disabled:opacity-50"
             />
           </label>
           <div className="flex flex-wrap gap-1.5">
@@ -276,13 +287,14 @@ export function SettingsView() {
                   key={item.day}
                   type="button"
                   aria-pressed={on}
+                  disabled={!isOwner || busy}
                   onClick={() => {
                     const next = on
                       ? days.filter((day) => day !== item.day)
                       : [...days, item.day].sort((a, b) => a - b);
                     void save({ work_days: next });
                   }}
-                  className={`min-h-11 min-w-11 cursor-pointer rounded-full border text-[14px] font-bold ${
+                  className={`min-h-11 min-w-11 cursor-pointer rounded-full border text-[14px] font-bold disabled:opacity-50 ${
                     on
                       ? "border-bolu-ink bg-bolu-solid text-bolu-solid-ink"
                       : "border-bolu-border bg-bolu-surface text-bolu-body"
