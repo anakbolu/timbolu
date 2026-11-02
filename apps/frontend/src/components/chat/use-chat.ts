@@ -64,6 +64,10 @@ export type ChatState = {
   conversations: ChatConversation[];
   active: ChatConversation | null;
   messages: ChatMessage[];
+  /**
+   * loading is true during the workspace store's initial read or while the
+   * active thread's messages are being fetched from the server.
+   */
   loading: boolean;
   sending: boolean;
   loadingOlder: boolean;
@@ -138,6 +142,7 @@ export function useChat(): ChatState {
   const [sending, setSending] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const [threadLoading, setThreadLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openError, setOpenError] = useState<ApiError | null>(null);
   const [responders, setResponders] = useState<{ agentId: string; name: string }[]>([]);
@@ -151,6 +156,7 @@ export function useChat(): ChatState {
   // The history the open thread was built from, read by the stream handler that
   // outlives the render which created it.
   const snapshot = useRef<HistorySnapshot | null>(null);
+  const openingConversationID = useRef<string | null>(null);
 
   useEffect(() => {
     activeID.current = active?.id ?? null;
@@ -165,8 +171,10 @@ export function useChat(): ChatState {
       setActive(conversation);
       setMessages([]);
       // A conversation is open now, so whatever deep link failed before is not
-      // what the screen is about anymore.
+      // what the screen is about anymore, and errors from a previous thread must
+      // not stick to the new one.
       setOpenError(null);
+      setError(null);
       setRouterNotice(null);
       setResponders([]);
       setActivity(null);
@@ -182,23 +190,34 @@ export function useChat(): ChatState {
       // is not in the response, and early enough that a frame written after it
       // counts as news rather than as replay.
       const startedAt = Date.now();
+      openingConversationID.current = conversation.id;
+      setThreadLoading(true);
       void (async () => {
-        const result = await listMessages(workspaceId, conversation.id, undefined, 40);
-        if (!result.ok) {
-          setError(result.message);
-          return;
+        try {
+          const result = await listMessages(workspaceId, conversation.id, undefined, 40);
+          if (openingConversationID.current !== conversation.id) {
+            return;
+          }
+          if (!result.ok) {
+            setError(result.message);
+            return;
+          }
+          // The API returns newest first for the cursor; the thread reads oldest
+          // first, so the page is reversed here rather than at every render.
+          setMessages([...result.data.messages].reverse());
+          cursor.current = result.data.next_cursor;
+          setHasMore(result.data.has_more);
+          setError(null);
+          snapshot.current = {
+            conversationId: conversation.id,
+            at: result.serverDate ?? startedAt,
+            ids: new Set(result.data.messages.map((message) => message.message_id)),
+          };
+        } finally {
+          if (openingConversationID.current === conversation.id) {
+            setThreadLoading(false);
+          }
         }
-        // The API returns newest first for the cursor; the thread reads oldest
-        // first, so the page is reversed here rather than at every render.
-        setMessages([...result.data.messages].reverse());
-        cursor.current = result.data.next_cursor;
-        setHasMore(result.data.has_more);
-        setError(null);
-        snapshot.current = {
-          conversationId: conversation.id,
-          at: result.serverDate ?? startedAt,
-          ids: new Set(result.data.messages.map((message) => message.message_id)),
-        };
       })();
     },
     [workspaceId],
@@ -342,9 +361,9 @@ export function useChat(): ChatState {
     conversations: store.conversations,
     active: tracked,
     messages,
-    // The thread list arrives with the store, so "still loading" is exactly "the
-    // store has not finished its first read".
-    loading: !store.ready,
+    // The thread list arrives with the store, so "still loading" is true while
+    // the store is loading or when a selected thread's messages are being fetched.
+    loading: !store.ready || threadLoading,
     sending,
     loadingOlder,
     hasMore,

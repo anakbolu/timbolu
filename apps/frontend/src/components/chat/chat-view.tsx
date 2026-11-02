@@ -26,6 +26,7 @@ import { CONVERSATION_NOT_FOUND, friendlyLoadFailure } from "@/lib/friendly-erro
 import { Block } from "./blocks";
 import { ThreadPanel } from "./thread-panel";
 import { describeResult, isBusy, useChat, type ChatState } from "./use-chat";
+import { threadPlaceholder } from "./thread-placeholder";
 
 const STATUS_LABEL: Record<string, string> = {
   connecting: "menyambung…",
@@ -353,18 +354,46 @@ export function ChatView({
           {/* The one place the instruction lives: with no conversation open it is the
               whole screen's message, and it must not wait on a message load that
               will never happen. */}
-          {!chat.active || (chat.messages.length === 0 && !chat.loading) ? (
-            <p className="mt-8 text-center text-[15px] text-bolu-muted">
-              {chat.active
-                ? `Belum ada pesan dengan ${title}. Tulis sesuatu untuk mulai.`
-                : (
-                    <>
-                      <span className="max-[760px]:hidden">Pilih Bolu di kiri untuk mulai.</span>
-                      <span className="hidden max-[760px]:inline">Buka menu ☰ untuk memilih Bolu atau obrolan.</span>
-                    </>
-                  )}
-            </p>
-          ) : null}
+          {(() => {
+            const placeholder = threadPlaceholder({
+              active: !!chat.active,
+              loading: chat.loading,
+              error: chat.error,
+              messageCount: chat.messages.length,
+            });
+            switch (placeholder) {
+              case "no-conversation":
+                return (
+                  <p className="mt-8 text-center text-[15px] text-bolu-muted">
+                    <span className="max-[760px]:hidden">Pilih Bolu di kiri untuk mulai.</span>
+                    <span className="hidden max-[760px]:inline">Buka menu ☰ untuk memilih Bolu atau obrolan.</span>
+                  </p>
+                );
+              case "loading":
+                return (
+                  <div
+                    aria-busy="true"
+                    className="mx-auto mt-8 flex w-full max-w-md flex-col items-center gap-3"
+                  >
+                    <p className="text-[15px] text-bolu-muted">Memuat pesan…</p>
+                    <div className="flex w-full flex-col items-center gap-2">
+                      <div className="h-3 w-3/4 rounded bg-bolu-border/60 animate-pulse" />
+                      <div className="h-3 w-1/2 rounded bg-bolu-border/60 animate-pulse" />
+                      <div className="h-3 w-2/3 rounded bg-bolu-border/60 animate-pulse" />
+                    </div>
+                  </div>
+                );
+              case "empty":
+                return (
+                  <p className="mt-8 text-center text-[15px] text-bolu-muted">
+                    Belum ada pesan dengan {title}. Tulis sesuatu untuk mulai.
+                  </p>
+                );
+              case "error":
+              case "messages":
+                return null;
+            }
+          })()}
 
           <div ref={content} className="mx-auto mt-auto flex w-full max-w-3xl flex-col gap-6">
             {timeline.map((item) => {
