@@ -10,6 +10,12 @@
 
 Application:
   Environment: "production"
+  # Production browser origins are stated explicitly: credentialed responses must never
+  # reflect untrusted origins, and browsers reject wildcards with credentials. The list is
+  # closed to our web frontend hosts so malicious third-party origins cannot read user data.
+  CORSOrigins:
+    - "https://timbolu.com"
+    - "https://www.timbolu.com"
 
 JWT:
   # Nothing in this file is a secret; this is the only value production is allowed to take from
