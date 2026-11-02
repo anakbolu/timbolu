@@ -57,7 +57,7 @@ is decided. Three cases follow from that:
 
 - **A change under `apps/backend-js/**` changes the code a user runs.** Its gates are
   the Bun ones in the table below, and `make ci` runs them, so a green `make ci` does
-  cover this tree — but only as far as those two commands reach, which is a 27-file
+  cover this tree — but only as far as those two commands reach, which is a 28-file
   suite rather than the coverage the Go tree has.
 - **A change under `apps/backend/**` alone changes nothing a user can see today.** The
   Go gates still apply — it is where the contract, the migrations and the fixes live,
@@ -86,7 +86,7 @@ skipped, and the run went green while production kept serving the previous image
 | Coverage | `make cover` (`scripts/coverage.sh`) | Total coverage ≥ 80% |
 | Types (Bun port) | `make typecheck-backend-js` (`cd apps/backend-js && bun run typecheck`) | `tsc --noEmit` over `apps/backend-js/src/**/*.ts`: no type error in the tree production runs; `make ci` runs it |
 | Tests (Bun port) | `make test-backend-js` (`cd apps/backend-js && bun test`) | `bun test` over `apps/backend-js/src/**/*.test.ts`: the build fingerprint `/api/health` reports, the stream's positional contract with its publisher, the container wiring, auth, task activity, and the device registry; `make ci` runs it |
-| Tests (frontend) | `make test-frontend` (`cd apps/frontend && bun test src`) | `bun test` over `apps/frontend/src/**/*.test.ts` — 46 kasus di delapan berkas (`seo-routes`, `error-boundary`, `thread-placeholder`, `dashboard-view`, `friendly-error`, `app-links`, `phone`, `api`); `make ci` runs it; verifikasi dengan `cd apps/frontend && bun test src` |
+| Tests (frontend) | `make test-frontend` (`cd apps/frontend && bun test src`) | `bun test` over `apps/frontend/src/**/*.test.ts` — 52 kasus di sembilan berkas (`seo-routes`, `error-boundary`, `thread-placeholder`, `dashboard-view`, `friendly-error`, `app-links`, `phone`, `api`, `jakarta-date`); `make ci` runs it; verifikasi dengan `cd apps/frontend && bun test src` |
 | Lint (frontend) | `make lint-frontend` (`cd apps/frontend && npm run lint`) | `eslint` over `apps/frontend/src/**` with the rules in `apps/frontend/eslint.config.mjs`, including `no-unused-vars` and `react-hooks`; nothing else runs them, because `make ci` leaves the frontend's lint and build out |
 | Build (frontend) | `make build-frontend` (`cd apps/frontend && npm run build`) | `next build` over the tree `timbolu.com` serves: a missing import, a server/client boundary used the wrong way, or a page that fails to prerender is red here rather than in `deployment.yml` |
 
@@ -96,7 +96,7 @@ Both Bun commands need `bun install` in `apps/backend-js` first (it reads
 the Go one. `bun test` needs no `test` script in `apps/backend-js/package.json`: it
 discovers `*.test.ts` on its own, which is why the test target calls the binary
 directly while the typecheck target goes through the `typecheck` script. That is the
-whole Bun suite today — 27 files, 145 tests (verifikasi dengan `cd apps/backend-js && bun test src`), covering the build fingerprint, the chat
+whole Bun suite today — 28 files, 152 tests (verifikasi dengan `cd apps/backend-js && bun test src`), covering the build fingerprint, the chat
 stream's positional contract, the container wiring (including the integration hub),
 auth, task activity, the device registry's service and handler, and the subscription
 guard that refuses a write from a workspace past its grace window — so treat it as a
