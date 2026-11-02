@@ -37,6 +37,7 @@ import {
   setMemoryExtraction,
   updateMemory,
 } from "@/lib/api";
+import { KNOWLEDGE_LIST_LIMIT, formatKnowledgeCount } from "@/lib/knowledge";
 
 const KIND_LABEL: Record<string, string> = {
   fact: "Fakta",
@@ -65,22 +66,6 @@ function formatDate(value: string): string {
     return "—";
   }
   return new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(date);
-}
-
-/** KNOWLEDGE_LIST_LIMIT is the maximum chunks the backend will return in one page. */
-export const KNOWLEDGE_LIST_LIMIT = 200;
-
-/**
- * formatKnowledgeCount formats the knowledge count label.
- *
- * When the returned chunks reach the server limit, we must not pretend the
- * count is the complete total because older chunks exist on the server.
- */
-export function formatKnowledgeCount(count: number, limit: number = KNOWLEDGE_LIST_LIMIT): string {
-  if (count >= limit) {
-    return `menampilkan ${count} potongan terbaru`;
-  }
-  return `${count} potongan`;
 }
 
 /** MAIN is the sentinel the API reads for the workspace-wide layer. */
@@ -120,10 +105,7 @@ export function MemoryView() {
 
     const [memoryResult, knowledgeResult, teamResult] = await Promise.all([
       listMemories(active, { history: true, limit: 200 }),
-      listKnowledge(active, {
-        limit: KNOWLEDGE_LIST_LIMIT,
-        query: knowledgeQuery.trim() || undefined,
-      }),
+      listKnowledge(active, { limit: KNOWLEDGE_LIST_LIMIT }),
       listAgentTeams(active),
     ]);
 
@@ -135,7 +117,7 @@ export function MemoryView() {
     setMemories(memoryResult.data);
     setKnowledge(knowledgeResult.ok ? knowledgeResult.data : []);
     setAgents(teamResult.ok ? teamResult.data.flatMap((team) => team.agents) : []);
-  }, [knowledgeQuery, router]);
+  }, [router]);
 
   useEffect(() => {
     void (async () => {
