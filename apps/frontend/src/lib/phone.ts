@@ -31,3 +31,31 @@ export function normalizeWhatsAppPhone(input: string): string {
   }
   return digits;
 }
+
+export type ParsedPhone = { ok: true; phone: string } | { ok: false; reason: string };
+
+export function parseWhatsAppPhone(input: string): ParsedPhone {
+  const phone = normalizeWhatsAppPhone(input);
+  if (!phone) {
+    return { ok: false, reason: "Isi dulu nomor WhatsApp-nya." };
+  }
+  if (!phone.startsWith("62")) {
+    return {
+      ok: false,
+      reason: "Tulis nomor WhatsApp dengan kode negara, contoh 62812… (bukan 0812… atau 812…).",
+    };
+  }
+  if (phone.length < 10 || phone.length > 15) {
+    return {
+      ok: false,
+      reason: "Nomor WhatsApp harus 10–15 digit, termasuk kode negara.",
+    };
+  }
+  if (!phone.slice(2).startsWith("8")) {
+    return {
+      ok: false,
+      reason: "Itu bukan nomor seluler Indonesia — setelah 62 harus diawali 8.",
+    };
+  }
+  return { ok: true, phone };
+}

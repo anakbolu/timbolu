@@ -43,7 +43,7 @@ import {
 import { ALL_BOTS } from "@/lib/crew";
 import { crewFor, expressionOf, relativeAge, stateOf } from "@/lib/dashboard-view";
 
-import { normalizeWhatsAppPhone } from "@/lib/phone";
+import { parseWhatsAppPhone } from "@/lib/phone";
 import { AppTile } from "./apps-pill";
 import { useWorkspace } from "./workspace-data";
 
@@ -252,14 +252,14 @@ export function WhatsAppPanel() {
 
   const prepare = useCallback(async () => {
     if (!workspaceID) return;
-    const normalized = normalizeWhatsAppPhone(phone);
-    if (!normalized) {
-      setError("Isi dulu nomor WhatsApp-nya.");
+    const parsed = parseWhatsAppPhone(phone);
+    if (!parsed.ok) {
+      setError(parsed.reason);
       return;
     }
 
     setBusy(true);
-    const result = await prepareWhatsAppNumber(workspaceID, { phone: normalized, agent_id: chosenAgent });
+    const result = await prepareWhatsAppNumber(workspaceID, { phone: parsed.phone, agent_id: chosenAgent });
     setBusy(false);
 
     if (!result.ok) {
