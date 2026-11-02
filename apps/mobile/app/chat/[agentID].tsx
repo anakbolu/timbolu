@@ -4,6 +4,7 @@ import {
   AppState,
   FlatList,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   StyleSheet,
@@ -302,13 +303,52 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   const mine = message.user_id !== undefined && message.agent_id === undefined;
   const text = messageText(message.blocks);
   const pending = message.status === "streaming";
+  const attachments = message.attachments ?? [];
+  const hasAttachments = attachments.length > 0;
+  const hasText = text !== "";
 
   return (
     <View style={[styles.bubbleRow, mine ? styles.bubbleRowMine : styles.bubbleRowTheirs]}>
       <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
-        <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>
-          {text !== "" ? text : pending ? "Bolu sedang menyusun jawaban…" : "(pesan tanpa teks)"}
-        </Text>
+        {hasText ? (
+          <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>{text}</Text>
+        ) : pending ? (
+          <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>Bolu sedang menyusun jawaban…</Text>
+        ) : !hasAttachments ? (
+          <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>(pesan tanpa teks)</Text>
+        ) : null}
+        {hasAttachments ? (
+          <View style={[styles.attachmentList, hasText && styles.attachmentListSpaced]}>
+            {attachments.map((att) => (
+              <Pressable
+                key={att.id || att.url}
+                onPress={() => {
+                  void Linking.openURL(att.url).catch(() => {
+                    // Abaikan bila OS menolak membuka URL
+                  });
+                }}
+                accessibilityRole="button"
+                style={({ pressed }) => [
+                  styles.attachmentItem,
+                  mine ? styles.attachmentItemMine : styles.attachmentItemTheirs,
+                  pressed && styles.attachmentItemPressed,
+                ]}
+              >
+                <Text
+                  style={[styles.attachmentFilename, mine && styles.attachmentFilenameMine]}
+                  numberOfLines={1}
+                >
+                  {att.filename}
+                </Text>
+                {att.content_type ? (
+                  <Text style={[styles.attachmentMeta, mine && styles.attachmentMetaMine]}>
+                    {att.content_type}
+                  </Text>
+                ) : null}
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
         {message.status === "failed" ? <Text style={styles.failed}>Jawaban gagal.</Text> : null}
         {message.status === "partial" ? <Text style={styles.failed}>Jawaban terpotong.</Text> : null}
       </View>
@@ -346,6 +386,41 @@ const styles = StyleSheet.create({
   bubbleTextMine: { color: "#FFFFFF" },
   failed: { marginTop: 4, fontSize: 12, color: "#B3261E" },
   emptyHint: { textAlign: "center", color: "#5A5670", fontSize: 13, paddingHorizontal: 32 },
+  attachmentList: { gap: 6 },
+  attachmentListSpaced: { marginTop: 6 },
+  attachmentItem: {
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderWidth: 1,
+  },
+  attachmentItemTheirs: {
+    backgroundColor: "#FBF7F2",
+    borderColor: "#E2DCD4",
+  },
+  attachmentItemMine: {
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    borderColor: "rgba(255, 255, 255, 0.3)",
+  },
+  attachmentItemPressed: {
+    opacity: 0.7,
+  },
+  attachmentFilename: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#1E1B2E",
+  },
+  attachmentFilenameMine: {
+    color: "#FFFFFF",
+  },
+  attachmentMeta: {
+    fontSize: 11,
+    marginTop: 2,
+    color: "#5A5670",
+  },
+  attachmentMetaMine: {
+    color: "rgba(255, 255, 255, 0.8)",
+  },
   composer: {
     flexDirection: "row",
     alignItems: "flex-end",
