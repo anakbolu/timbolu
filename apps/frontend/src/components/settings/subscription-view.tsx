@@ -33,6 +33,7 @@ import {
   listBillingPlans,
   payInvoice,
 } from "@/lib/api";
+import { formatBusinessDay } from "@/lib/jakarta-date";
 
 const CARD = "rounded-md border border-bolu-border bg-bolu-surface";
 /**
@@ -85,17 +86,11 @@ function formatTokens(tokens: number): string {
   return new Intl.NumberFormat("id-ID").format(tokens);
 }
 
-/** formatDay renders a date the way a person reads it. */
-function formatDay(value: string): string {
-  if (!value) {
-    return "—";
-  }
-  return new Intl.DateTimeFormat("id-ID", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(new Date(value));
-}
+/**
+ * formatDay formats a billing period or due date into Indonesian business date format
+ * locked to Asia/Jakarta (WIB) so users outside WIB don't see invoice dates shifted by a day.
+ */
+const formatDay = formatBusinessDay;
 
 /**
  * packageLine describes a package in one line: what it costs, what it grants, and what
