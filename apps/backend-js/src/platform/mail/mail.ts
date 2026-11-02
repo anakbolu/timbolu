@@ -34,11 +34,14 @@ export class LogSender implements Sender {
 
   async send(message: Message, _signal?: AbortSignal): Promise<void> {
     validate(message);
-    // Secrets like reset/verification tokens must never reach the log,
-    // otherwise any log reader can take over accounts when MAIL_DRIVER=log.
+    // Secrets like reset/verification tokens must never reach the log across
+    // the recipient, subject, or body, otherwise any log reader can take
+    // over accounts when MAIL_DRIVER=log.
+    const safeTo = redactSecrets(message.to);
+    const safeSubject = redactSecrets(message.subject);
     const safeBody = redactSecrets(message.text);
     this.log(
-      formatLog("mail (not sent, log sender): to=%s subject=%q\n%s", message.to, message.subject, safeBody),
+      formatLog("mail (not sent, log sender): to=%s subject=%q\n%s", safeTo, safeSubject, safeBody),
     );
   }
 }
@@ -76,12 +79,14 @@ export function formatLog(format: string, ...args: unknown[]): string {
 }
 
 /**
- * Query parameters and bearer tokens that must not be leaked to the log.
- * Redacts query params (?token=..., &code=..., etc.) and Authorization: Bearer tokens.
+ * Query parameters, URL fragments, and bearer tokens that must not be leaked to the log.
+ * Redacts parameter values starting with [#?&;] for known sensitive keys (token, signature,
+ * password, secret, apikey, credential, etc.) and Authorization: Bearer tokens. Host and
+ * path remain intact so debug traces keep their diagnostic utility.
  */
-const SECRET_QUERY_PARAM_REGEX = /([?&](?:token|code|key|access_token|refresh_token)=)[^&\s]+/gi;
+const SECRET_QUERY_PARAM_REGEX =
+  /([#?&;](?:token|code|key|access_token|refresh_token|signature|password|secret|apikey|api_key|credential)=)[^#?&;\s"'<>]+/gi;
 const BEARER_TOKEN_REGEX = /(Bearer\s+)[^\s]+/gi;
-
 /**
  * Redacts sensitive credentials from email text before logging.
  * Preserves structure and query parameter keys so debug traces remain useful.
