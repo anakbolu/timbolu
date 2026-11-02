@@ -311,6 +311,7 @@ export async function newContainer(
         from: config.mail.from,
         timeoutMs: config.mail.timeoutSeconds * 1000,
       }),
+      { errorf: (fmt, ...args) => log.warn(formatLog(fmt, args)) },
     );
   } else {
     // The log driver is what local development and the demo run: the message is
