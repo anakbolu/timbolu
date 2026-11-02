@@ -68,6 +68,9 @@ export class Handler {
     if (!req) {
       return error(c, 400, "invalid request body", "invalid_request");
     }
+    if (req.price_idr === undefined) {
+      return error(c, 400, "price_idr wajib diisi", "invalid_input");
+    }
 
     let product: Product;
     try {
@@ -77,7 +80,7 @@ export class Handler {
         // The wire carries rupiah because a screen has rupiah and the API does
         // not ask a client to know the storage unit; the conversion happens
         // here, once, with the same factor the usage report uses.
-        unitPriceMicros: rupiahToMicros(req.price_idr ?? 0),
+        unitPriceMicros: rupiahToMicros(req.price_idr),
         unit: req.unit ?? "",
       });
     } catch (err) {
@@ -98,7 +101,9 @@ export class Handler {
     if (!req) {
       return error(c, 400, "invalid request body", "invalid_request");
     }
-
+    if (req.priceIdrInvalid) {
+      return error(c, 400, "price_idr tidak valid", "invalid_input");
+    }
     let product: Product;
     try {
       product = await this.service.updateProduct(c, requestScopeOf(c), id, {
@@ -236,10 +241,17 @@ interface ProductRequest {
   sku?: string;
   name?: string;
   price_idr?: number;
+  /**
+   * Ditandai true bila client mengirimkan field `price_idr` pada JSON body tetapi
+   * nilainya bukan angka non-negatif yang valid (mis. string, negatif, dsb.).
+   * Ini memungkinkan `updateProduct` membedakan antara "field tidak dikirim"
+   * (tidak ada perubahan harga) dan "field dikirim tetapi salah tipe/nilai"
+   * (harus ditolak dengan 400 invalid_input).
+   */
+  priceIdrInvalid?: boolean;
   unit?: string;
   active?: boolean;
 }
-
 /** A catalogue entry as a screen reads it. */
 interface ProductPayload {
   product_id: string;
@@ -347,10 +359,17 @@ export async function readProductRequest(c: AppContext): Promise<ProductRequest 
   }
 
   const raw = body as Record<string, unknown>;
+  // Menandai priceIdrInvalid pada ProductRequest adalah pilihan paling terisolasi
+  // dan minim duplikasi: parsing JSON body tetap terjadi satu kali di helper ini,
+  // membedakan field yang absen dari field bernilai tidak valid (mis. string / negatif).
+  const priceSent = "price_idr" in raw && raw.price_idr !== undefined;
+  const priceValid = typeof raw.price_idr === "number" && !Number.isNaN(raw.price_idr) && raw.price_idr >= 0;
+
   return {
     sku: typeof raw.sku === "string" ? raw.sku : undefined,
     name: typeof raw.name === "string" ? raw.name : undefined,
-    price_idr: (typeof raw.price_idr === "number" && raw.price_idr >= 0) ? raw.price_idr : undefined,
+    price_idr: priceValid ? (raw.price_idr as number) : undefined,
+    priceIdrInvalid: priceSent && !priceValid,
     unit: typeof raw.unit === "string" ? raw.unit : undefined,
     active: typeof raw.active === "boolean" ? raw.active : undefined,
   };
