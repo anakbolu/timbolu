@@ -1,6 +1,7 @@
 // @ts-ignore
 import { describe, it, expect } from "bun:test";
-import { draftIdOf, draftIdsOf, messageText, type MessageBlock } from "./api";
+import { draftIdOf, draftIdsOf, messageText } from "./chat-message";
+import type { MessageBlock } from "./api";
 
 describe("messageText and draft blocks", () => {
   it("renders draft block as 'Draf menunggu persetujuan'", () => {

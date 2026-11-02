@@ -948,53 +948,6 @@ export async function listRoutineRuns(
   });
 }
 
-/**
- * Extract draft ID from a draft block, or undefined if not a draft block.
- */
-export function draftIdOf(block: MessageBlock): string | undefined {
-  if (block.type === "draft" && typeof block.draft_id === "string" && block.draft_id !== "") {
-    return block.draft_id;
-  }
-  return undefined;
-}
-
-/**
- * Find all draft IDs present in a message's blocks.
- */
-export function draftIdsOf(blocks: MessageBlock[]): string[] {
-  const ids: string[] = [];
-  for (const block of blocks) {
-    const id = draftIdOf(block);
-    if (id && !ids.includes(id)) {
-      ids.push(id);
-    }
-  }
-  return ids;
-}
-
-/**
- * The readable text of one message.
- *
- * A body is a list of typed blocks: `text` renders markdown, `draft` renders
- * "Draf menunggu persetujuan", and the other four types are counted rather than
- * dropped silently so a message never looks empty when it carried a table or a chart.
- */
-export function messageText(blocks: MessageBlock[]): string {
-  const parts: string[] = [];
-  let others = 0;
-  for (const block of blocks) {
-    if (block.type === "text" && typeof block.markdown === "string") {
-      parts.push(block.markdown);
-    } else if (block.type === "draft") {
-      parts.push("Draf menunggu persetujuan");
-    } else {
-      others += 1;
-    }
-  }
-  if (others > 0) {
-    parts.push(`(${others} bagian lain belum bisa ditampilkan di app ini)`);
-  }
-  return parts.join("\n\n").trim();
-}
+export { draftIdOf, draftIdsOf, messageText } from "./chat-message";
 
 export { API_URL };
