@@ -45,6 +45,7 @@ import type {
 import { redactStored } from "../domain/gateway.ts";
 import type { Capabilities, ChatRequest, ChatResponse, EmbedRequest, EmbedResponse, Provider, StreamEvent, Usage } from "../domain/provider.ts";
 import { ErrInvalidRequest, llmError } from "../domain/provider.ts";
+import { checkBaseUrl } from "./baseurl.ts";
 import { chat, record, stream } from "./gateway.ts";
 import { embed } from "./embed.ts";
 import { check, dayStart } from "./quota.ts";
@@ -166,7 +167,7 @@ export class Service implements Gateway, Resolver, QuotaChecker, UsageReporter {
       model: req.model.trim(),
     };
 
-    this.validate(cfg);
+    await this.validate(cfg);
 
     const stored = this.buildStored(cfg, req.clearKey ?? false);
 
@@ -309,8 +310,16 @@ export class Service implements Gateway, Resolver, QuotaChecker, UsageReporter {
     requireAgent(scope);
 
     override.adapter = override.adapter?.trim();
-    override.base_url = override.base_url?.trim();
     override.model = override.model?.trim();
+    override.base_url = override.base_url?.trim();
+
+    if (override.base_url) {
+      const checked = await checkBaseUrl(override.base_url);
+      if (!checked.ok) {
+        throw llmError(ErrInvalidRequest, checked.reason);
+      }
+      override.base_url = checked.value;
+    }
 
     if (override.adapter) {
       // Validate the pair the same way a stored provider is validated, so an
@@ -396,7 +405,14 @@ export class Service implements Gateway, Resolver, QuotaChecker, UsageReporter {
     return start;
   }
 
-  private validate(cfg: ProviderConfig): void {
+  private async validate(cfg: ProviderConfig): Promise<void> {
+    if (cfg.baseUrl) {
+      const checked = await checkBaseUrl(cfg.baseUrl);
+      if (!checked.ok) {
+        throw llmError(ErrInvalidRequest, checked.reason);
+      }
+      cfg.baseUrl = checked.value;
+    }
     if (!cfg.model) throw llmError(ErrInvalidRequest, "model is required");
     if (!cfg.name) throw llmError(ErrInvalidRequest, "name is required");
     if (Array.from(cfg.name).length > NameMaxLength) {
