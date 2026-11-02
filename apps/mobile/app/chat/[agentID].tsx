@@ -12,12 +12,12 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { Redirect, useFocusEffect, useLocalSearchParams } from "expo-router";
+import { Redirect, router, useFocusEffect, useLocalSearchParams } from "expo-router";
 
 import { BoluFace } from "@/components/bolu-face";
 import { agentStateView } from "@/lib/agent-state";
 import type { AgentStateUpdate } from "@/lib/agent-state";
-import { listMessages, messageText, openDirectConversation, sendMessage } from "@/lib/api";
+import { draftIdsOf, listMessages, messageText, openDirectConversation, sendMessage } from "@/lib/api";
 import type { ChatConversation, ChatMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { applyPage, connectChatStream, insertMessage } from "@/lib/chat-stream";
@@ -304,9 +304,10 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   const text = messageText(message.blocks);
   const pending = message.status === "streaming";
   const attachments = message.attachments ?? [];
+  const draftIds = draftIdsOf(message.blocks);
   const hasAttachments = attachments.length > 0;
+  const hasDrafts = draftIds.length > 0;
   const hasText = text !== "";
-
   return (
     <View style={[styles.bubbleRow, mine ? styles.bubbleRowMine : styles.bubbleRowTheirs]}>
       <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
@@ -314,11 +315,31 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>{text}</Text>
         ) : pending ? (
           <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>Bolu sedang menyusun jawaban…</Text>
-        ) : !hasAttachments ? (
+        ) : !hasAttachments && !hasDrafts ? (
           <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>(pesan tanpa teks)</Text>
         ) : null}
+        {hasDrafts ? (
+          <View style={[styles.draftList, hasText && styles.draftListSpaced]}>
+            {draftIds.map((draftId) => (
+              <Pressable
+                key={draftId}
+                onPress={() => router.push(`/draft/${draftId}`)}
+                accessibilityRole="button"
+                style={({ pressed }) => [
+                  styles.draftItem,
+                  mine ? styles.draftItemMine : styles.draftItemTheirs,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={[styles.draftItemText, mine && styles.draftItemTextMine]}>
+                  Lihat draf
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
         {hasAttachments ? (
-          <View style={[styles.attachmentList, hasText && styles.attachmentListSpaced]}>
+          <View style={[styles.attachmentList, (hasText || hasDrafts) && styles.attachmentListSpaced]}>
             {attachments.map((att) => (
               <Pressable
                 key={att.id || att.url}
@@ -420,6 +441,34 @@ const styles = StyleSheet.create({
   },
   attachmentMetaMine: {
     color: "rgba(255, 255, 255, 0.8)",
+  },
+  draftList: { gap: 6 },
+  draftListSpaced: { marginTop: 6 },
+  draftItem: {
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    alignItems: "center",
+  },
+  draftItemTheirs: {
+    backgroundColor: "#FFF1E4",
+    borderColor: "#F28C4E",
+  },
+  draftItemMine: {
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    borderColor: "#FFFFFF",
+  },
+  draftItemText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#B4531E",
+  },
+  draftItemTextMine: {
+    color: "#FFFFFF",
+  },
+  pressed: {
+    opacity: 0.7,
   },
   composer: {
     flexDirection: "row",
