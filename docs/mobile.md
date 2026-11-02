@@ -32,6 +32,8 @@ npm run export:ios # membentuk bundle iOS; membuktikan babel.config.js, plugin, 
 npx expo-doctor    # memeriksa versi paket terhadap SDK
 ```
 
+CI menjalankan `make typecheck-mobile` sebagai check run `Expo typecheck` pada setiap PR dan push ke `main`.
+
 `babel-preset-expo` ditulis eksplisit di `devDependencies` walaupun `expo` sudah
 bergantung padanya: npm bisa memasang salinannya di bawah
 `node_modules/expo/node_modules/` alih-alih di root,

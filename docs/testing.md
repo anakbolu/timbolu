@@ -10,7 +10,7 @@ still say nothing about the Bun tree and the Bun gates say nothing about the Go 
 so [What production runs, and which gates apply](#what-production-runs-and-which-gates-apply)
 says which of the gates below a given change actually needs.
 
-**A workflow enforces eight of them, and only eight.** `.github/workflows/checks.yml`
+**A workflow enforces nine of them, and only nine.** `.github/workflows/checks.yml`
 (the workflow named **Checks**, whose first job is the check run "Contracts and design
 tokens") runs `make contracts-check`, `make design-tokens-check` and
 `make deep-links-check` on every pull request and on every push to `main`. The first
@@ -28,6 +28,12 @@ Its third job, the check run "Next tests, lint and build", runs `make test-front
 `timbolu.com` is served by, and until it existed its lint rules and its production build
 were run by a person before merge or not at all. A pull request that broke `next build`
 went green and only failed in `deployment.yml`, after the merge that would have rejected it.
+Its fourth job, the check run "Expo typecheck", runs `make typecheck-mobile` on the
+same triggers: that is the Expo client under `apps/mobile`, and until it existed its type
+safety ran only when someone remembered to run `tsc --noEmit` locally. `make typecheck-mobile`
+is in the `Makefile` and runs `npm run typecheck` (`tsc --noEmit`) in `apps/mobile`. A pull
+request that broke mobile types went green and only failed when someone tested the
+app by hand.
 
 Everything else in the table — formatting, `archcheck`, Go lint, generated code,
 migrations, `go test`, the race detector, and coverage —
@@ -38,7 +44,7 @@ fingerprint production serves against the Go and Bun fingerprints computed from 
 checked-out tree (a match to either one names the implementation serving), so it proves
 a rollout landed and says nothing about whether the code is correct. So **run `make ci`
 locally, plus `make lint-frontend` and `make build-frontend` for a frontend change, and
-paste their output in the pull request**; the eight checks above are the only gates a
+paste their output in the pull request**; the nine checks above are the only gates a
 machine runs for you.
 
 ## What production runs, and which gates apply
