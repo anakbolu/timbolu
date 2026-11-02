@@ -261,8 +261,11 @@ export class Service implements ServicePort {
 
     const session = await this.openSession(user, req.userAgent, req.ip, null);
 
-    // A successful sign-in clears the throttle for this email and IP.
-    await this.resetLoginAttempts(email, req.ip);
+    // A successful sign-in clears the per-email throttle so typos do not lock
+    // the account. The per-IP bucket is intentionally left to drain through
+    // steady refill so an attacker cannot wash their IP throttle with one
+    // valid login (#713).
+    await this.resetLoginAttempts(email);
 
     return session;
   }
@@ -489,6 +492,11 @@ export class Service implements ServicePort {
   /**
    * Spends a token from the per-email and per-IP buckets. When Redis is not
    * configured the throttle is skipped rather than blocking every sign-in.
+   *
+   * The per-email bucket protects individual accounts from targeted brute
+   * force and is cleared on successful login. The per-IP bucket mitigates
+   * password spraying across distinct accounts from a single host and is
+   * never reset on login (#713), refilling only over time.
    */
   private async allowLoginAttempt(email: string, ip: string): Promise<void> {
     if (!this.deps.throttle) return;
@@ -515,12 +523,17 @@ export class Service implements ServicePort {
     }
   }
 
-  private async resetLoginAttempts(email: string, ip: string): Promise<void> {
+  /**
+   * Clears the per-email attempt bucket after a successful login so an honest
+   * user is not penalized for earlier typos. The per-IP bucket is intentionally
+   * not cleared here: clearing on success allows an attacker controlling a
+   * single valid account to bypass the IP throttle by interleaving password-
+   * spray attempts with logins to their own account (#713). The IP bucket
+   * drains exclusively via its configured refill rate.
+   */
+  private async resetLoginAttempts(email: string): Promise<void> {
     if (!this.deps.throttle) return;
     await this.deps.throttle.reset("auth:login:email:" + email).catch(() => undefined);
-    if (ip.trim() !== "") {
-      await this.deps.throttle.reset("auth:login:ip:" + ip).catch(() => undefined);
-    }
   }
 
   /** Issues a one-time link and emails it. */
