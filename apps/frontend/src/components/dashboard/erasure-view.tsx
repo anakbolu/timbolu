@@ -25,6 +25,7 @@ import { useCallback, useState } from "react";
 
 import { Alert } from "@/components/auth/auth-shell";
 import { ensureActiveWorkspace, eraseWorkspaceData } from "@/lib/api";
+import { formatComplianceTimestamp } from "@/lib/jakarta-date";
 
 import { useWorkspace } from "./workspace-data";
 
@@ -111,6 +112,8 @@ export function ErasureView() {
       workspace_name: name || storedName,
       objects_deleted: result.data.objects,
       rows_deleted: result.data.rows,
+      // Waktu dicatat dari jam perangkat pengguna karena respons server belum membawa
+      // stempel waktu penghapusan (akan ditangani terpisah pada backend).
       erased_at: new Date().toISOString(),
       requested_by_email: requestedBy,
     });
@@ -151,7 +154,7 @@ export function ErasureView() {
             <Evidence label="Diminta oleh" value={evidence.requested_by_email || "—"} />
             <Evidence label="Baris dihapus" value={String(evidence.rows_deleted)} />
             <Evidence label="Berkas dihapus" value={String(evidence.objects_deleted)} />
-            <Evidence label="Waktu" value={new Date(evidence.erased_at).toLocaleString("id-ID")} />
+            <Evidence label="Waktu" value={formatComplianceTimestamp(evidence.erased_at)} />
           </dl>
         </section>
       ) : null}
