@@ -29,13 +29,19 @@ const OUTCOME: Record<string, string> = {
   failed: "Penyambungan gagal. Coba lagi.",
 };
 
+interface OutcomeResult {
+  message: string;
+  ok: boolean;
+}
+
 /**
- * readOutcome turns the query a provider's redirect left behind into a message.
+ * readOutcome turns the query a provider's redirect left behind into a message
+ * and whether the authorization succeeded.
  *
  * It runs only in the browser: the screen is a client component, but it is still
  * rendered once on the server, where there is no query string to read.
  */
-function readOutcome(): string | null {
+function readOutcome(): OutcomeResult | null {
   if (typeof window === "undefined") {
     return null;
   }
@@ -46,14 +52,17 @@ function readOutcome(): string | null {
     return null;
   }
 
+  // Only "connected" represents a completed authorization. Any other outcome,
+  // including unexpected values falling back to failed, is an error condition.
+  const ok = outcome === "connected";
   const message = OUTCOME[outcome] ?? OUTCOME.failed;
   const detail = params.get("detail");
 
   // A refusal's own words are worth showing; a success has nothing to add.
-  if (detail && outcome !== "connected") {
-    return `${message} (${detail})`;
+  if (detail && !ok) {
+    return { message: `${message} (${detail})`, ok };
   }
-  return message;
+  return { message, ok };
 }
 
 export function IntegrationsPanel() {
@@ -63,7 +72,7 @@ export function IntegrationsPanel() {
   // The provider's redirect lands here with the outcome in the query string. It is
   // read once, when the screen first renders, and then cleared so a reload does not
   // repeat a message about a flow that already finished.
-  const [outcome] = useState<string | null>(() => readOutcome());
+  const [outcome] = useState<OutcomeResult | null>(readOutcome);
 
   useEffect(() => {
     if (!outcome) return;
@@ -95,8 +104,17 @@ export function IntegrationsPanel() {
       </header>
 
       {outcome ? (
-        <p role="status" className="rounded-md bg-bolu-live/10 px-4 py-3 text-[15px] text-bolu-lunas">
-          {outcome}
+        /* Success retains the calm green banner; any failure uses the amber warning
+           styling so a failed connection is never announced as a success. */
+        <p
+          role="status"
+          className={`rounded-md px-4 py-3 text-[15px] ${
+            outcome.ok
+              ? "bg-bolu-live/10 text-bolu-lunas"
+              : "bg-bolu-flag/10 text-bolu-flag"
+          }`}
+        >
+          {outcome.message}
         </p>
       ) : null}
 
