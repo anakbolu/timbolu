@@ -12,7 +12,7 @@
  */
 
 import { ChevronRight, Plug } from "lucide-react";
-
+import Link from "next/link";
 /** AppMeta is how one application is drawn: its monogram, colour, name, category. */
 type AppMeta = { mono: string; tile: string; name: string; cat: string };
 
@@ -144,7 +144,13 @@ export function AppsPill({
   );
 }
 
-/** PillLink is one destination, in the same pill language, without the marks. */
+/**
+ * PillLink is one destination, in the same pill language, without the marks.
+ *
+ * Navigasi internal memakai Link next/link agar router klien mempertahankan
+ * state halaman dan fetch onBlur yang belum selesai tidak terputus (#687).
+ * URL eksternal (http, https, mailto, dsb.) tetap memakai anchor standar.
+ */
 export function PillLink({
   href,
   label,
@@ -156,14 +162,27 @@ export function PillLink({
   onClick?: () => void;
   className?: string;
 }) {
-  return (
-    <a
-      href={href}
-      onClick={onClick}
-      className={`flex min-h-[46px] items-center gap-2.5 rounded-full border border-bolu-border bg-bolu-surface px-4 text-[15px] font-semibold text-bolu-ink no-underline hover:border-bolu-accent hover:text-bolu-ink ${className}`}
-    >
+  const isExternal = /^(?:[a-z]+:)?\/\//i.test(href) || href.startsWith("mailto:");
+  const classes = `flex min-h-[46px] items-center gap-2.5 rounded-full border border-bolu-border bg-bolu-surface px-4 text-[15px] font-semibold text-bolu-ink no-underline hover:border-bolu-accent hover:text-bolu-ink ${className}`;
+
+  const content = (
+    <>
       <span className="truncate">{label}</span>
       <ChevronRight size={16} strokeWidth={2.5} aria-hidden className="ml-auto flex-none text-bolu-muted" />
-    </a>
+    </>
+  );
+
+  if (isExternal) {
+    return (
+      <a href={href} onClick={onClick} className={classes}>
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <Link href={href} onClick={onClick} className={classes}>
+      {content}
+    </Link>
   );
 }
