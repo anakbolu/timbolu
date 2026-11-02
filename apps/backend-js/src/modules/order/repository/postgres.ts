@@ -281,25 +281,24 @@ export class PostgresRepository implements Repository {
       // remains the ultimate guard. If a collision occurs on the code, we retry
       // once with a new random uuid.
       const recordHeaderAndLines = async (): Promise<Order> => {
+        const id = crypto.randomUUID();
+        const code = orderCodeFrom(id);
+
         const headers = await tx<OrderRow[]>`
-          WITH identified AS (
-              SELECT gen_random_uuid() AS id
-          )
           INSERT INTO orders (id, workspace_id, customer_id, customer_phone, customer_name, agent_id, task_id, code, note)
-          SELECT identified.id,
-                 ${scope.workspaceId},
-                 ${optionalId(customer.id)},
-                 ${customer.phone},
-                 ${customer.name},
-                 ${optionalId(order.agentId)},
-                 ${optionalId(order.taskId)},
-                 'P-' || upper(substr(replace(identified.id::text, '-', ''), 1, 10)),
-                 ${order.note.trim()}
-          FROM identified
+          VALUES (
+            ${id},
+            ${scope.workspaceId},
+            ${optionalId(customer.id)},
+            ${customer.phone},
+            ${customer.name},
+            ${optionalId(order.agentId)},
+            ${optionalId(order.taskId)},
+            ${code},
+            ${order.note.trim()}
+          )
           RETURNING *
-        `.catch((err: unknown) => {
-          throw err;
-        });
+        `;
         const header = headers[0];
         if (!header) {
           throw new Error("order: record order returned no row");
@@ -660,7 +659,7 @@ function translateWrite(err: unknown, operation: string): Error {
  * Derives the workspace order code from a UUID.
  *
  * Issue #670: Formats as 'P-' + 10 hex characters in uppercase (16^10 space).
- * Kept identical to the SQL expression `'P-' || upper(substr(replace(identified.id::text, '-', ''), 1, 10))`.
+ * Single source of truth for order code generation passed directly into SQL insert.
  */
 export function orderCodeFrom(uuid: string): string {
   return `P-${uuid.replace(/-/g, "").slice(0, 10).toUpperCase()}`;
