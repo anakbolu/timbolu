@@ -310,6 +310,7 @@ export class Service implements Gateway, Resolver, QuotaChecker, UsageReporter {
     requireAgent(scope);
 
     override.adapter = override.adapter?.trim();
+    override.model = override.model?.trim();
     override.base_url = override.base_url?.trim();
 
     if (override.base_url) {
