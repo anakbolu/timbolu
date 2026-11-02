@@ -93,18 +93,14 @@ export function authStateSigner(codec: OAuthStateCodec | null, ttlMinutes: numbe
   if (!codec) return null;
   return {
     async sign() {
-      return codec.sign({
-        purpose: "oauth-state",
-        workspaceId: "",
-        userId: "",
+      return codec.signLogin({
         app: "google",
         nonce: crypto.randomUUID(),
-        returnTo: "",
-        expiresAt: Math.floor(Date.now() / 1000) + ttlMinutes * 60,
-      } as any);
+        expiresAt: new Date(Date.now() + ttlMinutes * 60_000),
+      });
     },
     async verify(state) {
-      codec.verify(state);
+      codec.verifyLogin(state);
     },
   };
 }
