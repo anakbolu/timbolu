@@ -1993,7 +1993,7 @@ export function deleteMemory(workspaceId: string, id: string): Promise<ApiResult
 /** listKnowledge returns the workspace's document chunks, failed ones included. */
 export function listKnowledge(
   workspaceId: string,
-  filter: { status?: string; query?: string; agent_id?: string } = {},
+  filter: { status?: string; query?: string; agent_id?: string; limit?: number } = {},
 ): Promise<ApiResult<KnowledgeItem[]>> {
   const query = new URLSearchParams();
   if (filter.status) {
@@ -2004,6 +2004,9 @@ export function listKnowledge(
   }
   if (filter.agent_id) {
     query.set("agent_id", filter.agent_id);
+  }
+  if (filter.limit !== undefined) {
+    query.set("limit", String(filter.limit));
   }
 
   const suffix = query.toString();

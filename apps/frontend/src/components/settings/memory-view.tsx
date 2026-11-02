@@ -67,6 +67,22 @@ function formatDate(value: string): string {
   return new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
+/** KNOWLEDGE_LIST_LIMIT is the maximum chunks the backend will return in one page. */
+export const KNOWLEDGE_LIST_LIMIT = 200;
+
+/**
+ * formatKnowledgeCount formats the knowledge count label.
+ *
+ * When the returned chunks reach the server limit, we must not pretend the
+ * count is the complete total because older chunks exist on the server.
+ */
+export function formatKnowledgeCount(count: number, limit: number = KNOWLEDGE_LIST_LIMIT): string {
+  if (count >= limit) {
+    return `menampilkan ${count} potongan terbaru`;
+  }
+  return `${count} potongan`;
+}
+
 /** MAIN is the sentinel the API reads for the workspace-wide layer. */
 const MAIN = "main";
 
@@ -77,6 +93,7 @@ export function MemoryView() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [knowledgeQuery, setKnowledgeQuery] = useState("");
   const [showHistory, setShowHistory] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,7 +120,10 @@ export function MemoryView() {
 
     const [memoryResult, knowledgeResult, teamResult] = await Promise.all([
       listMemories(active, { history: true, limit: 200 }),
-      listKnowledge(active),
+      listKnowledge(active, {
+        limit: KNOWLEDGE_LIST_LIMIT,
+        query: knowledgeQuery.trim() || undefined,
+      }),
       listAgentTeams(active),
     ]);
 
@@ -115,13 +135,30 @@ export function MemoryView() {
     setMemories(memoryResult.data);
     setKnowledge(knowledgeResult.ok ? knowledgeResult.data : []);
     setAgents(teamResult.ok ? teamResult.data.flatMap((team) => team.agents) : []);
-  }, [router]);
+  }, [knowledgeQuery, router]);
 
   useEffect(() => {
     void (async () => {
       await load();
     })();
   }, [load]);
+
+  // Search knowledge base with a small debounce so typing does not flood the backend.
+  useEffect(() => {
+    if (!workspaceId) {
+      return;
+    }
+    const timer = setTimeout(async () => {
+      const result = await listKnowledge(workspaceId, {
+        limit: KNOWLEDGE_LIST_LIMIT,
+        query: knowledgeQuery.trim() || undefined,
+      });
+      if (result.ok) {
+        setKnowledge(result.data);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [knowledgeQuery, workspaceId]);
 
   function report<T>(result: ApiResult<T>): result is Extract<ApiResult<T>, { ok: true }> {
     if (result.ok) {
@@ -458,11 +495,21 @@ export function MemoryView() {
           ))}
 
           <section>
-            <div className="mb-3 flex items-baseline justify-between">
-              <h2 className="font-display text-xl font-semibold">Basis pengetahuan</h2>
-              <span className="text-sm text-bolu-muted">{knowledge.length} potongan</span>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-baseline gap-3">
+                <h2 className="font-display text-xl font-semibold">Basis pengetahuan</h2>
+                <span className="text-sm text-bolu-muted">
+                  {formatKnowledgeCount(knowledge.length, KNOWLEDGE_LIST_LIMIT)}
+                </span>
+              </div>
+              <input
+                type="search"
+                value={knowledgeQuery}
+                onChange={(event) => setKnowledgeQuery(event.target.value)}
+                placeholder="Cari potongan dokumen…"
+                className="rounded-md border border-bolu-border bg-bolu-surface px-2.5 py-1 text-sm outline-none focus:border-bolu-accent"
+              />
             </div>
-
             {knowledge.length === 0 ? (
               <p className="rounded-md border border-dashed border-bolu-border px-4 py-6 text-sm text-bolu-muted">
                 Belum ada dokumen. Tempel teks di kanan untuk mulai.
