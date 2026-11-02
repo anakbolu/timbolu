@@ -938,7 +938,10 @@ export function RoutinesView({ focusID }: { focusID?: string }) {
           </p>
         ) : (
           <ul className="flex flex-col">
-            {shownRuns.slice(0, 20).map((run) => {
+            {/* Render all runs fetched (up to 50) rather than silently truncating to 20
+                while the card header says "{shownRuns.length} eksekusi". The list is cheap
+                to render and users need to see whether recent runs actually ran. */}
+            {shownRuns.map((run) => {
               const agentId = routineAgent(run, routines);
               const agent = agents.find((item) => item.id === agentId) ?? null;
               const chip = STATUS_STYLE[run.status] ?? STATUS_STYLE.skipped;

@@ -169,7 +169,9 @@ export function MemoryView() {
       perAgent.set(memory.agent_id, list);
     }
 
-    return { main, perAgent };
+    const totalVisible = visible.length;
+
+    return { main, perAgent, totalVisible };
   }, [memories, query, showHistory]);
 
   async function add(event: React.FormEvent<HTMLFormElement>) {
@@ -393,7 +395,13 @@ export function MemoryView() {
           />
           Tampilkan versi lama
         </label>
-        <span className="text-sm text-bolu-muted">{memories.length} memori tersimpan</span>
+        <span className="text-sm text-bolu-muted">
+          {/* The counter must match what the screen actually renders: when showHistory
+              is off (the default), superseded versions are filtered out, and search query
+              narrows the list further. Showing total fetched rows here deceived readers into
+              thinking rows were lost. */}
+          {filtered.totalVisible} memori tersimpan
+        </span>
       </div>
 
       <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
