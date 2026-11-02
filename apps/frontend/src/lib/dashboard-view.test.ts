@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { Task } from "@/lib/api";
-import { buildStats, expressionOf, STATE_EXPRESSION } from "./dashboard-view";
+import { buildStats, buildWeek, expressionOf, STATE_EXPRESSION } from "./dashboard-view";
 
 const now = new Date(2026, 9, 30, 12, 0, 0);
 
@@ -63,6 +63,22 @@ test("buildStats does not count a task that succeeded yesterday", () => {
     doneToday([task({ finished_at: new Date(2026, 9, 29, 9, 0, 30).toISOString() })]),
     "0",
   );
+});
+
+test("buildWeek counts only succeeded tasks for a given day", () => {
+  // Friday in the week of Monday 2026-10-26 .. Sunday 2026-11-01
+  const fridayIso = new Date(2026, 9, 30, 10, 0, 0).toISOString();
+  const tasks: Task[] = [
+    task({ task_id: "task-succeeded-1", status: "succeeded", finished_at: fridayIso }),
+    task({ task_id: "task-succeeded-2", status: "succeeded", finished_at: fridayIso }),
+    task({ task_id: "task-failed", status: "failed", health: "done", finished_at: fridayIso }),
+    task({ task_id: "task-canceled", status: "canceled", health: "done", finished_at: fridayIso }),
+  ];
+
+  const week = buildWeek(tasks, now);
+  const fridayBar = week.find((bar) => bar.day === "Jum");
+  assert.ok(fridayBar, "Friday bar not found in week chart");
+  assert.equal(fridayBar.label, "2");
 });
 
 test("expressionOf draws an unknown state as idle", () => {
