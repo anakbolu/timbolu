@@ -360,8 +360,8 @@ export function RoutinesView({ focusID }: { focusID?: string }) {
   }, [workspaceID, kind, minute, hourStart, hourEnd, dayOfWeek]);
 
   // A trigger routine has no times to preview, whatever the last cadence fetched.
-  const shown = resolveRoutinePreview({ kind, busy: previewBusy, result: previewResult });
-  const shownPreview = shown.state === "ready" ? shown.runs : [];
+  const previewState = resolveRoutinePreview({ kind, busy: previewBusy, result: previewResult });
+  const shownPreview = previewState.state === "ready" ? previewState.runs : [];
 
   const zone = workspace?.timezone ?? "Asia/Jakarta";
   const isOwner = members.some((member) => member.user_id === user?.id && member.role === "owner");
@@ -765,16 +765,16 @@ export function RoutinesView({ focusID }: { focusID?: string }) {
                 {form.kind === "trigger"
                   ? form.trigger_source || "kejadian belum dipilih"
                   : (() => {
-                      switch (shown.state) {
+                      switch (previewState.state) {
                         case "idle":
                         case "busy":
                           return "menghitung waktu berikutnya…";
                         case "failed":
-                          return `jadwal tidak bisa dihitung: ${shown.reason}`;
+                          return `jadwal tidak bisa dihitung: ${previewState.reason}`;
                         case "empty":
                           return "jadwal tidak menghasilkan waktu jalan";
                         case "ready":
-                          return `berikutnya ${formatNextRun(shown.runs[0], now, zone)}`;
+                          return `berikutnya ${formatNextRun(previewState.runs[0], now, zone)}`;
                       }
                     })()}
               </div>
@@ -788,7 +788,7 @@ export function RoutinesView({ focusID }: { focusID?: string }) {
               </div>
             </div>
 
-              {shown.state === "failed" ? (
+              {previewState.state === "failed" ? (
                 <p className="text-[13px] text-bolu-muted">
                   Jadwal belum bisa dihitung — kamu tetap bisa menyimpan, tapi Bolu mungkin tidak
                   menjalankannya.

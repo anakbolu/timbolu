@@ -85,7 +85,7 @@ test("resolveRoutinePreview maps { ok: true, next_runs: [...] } to ready with ru
 
 test("resolveRoutinePreview maps { ok: true, next_runs: [] } to empty-but-settled (not busy)", () => {
   const state = resolveRoutinePreview({
-    kind: "hourly",
+    kind: "hourly_range",
     busy: false,
     result: {
       ok: true,
