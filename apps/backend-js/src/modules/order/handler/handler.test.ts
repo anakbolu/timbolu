@@ -84,10 +84,10 @@ describe("Handler product price validation", () => {
   });
 
   test("createProduct: body price_idr 50000 -> 201 dan unitPriceMicros diterima service = 50000 * 1_000_000", async () => {
-    let receivedArg: Omit<NewProduct, "active"> | null = null;
+    const received: { arg?: Omit<NewProduct, "active"> } = {};
     const fakeService = {
       createProduct: async (_ctx: AppContext, _scope: Scope, arg: Omit<NewProduct, "active">) => {
-        receivedArg = arg;
+        received.arg = arg;
         return createFakeProduct({ unitPriceMicros: arg.unitPriceMicros });
       },
     } as unknown as Service;
@@ -97,8 +97,8 @@ describe("Handler product price validation", () => {
 
     const res = await handler.createProduct(c);
     expect(res.status).toBe(201);
-    expect(receivedArg).not.toBeNull();
-    expect(receivedArg?.unitPriceMicros).toBe(50000 * 1_000_000);
+    expect(received.arg).toBeDefined();
+    expect(received.arg?.unitPriceMicros).toBe(50000 * 1_000_000);
   });
 
   test("updateProduct: body price_idr string -> 400; body tanpa price_idr -> 200 dan unitPriceMicros undefined", async () => {
