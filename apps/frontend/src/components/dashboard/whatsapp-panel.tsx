@@ -650,12 +650,17 @@ export function WhatsAppPanel() {
                   this workspace asked to send. */}
               <div className="grid gap-3.5 sm:grid-cols-2">
                 <div className="flex flex-col gap-2">
-                  <div className="text-[14px] font-semibold">Pesan masuk</div>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-[14px] font-semibold">Pesan masuk</span>
+                    {messages.length > 0 ? (
+                      <span className="text-[12px] text-bolu-muted">{messages.length} pesan terakhir</span>
+                    ) : null}
+                  </div>
                   {messages.length === 0 ? (
                     <p className="text-[13px] text-bolu-muted">Belum ada pesan.</p>
                   ) : (
                     <ul className="flex flex-col">
-                      {messages.slice(0, 8).map((message) => (
+                      {messages.map((message) => (
                         <li key={message.id} className="border-t border-bolu-line p-[8px_0] text-[13px]">
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-semibold">
@@ -675,12 +680,17 @@ export function WhatsAppPanel() {
                   )}
                 </div>
                 <div className="flex flex-col gap-2">
-                  <div className="text-[14px] font-semibold">Pesan keluar</div>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-[14px] font-semibold">Pesan keluar</span>
+                    {outbox.length > 0 ? (
+                      <span className="text-[12px] text-bolu-muted">{outbox.length} pesan terakhir</span>
+                    ) : null}
+                  </div>
                   {outbox.length === 0 ? (
                     <p className="text-[13px] text-bolu-muted">Belum ada yang dikirim.</p>
                   ) : (
                     <ul className="flex flex-col">
-                      {outbox.slice(0, 8).map((item) => (
+                      {outbox.map((item) => (
                         <li key={item.id} className="border-t border-bolu-line p-[8px_0] text-[13px]">
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-semibold">{item.to}</span>
