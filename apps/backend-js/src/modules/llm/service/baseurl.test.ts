@@ -85,7 +85,7 @@ describe("Service base_url SSRF validation integration", () => {
     };
     let lastOverride: AgentOverride | undefined;
     const agents: AgentStore = {
-      agentModel: async () => lastOverride,
+      agentModel: async () => lastOverride ?? {},
       setAgentModel: async (_c, _w, _a, o) => { lastOverride = o; },
     };
     const provider: Provider = {
