@@ -42,6 +42,65 @@ test("(workspace)/error.tsx exists and exports a default function with Indonesia
   assert.ok(content.includes("/dashboard"), "(workspace)/error.tsx must have link to /dashboard");
   assert.ok(content.includes("reset()"), "(workspace)/error.tsx must invoke reset()");
 });
+test("root error.tsx exists and exports a default function with Indonesian copy", () => {
+  const filePath = path.join(APP_DIR, "error.tsx");
+  assert.ok(fs.existsSync(filePath), "error.tsx must exist in src/app");
+
+  const content = fs.readFileSync(filePath, "utf-8");
+  assert.ok(content.includes('"use client"'), 'error.tsx must have "use client"');
+  assert.ok(content.includes("Ada yang salah di halaman ini"), "error.tsx must have Indonesian error copy");
+  assert.ok(content.includes("Coba lagi"), 'error.tsx must have "Coba lagi" button');
+  assert.ok(content.includes("Kembali ke beranda"), 'error.tsx must have "Kembali ke beranda" text');
+  assert.ok(content.includes('href="/"'), 'error.tsx must have link home');
+  assert.ok(content.includes("reset()"), "error.tsx must invoke reset()");
+});
+
+test("route tree error boundary coverage: root or segment error.tsx covers all top-level routes", () => {
+  // Root error.tsx lives inside RootLayout (src/app/layout.tsx), which means
+  // all non-workspace child routes (/login, /signup, /pricing, etc.) are caught within root layout
+  // where globals.css and font variables are active.
+  const rootErrorPath = path.join(APP_DIR, "error.tsx");
+  assert.ok(fs.existsSync(rootErrorPath), "src/app/error.tsx must exist to catch non-workspace routes");
+
+  const entries = fs.readdirSync(APP_DIR, { withFileTypes: true });
+  const topLevelDirs = entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+
+  // Explicit allowlist of top-level segments/directories with documented reasons:
+  // - "(workspace)": Has its own segment-level error.tsx boundary for workspace-specific layout and links.
+  // - "api": Next.js Route Handlers (HTTP endpoints), not React UI components; App Router error boundaries do not apply.
+  // - All other top-level UI routes (/admin, /login, /signup, /pricing, etc.) fall back to src/app/error.tsx
+  //   within root layout, avoiding unstyled global-error.tsx crashes.
+  const explicitSegmentBoundaries: Record<string, string> = {
+    "(workspace)": "Dedicated workspace error boundary with contextual links and crew bot illustration",
+  };
+
+  const exemptDirectories: Record<string, string> = {
+    api: "API route handlers return JSON HTTP responses and do not render React component trees",
+  };
+
+  for (const dirName of topLevelDirs) {
+    if (explicitSegmentBoundaries[dirName]) {
+      const segmentError = path.join(APP_DIR, dirName, "error.tsx");
+      assert.ok(
+        fs.existsSync(segmentError),
+        `Top-level segment ${dirName} is documented as having its own error boundary (${explicitSegmentBoundaries[dirName]}), but ${segmentError} is missing`
+      );
+    } else if (exemptDirectories[dirName]) {
+      // Documented exempt directory
+      assert.ok(true);
+    } else {
+      // Standard route segments rely on the root error.tsx boundary.
+      // We assert that the root error.tsx is present and active.
+      assert.ok(
+        fs.existsSync(rootErrorPath),
+        `Route segment ${dirName} relies on src/app/error.tsx, which must exist`
+      );
+    }
+  }
+});
+
 
 test("required segment loading.tsx files exist and export default functions", () => {
   const loadingSegments = [

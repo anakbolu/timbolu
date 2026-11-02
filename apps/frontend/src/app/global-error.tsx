@@ -2,8 +2,23 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { Figtree, Fredoka } from "next/font/google";
 import { BotSvg } from "@/components/bolu/bot-svg";
 import { bot } from "@/lib/crew";
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
+import "./globals.css";
+
+const figtree = Figtree({
+  variable: "--font-figtree",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+const fredoka = Fredoka({
+  variable: "--font-fredoka",
+  subsets: ["latin"],
+  display: "swap",
+});
 
 export default function GlobalError({
   error,
@@ -37,7 +52,15 @@ export default function GlobalError({
   }, [error]);
 
   return (
-    <html lang="id" className="h-full antialiased">
+    <html
+      lang="id"
+      className={`${figtree.variable} ${fredoka.variable} h-full antialiased`}
+      suppressHydrationWarning
+    >
+      <head>
+        <title>Ada yang salah di aplikasi · Timbolu</title>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="flex min-h-full flex-col items-center justify-center bg-bolu-bg p-6 font-sans text-bolu-ink">
         <main className="mx-auto flex w-full max-w-[560px] flex-col items-center text-center">
           <BotSvg bot={bot("Pinky")} className="bob size-24" />
