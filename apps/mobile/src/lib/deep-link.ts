@@ -36,20 +36,19 @@ const UNIVERSAL_HOST = "timbolu.com";
  * The paths this app claims under that host — the same list the Android intent
  * filter in `app.json` declares.
  *
- * `/tasks/` and `/approval/` keep their slash because those screens only exist
- * with an id (`/tasks` is a web redirect to `/dashboard`, not a screen); the
- * rest claim their whole subtree. The paths the contract leaves to the browser
- * — `/login`, `/signup`, `/pricing`, `/admin/**`, … — are deliberately absent.
+ * `/tasks/`, `/approval/`, and `/routines/` keep their trailing slash because
+ * those screens only exist with an id (`/tasks` is a web redirect to `/dashboard`,
+ * `/routines` is a web list with no app screen); `/chat` receives its id in the
+ * query string (`?conversation=<id>`). The paths without an app screen
+ * (`/dashboard`, `/groups`, `/bolu/new`, `/settings`, and browser pages like
+ * `/login`, `/pricing`, `/admin/**`, …) are deliberately absent so they remain
+ * in the browser.
  */
-const CLAIMED_PREFIXES = [
-  "/dashboard",
+export const CLAIMED_PREFIXES = [
   "/chat",
   "/tasks/",
   "/approval/",
-  "/routines",
-  "/groups",
-  "/bolu/new",
-  "/settings",
+  "/routines/",
 ] as const;
 
 /**
@@ -89,10 +88,9 @@ function parseBoluLink(parsed: URL): LinkTarget {
 /**
  * `https://timbolu.com/<path>` on the paths the app claims (§ Universal link).
  *
- * Only the forms that map onto a `LinkTarget` are honoured here. `/tasks` and
- * `/routines` without an id are list pages in the web app, and this build has
- * no list target to open; they fall back to the Bolu list with its notice
- * instead of a blank screen.
+ * Only the forms that map onto a `LinkTarget` are claimed and honoured here:
+ * `/chat?conversation=<id>`, `/tasks/<id>`, `/approval/<id>`, and
+ * `/routines/<id>`.
  */
 function parseUniversalLink(parsed: URL): LinkTarget {
   // Empty segments dropped so `/tasks/<id>/` is the same URL as

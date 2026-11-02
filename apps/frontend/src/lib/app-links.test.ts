@@ -80,14 +80,10 @@ test("Apple components restate the claimed paths one for one", () => {
 
 test("Android prefixes drop the id glob and an ancestor covers its children", () => {
   assert.deepEqual([...ANDROID_PATH_PREFIXES], [
-    "/dashboard",
     "/chat",
-    "/tasks",
-    "/approval",
-    "/routines",
-    "/groups",
-    "/bolu/new",
-    "/settings",
+    "/tasks/",
+    "/approval/",
+    "/routines/",
   ]);
   for (const prefix of ANDROID_PATH_PREFIXES) assert.ok(!prefix.includes("*"));
 });
