@@ -157,6 +157,16 @@ export default function TaskScreen() {
         </View>
       ) : null}
 
+      {task.waiting_draft_id ? (
+        <Pressable
+          onPress={() => router.push(`/draft/${task.waiting_draft_id}`)}
+          style={({ pressed }) => [styles.primary, pressed && styles.pressed]}
+          accessibilityRole="button"
+        >
+          <Text style={styles.primaryText}>Lihat draf</Text>
+        </Pressable>
+      ) : null}
+
       {task.summary ? <Text style={styles.summary}>{task.summary}</Text> : null}
 
       <View style={styles.card}>

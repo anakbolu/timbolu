@@ -948,27 +948,6 @@ export async function listRoutineRuns(
   });
 }
 
-/**
- * The readable text of one message.
- *
- * A body is a list of typed blocks and the scaffold renders only `text`; the
- * other five types are counted rather than dropped silently, so a message never
- * looks empty when it carried a table or a draft.
- */
-export function messageText(blocks: MessageBlock[]): string {
-  const parts: string[] = [];
-  let others = 0;
-  for (const block of blocks) {
-    if (block.type === "text" && typeof block.markdown === "string") {
-      parts.push(block.markdown);
-    } else {
-      others += 1;
-    }
-  }
-  if (others > 0) {
-    parts.push(`(${others} bagian lain belum bisa ditampilkan di app ini)`);
-  }
-  return parts.join("\n\n").trim();
-}
+export { draftIdOf, draftIdsOf, messageText } from "./chat-message";
 
 export { API_URL };
