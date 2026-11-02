@@ -22,6 +22,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "@/components/auth/auth-shell";
 import { Bolu } from "@/components/bolu/bolu";
 import {
+  type ApiResult,
   type Routine,
   type RoutineInput,
   type RoutineRun,
@@ -39,6 +40,7 @@ import {
 } from "@/lib/api";
 import { ALL_BOTS } from "@/lib/crew";
 import { TIMEZONES, crewFor, expressionOf, relativeAge, stateOf } from "@/lib/dashboard-view";
+import { resolveRoutinePreview } from "@/lib/routine-preview";
 
 import { useWorkspace } from "./workspace-data";
 
@@ -247,7 +249,11 @@ export function RoutinesView({ focusID }: { focusID?: string }) {
   const [listed, setListed] = useState(false);
   const [draft, setDraft] = useState<RoutineInput | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
-  const [preview, setPreview] = useState<string[]>([]);
+  // A routine preview has three distinct outcomes — in flight, refused, and settled — and an
+  // empty run list is a real answer, not "still computing" (#697). The request lifecycle is
+  // therefore kept as data and resolved by resolveRoutinePreview.
+  const [previewResult, setPreviewResult] = useState<ApiResult<{ next_runs: string[] }> | null>(null);
+  const [previewBusy, setPreviewBusy] = useState(false);
   const [filterAgent, setFilterAgent] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -334,6 +340,7 @@ export function RoutinesView({ focusID }: { focusID?: string }) {
 
     let live = true;
     void (async () => {
+      setPreviewBusy(true);
       const result = await previewRoutine(workspaceID, {
         kind,
         minute,
@@ -342,16 +349,19 @@ export function RoutinesView({ focusID }: { focusID?: string }) {
         day_of_week: dayOfWeek,
       });
       if (!live) return;
-      setPreview(result.ok ? result.data.next_runs : []);
+      setPreviewResult(result);
+      setPreviewBusy(false);
     })();
 
     return () => {
       live = false;
+      setPreviewBusy(false);
     };
   }, [workspaceID, kind, minute, hourStart, hourEnd, dayOfWeek]);
 
   // A trigger routine has no times to preview, whatever the last cadence fetched.
-  const shownPreview = kind === "trigger" ? [] : preview;
+  const previewState = resolveRoutinePreview({ kind, busy: previewBusy, result: previewResult });
+  const shownPreview = previewState.state === "ready" ? previewState.runs : [];
 
   const zone = workspace?.timezone ?? "Asia/Jakarta";
   const isOwner = members.some((member) => member.user_id === user?.id && member.role === "owner");
@@ -754,9 +764,19 @@ export function RoutinesView({ focusID }: { focusID?: string }) {
                 {KINDS.find((option) => option.value === form.kind)?.label} ·{" "}
                 {form.kind === "trigger"
                   ? form.trigger_source || "kejadian belum dipilih"
-                  : shownPreview.length === 0
-                    ? "menghitung waktu berikutnya…"
-                    : `berikutnya ${formatNextRun(shownPreview[0], now, zone)}`}
+                  : (() => {
+                      switch (previewState.state) {
+                        case "idle":
+                        case "busy":
+                          return "menghitung waktu berikutnya…";
+                        case "failed":
+                          return `jadwal tidak bisa dihitung: ${previewState.reason}`;
+                        case "empty":
+                          return "jadwal tidak menghasilkan waktu jalan";
+                        case "ready":
+                          return `berikutnya ${formatNextRun(previewState.runs[0], now, zone)}`;
+                      }
+                    })()}
               </div>
               {shownPreview.length > 1 ? (
                 <div className="mt-1 text-[13px] text-bolu-muted">
@@ -767,6 +787,13 @@ export function RoutinesView({ focusID }: { focusID?: string }) {
                 Dihitung di zona waktu {zone}. Matikan untuk menyimpan tanpa menjalankannya.
               </div>
             </div>
+
+              {previewState.state === "failed" ? (
+                <p className="text-[13px] text-bolu-muted">
+                  Jadwal belum bisa dihitung — kamu tetap bisa menyimpan, tapi Bolu mungkin tidak
+                  menjalankannya.
+                </p>
+              ) : null}
 
             <div className="flex flex-wrap items-center gap-2.5">
               <label className="flex items-center gap-2 text-[15px]">
