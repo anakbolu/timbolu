@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { AppContext } from "../../../platform/context.ts";
+import type { Database, Tx } from "../../../platform/database/index.ts";
 import { nopLogger } from "../../../platform/logger.ts";
-import type { NewProduct, Product, ProductChange, Scope, Service } from "../domain/order.ts";
+import type { NewOrder, NewProduct, Order, Product, ProductChange, Scope, Service } from "../domain/order.ts";
+import { orderCodeFrom, PostgresRepository } from "../repository/postgres.ts";
 import { Handler } from "./handler.ts";
 
 function createFakeProduct(overrides: Partial<Product> = {}): Product {
@@ -124,5 +126,132 @@ describe("Handler product price validation", () => {
     expect(resValid.status).toBe(200);
     expect(updateCalls.length).toBe(1);
     expect(updateCalls[0].unitPriceMicros).toBeUndefined();
+  });
+});
+
+describe("orderCodeFrom (#670)", () => {
+  test("menghasilkan P- diikuti 10 karakter hex kapital", () => {
+    const sampleUuid = "12345678-abcd-ef01-2345-6789abcdef01";
+    const code = orderCodeFrom(sampleUuid);
+
+    expect(code).toBe("P-12345678AB");
+    expect(code).toMatch(/^P-[0-9A-F]{10}$/);
+    expect(code.length).toBe(12); // 'P-' (2) + 10 hex
+  });
+});
+
+describe("PostgresRepository.record retry unik (#670)", () => {
+  test("percobaan pertama throw unique violation orders_workspace_code_key, percobaan kedua berhasil", async () => {
+    let insertOrderAttempts = 0;
+
+    const fakeOrderRow = {
+      id: "99999999-9999-9999-9999-999999999999",
+      workspace_id: "ws-1",
+      customer_id: "c-1",
+      customer_phone: "6281234567890",
+      customer_name: "Budi",
+      agent_id: null,
+      task_id: null,
+      code: "P-1234567890",
+      note: "",
+      status: "recorded",
+      total_micros: 50000000000,
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+
+    // Tagged template mock untuk tx
+    const txMock = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const raw = strings.join(" ");
+      if (raw.includes("INSERT INTO customers")) {
+        return Promise.resolve([
+          {
+            id: "c-1",
+            workspace_id: "ws-1",
+            name: "Budi",
+            phone: "6281234567890",
+            email: "",
+            note: "",
+            created_at: new Date(),
+            updated_at: new Date(),
+          },
+        ]);
+      }
+      if (raw.includes("INSERT INTO orders")) {
+        insertOrderAttempts++;
+        if (insertOrderAttempts === 1) {
+          const err = Object.assign(
+            new Error('duplicate key value violates unique constraint "orders_workspace_code_key"'),
+            { code: "23505", constraint_name: "orders_workspace_code_key" },
+          );
+          return Promise.reject(err);
+        }
+        return Promise.resolve([fakeOrderRow]);
+      }
+      if (raw.includes("SELECT * FROM products")) {
+        return Promise.resolve([
+          {
+            id: "p-1",
+            workspace_id: "ws-1",
+            sku: "SKU-1",
+            name: "Kopi",
+            unit_price_micros: 50000000000,
+            unit: "cup",
+            active: true,
+            created_at: new Date(),
+            updated_at: new Date(),
+          },
+        ]);
+      }
+      if (raw.includes("INSERT INTO order_items")) {
+        return Promise.resolve([]);
+      }
+      if (raw.includes("UPDATE orders")) {
+        return Promise.resolve([]);
+      }
+      if (raw.includes("SELECT * FROM orders WHERE id")) {
+        return Promise.resolve([fakeOrderRow]);
+      }
+      if (raw.includes("SELECT * FROM order_items WHERE order_id")) {
+        return Promise.resolve([
+          {
+            id: "item-1",
+            workspace_id: "ws-1",
+            order_id: fakeOrderRow.id,
+            product_id: "p-1",
+            description: "Kopi",
+            unit: "cup",
+            quantity: "1.000",
+            unit_price_micros: 50000000000,
+            line_total_micros: 50000000000,
+          },
+        ]);
+      }
+      return Promise.resolve([]);
+    }) as unknown as Tx;
+
+    const fakeDb = {
+      inScope: async <T>(_scope: Scope, fn: (tx: Tx) => Promise<T>): Promise<T> => {
+        return fn(txMock);
+      },
+      inScopeRead: async <T>(_scope: Scope, fn: (tx: Tx) => Promise<T>): Promise<T> => {
+        return fn(txMock);
+      },
+    } as unknown as Database;
+
+    const repo = new PostgresRepository(fakeDb);
+    const newOrder: NewOrder = {
+      customerPhone: "081234567890",
+      customerName: "Budi",
+      agentId: "",
+      taskId: "",
+      items: [{ product: "Kopi", quantity: 1, description: "", note: "" }],
+      note: "",
+    };
+
+    const result = await repo.record({ workspaceId: "ws-1" }, newOrder);
+    expect(insertOrderAttempts).toBe(2);
+    expect(result.id).toBe(fakeOrderRow.id);
+    expect(result.code).toBe(fakeOrderRow.code);
   });
 });

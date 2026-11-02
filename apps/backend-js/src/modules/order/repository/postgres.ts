@@ -271,64 +271,89 @@ export class PostgresRepository implements Repository {
       if (!customer) {
         throw new Error("order: upsert customer returned no row");
       }
-
       // name: RecordOrder
       // The id is generated here rather than by the caller so the code and the
       // row cannot disagree: both come from the same value.
-      const headers = await tx<OrderRow[]>`
-        WITH identified AS (
-            SELECT gen_random_uuid() AS id
-        )
-        INSERT INTO orders (id, workspace_id, customer_id, customer_phone, customer_name, agent_id, task_id, code, note)
-        SELECT identified.id,
-               ${scope.workspaceId},
-               ${optionalId(customer.id)},
-               ${customer.phone},
-               ${customer.name},
-               ${optionalId(order.agentId)},
-               ${optionalId(order.taskId)},
-               'P-' || upper(substr(replace(identified.id::text, '-', ''), 1, 6)),
-               ${order.note.trim()}
-        FROM identified
-        RETURNING *
-      `.catch((err: unknown) => {
-        throw translateWrite(err, "record order");
-      });
-      const header = headers[0];
-      if (!header) {
-        throw new Error("order: record order returned no row");
-      }
+      //
+      // Issue #670: The order code uses 10 hex chars ('P-' || 10 hex) providing
+      // 16^10 space (~1.09e12); 6 hex had a ~52% collision probability at 5,000
+      // orders/workspace. The unique constraint `orders_workspace_code_key`
+      // remains the ultimate guard. If a collision occurs on the code, we retry
+      // once with a new random uuid.
+      const recordHeaderAndLines = async (): Promise<Order> => {
+        const id = crypto.randomUUID();
+        const code = orderCodeFrom(id);
 
-      for (const item of order.items) {
-        const product = await resolveProduct(tx, scope.workspaceId, item.product);
+        const headers = await tx<OrderRow[]>`
+          INSERT INTO orders (id, workspace_id, customer_id, customer_phone, customer_name, agent_id, task_id, code, note)
+          VALUES (
+            ${id},
+            ${scope.workspaceId},
+            ${optionalId(customer.id)},
+            ${customer.phone},
+            ${customer.name},
+            ${optionalId(order.agentId)},
+            ${optionalId(order.taskId)},
+            ${code},
+            ${order.note.trim()}
+          )
+          RETURNING *
+        `;
+        const header = headers[0];
+        if (!header) {
+          throw new Error("order: record order returned no row");
+        }
 
-        const description = item.description.trim() === "" ? product.name : item.description.trim();
+        for (const item of order.items) {
+          const product = await resolveProduct(tx, scope.workspaceId, item.product);
 
-        // name: RecordOrderItem
+          const description = item.description.trim() === "" ? product.name : item.description.trim();
+
+          // name: RecordOrderItem
+          await tx`
+            INSERT INTO order_items (workspace_id, order_id, product_id, description, unit, quantity, unit_price_micros)
+            VALUES (${scope.workspaceId}, ${header.id}, ${optionalId(product.id)}, ${description}, ${product.unit}, ${formatNumeric(item.quantity)}, ${product.unitPriceMicros})
+          `.catch((err: unknown) => {
+            throw translateWrite(err, "record order item");
+          });
+        }
+
+        // name: SetOrderTotal
+        // The total is summed from the rows that were just written rather than
+        // added up here, so it cannot disagree with its own lines.
         await tx`
-          INSERT INTO order_items (workspace_id, order_id, product_id, description, unit, quantity, unit_price_micros)
-          VALUES (${scope.workspaceId}, ${header.id}, ${optionalId(product.id)}, ${description}, ${product.unit}, ${formatNumeric(item.quantity)}, ${product.unitPriceMicros})
+          UPDATE orders
+          SET total_micros = (
+                  SELECT COALESCE(sum(items.line_total_micros), 0) FROM order_items AS items
+                  WHERE items.order_id = orders.id AND items.workspace_id = orders.workspace_id
+              ),
+              updated_at = now()
+          WHERE orders.id = ${header.id} AND orders.workspace_id = ${scope.workspaceId}
         `.catch((err: unknown) => {
-          throw translateWrite(err, "record order item");
+          throw translateWrite(err, "set order total");
         });
+
+        return loadOrder(tx, scope.workspaceId, header.id);
+      };
+
+      try {
+        return await recordHeaderAndLines();
+      } catch (err: unknown) {
+        const pgErr = err as { code?: string; constraint_name?: string; message?: string };
+        const isCodeUniqueViolation =
+          pgErr?.code === "23505" &&
+          ((pgErr.constraint_name ?? "").includes("orders_workspace_code_key") ||
+            (pgErr.message ?? "").includes("orders_workspace_code_key"));
+
+        if (isCodeUniqueViolation) {
+          try {
+            return await recordHeaderAndLines();
+          } catch (retryErr: unknown) {
+            throw translateWrite(retryErr, "record order");
+          }
+        }
+        throw translateWrite(err, "record order");
       }
-
-      // name: SetOrderTotal
-      // The total is summed from the rows that were just written rather than
-      // added up here, so it cannot disagree with its own lines.
-      await tx`
-        UPDATE orders
-        SET total_micros = (
-                SELECT COALESCE(sum(items.line_total_micros), 0) FROM order_items AS items
-                WHERE items.order_id = orders.id AND items.workspace_id = orders.workspace_id
-            ),
-            updated_at = now()
-        WHERE orders.id = ${header.id} AND orders.workspace_id = ${scope.workspaceId}
-      `.catch((err: unknown) => {
-        throw translateWrite(err, "set order total");
-      });
-
-      return loadOrder(tx, scope.workspaceId, header.id);
     });
   }
 
@@ -628,4 +653,14 @@ function translateWrite(err: unknown, operation: string): Error {
     default:
       return new Error(`order: ${operation}: ${errorMessage(err)}`, { cause: err });
   }
+}
+
+/**
+ * Derives the workspace order code from a UUID.
+ *
+ * Issue #670: Formats as 'P-' + 10 hex characters in uppercase (16^10 space).
+ * Single source of truth for order code generation passed directly into SQL insert.
+ */
+export function orderCodeFrom(uuid: string): string {
+  return `P-${uuid.replace(/-/g, "").slice(0, 10).toUpperCase()}`;
 }
