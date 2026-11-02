@@ -568,7 +568,9 @@ export async function newContainer(
         logger: log,
         config: { attachmentAllowedExtensions: config.storage.attachmentAllowedExtensions },
       } as any);
-    chat = new ChatHandler(chatService, log);
+    chat = new ChatHandler(chatService, log).withContent({
+      frameAncestors: contentFrameAncestors(config),
+    });
 
     // The modules the hub's own adapters serve. They are built before the hub
     // because an adapter hands its tools straight to its module; the Go tree
@@ -921,4 +923,26 @@ function clientHandleOver(client: unknown, taskQueue: string): any {
 function formatLog(format: string, args: unknown[]): string {
   let i = 0;
   return format.replace(/%[svd]/g, () => String(args[i++]));
+}
+
+/**
+ * Returns the list of origins allowed to frame a sandboxed content document.
+ *
+ * The content document is served from a separate host or route, so 'self'
+ * would reject frames from the web app. When CONTENT_FRAME_ANCESTORS is unset,
+ * fallback to the origin of the configured frontendUrl.
+ */
+function contentFrameAncestors(config: Config): string[] {
+  if (config.storage.contentFrameAncestors.length > 0) {
+    return config.storage.contentFrameAncestors;
+  }
+  const frontend = config.application.frontendUrl.trim();
+  if (frontend !== "") {
+    try {
+      return [new URL(frontend).origin];
+    } catch {
+      return [frontend];
+    }
+  }
+  return ["'self'"];
 }
