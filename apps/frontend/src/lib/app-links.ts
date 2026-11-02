@@ -10,26 +10,23 @@
  * source: every entry below is a row of that table, and a path only appears if
  * the table names it as a universal link target.
  *
- * A claimed path the app cannot render opens the app on nothing, which is worse
- * than staying in the browser. So the paths the table excludes stay excluded:
- * `/login`, `/signup`, `/verify`, `/forgot-password`, `/onboarding`, `/join`,
- * `/pricing`, `/contact`, `/privacy`, `/terms`, `/` and all of `/admin/**` are
- * browser pages with no app screen. `/tasks` is absent on its own for a
- * different reason: it is only `redirect("/dashboard")`, so it has no screen of
- * its own — `/tasks/*` is claimed because the task detail does.
+ * A claimed path the app cannot render opens the app on nothing or falls back
+ * to an unhelpful notice, which is worse than staying in the browser. Only the
+ * paths with screens in the current mobile build are claimed: `/chat`
+ * (`?conversation=<id>`), `/tasks/*` (`/tasks/<task_id>`), `/approval/*`
+ * (`/approval/<draft_id>`), and `/routines/*` (`/routines/<routine_id>`).
+ *
+ * All other paths remain in the browser: marketing and auth pages (`/`,
+ * `/login`, `/pricing`, ...), operator routes (`/admin/**`), list pages with no
+ * corresponding screen (`/routines`, `/tasks`), and web features not yet built
+ * in mobile (`/dashboard`, `/dashboard/integrations`, `/groups`, `/bolu/new`,
+ * `/settings`, `/settings/*`).
  */
 const UNIVERSAL_LINK_PATHS = [
-  "/dashboard",
-  "/chat", // `/chat?agent=<id>` and `/chat?conversation=<id>`; a component matches the path, so both arrive
-  "/tasks/*", // `/tasks/<task_id>`; the bare `/tasks` above is the redirect, not a screen
+  "/chat", // `/chat?conversation=<id>`
+  "/tasks/*", // `/tasks/<task_id>`
   "/approval/*", // `/approval/<draft_id>`
-  "/routines", // the list, with history
-  "/routines/*", // `/routines/<routine_id>`, the focused routine
-  "/groups",
-  "/bolu/new",
-  "/dashboard/integrations",
-  "/settings",
-  "/settings/*", // `/settings/team`, `/model`, `/memory`, `/data`, `/usage`, `/subscription`
+  "/routines/*", // `/routines/<routine_id>`
 ] as const;
 
 /** A path from `docs/deep-links.md` § Universal link, with `*` standing for an id segment. */
@@ -52,10 +49,9 @@ export const APPLE_APP_LINK_COMPONENTS: readonly { "/": UniversalLinkPath }[] = 
  * signing identity, so this is the only place the Android side of the same
  * decision is written down.
  *
- * The id glob is dropped (`/tasks/*` becomes `/tasks`), and an ancestor already
- * claims its descendants: Android compares a prefix one segment at a time, so
- * `/settings` covers `/settings/team` and repeating it would only restate the
- * claim.
+ * The wildcard `*` is dropped while keeping the trailing slash (`/tasks/*`
+ * becomes `/tasks/`), ensuring that bare list pages like `/tasks` or `/routines`
+ * stay in the browser while id-bearing paths open the app.
  */
 export const ANDROID_PATH_PREFIXES: readonly string[] = pathPrefixes(UNIVERSAL_LINK_PATHS);
 
@@ -132,11 +128,11 @@ export function assetLinks(): AssetLinkStatement[] {
 function pathPrefixes(paths: readonly string[]): string[] {
   const prefixes: string[] = [];
   for (const path of paths) {
-    const prefix = path.replace(/\/\*$/, "");
-    if (prefixes.includes(prefix)) continue; // `/routines` and `/routines/*` are one prefix
+    const prefix = path.replace(/\*$/, "");
+    if (prefixes.includes(prefix)) continue;
     prefixes.push(prefix);
   }
-  return prefixes.filter((prefix) => !prefixes.some((other) => prefix.startsWith(`${other}/`)));
+  return prefixes.filter((prefix) => !prefixes.some((other) => prefix !== other && prefix.startsWith(`${other}/`)));
 }
 
 function splitList(value: string | undefined): string[] {

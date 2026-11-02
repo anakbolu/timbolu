@@ -112,11 +112,18 @@ terhadap `apps/frontend/src/app`.
 | `/routines/<routine_id>` | `(workspace)/routines/[routineID]/page.tsx` | ada — halaman rutin yang difokus: kartu rutin disorot dan riwayat rutin itu yang disaring; id yang tidak ada berakhir di "Rutinitas tidak ditemukan" |
 | `/drafts/<draft_id>` | — | tidak ada |
 
-`/tasks/*`, `/approval/*`, `/routines/*`, dan `/settings/*` di berkas well-known adalah glob dari
-baris `/tasks/<task_id>`, baris `/approval/<draft_id>`, baris `/routines/<routine_id>`, dan
-baris-baris `/settings/...`. `/routines/*` mencakup kedua bentuk `/routines/...` karena keduanya
-dilayani satu berkas dinamis yang sama, jadi id run pun sampai ke app dan berakhir di layar "tidak
-ditemukan". Tidak ada path lain di bawah keempatnya yang dilayani.
+`/chat`, `/tasks/*`, `/approval/*`, dan `/routines/*` adalah klaim universal link yang benar-benar
+terpasang — sumbernya `apps/frontend/src/lib/app-links.ts`. `/tasks/*` dan `/approval/*` adalah glob
+dari baris `/tasks/<task_id>` dan `/approval/<draft_id>`, `/routines/*` mencakup kedua bentuk
+`/routines/...` karena keduanya dilayani satu berkas dinamis yang sama, jadi id run pun sampai ke app
+dan berakhir di layar "tidak ditemukan", dan `/chat` membawa id-nya di query (`?conversation=<id>`).
+
+Path lain di tabel ini — `/dashboard`, `/dashboard/integrations`, `/groups`, `/bolu/new`, `/settings`,
+`/settings/*`, dan `/routines` tanpa id — sengaja **tidak** diklaim: build app sekarang belum punya
+layarnya, jadi tautan itu tetap terbuka di browser. Klaim dibatasi ke empat bentuk di atas supaya
+tautan resmi tidak berakhir di daftar Bolu dengan pesan "Tautan ini tidak dikenal" (#688). Kalau layar
+barunya ada, barulah barisnya ditambahkan ke `UNIVERSAL_LINK_PATHS`; test di
+`apps/mobile/src/lib/deep-link.test.ts` menjaga `pathPrefix` `app.json` tetap sama dengan daftar itu.
 
 ## Keadaan saat tautan tidak bisa dibuka
 
