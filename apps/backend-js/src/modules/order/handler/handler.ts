@@ -340,7 +340,7 @@ function rupiahToMicros(rupiah: number): number {
 }
 
 /** Parses a request body, answering null when it is not a JSON object. */
-async function readProductRequest(c: AppContext): Promise<ProductRequest | null> {
+export async function readProductRequest(c: AppContext): Promise<ProductRequest | null> {
   const body: unknown = await c.req.json().catch(() => null);
   if (body === null || typeof body !== "object" || Array.isArray(body)) {
     return null;
@@ -350,7 +350,7 @@ async function readProductRequest(c: AppContext): Promise<ProductRequest | null>
   return {
     sku: typeof raw.sku === "string" ? raw.sku : undefined,
     name: typeof raw.name === "string" ? raw.name : undefined,
-    price_idr: typeof raw.price_idr === "number" ? raw.price_idr : undefined,
+    price_idr: (typeof raw.price_idr === "number" && raw.price_idr >= 0) ? raw.price_idr : undefined,
     unit: typeof raw.unit === "string" ? raw.unit : undefined,
     active: typeof raw.active === "boolean" ? raw.active : undefined,
   };
