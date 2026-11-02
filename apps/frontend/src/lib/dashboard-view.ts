@@ -379,9 +379,16 @@ export function startOfWeek(now: Date): Date {
   return start;
 }
 
-/** finishedOn returns the tasks that finished on `day`. */
+/**
+ * finishedOn returns tasks that succeeded on `day`.
+ *
+ * The chart is titled "Tugas selesai minggu ini" and sits beside the "Tugas selesai hari ini"
+ * card. All terminal tasks write `finished_at` (including failed and canceled runs), but counting
+ * non-successful tasks would inflate completed work and tell two conflicting stories on the same
+ * screen. Only `succeeded` represents finished work.
+ */
 function finishedOn(tasks: Task[], day: Date): Task[] {
-  return tasks.filter((task) => isSameDay(task.finished_at, day));
+  return tasks.filter((task) => task.status === "succeeded" && isSameDay(task.finished_at, day));
 }
 
 /**
