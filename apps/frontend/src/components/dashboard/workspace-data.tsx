@@ -65,8 +65,13 @@ export type Hub = {
   grantsByAgent: Record<string, HubGrant[]>;
 };
 
-/** Outcome is what an action reports back to the view that asked for it. */
-export type Outcome = { ok: boolean; message: string };
+/**
+ * Outcome is what an action reports back to the view that asked for it.
+ *
+ * Actions that open or route into a thread also return `conversationId` so the
+ * caller can link straight to `/chat?conversation=<id>` without re-fetching.
+ */
+export type Outcome = { ok: boolean; message: string; conversationId?: string };
 
 export type WorkspaceData = {
   /** ready stays false until the first load finishes, so a view can hold its shape. */
@@ -456,6 +461,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       return {
         ok: true,
         message: names.length === 0 ? "Tugas diteruskan ke timmu." : `${names.join(", ")} menerimanya.`,
+        conversationId: conversationID,
       };
     },
     [conversations, loadConversations],

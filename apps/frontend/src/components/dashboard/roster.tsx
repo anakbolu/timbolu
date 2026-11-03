@@ -29,7 +29,7 @@
  * what comes back, so two tabs and a reload all agree.
  */
 
-import { ChevronDown, GripVertical } from "lucide-react";
+import { ChevronDown, GripVertical, MessagesSquare } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
@@ -301,8 +301,8 @@ function RosterRow({
  * unfolded again — nor be a place to drop one into.
  */
 export function BoluRoster() {
-  const { teams, drafts, ready, user, members, workspaceID, moveAgent } = useWorkspace();
-
+  const { teams, conversations, drafts, ready, user, members, workspaceID, moveAgent } = useWorkspace();
+  const groups = conversations.filter((conversation) => conversation.kind === "group");
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [drop, setDrop] = useState<DropTarget | null>(null);
   const [announcement, setAnnouncement] = useState("");
@@ -588,6 +588,31 @@ export function BoluRoster() {
           </section>
         );
       })}
+      {/* Group threads live in the same store as the roster, so listing them here
+          gives the sidebar the `?conversation=<id>` entry point that `ChatScreen`
+          expects without an extra query. */}
+      {groups.length > 0 ? (
+        <section className="mb-3 flex flex-col last:mb-0">
+          <div className="mb-1 flex items-center gap-1 px-1.5 text-[12px] font-semibold text-bolu-muted">
+            <span className="flex-1 text-left">Grup</span>
+            <span className="font-normal">{groups.length}</span>
+          </div>
+          <div className="flex flex-col gap-0.5">
+            {groups.map((group) => (
+              <Link
+                key={group.id}
+                href={`/chat?conversation=${group.id}`}
+                aria-label={`Buka obrolan grup ${group.title || "Grup tanpa nama"}`}
+                className="flex min-h-[32px] min-w-0 items-center gap-2.5 rounded-md border-2 border-transparent px-1.5 text-left text-[14px] text-bolu-body no-underline hover:bg-bolu-hover/70 hover:text-bolu-ink"
+              >
+                <MessagesSquare size={16} strokeWidth={2} aria-hidden="true" className="flex-none text-bolu-muted" />
+                <span className="min-w-0 flex-1 truncate">{group.title || "Grup tanpa nama"}</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
 
       <p aria-live="polite" className="sr-only">
         {announcement}
