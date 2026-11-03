@@ -743,6 +743,11 @@ export async function newContainer(
         logger: log,
       } as any);
     routine = new RoutineHandler(routineService, log);
+    if (workspace) {
+      workspace.withClockChange(async (workspaceId: string) => {
+        await routineService?.reschedule({ workspaceId });
+      });
+    }
 
     const taskRepo = new TaskRepository(db);
     // The starter is the Temporal seam: without it a task is recorded and stays
