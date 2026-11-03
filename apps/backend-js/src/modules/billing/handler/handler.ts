@@ -41,14 +41,34 @@ import type { Delivery, Service } from "../domain/service.ts";
  */
 export const WebhookMaxBytes = 64 * 1024;
 
+/**
+ * Batas laju rute webhook publik per IP (60 permintaan per menit, isi ulang
+ * 1 token/detik). Kapasitas longgar ini menjaga agar retry sah dari gateway
+ * pembayaran tidak ikut tertolak, sekaligus menahan banjir request ke rute
+ * tanpa sesi sebelum body dibaca atau tanda tangan diverifikasi (#777).
+ */
+export const WebhookRateLimitCapacity = 60;
+export const WebhookRateLimitRefillPerSecond = 1;
+
+/** Port pembatas laju untuk rute webhook publik, kompatibel dengan `authThrottle`. */
+export interface WebhookThrottle {
+  allow(
+    key: string,
+    capacity: number,
+    refill: number,
+  ): Promise<{ allowed: boolean; retryAfter: number }>;
+}
+
 /** Serves the billing endpoints. */
 export class Handler {
   readonly service: Service;
   readonly log: Logger;
+  readonly throttle: WebhookThrottle | null;
 
-  constructor(service: Service, log?: Logger | null) {
+  constructor(service: Service, log?: Logger | null, throttle?: WebhookThrottle | null) {
     this.service = service;
     this.log = log ?? nopLogger;
+    this.throttle = throttle ?? null;
   }
 
   /** Returns the workspace's package, its usage, and what it owes. */
@@ -142,6 +162,39 @@ export class Handler {
    * cannot fix by sending again — and 4xx for what it can.
    */
   webhook = async (c: AppContext): Promise<Response> => {
+    // Batasi laju per IP di paling depan sebelum menyentuh header ukuran atau
+    // membaca stream body, supaya banjir request publik tidak membebani proses
+    // dan verifikasi HMAC (#777).
+    if (this.throttle) {
+      const ip =
+        (c.req.header("CF-Connecting-IP") ?? "").trim() ||
+        (c.req.header("X-Forwarded-For") ?? "").split(",")[0]?.trim() ||
+        (c.req.header("X-Real-IP") ?? "").trim() ||
+        "unknown";
+      let decision: { allowed: boolean; retryAfter: number } | null = null;
+      try {
+        decision = await this.throttle.allow(
+          `billing:webhook:ip:${ip}`,
+          WebhookRateLimitCapacity,
+          WebhookRateLimitRefillPerSecond,
+        );
+      } catch {
+        // Sama seperti auth login throttle: bila Redis belum dikonfigurasi pada
+        // deployment ini, jangan memblokir notifikasi pembayaran yang masuk.
+        decision = null;
+      }
+      if (decision && !decision.allowed) {
+        const retryAfterSeconds = Math.max(1, Math.ceil(decision.retryAfter / 1000));
+        c.header("Retry-After", String(retryAfterSeconds));
+        return error(
+          c,
+          429,
+          "terlalu banyak permintaan webhook, coba lagi nanti",
+          "rate_limited",
+        );
+      }
+    }
+
     const rawReq = c.req.raw;
 
     // Pre-check Content-Length bila header tersedia agar request raksasa langsung
@@ -295,6 +348,7 @@ function scope(c: AppContext): Scope {
     workspaceId: workspaceUUID(c) ?? "",
   };
 }
+
 
 /** `c.QueryInt` with Go's default: a missing or malformed value answers the default. */
 function queryInt(c: AppContext, key: string, fallback: number): number {

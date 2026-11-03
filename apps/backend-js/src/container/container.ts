@@ -634,7 +634,7 @@ export async function newContainer(
       counter: quota ? spendCounter(quota) : null,
       logger: log,
     } as any);
-    billing = new BillingHandler(billingService, log);
+    billing = new BillingHandler(billingService, log, authThrottle(limiter));
 
     // A new workspace gets its trial package inside the onboarding transaction, so
     // "exactly one live subscription" is a fact about the data rather than a rule

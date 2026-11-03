@@ -43,7 +43,18 @@ import type {
 import { WireAttachment, WireMessage } from "../domain/wire.ts";
 
 /** Caps one upload, from the module's own contract. */
-const AttachmentMaxBytes = 25 * 1024 * 1024;
+export const AttachmentMaxBytes = 25 * 1024 * 1024;
+
+/**
+ * Ruang tambahan untuk framing `multipart/form-data` (boundary, header tiap
+ * part seperti `Content-Disposition`/`Content-Type`, dan field pendamping
+ * `message_id`). Dengan memeriksa `Content-Length` terhadap
+ * `AttachmentMaxBytes + AttachmentMultipartOverheadBytes` sebelum
+ * `c.req.parseBody()`, unggahan yang jelas melebihi batas langsung ditolak 413
+ * tanpa membaca dan mengalokasikan seluruh body multipart ke memori (#777).
+ */
+export const AttachmentMultipartOverheadBytes = 64 * 1024;
+export const AttachmentMaxRequestBytes = AttachmentMaxBytes + AttachmentMultipartOverheadBytes;
 
 /** Describes the sandboxed content origin. */
 export interface ContentConfig {
@@ -273,6 +284,23 @@ export class Handler {
     const id = parseId(c.req.param("conversationID") ?? "");
     if (id === null) {
       return invalidRequest(c, "invalid conversation id");
+    }
+
+    // Periksa Content-Length sebelum parseBody() menyerap seluruh multipart ke
+    // memori. Pemeriksaan file.size di bawah tetap dipertahankan sebagai lapis
+    // kedua untuk request yang ukurannya lolos batas amplop multipart tetapi
+    // byte berkasnya sendiri melebihi AttachmentMaxBytes (#777).
+    const contentLengthHeader = c.req.header("content-length");
+    if (contentLengthHeader !== undefined) {
+      const contentLength = Number.parseInt(contentLengthHeader, 10);
+      if (Number.isFinite(contentLength) && contentLength > AttachmentMaxRequestBytes) {
+        return errorEnvelope(
+          c,
+          413,
+          `the file is larger than ${AttachmentMaxBytes} bytes`,
+          "file_too_large",
+        );
+      }
     }
 
     let form: Record<string, string | File | (string | File)[]>;

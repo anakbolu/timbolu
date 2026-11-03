@@ -13,9 +13,17 @@ import { nopLogger } from "../platform/logger.ts";
 import { requestContext } from "../platform/middleware/request_context.ts";
 import type { Container } from "./container.ts";
 import { registerRoutes } from "./handler.ts";
-import type { Invoice, Plan, Snapshot } from "../modules/billing/domain/billing.ts";
+import { ErrUnverifiable, type Invoice, type Plan, type Snapshot } from "../modules/billing/domain/billing.ts";
 import type { Delivery, Service as BillingPort } from "../modules/billing/domain/service.ts";
-import { Handler as BillingHandler, WebhookMaxBytes } from "../modules/billing/handler/handler.ts";
+import {
+  Handler as BillingHandler,
+  WebhookMaxBytes,
+  WebhookRateLimitCapacity,
+  type WebhookThrottle,
+} from "../modules/billing/handler/handler.ts";
+import { authThrottle } from "./adapters.ts";
+import { Limiter } from "../platform/ratelimit/ratelimit.ts";
+import type { Client as RedisClient } from "../platform/redis/redis.ts";
 
 const workspaceId = "11111111-1111-1111-1111-111111111111";
 const userId = "22222222-2222-2222-2222-222222222222";
@@ -178,7 +186,10 @@ const authPort = {
   async assertVerified(): Promise<void> {},
 };
 
-function newAppWithBilling(resolvedRole: string): { app: Hono<AppEnv>; billing: StubBilling } {
+function newAppWithBilling(
+  resolvedRole: string,
+  throttle: WebhookThrottle | null = null,
+): { app: Hono<AppEnv>; billing: StubBilling } {
   const billing = new StubBilling();
   const workspacePort = {
     async resolve(): Promise<string> {
@@ -195,7 +206,7 @@ function newAppWithBilling(resolvedRole: string): { app: Hono<AppEnv>; billing: 
     auth: null,
     authService: authPort,
     workspaceService: workspacePort,
-    billing: new BillingHandler(billing, nopLogger),
+    billing: new BillingHandler(billing, nopLogger, throttle),
     billingService: billing,
   } as unknown as Container;
 
@@ -321,5 +332,115 @@ describe("billing webhook body limit (#653)", () => {
     expect(billing.lastDelivery).not.toBeNull();
     expect(billing.lastDelivery?.provider).toBe("duitku");
     expect(billing.lastDelivery?.body).toEqual(expectedBytes);
+  });
+});
+
+/**
+ * Fake Redis client yang menjalankan semantik token bucket `Limiter` di memori,
+ * sehingga jalur `authThrottle(new Limiter(redis))` diuji utuh tanpa server Redis.
+ */
+function newInMemoryLimiter(): { limiter: Limiter; calls: Array<{ key: string; capacity: number; refill: number }> } {
+  const buckets = new Map<string, { tokens: number }>();
+  const calls: Array<{ key: string; capacity: number; refill: number }> = [];
+
+  const fakeRedis = {
+    raw() {
+      return {
+        async eval(_script: string, _numKeys: number, key: string, capStr: string, refillStr: string) {
+          const capacity = Number(capStr);
+          const refill = Number(refillStr);
+          calls.push({ key, capacity, refill });
+          const state = buckets.get(key) ?? { tokens: capacity };
+          if (state.tokens >= 1) {
+            state.tokens -= 1;
+            buckets.set(key, state);
+            return [1, 0];
+          }
+          const retryMillis = Math.ceil(((1 - state.tokens) / refill) * 1000);
+          return [0, retryMillis];
+        },
+        async del(key: string) {
+          buckets.delete(key);
+          return 1;
+        },
+      };
+    },
+  } as unknown as RedisClient;
+
+  return { limiter: new Limiter(fakeRedis), calls };
+}
+
+describe("billing webhook rate limit (#777)", () => {
+  test("di bawah kapasitas (60/menit per IP) -> 200, di atas kapasitas -> 429 dengan header Retry-After", async () => {
+    const { limiter, calls } = newInMemoryLimiter();
+    const { app, billing } = newAppWithBilling("member", authThrottle(limiter));
+    const payload = "merchantCode=D1234&amount=50000&merchantOrderId=INV-1&resultCode=00";
+
+    for (let i = 0; i < WebhookRateLimitCapacity; i++) {
+      const res = await app.request("/api/billing/webhooks/duitku", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-Forwarded-For": "203.0.113.10, 10.0.0.1",
+        },
+        body: payload,
+      });
+      expect(res.status).toBe(200);
+    }
+    expect(billing.handlePaymentCalls).toBe(WebhookRateLimitCapacity);
+    expect(calls[0]).toEqual({
+      key: "billing:webhook:ip:203.0.113.10",
+      capacity: 60,
+      refill: 1,
+    });
+
+    // Permintaan ke-61 dari IP yang sama ditolak 429 dengan Retry-After tanpa memanggil service.
+    const blocked = await app.request("/api/billing/webhooks/duitku", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Forwarded-For": "203.0.113.10, 10.0.0.1",
+      },
+      body: payload,
+    });
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get("Retry-After")).toBe("1");
+    const body = (await blocked.json()) as { success: boolean; error?: { code: string } };
+    expect(body.success).toBe(false);
+    expect(body.error?.code).toBe("rate_limited");
+    expect(billing.handlePaymentCalls).toBe(WebhookRateLimitCapacity);
+
+    // IP berbeda memiliki ember sendiri dan tetap dilayani 200.
+    const otherIp = await app.request("/api/billing/webhooks/duitku", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Forwarded-For": "198.51.100.77",
+      },
+      body: payload,
+    });
+    expect(otherIp.status).toBe(200);
+    expect(billing.handlePaymentCalls).toBe(WebhookRateLimitCapacity + 1);
+  });
+
+  test("verifikasi tanda tangan yang gagal tetap ditolak 400 saat di bawah kapasitas", async () => {
+    const { limiter } = newInMemoryLimiter();
+    const { app, billing } = newAppWithBilling("member", authThrottle(limiter));
+    billing.handlePayment = async () => {
+      throw ErrUnverifiable;
+    };
+
+    const res = await app.request("/api/billing/webhooks/duitku", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Forwarded-For": "203.0.113.55",
+      },
+      body: "merchantCode=D1234&amount=50000&signature=invalid",
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { success: boolean; error?: { code: string } };
+    expect(body.success).toBe(false);
+    expect(body.error?.code).toBe("unverifiable_payment");
   });
 });
