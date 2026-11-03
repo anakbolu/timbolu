@@ -708,7 +708,18 @@ export async function newContainer(
             MemorySignalActive,
           )
         : null,
-      limits: { maxContentRunes: config.memory.maxContentRunes } as any,
+      limits: {
+        mainTokens: config.memory.mainTokens,
+        recallMemories: config.memory.recallMemories,
+        recallKnowledge: config.memory.recallKnowledge,
+        similarity: config.memory.similarity,
+        // MemoryConfig uses seconds while Limits uses milliseconds.
+        quietPeriod: config.memory.quietSeconds * 1000,
+        extractionMessages: config.memory.extractionMessages,
+        chunkRunes: config.memory.chunkRunes,
+        chunkOverlapRunes: config.memory.chunkOverlapRunes,
+        maxContentRunes: config.memory.maxContentRunes,
+      },
       logger: log,
     } as any);
     memory = new MemoryHandler(memoryService, log);

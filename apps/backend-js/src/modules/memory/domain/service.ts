@@ -126,19 +126,22 @@ export const DefaultLimits: Limits = {
   maxContentRunes: 2000,
 };
 
+/** A bound that a partial configuration left out or zeroed falls back from. `undefined <= 0` is false, so the comparison alone let an unset field through as undefined. */
+export function bound(value: number, fallback: number): number {
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
 /** Fills the zero fields from the defaults, so a partially configured deployment still has bounds. */
 export function normaliseLimits(l: Limits): Limits {
   return {
-    mainTokens: l.mainTokens <= 0 ? DefaultLimits.mainTokens : l.mainTokens,
-    recallMemories: l.recallMemories <= 0 ? DefaultLimits.recallMemories : l.recallMemories,
-    recallKnowledge: l.recallKnowledge <= 0 ? DefaultLimits.recallKnowledge : l.recallKnowledge,
-    similarity: l.similarity <= 0 ? DefaultLimits.similarity : l.similarity,
-    quietPeriod: l.quietPeriod <= 0 ? DefaultLimits.quietPeriod : l.quietPeriod,
-    extractionMessages:
-      l.extractionMessages <= 0 ? DefaultLimits.extractionMessages : l.extractionMessages,
-    chunkRunes: l.chunkRunes <= 0 ? DefaultLimits.chunkRunes : l.chunkRunes,
-    chunkOverlapRunes:
-      l.chunkOverlapRunes <= 0 ? DefaultLimits.chunkOverlapRunes : l.chunkOverlapRunes,
-    maxContentRunes: l.maxContentRunes <= 0 ? DefaultLimits.maxContentRunes : l.maxContentRunes,
+    mainTokens: bound(l.mainTokens, DefaultLimits.mainTokens),
+    recallMemories: bound(l.recallMemories, DefaultLimits.recallMemories),
+    recallKnowledge: bound(l.recallKnowledge, DefaultLimits.recallKnowledge),
+    similarity: bound(l.similarity, DefaultLimits.similarity),
+    quietPeriod: bound(l.quietPeriod, DefaultLimits.quietPeriod),
+    extractionMessages: bound(l.extractionMessages, DefaultLimits.extractionMessages),
+    chunkRunes: bound(l.chunkRunes, DefaultLimits.chunkRunes),
+    chunkOverlapRunes: bound(l.chunkOverlapRunes, DefaultLimits.chunkOverlapRunes),
+    maxContentRunes: bound(l.maxContentRunes, DefaultLimits.maxContentRunes),
   };
 }
