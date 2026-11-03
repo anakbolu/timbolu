@@ -330,6 +330,10 @@ export interface AuthConfig {
   cookieSecure: boolean;
   loginThrottleCapacity: number;
   loginThrottleRefill: number;
+  mailThrottleCapacity?: number;
+  mailThrottleIpCapacity?: number;
+  mailThrottleRefill?: number;
+  mailThrottleIpRefill?: number;
   requireEmailVerification: boolean;
 }
 
