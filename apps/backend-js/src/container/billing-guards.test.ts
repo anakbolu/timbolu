@@ -14,8 +14,8 @@ import { requestContext } from "../platform/middleware/request_context.ts";
 import type { Container } from "./container.ts";
 import { registerRoutes } from "./handler.ts";
 import type { Invoice, Plan, Snapshot } from "../modules/billing/domain/billing.ts";
-import type { Service as BillingPort } from "../modules/billing/domain/service.ts";
-import { Handler as BillingHandler } from "../modules/billing/handler/handler.ts";
+import type { Delivery, Service as BillingPort } from "../modules/billing/domain/service.ts";
+import { Handler as BillingHandler, WebhookMaxBytes } from "../modules/billing/handler/handler.ts";
 
 const workspaceId = "11111111-1111-1111-1111-111111111111";
 const userId = "22222222-2222-2222-2222-222222222222";
@@ -147,8 +147,12 @@ class StubBilling implements BillingPort {
     };
   }
 
-  async handlePayment(): Promise<never> {
-    throw new Error("webhook not under test");
+  lastDelivery: Delivery | null = null;
+  handlePaymentCalls = 0;
+
+  async handlePayment(delivery: Delivery): Promise<void> {
+    this.handlePaymentCalls++;
+    this.lastDelivery = delivery;
   }
 
   async check(): Promise<never> {
@@ -174,7 +178,7 @@ const authPort = {
   async assertVerified(): Promise<void> {},
 };
 
-function newApp(resolvedRole: string): Hono<AppEnv> {
+function newAppWithBilling(resolvedRole: string): { app: Hono<AppEnv>; billing: StubBilling } {
   const billing = new StubBilling();
   const workspacePort = {
     async resolve(): Promise<string> {
@@ -198,7 +202,11 @@ function newApp(resolvedRole: string): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   app.use("*", requestContext(nopLogger));
   registerRoutes(app, container);
-  return app;
+  return { app, billing };
+}
+
+function newApp(resolvedRole: string): Hono<AppEnv> {
+  return newAppWithBilling(resolvedRole).app;
 }
 
 const headers = {
@@ -244,5 +252,74 @@ describe("billing role guards (#661)", () => {
     );
     expect(payRes.status).not.toBe(403);
     expect(payRes.status).not.toBe(401);
+  });
+});
+describe("billing webhook body limit (#653)", () => {
+  test("Content-Length > 64 KiB -> 413 dan service.handlePayment tidak dipanggil", async () => {
+    const { app, billing } = newAppWithBilling("member");
+    const res = await app.request("/api/billing/webhooks/duitku", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": String(WebhookMaxBytes + 1),
+      },
+      body: "merchantCode=D1234&amount=10000",
+    });
+
+    expect(res.status).toBe(413);
+    const body = (await res.json()) as { success: boolean; error?: { code: string } };
+    expect(body.success).toBe(false);
+    expect(body.error?.code).toBe("payload_too_large");
+    expect(billing.handlePaymentCalls).toBe(0);
+  });
+
+  test("streamed body tanpa Content-Length > 64 KiB -> 413 dan service.handlePayment tidak dipanggil", async () => {
+    const { app, billing } = newAppWithBilling("member");
+    const oversized = new Uint8Array(WebhookMaxBytes + 10);
+    oversized.fill(65);
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(oversized);
+        controller.close();
+      },
+    });
+
+    const res = await app.request("/api/billing/webhooks/duitku", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: stream,
+      duplex: "half",
+    });
+
+    expect(res.status).toBe(413);
+    const body = (await res.json()) as { success: boolean; error?: { code: string } };
+    expect(body.success).toBe(false);
+    expect(body.error?.code).toBe("payload_too_large");
+    expect(billing.handlePaymentCalls).toBe(0);
+  });
+
+  test("body normal <= 64 KiB -> 200 dan byte yang diterima service identik", async () => {
+    const { app, billing } = newAppWithBilling("member");
+    const rawPayload = "merchantCode=D1234&amount=50000&merchantOrderId=INV-1&resultCode=00";
+    const expectedBytes = new TextEncoder().encode(rawPayload);
+
+    const res = await app.request("/api/billing/webhooks/duitku", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: rawPayload,
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { success: boolean };
+    expect(body.success).toBe(true);
+    expect(billing.handlePaymentCalls).toBe(1);
+    expect(billing.lastDelivery).not.toBeNull();
+    expect(billing.lastDelivery?.provider).toBe("duitku");
+    expect(billing.lastDelivery?.body).toEqual(expectedBytes);
   });
 });

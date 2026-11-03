@@ -32,6 +32,14 @@ import {
   type TopUpPackage,
 } from "../domain/billing.ts";
 import type { Delivery, Service } from "../domain/service.ts";
+/**
+ * Batas ukuran body webhook notifikasi pembayaran (64 KiB).
+ * Payload notifikasi Duitku (form-urlencoded) jauh di bawah nilai ini (biasanya
+ * < 1 KiB), dan adapter memverifikasi tanda tangan HMAC di atas byte mentah ini.
+ * Pembatasan ini mencegah penyerang membanjiri memori proses sebelum signature
+ * diperiksa (#653).
+ */
+export const WebhookMaxBytes = 64 * 1024;
 
 /** Serves the billing endpoints. */
 export class Handler {
@@ -134,10 +142,68 @@ export class Handler {
    * cannot fix by sending again — and 4xx for what it can.
    */
   webhook = async (c: AppContext): Promise<Response> => {
-    const body = new Uint8Array(await c.req.arrayBuffer());
+    const rawReq = c.req.raw;
+
+    // Pre-check Content-Length bila header tersedia agar request raksasa langsung
+    // ditolak tanpa membaca stream ke memori.
+    const contentLengthHeader = rawReq.headers.get("content-length");
+    if (contentLengthHeader !== null) {
+      const contentLength = Number.parseInt(contentLengthHeader, 10);
+      if (Number.isFinite(contentLength) && contentLength > WebhookMaxBytes) {
+        return error(
+          c,
+          413,
+          `ukuran body webhook melebihi batas ${WebhookMaxBytes} byte`,
+          "payload_too_large",
+        );
+      }
+    }
+
+    // Baca body secara bertahap (baik bila Content-Length tidak ada / chunked
+    // maupun untuk menjaga konsumsi memori).
+    if (!rawReq.body) {
+      return error(c, 400, "body webhook kosong atau tidak bisa dibaca", "invalid_request");
+    }
+
+    const reader = rawReq.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          totalBytes += value.byteLength;
+          if (totalBytes > WebhookMaxBytes) {
+            await reader.cancel();
+            return error(
+              c,
+              413,
+              `ukuran body webhook melebihi batas ${WebhookMaxBytes} byte`,
+              "payload_too_large",
+            );
+          }
+          chunks.push(value);
+        }
+      }
+    } catch {
+      return error(c, 400, "body webhook kosong atau tidak bisa dibaca", "invalid_request");
+    }
+
+    if (totalBytes === 0) {
+      return error(c, 400, "body webhook kosong atau tidak bisa dibaca", "invalid_request");
+    }
+
+    const body = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      body.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
 
     const headers: Record<string, string> = {};
-    c.req.raw.headers.forEach((value, key) => {
+    rawReq.headers.forEach((value, key) => {
       headers[key] = value;
     });
 

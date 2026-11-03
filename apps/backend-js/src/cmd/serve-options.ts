@@ -5,6 +5,15 @@
 
 import { type BunWebSocketData, websocket } from "hono/bun";
 
+/**
+ * Global body ceiling for `Bun.serve`. Legitimate chat attachment uploads allow
+ * up to 25 MB (`AttachmentMaxBytes` in `modules/chat/domain/service.ts`), so
+ * the server ceiling must stay >= 25 MB plus multipart framing overhead rather
+ * than Bun's 128 MB default (#653). Smaller endpoints enforce tighter bounds of
+ * their own before reading the body.
+ */
+export const MaxRequestBodyBytes = 32 * 1024 * 1024;
+
 interface ServeOptionsInput {
   hostname: string;
   port: number;
@@ -25,5 +34,10 @@ interface ServeOptionsInput {
  * booting the stream's options too.
  */
 export function serveOptions(opts: ServeOptionsInput) {
-  return { ...opts, idleTimeout: 0, websocket } satisfies Bun.Serve.Options<BunWebSocketData>;
+  return {
+    ...opts,
+    idleTimeout: 0,
+    maxRequestBodySize: MaxRequestBodyBytes,
+    websocket,
+  } satisfies Bun.Serve.Options<BunWebSocketData>;
 }
