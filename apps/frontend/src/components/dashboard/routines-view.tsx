@@ -442,6 +442,16 @@ export function RoutinesView({ focusID }: { focusID?: string }) {
   const remove = useCallback(
     async (routine: Routine) => {
       if (!workspaceID) return;
+
+      // Deleting a routine stops all future automated runs and removes its instructions.
+      // Confirming with the routine's name prevents accidental removal from the action row.
+      const confirmed = window.confirm(
+        `Hapus ${routine.name}?\n\nJadwal otomatisnya akan berhenti dan rutinitas ini tidak bisa dikembalikan.`,
+      );
+      if (!confirmed) {
+        return;
+      }
+
       setBusy(true);
       const result = await deleteRoutine(workspaceID, routine.id);
       setBusy(false);

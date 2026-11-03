@@ -175,6 +175,15 @@ export function TeamView() {
       return;
     }
 
+    // Removing an agent deletes its persona, instructions, tools, and private memories forever.
+    // Prompting with its exact name avoids accidental clicks on the destructive button.
+    const confirmed = window.confirm(
+      `Keluarkan ${agent.name}?\n\nPersona, alat, dan memorinya ikut terhapus dan tidak bisa dikembalikan.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
     setBusy(true);
     const result = await deleteAgent(workspaceId, agent.id);
     setBusy(false);
