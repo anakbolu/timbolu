@@ -10,7 +10,7 @@
  * and the values come from what the API can answer.
  */
 
-import { Bell, Check } from "lucide-react";
+import { Check } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
@@ -31,6 +31,7 @@ import {
 } from "@/lib/dashboard-view";
 
 import { useWorkspace } from "./workspace-data";
+import { NotificationBell } from "./notification-bell";
 
 const CARD = "rounded-md border border-bolu-border bg-bolu-surface";
 const HEADING = "font-display text-[22px] font-semibold";
@@ -98,13 +99,7 @@ export function DashView() {
           </div>
         </div>
         <div className="flex items-center gap-2.5">
-          <button
-            type="button"
-            aria-label="Notifikasi"
-            className="flex size-11 cursor-pointer items-center justify-center rounded-full border border-bolu-border bg-bolu-surface"
-          >
-            <Bell size={20} strokeWidth={2} aria-hidden="true" />
-          </button>
+          <NotificationBell />
           <div className="flex size-11 items-center justify-center rounded-full bg-bolu-tint font-display font-bold text-bolu-on-tint">
             {initials}
           </div>
