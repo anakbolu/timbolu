@@ -513,14 +513,37 @@ export class PostgresRepository {
     });
   }
 
-  /** One attachment's metadata. */
+  /**
+   * One attachment's metadata.
+   *
+   * Only the message author or a participant of the message's conversation may
+   * read the attachment. Anyone else in the workspace receives `ErrAttachmentNotFound`
+   * (404 rather than 403) so another member's conversation or upload is not
+   * distinguishable from a file that does not exist (#650).
+   */
   async open(scope: Scope, id: string): Promise<Attachment> {
+    if (isNil(scope.userId)) {
+      throw ErrAttachmentNotFound;
+    }
     return this.read(scope, async (tx) => {
       // name: GetAttachment
       const rows = await tx<AttachmentRow[]>`
-        SELECT id, workspace_id, message_id, storage_key, filename, content_type, byte_size, checksum_sha256, created_at
-        FROM message_attachments
-        WHERE id = ${id} AND workspace_id = ${scope.workspaceId}
+        SELECT a.id, a.workspace_id, a.message_id, a.storage_key, a.filename, a.content_type, a.byte_size, a.checksum_sha256, a.created_at
+        FROM message_attachments a
+        JOIN messages m
+            ON m.id = a.message_id AND m.workspace_id = a.workspace_id
+        WHERE a.id = ${id}
+          AND a.workspace_id = ${scope.workspaceId}
+          AND (
+              m.author_user_id = ${scope.userId}::uuid
+              OR EXISTS (
+                  SELECT 1
+                  FROM conversation_participants p
+                  WHERE p.workspace_id = a.workspace_id
+                    AND p.conversation_id = m.conversation_id
+                    AND p.user_id = ${scope.userId}::uuid
+              )
+          )
       `;
       if (rows.length === 0) {
         throw ErrAttachmentNotFound;
