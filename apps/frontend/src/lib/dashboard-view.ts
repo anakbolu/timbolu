@@ -658,3 +658,92 @@ export function moveAgentTo(teams: AgentTeam[], agentId: string, teamId: string,
   const same = before.length === after.length && before.every((agent, i) => agent.id === after[i].id);
   return same ? teams : next;
 }
+
+/** The independent workspace list reads whose failures must not stop the live stream. */
+export type WorkspaceSection = "agents" | "conversations" | "drafts" | "tasks";
+
+/** Per-section failure messages; null means the section's last read succeeded. */
+export type WorkspaceSectionErrors = Record<WorkspaceSection, string | null>;
+
+/** The initial state before any section read has failed. */
+export const EMPTY_SECTION_ERRORS: WorkspaceSectionErrors = {
+  agents: null,
+  conversations: null,
+  drafts: null,
+  tasks: null,
+};
+
+/**
+ * applySectionResult updates one section's items and error from an API read.
+ *
+ * A failed read records the failure on that section alone and preserves `current`
+ * so a transient 500 or timeout never wipes the last good data off the screen. A
+ * subsequent successful read replaces the data and clears that section's error.
+ */
+export function applySectionResult<T, S extends WorkspaceSection>(
+  section: S,
+  current: T,
+  errors: WorkspaceSectionErrors,
+  result: { ok: true; data: T } | { ok: false; message: string },
+): { data: T; errors: WorkspaceSectionErrors } {
+  if (!result.ok) {
+    if (errors[section] === result.message) {
+      return { data: current, errors };
+    }
+    return {
+      data: current,
+      errors: { ...errors, [section]: result.message },
+    };
+  }
+  if (errors[section] === null) {
+    return { data: result.data, errors };
+  }
+  return {
+    data: result.data,
+    errors: { ...errors, [section]: null },
+  };
+}
+
+const SECTION_ORDER: readonly WorkspaceSection[] = ["drafts", "tasks", "agents", "conversations"];
+
+/**
+ * summarizeSectionErrors returns the first active section error for the top banner,
+ * or null when every section's latest read succeeded.
+ */
+export function summarizeSectionErrors(errors: WorkspaceSectionErrors): string | null {
+  for (const section of SECTION_ORDER) {
+    const message = errors[section];
+    if (message) return message;
+  }
+  return null;
+}
+
+/**
+ * canOpenWorkspaceStream decides whether the workspace realtime stream may open.
+ *
+ * Only a missing readiness gate, workspace id, or access token may hold back the
+ * stream. Section read failures (`errors`, `error`) are intentionally ignored here
+ * so a single failed list read never kills live updates for the rest of the session.
+ */
+export function canOpenWorkspaceStream(input: {
+  ready: boolean;
+  workspaceID: string | null;
+  accessToken: string | null;
+  error?: string | null;
+  sectionErrors?: Partial<WorkspaceSectionErrors>;
+}): boolean {
+  return input.ready && Boolean(input.workspaceID) && Boolean(input.accessToken);
+}
+
+/** Exponential backoff schedule for stream/read recovery: 1s, 2s, 4s, 8s, capped at 30s. */
+export const STREAM_RETRY_MAX_MS = 30_000;
+export const STREAM_RETRY_BASE_MS = 1_000;
+
+/**
+ * streamRetryDelayMs computes the backoff delay (in milliseconds) for a 0-based
+ * retry attempt: 1000, 2000, 4000, 8000, 16000, 30000, 30000...
+ */
+export function streamRetryDelayMs(attempt: number): number {
+  const exponent = Math.max(0, Math.floor(attempt));
+  return Math.min(STREAM_RETRY_MAX_MS, STREAM_RETRY_BASE_MS * 2 ** exponent);
+}

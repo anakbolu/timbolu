@@ -17,7 +17,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { Task } from "@/lib/api";
-import { buildStats, buildWeek, countPending, expressionOf, STATE_EXPRESSION } from "./dashboard-view";
+import {
+  applySectionResult,
+  buildStats,
+  buildWeek,
+  canOpenWorkspaceStream,
+  countPending,
+  EMPTY_SECTION_ERRORS,
+  expressionOf,
+  STATE_EXPRESSION,
+  streamRetryDelayMs,
+  summarizeSectionErrors,
+} from "./dashboard-view";
 
 const now = new Date(2026, 9, 30, 12, 0, 0);
 
@@ -110,4 +121,118 @@ test("countPending counts only drafts with pending status", () => {
     { status: "rejected" },
   ] as Parameters<typeof countPending>[0];
   assert.equal(countPending(drafts), 2);
+});
+
+test("canOpenWorkspaceStream opens when ready, workspaceID, and accessToken are present despite section errors", () => {
+  assert.equal(
+    canOpenWorkspaceStream({
+      ready: true,
+      workspaceID: "ws-1",
+      accessToken: "tok-1",
+      error: "500 internal error",
+      sectionErrors: { tasks: "timeout", drafts: "network error" },
+    }),
+    true,
+  );
+
+  assert.equal(
+    canOpenWorkspaceStream({ ready: false, workspaceID: "ws-1", accessToken: "tok-1" }),
+    false,
+  );
+  assert.equal(
+    canOpenWorkspaceStream({ ready: true, workspaceID: null, accessToken: "tok-1" }),
+    false,
+  );
+  assert.equal(
+    canOpenWorkspaceStream({ ready: true, workspaceID: "", accessToken: "tok-1" }),
+    false,
+  );
+  assert.equal(
+    canOpenWorkspaceStream({ ready: true, workspaceID: "ws-1", accessToken: null }),
+    false,
+  );
+  assert.equal(
+    canOpenWorkspaceStream({ ready: true, workspaceID: "ws-1", accessToken: "" }),
+    false,
+  );
+});
+
+test("applySectionResult preserves prior data on failure and clears only that section on recovery", () => {
+  const initialTasks = [task({ task_id: "t-old" })];
+  const baseErrors = { ...EMPTY_SECTION_ERRORS, agents: "agents down" };
+
+  const failed = applySectionResult("tasks", initialTasks, baseErrors, {
+    ok: false,
+    message: "tasks 503",
+  });
+  assert.equal(failed.data, initialTasks);
+  assert.deepEqual(failed.errors, {
+    ...EMPTY_SECTION_ERRORS,
+    agents: "agents down",
+    tasks: "tasks 503",
+  });
+
+  const nextTasks = [task({ task_id: "t-new" })];
+  const recovered = applySectionResult("tasks", failed.data, failed.errors, {
+    ok: true,
+    data: nextTasks,
+  });
+  assert.equal(recovered.data, nextTasks);
+  assert.deepEqual(recovered.errors, {
+    ...EMPTY_SECTION_ERRORS,
+    agents: "agents down",
+    tasks: null,
+  });
+});
+
+test("summarizeSectionErrors returns null when clean and follows fixed section order when multiple fail", () => {
+  assert.equal(summarizeSectionErrors(EMPTY_SECTION_ERRORS), null);
+
+  assert.equal(
+    summarizeSectionErrors({
+      drafts: "err-drafts",
+      tasks: "err-tasks",
+      agents: "err-agents",
+      conversations: "err-conversations",
+    }),
+    "err-drafts",
+  );
+  assert.equal(
+    summarizeSectionErrors({
+      drafts: null,
+      tasks: "err-tasks",
+      agents: "err-agents",
+      conversations: "err-conversations",
+    }),
+    "err-tasks",
+  );
+  assert.equal(
+    summarizeSectionErrors({
+      drafts: null,
+      tasks: null,
+      agents: "err-agents",
+      conversations: "err-conversations",
+    }),
+    "err-agents",
+  );
+  assert.equal(
+    summarizeSectionErrors({
+      drafts: null,
+      tasks: null,
+      agents: null,
+      conversations: "err-conversations",
+    }),
+    "err-conversations",
+  );
+});
+
+test("streamRetryDelayMs backs off exponentially and caps at 30000ms", () => {
+  assert.equal(streamRetryDelayMs(0), 1_000);
+  assert.equal(streamRetryDelayMs(1), 2_000);
+  assert.equal(streamRetryDelayMs(2), 4_000);
+  assert.equal(streamRetryDelayMs(3), 8_000);
+  assert.equal(streamRetryDelayMs(4), 16_000);
+  assert.equal(streamRetryDelayMs(5), 30_000);
+  assert.equal(streamRetryDelayMs(6), 30_000);
+  assert.equal(streamRetryDelayMs(100), 30_000);
 });
