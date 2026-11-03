@@ -51,7 +51,7 @@ export type RouterNotice = {
  * slow replay overwrite a fresh page. The ids and the moment of the read are
  * kept together so those frames can be told apart from real ones.
  */
-type HistorySnapshot = {
+export type HistorySnapshot = {
   conversationId: string;
   /** When the server answered the read, as epoch milliseconds. */
   at: number;
@@ -157,11 +157,7 @@ export function useChat(): ChatState {
   // outlives the render which created it.
   const snapshot = useRef<HistorySnapshot | null>(null);
   const openingConversationID = useRef<string | null>(null);
-
-  useEffect(() => {
-    activeID.current = active?.id ?? null;
-  }, [active]);
-
+  const openingAgentID = useRef<string | null>(null);
   const refresh = useCallback(async () => {
     await reloadConversations();
   }, [reloadConversations]);
@@ -169,19 +165,23 @@ export function useChat(): ChatState {
   const open = useCallback(
     (conversation: ChatConversation) => {
       setActive(conversation);
+      activeID.current = conversation.id;
       setMessages([]);
       // A conversation is open now, so whatever deep link failed before is not
-      // what the screen is about anymore, and errors from a previous thread must
-      // not stick to the new one.
+      // what the screen is about anymore, and errors or in-flight state from a
+      // previous thread must not stick to the new one.
       setOpenError(null);
       setError(null);
       setRouterNotice(null);
       setResponders([]);
       setActivity(null);
+      setLoadingOlder(false);
+      setSending(false);
       cursor.current = undefined;
       snapshot.current = null;
       setHasMore(false);
-
+      openingConversationID.current = conversation.id;
+      openingAgentID.current = null;
       if (!workspaceId) {
         return;
       }
@@ -190,7 +190,6 @@ export function useChat(): ChatState {
       // is not in the response, and early enough that a frame written after it
       // counts as news rather than as replay.
       const startedAt = Date.now();
-      openingConversationID.current = conversation.id;
       setThreadLoading(true);
       void (async () => {
         try {
@@ -230,7 +229,15 @@ export function useChat(): ChatState {
       }
 
       setOpenError(null);
+      // Capture the active conversation and target agent before the round trip
+      // so a late reply from an earlier click cannot replace a conversation
+      // the user has already switched to.
+      const targetBefore = openingConversationID.current;
+      openingAgentID.current = agentId;
       const result = await openDirectConversation(workspaceId, agentId);
+      if (openingAgentID.current !== agentId || openingConversationID.current !== targetBefore) {
+        return;
+      }
       if (!result.ok) {
         // The API's sentence is a status label (`internal server error`), so it
         // is kept whole for the view to translate rather than printed here.
@@ -260,37 +267,47 @@ export function useChat(): ChatState {
       return;
     }
 
+    // Record the target conversation before the await so a page finishing after
+    // the user switches threads is discarded without touching the new thread's
+    // messages, cursor, hasMore, snapshot, or loadingOlder state.
+    const target = active.id;
+    const pageCursor = cursor.current;
     // The page is read before it is applied, so the moment the read started is
     // what the older rows are measured against.
     const startedAt = Date.now();
     setLoadingOlder(true);
-    const result = await listMessages(workspaceId, active.id, cursor.current, 40);
-    setLoadingOlder(false);
+    try {
+      const result = await listMessages(workspaceId, target, pageCursor, 40);
+      const applied = applyOlderPage({
+        targetConversationID: target,
+        activeConversationID: openingConversationID.current,
+        startedAt,
+        result,
+        previousMessages: messages,
+        previousCursor: cursor.current,
+        previousHasMore: hasMore,
+        previousSnapshot: snapshot.current,
+      });
+      if (applied.status === "discarded") {
+        return;
+      }
+      if (applied.status === "error") {
+        setError(applied.error);
+        return;
+      }
 
-    if (!result.ok) {
-      setError(result.message);
-      return;
+      // Apply the older rows against the latest messages state in case a stream
+      // frame landed while the older page was in flight for the same thread.
+      setMessages((previous) => [...[...result.data.messages].reverse(), ...previous]);
+      cursor.current = applied.cursor;
+      setHasMore(applied.hasMore);
+      snapshot.current = applied.snapshot;
+    } finally {
+      if (openingConversationID.current === target) {
+        setLoadingOlder(false);
+      }
     }
-
-    // Older messages go in front: the thread keeps reading oldest first.
-    setMessages((previous) => [...[...result.data.messages].reverse(), ...previous]);
-    cursor.current = result.data.next_cursor;
-    setHasMore(result.data.has_more);
-
-    // These rows are history too, so a frame older than this read must not put the
-    // thread back to what it said before. The open conversation's snapshot is
-    // extended rather than replaced: the newer page is the later truth.
-    const known = snapshot.current;
-    const ids = known && known.conversationId === active.id ? known.ids : new Set<string>();
-    for (const message of result.data.messages) {
-      ids.add(message.message_id);
-    }
-    snapshot.current = {
-      conversationId: active.id,
-      at: result.serverDate ?? startedAt,
-      ids,
-    };
-  }, [workspaceId, active, loadingOlder]);
+  }, [workspaceId, active, loadingOlder, messages, hasMore]);
 
   const send = useCallback(
     async (text: string, attachmentIds?: string[], agentId?: string): Promise<ApiResult<ChatMessage>> => {
@@ -298,36 +315,47 @@ export function useChat(): ChatState {
         return { ok: false, status: 0, message: "Pilih obrolan dulu." };
       }
 
+      // Record the target conversation before the await so a send completing after
+      // a conversation switch does not append its message or responders to the new
+      // thread or clear the new thread's sending state.
+      const target = active.id;
       setSending(true);
-      const result = await sendMessage(workspaceId, active.id, {
-        text,
-        reply: true,
-        agent_id: agentId,
-        attachment_ids: attachmentIds,
-      });
-      setSending(false);
+      try {
+        const result = await sendMessage(workspaceId, target, {
+          text,
+          reply: true,
+          agent_id: agentId,
+          attachment_ids: attachmentIds,
+        });
 
-      if (!result.ok) {
-        // The reason is not put in the thread's banner: a refused send is about
-        // the draft and the files beside it, and the composer says so where they
-        // are, in the words the code calls for.
-        return result;
+        if (!result.ok) {
+          // The reason is not put in the thread's banner: a refused send is about
+          // the draft and the files beside it, and the composer says so where they
+          // are, in the words the code calls for.
+          return result;
+        }
+
+        if (openingConversationID.current === target) {
+          setError(null);
+          setMessages((previous) => append(previous, result.data.message));
+
+          setResponders(
+            (result.data.responders ?? []).map((responder) => ({
+              agentId: responder.agent_id ?? "",
+              name: responder.name,
+            })),
+          );
+        }
+
+        // The reply placeholder is not added here: it arrives on the stream, which
+        // is what makes a second tab show the same conversation.
+        await reloadConversations();
+        return { ok: true, status: result.status, data: result.data.message };
+      } finally {
+        if (openingConversationID.current === target) {
+          setSending(false);
+        }
       }
-
-      setError(null);
-      setMessages((previous) => append(previous, result.data.message));
-
-      setResponders(
-        (result.data.responders ?? []).map((responder) => ({
-          agentId: responder.agent_id ?? "",
-          name: responder.name,
-        })),
-      );
-
-      // The reply placeholder is not added here: it arrives on the stream, which
-      // is what makes a second tab show the same conversation.
-      await reloadConversations();
-      return { ok: true, status: result.status, data: result.data.message };
     },
     [workspaceId, active, reloadConversations],
   );
@@ -338,13 +366,23 @@ export function useChat(): ChatState {
       if (!(CHAT_EVENT_TYPES as readonly string[]).includes(event.type)) {
         return;
       }
-      if (event.conversation_id && event.conversation_id !== activeID.current) {
+      const eventConversationID =
+        event.conversation_id ?? readString((event.payload ?? {})["conversation_id"]);
+      if (eventConversationID && eventConversationID !== activeID.current) {
         // Another thread: the list is refreshed, the open thread is left alone so
         // a reply cannot appear in the wrong conversation.
         void reloadConversations();
         return;
       }
-      applyEvent(event, snapshot.current, setMessages, setRouterNotice, setResponders, setActivity);
+      applyEvent(
+        event,
+        activeID.current,
+        snapshot.current,
+        setMessages,
+        setRouterNotice,
+        setResponders,
+        setActivity,
+      );
     });
 
     return unsubscribe;
@@ -383,6 +421,81 @@ export function useChat(): ChatState {
   };
 }
 
+export type OlderPageResult = {
+  messages: ChatMessage[];
+  next_cursor?: string;
+  has_more: boolean;
+};
+
+export type ApplyOlderPageOutcome =
+  | { status: "discarded" }
+  | { status: "error"; error: string }
+  | {
+      status: "applied";
+      messages: ChatMessage[];
+      cursor: string | undefined;
+      hasMore: boolean;
+      snapshot: HistorySnapshot;
+    };
+
+/**
+ * applyOlderPage decides whether a completed loadOlder read still belongs to the
+ * active conversation and computes the updated thread state when it does.
+ *
+ * If the user switched conversations while listMessages was in flight
+ * (`activeConversationID !== targetConversationID`), the older page is discarded
+ * so messages, cursor, hasMore, and snapshot from the old thread never leak into
+ * the newly opened thread (#617).
+ */
+export function applyOlderPage(input: {
+  targetConversationID: string;
+  activeConversationID: string | null;
+  startedAt: number;
+  result: ApiResult<OlderPageResult>;
+  previousMessages: ChatMessage[];
+  previousCursor: string | undefined;
+  previousHasMore: boolean;
+  previousSnapshot: HistorySnapshot | null;
+}): ApplyOlderPageOutcome {
+  if (input.activeConversationID !== input.targetConversationID) {
+    return { status: "discarded" };
+  }
+
+  if (!input.result.ok) {
+    return { status: "error", error: input.result.message };
+  }
+
+  // Older messages go in front: the thread keeps reading oldest first.
+  const messages = [...[...input.result.data.messages].reverse(), ...input.previousMessages];
+  const cursor = input.result.data.next_cursor;
+  const hasMore = input.result.data.has_more;
+
+  // These rows are history too, so a frame older than this read must not put the
+  // thread back to what it said before. The open conversation's snapshot is
+  // extended rather than replaced: the newer page is the later truth.
+  const known = input.previousSnapshot;
+  const ids =
+    known && known.conversationId === input.targetConversationID
+      ? new Set(known.ids)
+      : new Set<string>();
+  for (const message of input.result.data.messages) {
+    ids.add(message.message_id);
+  }
+  const snapshot: HistorySnapshot = {
+    conversationId: input.targetConversationID,
+    at: input.result.serverDate ?? input.startedAt,
+    ids,
+  };
+
+  return {
+    status: "applied",
+    messages,
+    cursor,
+    hasMore,
+    snapshot,
+  };
+}
+
 /**
  * applyEvent folds one stream event into the thread.
  *
@@ -403,6 +516,7 @@ export function useChat(): ChatState {
  */
 function applyEvent(
   event: ActivityEvent,
+  activeConversationID: string | null,
   snapshot: HistorySnapshot | null,
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
   setRouterNotice: React.Dispatch<React.SetStateAction<RouterNotice | null>>,
@@ -453,6 +567,9 @@ function applyEvent(
 
   const payload = event.payload as MessageEventPayload | undefined;
   if (!payload || typeof payload.message_id !== "string") {
+    return;
+  }
+  if (!activeConversationID || (payload.conversation_id && payload.conversation_id !== activeConversationID)) {
     return;
   }
 
