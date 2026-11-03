@@ -291,7 +291,6 @@ describe("billing webhook body limit (#653)", () => {
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: stream,
-      // @ts-expect-error duplex required for streaming body in fetch
       duplex: "half",
     });
 
