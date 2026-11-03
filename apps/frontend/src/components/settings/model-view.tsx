@@ -505,7 +505,12 @@ export function ModelView() {
             {editing ? `Ubah ${editing.name}` : "Tambah penyedia"}
           </h2>
 
-          <form onSubmit={saveProvider} className="space-y-3 rounded-md border border-bolu-border bg-bolu-surface px-4 py-4">
+          {/* Remount form saat target penyedia yang diedit berganti (#627) agar defaultValue diperbarui */}
+          <form
+            key={editing?.id ?? "new"}
+            onSubmit={saveProvider}
+            className="space-y-3 rounded-md border border-bolu-border bg-bolu-surface px-4 py-4"
+          >
             <label className="block text-sm">
               <span className="mb-1 block text-bolu-muted">Nama</span>
               <input

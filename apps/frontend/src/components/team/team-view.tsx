@@ -352,7 +352,8 @@ export function TeamView() {
                 </p>
               ) : null}
 
-              <form onSubmit={(event) => void saveProfile(event)}>
+              {/* Remount form saat agen yang dipilih berganti (#635) agar defaultValue diperbarui */}
+              <form key={selected.id} onSubmit={(event) => void saveProfile(event)}>
                 <label className="mb-1 block text-sm font-medium" htmlFor="agent-name">
                   Nama
                 </label>
