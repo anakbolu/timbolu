@@ -72,6 +72,13 @@ const KIND_LABEL: Record<string, string> = {
   topup: "Paket tambahan",
 };
 
+/**
+ * Backend memotong `snapshot.invoices` pada `DefaultListLimit` (50 baris terakhir) tanpa
+ * menyertakan total penuh; saat panjang daftar mencapai batas ini, pengguna perlu diberi
+ * tahu bahwa tagihan yang lebih lama tidak ikut ditampilkan di layar ini.
+ */
+const INVOICE_HISTORY_LIMIT = 50;
+
 /** formatRupiah renders the rupiah the API reports. */
 function formatRupiah(amount: number): string {
   return new Intl.NumberFormat("id-ID", {
@@ -522,6 +529,11 @@ export function SubscriptionView() {
 
       <section className={`${CARD} p-[22px]`}>
         <h2 className={HEADING}>Riwayat tagihan</h2>
+        {snapshot.invoices.length >= INVOICE_HISTORY_LIMIT ? (
+          <p className="mt-1 text-[13px] text-bolu-muted">
+            Menampilkan {INVOICE_HISTORY_LIMIT} tagihan terakhir. Tagihan yang lebih lama tidak ditampilkan di layar ini.
+          </p>
+        ) : null}
         {snapshot.invoices.length === 0 ? (
           <p className="mt-2 text-bolu-muted">Belum ada tagihan.</p>
         ) : (
