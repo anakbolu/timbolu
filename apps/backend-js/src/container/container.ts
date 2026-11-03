@@ -394,6 +394,7 @@ export async function newContainer(
       mailer: workspaceMailer(mailer, config.mail.from),
       tokens: workspaceTokens,
       limits: workspacePlanLimits(config.plan.maxAgentsPerWorkspace > 0 ? config.plan.maxAgentsPerWorkspace : 50),
+      config: { frontendURL: config.application.frontendUrl },
     });
     workspaceService = service;
     workspace = new WorkspaceHandler(service, log);

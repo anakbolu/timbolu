@@ -405,7 +405,7 @@ export class Service implements ServicePort {
   private async sendInvitation(email: string, token: string, invitation: Invitation): Promise<void> {
     if (!this.mail) return;
 
-    const link = `${this.cfg.frontendURL.replace(/\/+$/, "")}/join?token=${token}`;
+    const link = invitationLink(this.cfg.frontendURL, token);
     const body =
       `Kamu diundang bergabung ke workspace Bolu sebagai ${invitation.role}.\n\n` +
       `Buka tautan ini untuk menerima:\n\n${link}\n\n` +
@@ -509,4 +509,17 @@ function formatInvitationExpiry(at: Date): string {
   return `${at.getUTCDate()} ${months[at.getUTCMonth()]} ${at.getUTCFullYear()} ${pad(at.getUTCHours())}:${pad(
     at.getUTCMinutes(),
   )} UTC`;
+}
+
+/**
+ * invitationLink builds the link an invitation email carries.
+ *
+ * A mail client has no origin to resolve a relative path against, so
+ * "/join?token=…" arrives as plain text nobody can click. An unwired deployment
+ * must refuse the invitation instead of mailing a dead link (#625).
+ */
+export function invitationLink(frontendURL: string, token: string): string {
+  const base = frontendURL.replace(/\/+$/, "");
+  if (base === "") throw wrap(ErrInvalidInput, "frontend URL is not configured");
+  return `${base}/join?token=${token}`;
 }
