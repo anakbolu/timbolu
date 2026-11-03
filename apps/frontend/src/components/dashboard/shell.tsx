@@ -32,7 +32,6 @@ import { useState } from "react";
 import { Bolu } from "@/components/bolu/bolu";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { LOGO } from "@/lib/crew";
-import { countPending } from "@/lib/dashboard-view";
 
 import { BoluRoster } from "./roster";
 import { useWorkspace } from "./workspace-data";
@@ -105,12 +104,12 @@ function rowClass(on: boolean): string {
  * remember to pass.
  */
 export function WorkspaceShell({ children }: { children: React.ReactNode }) {
-  const { drafts, error, user } = useWorkspace();
+  const { pendingCount, error, user } = useWorkspace();
   const [navOpen, setNavOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const pathname = usePathname();
 
-  const pending = countPending(drafts);
+  const pending = pendingCount;
 
   const screenTitle =
     NAV.find((item) => item.matches(pathname))?.label === "Pengaturan"
