@@ -52,7 +52,16 @@ import {
   type User,
   type Workspace,
 } from "@/lib/api";
-import { moveAgentTo } from "@/lib/dashboard-view";
+import {
+  applySectionResult,
+  canOpenWorkspaceStream,
+  EMPTY_SECTION_ERRORS,
+  moveAgentTo,
+  streamRetryDelayMs,
+  summarizeSectionErrors,
+  type WorkspaceSection,
+  type WorkspaceSectionErrors,
+} from "@/lib/dashboard-view";
 import { connect, readLastEventId, type RealtimeConnection, type RealtimeStatus } from "@/lib/realtime";
 import { NO_WORKSPACE_MESSAGE } from "@/lib/workspace-messages";
 
@@ -77,6 +86,7 @@ export type WorkspaceData = {
   /** ready stays false until the first load finishes, so a view can hold its shape. */
   ready: boolean;
   error: string | null;
+  sectionErrors: WorkspaceSectionErrors;
   status: RealtimeStatus;
   workspaceID: string | null;
   user: User | null;
@@ -105,6 +115,8 @@ export type WorkspaceData = {
    */
   subscribe: (handler: (event: ActivityEvent) => void) => () => void;
   reload: () => Promise<void>;
+  /** reconnect forces an immediate stream reconnect and retries failed reads. */
+  reconnect: () => void;
   reloadAgents: () => Promise<void>;
   reloadConversations: () => Promise<void>;
   reloadDrafts: () => Promise<void>;
@@ -150,7 +162,9 @@ export function useWorkspace(): WorkspaceData {
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [ready, setReady] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [sectionErrors, setSectionErrors] = useState<WorkspaceSectionErrors>(EMPTY_SECTION_ERRORS);
+  const [streamAttempt, setStreamAttempt] = useState(0);
+  const [manualReconnectNonce, setManualReconnectNonce] = useState(0);
   const [status, setStatus] = useState<RealtimeStatus>("connecting");
   const [user, setUser] = useState<User | null>(null);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
@@ -190,28 +204,29 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const fail = useCallback((message: string) => {
-    setError(message);
+  const setSectionError = useCallback((section: WorkspaceSection, message: string | null) => {
+    setSectionErrors((previous) =>
+      previous[section] === message ? previous : { ...previous, [section]: message },
+    );
   }, []);
 
   const loadAgents = useCallback(async (id: string) => {
     const result = await listAgentTeams(id);
-    if (!result.ok) {
-      fail(result.message);
-      return;
-    }
-    setTeams(result.data);
-    agentsRef.current = result.data.flatMap((team) => team.agents);
-  }, [fail]);
+    setTeams((current) => {
+      const applied = applySectionResult("agents", current, EMPTY_SECTION_ERRORS, result);
+      if (result.ok) {
+        agentsRef.current = applied.data.flatMap((team) => team.agents);
+      }
+      return applied.data;
+    });
+    setSectionError("agents", result.ok ? null : result.message);
+  }, [setSectionError]);
 
   const loadConversations = useCallback(async (id: string) => {
     const result = await listConversations(id);
-    if (!result.ok) {
-      fail(result.message);
-      return;
-    }
-    setConversations(result.data);
-  }, [fail]);
+    setConversations((current) => applySectionResult("conversations", current, EMPTY_SECTION_ERRORS, result).data);
+    setSectionError("conversations", result.ok ? null : result.message);
+  }, [setSectionError]);
 
   const loadDrafts = useCallback(async (id: string) => {
     // Drafts and pending drafts are queried separately so the pending badge
@@ -220,25 +235,29 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       listDrafts(id, { limit: 50 }),
       listDrafts(id, { status: "pending", limit: 50 }),
     ]);
-    if (!result.ok) {
-      fail(result.message);
-      return;
+    if (result.ok) {
+      setDrafts(result.data);
     }
-    setDrafts(result.data);
     if (pendingResult.ok) {
       setPendingCount(pendingResult.data.length);
       setPendingDrafts(pendingResult.data);
     }
-  }, [fail]);
+    if (!result.ok) {
+      setSectionError("drafts", result.message);
+      return;
+    }
+    if (!pendingResult.ok) {
+      setSectionError("drafts", pendingResult.message);
+      return;
+    }
+    setSectionError("drafts", null);
+  }, [setSectionError]);
 
   const loadTasks = useCallback(async (id: string) => {
     const result = await listTasks(id, { limit: 100 });
-    if (!result.ok) {
-      fail(result.message);
-      return;
-    }
-    setTasks(result.data);
-  }, [fail]);
+    setTasks((current) => applySectionResult("tasks", current, EMPTY_SECTION_ERRORS, result).data);
+    setSectionError("tasks", result.ok ? null : result.message);
+  }, [setSectionError]);
 
   // Grants are per Bolu at the API, so the map is assembled from one read per
   // Bolu. It is what lets a connected app say which of them may use it.
@@ -305,21 +324,15 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     }
     setWorkspaceID(id);
 
-    const [profile, people, pending, pendingDrafts, account] = await Promise.all([
+    const [profile, people, account] = await Promise.all([
       currentWorkspace(id),
       listMembers(id),
-      listDrafts(id, { limit: 50 }),
-      listDrafts(id, { status: "pending", limit: 50 }),
       currentUser(),
+      loadDrafts(id),
     ]);
 
     if (profile.ok) setWorkspace(profile.data);
     if (people.ok) setMembers(people.data);
-    if (pending.ok) setDrafts(pending.data);
-    if (pendingDrafts.ok) {
-      setPendingCount(pendingDrafts.data.length);
-      setPendingDrafts(pendingDrafts.data);
-    }
     if (account.ok) setUser(account.data);
     else if (account.status === 401) {
       // The API rejected the token, so the session in hand is not one. Dropping it
@@ -337,9 +350,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     await loadAgents(id);
     await Promise.all([loadConversations(id), loadTasks(id), loadHub(id), loadPolicies(id)]);
 
-    setError(null);
     setReady(true);
-  }, [loadAgents, loadConversations, loadHub, loadPolicies, loadTasks, router]);
+  }, [loadAgents, loadConversations, loadDrafts, loadHub, loadPolicies, loadTasks, router]);
 
   useEffect(() => {
     void (async () => {
@@ -347,14 +359,65 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     })();
   }, [reload]);
 
-  // One live connection for the whole app. Deltas are applied to the lists the
-  // changed thing belongs to, and a burst of frames is coalesced: a task emits a
-  // step many times a minute.
-  useEffect(() => {
-    if (!ready || error) return;
-    const id = workspaceIdRef.current;
-    if (!id) return;
+  const error = useMemo(() => summarizeSectionErrors(sectionErrors), [sectionErrors]);
 
+  const retryFailedSections = useCallback(
+    (id: string) => {
+      if (sectionErrors.drafts) void loadDrafts(id);
+      if (sectionErrors.tasks) void loadTasks(id);
+      if (sectionErrors.agents) void loadAgents(id);
+      if (sectionErrors.conversations) void loadConversations(id);
+    },
+    [sectionErrors, loadDrafts, loadTasks, loadAgents, loadConversations],
+  );
+
+  // Failed section reads are retried automatically with exponential backoff
+  // (1s, 2s, 4s, 8s, capped at 30s) so a transient 500 or timeout recovers on
+  // its own without requiring a full page reload.
+  const sectionRetryAttempt = useRef(0);
+  useEffect(() => {
+    if (!ready || !workspaceID) return;
+    if (!error) {
+      sectionRetryAttempt.current = 0;
+      return;
+    }
+    const delay = streamRetryDelayMs(sectionRetryAttempt.current);
+    const timer = window.setTimeout(() => {
+      sectionRetryAttempt.current += 1;
+      retryFailedSections(workspaceID);
+    }, delay);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [ready, workspaceID, error, sectionErrors, retryFailedSections]);
+
+  const reconnect = useCallback(() => {
+    const id = workspaceIdRef.current;
+    sectionRetryAttempt.current = 0;
+    setStreamAttempt(0);
+    setManualReconnectNonce((value) => value + 1);
+    if (id) {
+      void loadDrafts(id);
+      void loadTasks(id);
+      void loadAgents(id);
+      void loadConversations(id);
+    } else {
+      void reload();
+    }
+  }, [loadDrafts, loadTasks, loadAgents, loadConversations, reload]);
+
+  // One live connection for the whole app. Section read failures never block this
+  // effect: only a missing readiness gate, workspace id, or access token may
+  // prevent opening the stream. When the stream drops into `slow`/`closed`, this
+  // effect schedules a fresh reconnect with exponential backoff (1s, 2s, 4s, 8s,
+  // max 30s), and clears the timer on unmount.
+  useEffect(() => {
+    const id = workspaceID ?? workspaceIdRef.current;
+    if (!canOpenWorkspaceStream({ ready, workspaceID: id, accessToken: getAccessToken() }) || !id) {
+      return;
+    }
+
+    let retryTimer: number | undefined;
     const scheduleReload = () => {
       clearTimeout(reloadTimer.current);
       reloadTimer.current = window.setTimeout(() => {
@@ -367,7 +430,20 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     const connection: RealtimeConnection = connect(
       id,
       {
-        onStatus: setStatus,
+        onStatus: (nextStatus) => {
+          setStatus(nextStatus);
+          if (nextStatus === "live") {
+            clearTimeout(retryTimer);
+            retryTimer = undefined;
+            setStreamAttempt(0);
+          } else if ((nextStatus === "slow" || nextStatus === "closed") && retryTimer === undefined) {
+            const delay = streamRetryDelayMs(streamAttempt);
+            retryTimer = window.setTimeout(() => {
+              retryTimer = undefined;
+              setStreamAttempt((attempt) => attempt + 1);
+            }, delay);
+          }
+        },
         onEvent: (event: ActivityEvent) => {
           setEvents((previous) => [event, ...previous].slice(0, FEED_LIMIT));
           for (const handler of subscribers.current) {
@@ -396,10 +472,20 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     );
 
     return () => {
+      clearTimeout(retryTimer);
       clearTimeout(reloadTimer.current);
       connection.close();
     };
-  }, [ready, error, loadAgents, loadDrafts, loadTasks, loadConversations]);
+  }, [
+    ready,
+    workspaceID,
+    streamAttempt,
+    manualReconnectNonce,
+    loadAgents,
+    loadDrafts,
+    loadTasks,
+    loadConversations,
+  ]);
 
   const decide = useCallback(
     async (draftId: string, decision: "approve" | "revise" | "cancel", note = "") => {
@@ -532,6 +618,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     () => ({
       ready,
       error,
+      sectionErrors,
       status,
       workspaceID,
       user,
@@ -549,6 +636,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       events,
       subscribe,
       reload,
+      reconnect,
       reloadAgents,
       reloadConversations,
       reloadDrafts,
@@ -562,6 +650,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     [
       ready,
       error,
+      sectionErrors,
       status,
       workspaceID,
       user,
@@ -579,6 +668,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       events,
       subscribe,
       reload,
+      reconnect,
       reloadAgents,
       reloadConversations,
       reloadDrafts,

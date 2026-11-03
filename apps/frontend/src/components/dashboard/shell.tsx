@@ -104,7 +104,7 @@ function rowClass(on: boolean): string {
  * remember to pass.
  */
 export function WorkspaceShell({ children }: { children: React.ReactNode }) {
-  const { pendingCount, error, user } = useWorkspace();
+  const { pendingCount, error, user, reconnect } = useWorkspace();
   const [navOpen, setNavOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const pathname = usePathname();
@@ -308,9 +308,16 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
         {error ? (
           <p
             role="alert"
-            className="m-[18px_20px_0] rounded-md border border-bolu-belum/30 bg-bolu-belum/5 px-4 py-3 text-[15px] text-bolu-belum"
+            className="m-[18px_20px_0] flex flex-wrap items-center justify-between gap-2 rounded-md border border-bolu-belum/30 bg-bolu-belum/5 px-4 py-3 text-[15px] text-bolu-belum"
           >
-            {error}
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={reconnect}
+              className="cursor-pointer border-0 bg-transparent p-0 font-semibold text-bolu-belum underline"
+            >
+              Coba sambung lagi
+            </button>
           </p>
         ) : null}
         {children}

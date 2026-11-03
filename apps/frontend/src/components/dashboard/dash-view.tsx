@@ -38,8 +38,24 @@ const HEADING = "font-display text-[22px] font-semibold";
 
 /** Dasbor is the overview screen. */
 export function DashView() {
-  const { user, drafts, pendingDrafts, tasks, agents, events, status, ready, workspaceID, decide, sendTask } =
-    useWorkspace();
+  const {
+    user,
+    drafts,
+    pendingDrafts,
+    tasks,
+    agents,
+    events,
+    status,
+    ready,
+    error,
+    sectionErrors,
+    workspaceID,
+    decide,
+    sendTask,
+    reconnect,
+    reloadDrafts,
+    reloadTasks,
+  } = useWorkspace();
   const [instruction, setInstruction] = useState("");
   const [notice, setNotice] = useState<{ text: string; conversationId?: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -108,6 +124,22 @@ export function DashView() {
           </div>
         </div>
       </div>
+
+      {error ? (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-bolu-belum/30 bg-bolu-belum/5 px-4 py-3 text-[15px] text-bolu-belum"
+        >
+          <span>Sebagian data gagal dimuat: {error}</span>
+          <button
+            type="button"
+            onClick={reconnect}
+            className="cursor-pointer rounded-full border border-bolu-belum/40 bg-bolu-surface px-3.5 py-1 text-[14px] font-semibold text-bolu-belum"
+          >
+            Coba sambung lagi
+          </button>
+        </div>
+      ) : null}
 
       {/* Suruh Bolu: the one place a task is given. The backend's router is what
           decides which Bolu answers, so the message goes into the team's group
@@ -184,6 +216,22 @@ export function DashView() {
             </div>
           </div>
 
+          {sectionErrors.drafts ? (
+            <p
+              role="alert"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-bolu-belum/30 bg-bolu-belum/5 px-3 py-2 text-[14px] text-bolu-belum"
+            >
+              <span>Daftar draf gagal dimuat: {sectionErrors.drafts}</span>
+              <button
+                type="button"
+                onClick={() => void reloadDrafts()}
+                className="cursor-pointer border-0 bg-transparent p-0 font-semibold text-bolu-belum underline"
+              >
+                Coba lagi
+              </button>
+            </p>
+          ) : null}
+
           {pending.length === 0 ? (
             <div className="pop flex flex-col items-center gap-2.5 px-3 py-8 text-center">
               <Bolu
@@ -255,13 +303,26 @@ export function DashView() {
         <section className={`${CARD} flex min-w-0 flex-[1_1_320px] flex-col gap-2.5 p-5`}>
           <div className="flex items-center justify-between">
             <h2 className={HEADING}>Aktivitas</h2>
-            {status === "live" ? (
-              <span className="pulse text-[13px] font-bold text-bolu-lunas">LIVE</span>
-            ) : status === "slow" ? (
-              <span className="text-[13px] text-bolu-muted">pembaruan tertunda</span>
-            ) : (
-              <span className="text-[13px] text-bolu-muted">menyambung…</span>
-            )}
+            <div className="flex items-center gap-2.5">
+              {status === "live" ? (
+                <span className="pulse text-[13px] font-bold text-bolu-lunas">LIVE</span>
+              ) : status === "slow" || status === "closed" ? (
+                <>
+                  <span className="text-[13px] text-bolu-muted">
+                    {status === "closed" ? "terputus" : "pembaruan tertunda"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={reconnect}
+                    className="cursor-pointer border-0 bg-transparent p-0 text-[13px] font-semibold text-bolu-link underline"
+                  >
+                    Coba sambung lagi
+                  </button>
+                </>
+              ) : (
+                <span className="text-[13px] text-bolu-muted">menyambung…</span>
+              )}
+            </div>
           </div>
           <div className="flex flex-col">
             {feed.length === 0 ? (
@@ -320,6 +381,21 @@ export function DashView() {
 
         <section className={`${CARD} flex min-w-0 flex-[1_1_320px] flex-col gap-1 p-5`}>
           <h2 className={`${HEADING} pb-1.5`}>Tugas terakhir</h2>
+          {sectionErrors.tasks ? (
+            <p
+              role="alert"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-bolu-belum/30 bg-bolu-belum/5 px-3 py-2 text-[14px] text-bolu-belum"
+            >
+              <span>Daftar tugas gagal dimuat: {sectionErrors.tasks}</span>
+              <button
+                type="button"
+                onClick={() => void reloadTasks()}
+                className="cursor-pointer border-0 bg-transparent p-0 font-semibold text-bolu-belum underline"
+              >
+                Coba lagi
+              </button>
+            </p>
+          ) : null}
           {tasks.length === 0 ? (
             <p className="py-3 text-[14px] text-bolu-muted">
               Belum ada tugas. Suruh Bolu di atas untuk memulai.
