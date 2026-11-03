@@ -14,11 +14,11 @@
  */
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Alert } from "@/components/auth/auth-shell";
 import { Bolu } from "@/components/bolu/bolu";
-import { type Draft, ensureActiveWorkspace, listDrafts } from "@/lib/api";
+import { type ActivityEvent, type Draft, ensureActiveWorkspace, listDrafts } from "@/lib/api";
 import { allBot } from "@/lib/crew";
 import { crewFor, expressionOf, relativeAge, stateOf } from "@/lib/dashboard-view";
 import { NO_WORKSPACE_MESSAGE } from "@/lib/workspace-messages";
@@ -42,16 +42,24 @@ const ACTION_LABEL: Record<string, string> = {
 
 /** ApprovalInbox is the list of drafts waiting for a decision. */
 export function ApprovalInbox() {
-  const { workspaceID, agents } = useWorkspace();
+  const { workspaceID, agents, subscribe, status } = useWorkspace();
 
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [load, setLoad] = useState<"loading" | "ready" | "error">("loading");
   const [message, setMessage] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const reloadTimer = useRef<number | undefined>(undefined);
+  const activeWorkspaceRef = useRef<string | null>(workspaceID);
 
-  const read = useCallback(async (workspace: string) => {
-    setLoad("loading");
-    setMessage(null);
+  useEffect(() => {
+    activeWorkspaceRef.current = workspaceID;
+  }, [workspaceID]);
+
+  const read = useCallback(async (workspace: string, quiet = false) => {
+    if (!quiet) {
+      setLoad("loading");
+      setMessage(null);
+    }
 
     const result = await listDrafts(workspace, { status: "pending", limit: 50 });
 
@@ -78,6 +86,7 @@ export function ApprovalInbox() {
         setMessage(NO_WORKSPACE_MESSAGE);
         return;
       }
+      activeWorkspaceRef.current = workspace;
 
       await read(workspace);
     })();
@@ -87,6 +96,37 @@ export function ApprovalInbox() {
     };
   }, [workspaceID, read, attempt]);
 
+  // Berlangganan ke stream agar draf yang baru masuk atau sudah diputuskan langsung
+  // memperbarui antrean tanpa muat ulang halaman. Debounce 400 ms menyatukan event
+  // beruntun (misalnya task.waiting_approval disusul draft.created) jadi satu bacaan.
+  useEffect(() => {
+    const scheduleReload = () => {
+      window.clearTimeout(reloadTimer.current);
+      reloadTimer.current = window.setTimeout(() => {
+        const workspace = activeWorkspaceRef.current;
+        if (workspace) {
+          void read(workspace, true);
+        }
+      }, 400);
+    };
+
+    const unsubscribe = subscribe((event: ActivityEvent) => {
+      switch (event.type) {
+        case "draft.created":
+        case "draft.decided":
+        case "task.waiting_approval":
+          scheduleReload();
+          break;
+        default:
+          break;
+      }
+    });
+
+    return () => {
+      window.clearTimeout(reloadTimer.current);
+      unsubscribe();
+    };
+  }, [subscribe, read]);
   const count = drafts.length;
 
   return (
@@ -113,9 +153,17 @@ export function ApprovalInbox() {
             color={agents[0]?.color || undefined}
             size={90}
           />
-          <div className="font-display text-[17px] font-semibold">Tidak ada draf yang menunggu keputusan.</div>
+          <div className="font-display text-[17px] font-semibold">
+            {status === "live"
+              ? "Tidak ada draf yang menunggu keputusan."
+              : "Belum terlihat draf yang menunggu keputusan."}
+          </div>
           <p className="max-w-[420px] text-[14px] text-bolu-muted">
-            Draf muncul di sini begitu ada Bolu yang menyiapkan aksi untuk kamu setujui.
+            {status === "live"
+              ? "Draf muncul di sini begitu ada Bolu yang menyiapkan aksi untuk kamu setujui."
+              : status === "connecting" || status === "reconnecting"
+                ? "Masih menyambung ke kantor—draf baru akan menyusul begitu tersambung."
+                : "Sambungan langsung sedang terputus, jadi draf yang baru masuk mungkin belum tampak di sini."}
           </p>
         </div>
       ) : (

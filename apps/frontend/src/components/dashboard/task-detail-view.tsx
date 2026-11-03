@@ -21,10 +21,11 @@
  */
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Alert } from "@/components/auth/auth-shell";
 import {
+  type ActivityEvent,
   type ApiError,
   type Task,
   type TaskStep,
@@ -61,7 +62,7 @@ const KIND_TONE: Record<string, string> = {
 
 /** TaskDetailView is one task's page. */
 export function TaskDetailView({ taskID }: { taskID: string }) {
-  const { workspaceID, agents, reloadTasks } = useWorkspace();
+  const { workspaceID, agents, tasks, reloadTasks, subscribe } = useWorkspace();
 
   const [task, setTask] = useState<Task | null>(null);
   const [steps, setSteps] = useState<TaskStep[]>([]);
@@ -80,12 +81,20 @@ export function TaskDetailView({ taskID }: { taskID: string }) {
   // person reloads to trust. The clock is state rather than a call in render, because reading it
   // during render is impure and would make two renders of the same data disagree.
   const [now, setNow] = useState(() => Date.now());
+  const reloadTimer = useRef<number | undefined>(undefined);
+  const activeWorkspaceRef = useRef<string | null>(workspaceID);
+
+  useEffect(() => {
+    activeWorkspaceRef.current = workspaceID;
+  }, [workspaceID]);
 
   const read = useCallback(
-    async (workspace: string) => {
-      setLoad("loading");
-      setMessage(null);
-      setFailure(null);
+    async (workspace: string, quiet = false) => {
+      if (!quiet) {
+        setLoad("loading");
+        setMessage(null);
+        setFailure(null);
+      }
 
       const [taskResult, stepsResult, childrenResult] = await Promise.all([
         getTask(workspace, taskID),
@@ -117,6 +126,7 @@ export function TaskDetailView({ taskID }: { taskID: string }) {
       if (cancelled || !workspace) {
         return;
       }
+      activeWorkspaceRef.current = workspace;
 
       await read(workspace);
     })();
@@ -126,6 +136,37 @@ export function TaskDetailView({ taskID }: { taskID: string }) {
     };
   }, [workspaceID, read, attempt]);
 
+  // Berlangganan ke event tugas yang sama dengan workspace-data.tsx agar langkah,
+  // serah-terima, dan status selesai/menunggu diperbarui tanpa muat ulang halaman.
+  useEffect(() => {
+    const scheduleReload = () => {
+      window.clearTimeout(reloadTimer.current);
+      reloadTimer.current = window.setTimeout(() => {
+        const workspace = activeWorkspaceRef.current;
+        if (workspace) {
+          void read(workspace, true);
+        }
+      }, 400);
+    };
+
+    const unsubscribe = subscribe((event: ActivityEvent) => {
+      switch (event.type) {
+        case "task.started":
+        case "task.finished":
+        case "task.waiting_approval":
+        case "task.failed":
+          scheduleReload();
+          break;
+        default:
+          break;
+      }
+    });
+
+    return () => {
+      window.clearTimeout(reloadTimer.current);
+      unsubscribe();
+    };
+  }, [subscribe, read]);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
@@ -171,8 +212,15 @@ export function TaskDetailView({ taskID }: { taskID: string }) {
   }, [workspaceID, task, read, reloadTasks]);
 
   const crewName = (id: string) => agents.find((agent) => agent.id === id)?.name ?? "Bolu";
-  const state = task ? taskState(task) : null;
-
+  // Gabungkan bacaan lokal dengan baris terbaru dari store workspace supaya status
+  // tombol "Batalkan tugas" langsung mengikuti data paling segar, bukan state.live yang beku.
+  const storeTask = tasks.find((item) => item.task_id === taskID) ?? null;
+  const currentTask =
+    task && storeTask && (storeTask.health === "done" || storeTask.status !== task.status || storeTask.step_count > task.step_count)
+      ? { ...task, ...storeTask }
+      : (task ?? storeTask);
+  const state = currentTask ? taskState(currentTask) : null;
+  const canCancel = Boolean(currentTask && state?.live && currentTask.status !== "waiting_approval");
   if (load === "error" && failure) {
     const friendly = friendlyLoadFailure(failure, "task");
     return (
@@ -214,13 +262,16 @@ export function TaskDetailView({ taskID }: { taskID: string }) {
         <div className="flex flex-none items-center gap-2">
           {/* Offered only while the task can still be stopped: a button on a finished task is a
               button that teaches people the product lies about what it can do. */}
-          {state.live && task.status !== "waiting_approval" ? (
+          {canCancel ? (
             <button type="button" className={BUTTON} onClick={() => void cancel()} disabled={cancelling}>
               {cancelling ? "Membatalkan…" : "Batalkan tugas"}
             </button>
           ) : null}
-          {task.status === "waiting_approval" && task.waiting_draft_id ? (
-            <Link href={`/approval/${task.waiting_draft_id}`} className={`${BUTTON} no-underline`}>
+          {currentTask?.status === "waiting_approval" && (currentTask.waiting_draft_id || task.waiting_draft_id) ? (
+            <Link
+              href={`/approval/${currentTask.waiting_draft_id || task.waiting_draft_id}`}
+              className={`${BUTTON} no-underline`}
+            >
               Lihat drafnya
             </Link>
           ) : null}
@@ -240,16 +291,16 @@ export function TaskDetailView({ taskID }: { taskID: string }) {
           </div>
           <div>
             <div className="text-[13px] text-bolu-muted">Durasi</div>
-            <div className="text-[17px] font-semibold">{taskDuration(task, now) || "—"}</div>
+            <div className="text-[17px] font-semibold">{taskDuration(currentTask ?? task, now) || "—"}</div>
           </div>
           <div>
             <div className="text-[13px] text-bolu-muted">Langkah</div>
-            <div className="text-[17px] font-semibold">{task.step_count}</div>
+            <div className="text-[17px] font-semibold">{(currentTask ?? task).step_count}</div>
           </div>
           <div>
             <div className="text-[13px] text-bolu-muted">Token masuk / keluar</div>
             <div className="text-[17px] font-semibold">
-              {formatTokens(task.input_tokens)} / {formatTokens(task.output_tokens)}
+              {formatTokens((currentTask ?? task).input_tokens)} / {formatTokens((currentTask ?? task).output_tokens)}
             </div>
           </div>
           {task.workflow_id ? (
@@ -262,14 +313,16 @@ export function TaskDetailView({ taskID }: { taskID: string }) {
 
         {/* The reason comes first among the explanations, because it is the question a person opens
             a failed or bound-hit task with. */}
-        {task.stopped_reason ? (
-          <Alert tone="error">Tugas berhenti: {task.stopped_reason}</Alert>
+        {(currentTask ?? task).stopped_reason ? (
+          <Alert tone="error">Tugas berhenti: {(currentTask ?? task).stopped_reason}</Alert>
         ) : null}
         {/* Gated on the task still being live: the reason is kept as history by the backend, and a
             cancelled task that still announced what it was waiting for would say two things at once —
             one of which is that it is waiting. */}
-        {state.live && task.waiting_reason ? <Alert tone="info">Menunggu: {task.waiting_reason}</Alert> : null}
-        {task.summary ? <p className="text-[15px]">{task.summary}</p> : null}
+        {state.live && (currentTask ?? task).waiting_reason ? (
+          <Alert tone="info">Menunggu: {(currentTask ?? task).waiting_reason}</Alert>
+        ) : null}
+        {(currentTask ?? task).summary ? <p className="text-[15px]">{(currentTask ?? task).summary}</p> : null}
       </section>
 
       <section className={`${CARD} overflow-hidden`}>
