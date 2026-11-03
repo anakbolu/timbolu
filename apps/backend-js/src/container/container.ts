@@ -743,10 +743,8 @@ export async function newContainer(
         logger: log,
       } as any);
     routine = new RoutineHandler(routineService, log);
-    if (workspace) {
-      workspace.withClockChange(async (workspaceId: string) => {
-        await routineService?.reschedule({ workspaceId });
-      });
+    if (workspace && routineService) {
+      wireClockChange(workspace, routineService);
     }
 
     const taskRepo = new TaskRepository(db);
@@ -963,4 +961,14 @@ function contentFrameAncestors(config: Config): string[] {
     }
   }
   return ["'self'"];
+}
+
+/** Wires a workspace's clock change to a routine reschedule. Split out so a test can prove the wiring. */
+export function wireClockChange(
+  workspace: WorkspaceHandler,
+  routines: RoutineService,
+): void {
+  workspace.withClockChange(async (workspaceId: string) => {
+    await routines.reschedule({ workspaceId });
+  });
 }
