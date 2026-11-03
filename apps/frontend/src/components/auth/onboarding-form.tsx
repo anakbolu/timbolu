@@ -16,12 +16,14 @@ import {
   acceptInvitation,
   createAgent,
   currentUser,
+  listAgentTeams,
   listWorkspaces,
   onboard,
   refreshSession,
   setActiveWorkspaceId,
+  type OnboardResult,
 } from "@/lib/api";
-
+import { finishOnboarding } from "@/lib/onboarding-retry";
 const TIMEZONES = [
   { value: "Asia/Jakarta", label: "WIB — Jakarta" },
   { value: "Asia/Makassar", label: "WITA — Makassar" },
@@ -71,7 +73,8 @@ export function OnboardingForm() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [ready, setReady] = useState(false);
-
+  const [onboardedResult, setOnboardedResult] = useState<OnboardResult | null>(null);
+  const [boluFailed, setBoluFailed] = useState(false);
   // A page reload loses the in-memory access token, so it is restored from the
   // refresh cookie before the form is used. An account that already has a
   // workspace has nothing left to do here and is sent on.
@@ -113,37 +116,39 @@ export function OnboardingForm() {
     setError(null);
     setPending(true);
 
-    // The workspace first: its id is what the Bolu is created inside.
-    const workspace = await onboard({ name: name.trim(), business_field: businessField.trim(), timezone });
-    if (!workspace.ok) {
+    const outcome = await finishOnboarding(
+      { onboard, listTeams: listAgentTeams, createAgent },
+      {
+        onboarded: onboardedResult,
+        name,
+        businessField,
+        timezone,
+        boluName,
+        boluRole,
+        shape,
+        color,
+        template: DEFAULT_BOLU.template,
+      },
+    );
+
+    if (outcome.kind === "workspace_failed") {
       setPending(false);
-      setError(workspace.message);
+      setError(outcome.message);
       return;
     }
 
-    const workspaceID = workspace.data.workspace.id;
-    setActiveWorkspaceId(workspaceID);
+    setOnboardedResult(outcome.onboarded);
+    setActiveWorkspaceId(outcome.onboarded.workspace.id);
 
-    // Onboarding seeds Tim Bolu, so the team the first Bolu belongs to is the
-    // workspace's own and the person is not asked to invent one first.
-    const team = workspace.data.teams[0]?.id;
-    if (team) {
-      const bolu = await createAgent(workspaceID, {
-        team_id: team,
-        name: boluName.trim() || DEFAULT_BOLU.name,
-        role: boluRole.trim(),
-        shape,
-        color,
-        template_key: DEFAULT_BOLU.template,
-      });
-      if (!bolu.ok) {
-        setPending(false);
-        setError(`Workspace tersimpan, tapi Bolu pertama gagal dibuat: ${bolu.message}`);
-        return;
-      }
+    if (outcome.kind === "bolu_failed") {
+      setPending(false);
+      setBoluFailed(true);
+      setError(outcome.message);
+      return;
     }
 
     setPending(false);
+    setBoluFailed(false);
     router.push("/dashboard");
   }
 
@@ -287,9 +292,9 @@ export function OnboardingForm() {
           />
 
           <SubmitButton
-            label={ready ? "Buat & mulai" : "Menyiapkan…"}
+            label={ready ? (boluFailed ? "Coba buat Bolu lagi" : "Buat & mulai") : "Menyiapkan…"}
             pending={pending || !ready}
-            pendingLabel="Menyiapkan workspace…"
+            pendingLabel={boluFailed ? "Membuat Bolu…" : "Menyiapkan workspace…"}
           />
 
           <p className="mt-4 text-center text-sm text-bolu-muted">
