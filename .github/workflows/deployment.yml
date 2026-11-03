@@ -610,3 +610,15 @@ jobs:
             done
             echo "$url answered 200"
           done
+
+      - name: Check readiness components
+        # Verify that mandatory components like database report status ok.
+        if: always() && !cancelled()
+        run: |
+          body=$(curl --fail --silent --show-error --max-time 30 https://timbolu.com/api/ready)
+          echo "$body"
+          db_status=$(echo "$body" | jq -r '.data.components[]? | select(.name=="database") | .status')
+          if [ "$db_status" != "ok" ]; then
+            echo "::error::readiness database component status is '$db_status', expected 'ok'" >&2
+            exit 1
+          fi
