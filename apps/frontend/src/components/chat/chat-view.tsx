@@ -23,6 +23,7 @@ import { allBot, type CrewMember } from "@/lib/crew";
 import { crewFor, expressionOf, stateOf } from "@/lib/dashboard-view";
 import { CONVERSATION_NOT_FOUND, friendlyLoadFailure } from "@/lib/friendly-error";
 
+import { blamedAttachmentIds } from "./attachment-failure";
 import { Block } from "./blocks";
 import { ThreadPanel } from "./thread-panel";
 import { describeResult, isBusy, useChat, type ChatState } from "./use-chat";
@@ -68,21 +69,6 @@ const SEND_ERROR: Record<string, string> = {
 /** sendErrorText turns a refused send into the one line the composer shows. */
 function sendErrorText(error: ApiError): string {
   return (error.code ? SEND_ERROR[error.code] : undefined) ?? error.message;
-}
-
-/**
- * blamedAttachments names the files a refused send is about.
- *
- * The API names the offending id only when the id itself could not be read. A
- * file that is gone or already bound comes back as a code with no id at all, and
- * then any of them could be the one, which is what an empty list means here.
- */
-function blamedAttachments(error: ApiError): string[] {
-  if (error.code !== "invalid_attachment_id") {
-    return [];
-  }
-  const quoted = /"([^"]+)"/.exec(error.message);
-  return quoted ? [quoted[1]] : [];
 }
 
 const STATUS_DOT: Record<string, string> = {
@@ -698,18 +684,21 @@ export function Composer({
     const attachmentIds = uploaded.flatMap((item) => (item.attachmentId ? [item.attachmentId] : []));
     const result = await chat.send(text, attachmentIds);
     if (!result.ok) {
-      // The draft and the chips stay: the files are still staged, so what is
-      // wrong is one of them and the composer marks which.
+      // The draft and the chips stay. A refusal about a file marks that chip,
+      // while any other refusal is only the composer's line: the files are
+      // still staged, so the next send could use them.
       const message = sendErrorText(result);
-      const blamed = blamedAttachments(result);
+      const blamed = blamedAttachmentIds(result);
       setSendError(message);
-      setQueued((previous) =>
-        previous.map((entry) =>
-          entry.status === "uploaded" && (blamed.length === 0 || blamed.includes(entry.attachmentId ?? ""))
-            ? { ...entry, status: "failed", error: message }
-            : entry,
-        ),
-      );
+      if (blamed.length > 0) {
+        setQueued((previous) =>
+          previous.map((entry) =>
+            entry.status === "uploaded" && blamed.includes(entry.attachmentId ?? "")
+              ? { ...entry, status: "failed", error: message }
+              : entry,
+          ),
+        );
+      }
       return;
     }
 
