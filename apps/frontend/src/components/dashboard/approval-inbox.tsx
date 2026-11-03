@@ -14,11 +14,11 @@
  */
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Alert } from "@/components/auth/auth-shell";
 import { Bolu } from "@/components/bolu/bolu";
-import { type Draft, ensureActiveWorkspace, listDrafts } from "@/lib/api";
+import { type ActivityEvent, type Draft, ensureActiveWorkspace, listDrafts } from "@/lib/api";
 import { allBot } from "@/lib/crew";
 import { crewFor, expressionOf, relativeAge, stateOf } from "@/lib/dashboard-view";
 import { NO_WORKSPACE_MESSAGE } from "@/lib/workspace-messages";
@@ -42,13 +42,18 @@ const ACTION_LABEL: Record<string, string> = {
 
 /** ApprovalInbox is the list of drafts waiting for a decision. */
 export function ApprovalInbox() {
-  const { workspaceID, agents } = useWorkspace();
+  const { workspaceID, agents, subscribe, status } = useWorkspace();
 
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [load, setLoad] = useState<"loading" | "ready" | "error">("loading");
   const [message, setMessage] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const reloadTimer = useRef<number | undefined>(undefined);
+  const activeWorkspaceRef = useRef<string | null>(workspaceID);
 
+  useEffect(() => {
+    activeWorkspaceRef.current = workspaceID;
+  }, [workspaceID]);
   const read = useCallback(async (workspace: string) => {
     setLoad("loading");
     setMessage(null);
@@ -78,6 +83,7 @@ export function ApprovalInbox() {
         setMessage(NO_WORKSPACE_MESSAGE);
         return;
       }
+      activeWorkspaceRef.current = workspace;
 
       await read(workspace);
     })();
@@ -87,13 +93,56 @@ export function ApprovalInbox() {
     };
   }, [workspaceID, read, attempt]);
 
+  // Berlangganan ke stream realtime: event draf atau tugas baru yang butuh persetujuan
+  // memicu pembacaan ulang daftar pending. Debounce 400ms mencegah burst event
+  // memicu puluhan HTTP request ke API.
+  useEffect(() => {
+    const scheduleReload = () => {
+      window.clearTimeout(reloadTimer.current);
+      reloadTimer.current = window.setTimeout(() => {
+        const workspace = activeWorkspaceRef.current;
+        if (workspace) {
+          void read(workspace);
+        }
+      }, 400);
+    };
+
+    const unsubscribe = subscribe((event: ActivityEvent) => {
+      switch (event.type) {
+        case "draft.created":
+        case "draft.decided":
+        case "task.waiting_approval":
+          scheduleReload();
+          break;
+        default:
+          break;
+      }
+    });
+
+    return () => {
+      window.clearTimeout(reloadTimer.current);
+      unsubscribe();
+    };
+  }, [subscribe, read]);
+
   const count = drafts.length;
 
   return (
     <div className="flex flex-col gap-6 p-[24px_28px_48px] max-[760px]:p-[18px_14px_36px]">
-      <div>
-        <h1 className={HEADING}>Persetujuan</h1>
-        <p className="mt-1 text-[15px] text-bolu-muted">Draf yang menunggu keputusanmu, terbaru dulu.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className={HEADING}>Persetujuan</h1>
+          <p className="mt-1 text-[15px] text-bolu-muted">Draf yang menunggu keputusanmu, terbaru dulu.</p>
+        </div>
+        <button
+          type="button"
+          className={BUTTON}
+          onClick={() => setAttempt((value) => value + 1)}
+          disabled={load === "loading"}
+          title="Muat ulang daftar draf"
+        >
+          {load === "loading" ? "Memuat…" : "Muat ulang"}
+        </button>
       </div>
 
       {load === "loading" ? (
@@ -115,7 +164,9 @@ export function ApprovalInbox() {
           />
           <div className="font-display text-[17px] font-semibold">Tidak ada draf yang menunggu keputusan.</div>
           <p className="max-w-[420px] text-[14px] text-bolu-muted">
-            Draf muncul di sini begitu ada Bolu yang menyiapkan aksi untuk kamu setujui.
+            {status === "live"
+              ? "Draf muncul di sini begitu ada Bolu yang menyiapkan aksi untuk kamu setujui."
+              : "Koneksi realtime belum tersambung; daftar mungkin belum lengkap. Gunakan tombol muat ulang jika draf belum muncul."}
           </p>
         </div>
       ) : (
