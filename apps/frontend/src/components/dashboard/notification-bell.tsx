@@ -47,17 +47,20 @@ export function NotificationBell() {
 
   const totalCount = (pendingCount || pendingDrafts.length) + attentionTasks.length;
 
-  const fetchAttention = useCallback(async (wsId: string) => {
-    setLoadingAttention(true);
-    setAttentionError(null);
-    const result = await listAttentionTasks(wsId);
-    if (!result.ok) {
-      setAttentionError("Gagal memuat notifikasi.");
-      setAttentionTasks([]);
-    } else {
-      setAttentionTasks(result.data);
-    }
-    setLoadingAttention(false);
+  const fetchAttention = useCallback((wsId: string) => {
+    void (async () => {
+      await Promise.resolve();
+      setLoadingAttention(true);
+      setAttentionError(null);
+      const result = await listAttentionTasks(wsId);
+      if (!result.ok) {
+        setAttentionError("Gagal memuat notifikasi.");
+        setAttentionTasks([]);
+      } else {
+        setAttentionTasks(result.data);
+      }
+      setLoadingAttention(false);
+    })();
   }, []);
 
   // Fetch attention tasks once workspace is ready or changes
