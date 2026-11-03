@@ -38,7 +38,7 @@ import {
 import { managerRoutes as llmManager, routes as llmRoutes } from "../modules/llm/handler/handler.ts";
 import { routes as adminRoutes } from "../modules/admin/handler/handler.ts";
 import { routes as chatRoutes, managerRoutes as chatManager, streamRoutes as chatStream, contentRoutes as chatContent } from "../modules/chat/handler/handler.ts";
-import { routes as integrationRoutes, callbackRoutes as integrationCallback } from "../modules/integration/handler/handler.ts";
+import { routes as integrationRoutes, managerRoutes as integrationManager, callbackRoutes as integrationCallback } from "../modules/integration/handler/handler.ts";
 import { routes as checklistRoutes } from "../modules/checklist/handler/handler.ts";
 import { routes as orderRoutes, managerRoutes as orderManager } from "../modules/order/handler/handler.ts";
 import { routes as billingRoutes, webhookRoutes as billingWebhook } from "../modules/billing/handler/handler.ts";
@@ -208,6 +208,7 @@ export function registerRoutes(app: Hono<AppEnv>, c: Container): void {
     if (c.chat) chatManager(g, c.chat);
     if (c.order) orderManager(g, c.order);
     if (c.approval) approvalManager(g, c.approval);
+    if (c.integration) integrationManager(g, c.integration);
   }, requireUser(deps), requireTenant(deps), requireActiveSubscription(deps, prefix), requireRole("owner", "admin"));
 
   const owners = withGuards((g) => {
