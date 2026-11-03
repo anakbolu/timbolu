@@ -295,6 +295,9 @@ export function useChat(): ChatState {
         setError(applied.error);
         return;
       }
+      if (!result.ok) {
+        return;
+      }
 
       // Apply the older rows against the latest messages state in case a stream
       // frame landed while the older page was in flight for the same thread.
