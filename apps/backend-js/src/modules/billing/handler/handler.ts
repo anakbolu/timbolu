@@ -193,16 +193,26 @@ export class Handler {
   }
 }
 
-/** Registers the subscription endpoints. */
+/** Registers the subscription endpoints every member may reach. */
 export function routes(group: Hono<AppEnv>, h: Handler): void {
   group.get("/billing/subscription", h.snapshot);
   group.get("/billing/plans", h.plans);
-  group.post("/billing/subscription", h.change);
   group.get("/billing/invoices", h.invoices);
+  // Paying is deliberately open to every member: a workspace that has been made
+  // read-only still has to be able to reach the call that fixes it (#661).
   group.post("/billing/invoices/:invoiceID/pay", h.pay);
-  group.post("/billing/topups", h.buyTopUp);
 }
 
+/**
+ * Registers the two endpoints that create a real invoice — changing the plan and
+ * buying a token pack. They sit in the manager group (`requireRole`) because the
+ * rest of the product already treats "spending the workspace's money" as an
+ * owner/admin action: `POST /orders` is guarded while these two were not (#661).
+ */
+export function managerRoutes(group: Hono<AppEnv>, h: Handler): void {
+  group.post("/billing/subscription", h.change);
+  group.post("/billing/topups", h.buyTopUp);
+}
 /**
  * Registers a provider's payment notification, on the router a provider can
  * reach without a session. What makes it safe is the adapter's own signature
