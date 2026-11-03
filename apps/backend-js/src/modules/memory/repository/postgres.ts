@@ -35,6 +35,7 @@ import {
   type Scope,
   type SearchQuery,
 } from "../domain/memory.ts";
+import { bound } from "../domain/service.ts";
 import {
   fromCreateKnowledgeRow,
   fromCreateRow,
@@ -535,12 +536,7 @@ function optionalString(value: string | null | undefined): string | null {
 /** The ceiling of a list read, so one request cannot pull a whole knowledge base. */
 const listLimit = 200;
 
-function limitOf(limit: number): number {
-  if (limit <= 0) {
-    return 50;
-  }
-  if (limit > listLimit) {
-    return listLimit;
-  }
-  return limit;
+export function limitOf(limit: number): number {
+  const safe = bound(limit, 50);
+  return safe > listLimit ? listLimit : safe;
 }

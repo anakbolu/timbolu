@@ -10,6 +10,8 @@
  * Ported 1:1 from internal/modules/memory/service/chunk.go.
  */
 
+import { bound } from "../domain/service.ts";
+
 /** Bounds one upload, so a paste of a whole book cannot fill the table and the bill in one request. */
 export const maxDocumentRunes = 200_000;
 
@@ -95,9 +97,7 @@ export function sliceRunes(text: string, start: number, end: number): string {
  * embeds worse than one that starts at a heading.
  */
 export function chunkText(text: string, size: number, overlap: number): string[] {
-  if (size <= 0) {
-    size = 1000;
-  }
+  size = bound(size, 1000);
   if (overlap < 0 || overlap >= size) {
     overlap = 0;
   }
