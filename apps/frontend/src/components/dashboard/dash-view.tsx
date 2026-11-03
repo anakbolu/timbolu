@@ -41,7 +41,7 @@ export function DashView() {
   const { user, drafts, pendingDrafts, tasks, agents, events, status, ready, workspaceID, decide, sendTask } =
     useWorkspace();
   const [instruction, setInstruction] = useState("");
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ text: string; conversationId?: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   // The composer is the one action on this screen that can be reached before the
@@ -83,7 +83,10 @@ export function DashView() {
     setBusy(true);
     const outcome = await sendTask(text);
     setBusy(false);
-    setNotice(outcome.ok ? "Tugas diteruskan ke timmu." : outcome.message);
+    setNotice({
+      text: outcome.message,
+      conversationId: outcome.ok ? outcome.conversationId : undefined,
+    });
     if (outcome.ok) setInstruction("");
   }
 
@@ -133,8 +136,25 @@ export function DashView() {
         >
           {busy ? "Mengirim…" : workspaceReady ? "Kirim tugas" : "Memuat workspace…"}
         </button>
-        <div className="basis-full text-[14px] opacity-75">
-          {currentNotice ?? (workspaceReady ? hint : null)}
+        <div className="flex basis-full flex-wrap items-center gap-2 text-[14px] opacity-75">
+          {currentNotice ? (
+            <>
+              <span>{currentNotice.text}</span>
+              {currentNotice.conversationId ? (
+                /* A task routed to a group has no single Bolu row in the sidebar to
+                   guess which thread received it, so the notice links straight to the
+                   conversation that `sendTask` opened or reused. */
+                <Link
+                  href={`/chat?conversation=${currentNotice.conversationId}`}
+                  className="font-semibold text-bolu-solid-ink underline"
+                >
+                  Buka obrolan →
+                </Link>
+              ) : null}
+            </>
+          ) : workspaceReady ? (
+            hint
+          ) : null}
         </div>
       </div>
 

@@ -12,6 +12,7 @@
  */
 
 import { useState } from "react";
+import Link from "next/link";
 
 import { Bolu } from "@/components/bolu/bolu";
 import { addGroupParticipants, createGroup, type ChatConversation } from "@/lib/api";
@@ -29,7 +30,7 @@ export function GroupView() {
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ text: string; conversationId?: string } | null>(null);
 
   const groups = conversations.filter((conversation) => conversation.kind === "group");
 
@@ -49,9 +50,10 @@ export function GroupView() {
     }
 
     setError(null);
-    setNotice(
-      `Grup ${result.data.title} dibuat dengan ${result.data.participants.length} peserta.`,
-    );
+    setNotice({
+      text: `Grup ${result.data.title} dibuat dengan ${result.data.participants.length} peserta.`,
+      conversationId: result.data.id,
+    });
     setTitle("");
     setSelected([]);
     await store.reloadConversations();
@@ -72,7 +74,10 @@ export function GroupView() {
     }
     const added = agents.find((agent) => agent.id === agentId);
     setError(null);
-    setNotice(`${added?.name ?? "Bolu"} ditambahkan ke ${group.title || "grup"}.`);
+    setNotice({
+      text: `${added?.name ?? "Bolu"} ditambahkan ke ${group.title || "grup"}.`,
+      conversationId: group.id,
+    });
     await store.reloadConversations();
   }
 
@@ -99,9 +104,17 @@ export function GroupView() {
       {notice ? (
         <p
           role="status"
-          className="rounded-md border border-bolu-lunas/30 bg-bolu-lunas/5 px-4 py-3 text-[15px] text-bolu-lunas"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-bolu-lunas/30 bg-bolu-lunas/5 px-4 py-3 text-[15px] text-bolu-lunas"
         >
-          {notice}
+          <span>{notice.text}</span>
+          {notice.conversationId ? (
+            <Link
+              href={`/chat?conversation=${notice.conversationId}`}
+              className="font-semibold text-bolu-lunas underline"
+            >
+              Buka obrolan →
+            </Link>
+          ) : null}
         </p>
       ) : null}
 
@@ -119,10 +132,20 @@ export function GroupView() {
                   key={group.id}
                   className="rounded-md border border-bolu-line px-4 py-3"
                 >
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  {/* The link wraps only the header rather than the whole card because
+                      the card also holds the <details> and <button> controls to add a
+                      Bolu, and interactive elements inside an <a> break browser markup. */}
+                  <Link
+                    href={`/chat?conversation=${group.id}`}
+                    aria-label={`Buka obrolan grup ${group.title || "Grup tanpa nama"}`}
+                    className="flex flex-wrap items-baseline justify-between gap-2 text-bolu-ink no-underline hover:text-bolu-accent"
+                  >
                     <p className="font-semibold">{group.title || "Grup tanpa nama"}</p>
-                    <span className="text-[13px] text-bolu-muted">{group.message_count} pesan</span>
-                  </div>
+                    <span className="inline-flex items-center gap-2 text-[13px] text-bolu-muted">
+                      <span>{group.message_count} pesan</span>
+                      <span className="font-semibold text-bolu-accent">Buka obrolan →</span>
+                    </span>
+                  </Link>
                   <ul className="mt-2 flex flex-wrap gap-2">
                     {group.participants
                       .filter((participant) => participant.is_agent)
