@@ -94,7 +94,7 @@ function formatMoment(value: string): string {
 
 /** UsageView is the usage and cost screen. */
 export function UsageView() {
-  const { workspaceID, agents, reloadTasks } = useWorkspace();
+  const { workspaceID, agents } = useWorkspace();
 
   const [report, setReport] = useState<UsageReport | null>(null);
   const [attention, setAttention] = useState<AttentionTask[]>([]);
@@ -155,6 +155,16 @@ export function UsageView() {
     const result = await usageReportCSV(workspace, days);
     setNotice(result.message);
   }, [workspaceID, days]);
+
+  /** reload re-reads the usage report and attention tasks for the active window. */
+  const reload = useCallback(async () => {
+    const workspace = workspaceID ?? (await ensureActiveWorkspace());
+    if (!workspace) {
+      return;
+    }
+
+    await load(workspace, days);
+  }, [workspaceID, days, load]);
 
   /** crewName is what a Bolu is called, from the store the rest of the screen reads. */
   const crewName = useMemo(() => {
@@ -338,7 +348,7 @@ export function UsageView() {
       <section className={CARD}>
         <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-bolu-line px-6 py-4">
           <h2 className="font-display text-[17px] font-semibold">Perlu perhatian</h2>
-          <button type="button" onClick={() => void reloadTasks()} className={BUTTON}>
+          <button type="button" onClick={() => void reload()} className={BUTTON}>
             Muat ulang
           </button>
         </div>
@@ -349,55 +359,60 @@ export function UsageView() {
           </p>
         ) : (
           <ul className="divide-y divide-bolu-line">
-            {attention.map((task) => {
-              const reason = ATTENTION[task.attention];
-              return (
-                <li key={task.task_id} className="flex flex-wrap items-center gap-3 px-6 py-3">
-                  <span
-                    title={reason.note}
-                    className={`rounded-full border px-2.5 py-0.5 text-[12px] font-semibold ${reason.tone}`}
-                  >
-                    {reason.label}
-                  </span>
-
-                  <span className="min-w-0 flex-1 truncate text-[14px]" title={task.title}>
-                    {task.title || task.task_id}
-                  </span>
-
-                  {task.stopped_reason || task.waiting_reason ? (
-                    <span className="min-w-0 max-w-[320px] truncate text-[13px] text-bolu-muted">
-                      {task.stopped_reason || task.waiting_reason}
-                    </span>
-                  ) : null}
-
-                  {/* The Temporal link is only offered when the deployment named a UI and the
-                      task reached the engine; the server decides both. */}
-                  {task.temporal_url ? (
-                    <a
-                      href={task.temporal_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[13px] font-medium text-bolu-accent underline-offset-2 hover:underline"
-                    >
-                      Buka di Temporal
-                    </a>
-                  ) : null}
-
-                  {task.waiting_draft_id ? (
-                    <Link
-                      href="/dashboard"
-                      className="text-[13px] font-medium text-bolu-accent underline-offset-2 hover:underline"
-                    >
-                      Lihat draf
-                    </Link>
-                  ) : null}
-                </li>
-              );
-            })}
+            {attention.map((task) => (
+              <AttentionRow key={task.task_id} task={task} />
+            ))}
           </ul>
         )}
       </section>
     </div>
+  );
+}
+
+/** AttentionRow renders one item in the Perlu perhatian card. */
+export function AttentionRow({ task }: { task: AttentionTask }) {
+  const reason = ATTENTION[task.attention];
+  return (
+    <li className="flex flex-wrap items-center gap-3 px-6 py-3">
+      <span
+        title={reason.note}
+        className={`rounded-full border px-2.5 py-0.5 text-[12px] font-semibold ${reason.tone}`}
+      >
+        {reason.label}
+      </span>
+
+      <span className="min-w-0 flex-1 truncate text-[14px]" title={task.title}>
+        {task.title || task.task_id}
+      </span>
+
+      {task.stopped_reason || task.waiting_reason ? (
+        <span className="min-w-0 max-w-[320px] truncate text-[13px] text-bolu-muted">
+          {task.stopped_reason || task.waiting_reason}
+        </span>
+      ) : null}
+
+      {/* The Temporal link is only offered when the deployment named a UI and the
+          task reached the engine; the server decides both. */}
+      {task.temporal_url ? (
+        <a
+          href={task.temporal_url}
+          target="_blank"
+          rel="noreferrer"
+          className="text-[13px] font-medium text-bolu-accent underline-offset-2 hover:underline"
+        >
+          Buka di Temporal
+        </a>
+      ) : null}
+
+      {task.waiting_draft_id ? (
+        <Link
+          href={`/approval/${task.waiting_draft_id}`}
+          className="text-[13px] font-medium text-bolu-accent underline-offset-2 hover:underline"
+        >
+          Lihat draf
+        </Link>
+      ) : null}
+    </li>
   );
 }
 

@@ -209,7 +209,11 @@ export function DashView() {
                   </Link>
                   <div className="flex flex-none gap-1.5">
                     <Link
-                      href="/chat"
+                      href={
+                        row.draft.conversation_id
+                          ? `/chat?conversation=${row.draft.conversation_id}`
+                          : `/chat?agent=${row.draft.agent_id}`
+                      }
                       className="flex min-h-10 items-center rounded-full border-2 border-bolu-ink bg-bolu-surface px-3.5 text-[14px] font-semibold text-bolu-ink no-underline hover:text-bolu-ink"
                     >
                       Buka obrolan

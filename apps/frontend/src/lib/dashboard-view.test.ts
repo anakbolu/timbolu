@@ -14,10 +14,17 @@
  */
 
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
-import type { Task } from "@/lib/api";
+import { AttentionRow } from "@/components/dashboard/usage-view";
+import type { AttentionTask, Task } from "@/lib/api";
 import { buildStats, buildWeek, countPending, expressionOf, STATE_EXPRESSION } from "./dashboard-view";
+
+const DASHBOARD_DIR = path.resolve(import.meta.dirname, "../components/dashboard");
 
 const now = new Date(2026, 9, 30, 12, 0, 0);
 
@@ -110,4 +117,68 @@ test("countPending counts only drafts with pending status", () => {
     { status: "rejected" },
   ] as Parameters<typeof countPending>[0];
   assert.equal(countPending(drafts), 2);
+});
+
+test("AttentionRow in Perlu perhatian renders href /approval/<id> for waiting_draft_id and UsageView reloads via load(workspace, days)", () => {
+  const attentionTask: AttentionTask = {
+    ...task({
+      task_id: "task-wait-1",
+      status: "waiting_approval",
+      health: "waiting",
+      waiting_draft_id: "draft-999",
+      waiting_reason: "menunggu persetujuan kirim email",
+    }),
+    attention: "waiting",
+  };
+
+  const html = renderToStaticMarkup(createElement(AttentionRow, { task: attentionTask }));
+  assert.ok(
+    html.includes('href="/approval/draft-999"'),
+    `Expected rendered AttentionRow to link to /approval/draft-999, got: ${html}`,
+  );
+  assert.ok(
+    !html.includes('href="/dashboard"'),
+    "Rendered AttentionRow must not link Lihat draf to /dashboard",
+  );
+
+  const content = fs.readFileSync(path.join(DASHBOARD_DIR, "usage-view.tsx"), "utf-8");
+  assert.ok(
+    !content.includes("reloadTasks"),
+    "Muat ulang on Perlu perhatian must not call reloadTasks()",
+  );
+  assert.ok(
+    content.includes("onClick={() => void reload()}") && content.includes("await load(workspace, days)"),
+    "Muat ulang must re-invoke load(workspace, days)",
+  );
+});
+
+test("dash-view Buka obrolan links to /chat?conversation=<id> or falls back to /chat?agent=<id>", () => {
+  const content = fs.readFileSync(path.join(DASHBOARD_DIR, "dash-view.tsx"), "utf-8");
+
+  assert.ok(
+    content.includes("`/chat?conversation=${row.draft.conversation_id}`"),
+    "Buka obrolan must link to /chat?conversation=${row.draft.conversation_id} when conversation_id is present",
+  );
+  assert.ok(
+    content.includes("`/chat?agent=${row.draft.agent_id}`"),
+    "Buka obrolan must fall back to /chat?agent=${row.draft.agent_id}",
+  );
+  assert.ok(!content.includes('href="/chat"'), "Buka obrolan must not link to bare /chat");
+});
+
+test("routines-view links run.task_id to /tasks/<id> as Lihat tugas and preserves agent fallback", () => {
+  const content = fs.readFileSync(path.join(DASHBOARD_DIR, "routines-view.tsx"), "utf-8");
+
+  assert.ok(
+    content.includes("href={`/tasks/${run.task_id}`}") && content.includes("Lihat tugas"),
+    "RoutineRun with task_id must link to /tasks/${run.task_id} with label Lihat tugas",
+  );
+  assert.ok(
+    content.includes("href={`/chat?agent=${agentId}`}") && content.includes("Buka obrolan"),
+    "RoutineRun without task_id must preserve /chat?agent=${agentId} fallback",
+  );
+  assert.ok(
+    !content.includes("there is no task\n                      screen"),
+    "Outdated comment claiming there is no task screen must be removed",
+  );
 });

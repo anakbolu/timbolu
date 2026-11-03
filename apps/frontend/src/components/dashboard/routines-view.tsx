@@ -1019,11 +1019,14 @@ export function RoutinesView({ focusID }: { focusID?: string }) {
                   >
                     {STATUS_LABEL[run.status] ?? run.status}
                   </span>
-                  {/* A routine's work is a task, and the place this product reads a
-                      task is the thread of the Bolu that ran it — there is no task
-                      screen, so the link opens that thread and says so rather than
-                      promising a page that does not exist. */}
-                  {agentId ? (
+                  {run.task_id ? (
+                    <Link
+                      href={`/tasks/${run.task_id}`}
+                      className="flex-none text-[13px] font-semibold text-bolu-ink underline"
+                    >
+                      Lihat tugas
+                    </Link>
+                  ) : agentId ? (
                     <Link
                       href={`/chat?agent=${agentId}`}
                       className="flex-none text-[13px] font-semibold text-bolu-ink underline"
