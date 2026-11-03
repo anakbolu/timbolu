@@ -9,7 +9,7 @@ import { PasswordRules, passwordMeetsPolicy } from "@/components/auth/password-r
 import { AuthScene } from "@/components/auth/auth-scene";
 import { useSearchParams } from "next/navigation";
 
-import { googleStartURL, login, register } from "@/lib/api";
+import { googleStartURL, login, register, resendVerification, setAccessToken } from "@/lib/api";
 
 /**
  * Whether this deployment shows the Google button. It is a build-time flag
@@ -78,6 +78,12 @@ export function CredentialsForm({ mode }: { mode: "signup" | "login" }) {
     return null;
   });
   const [pending, setPending] = useState(false);
+  // Set when a sign-in proved the password but the address is not verified yet:
+  // the backend answers every workspace route with 403 until it is, so the screen
+  // has to offer the resend and the verify page instead of a dead sentence.
+  const [unverified, setUnverified] = useState(false);
+  const [resendState, setResendState] = useState<"idle" | "pending" | "sent" | "failed">("idle");
+  const [resendMessage, setResendMessage] = useState<string | null>(null);
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -85,6 +91,9 @@ export function CredentialsForm({ mode }: { mode: "signup" | "login" }) {
     setNotice(null);
     setTimedOut(false);
     setPending(true);
+    setUnverified(false);
+    setResendState("idle");
+    setResendMessage(null);
 
     // Every exit below runs through `finally`, because the busy state is the only
     // thing standing between the person and a second submission: a path that
@@ -132,7 +141,12 @@ export function CredentialsForm({ mode }: { mode: "signup" | "login" }) {
         return;
       }
       if (!result.data.user.email_verified) {
-        setNotice("Emailmu belum diverifikasi. Cek tautan yang kami kirim.");
+        // The password was right, so the account exists — but the token is no use:
+        // every workspace route answers 403 email_not_verified, and the session
+        // hint cookie would let the gate walk this person into screens that all
+        // fail. Drop the session, then offer the two steps that can unblock it.
+        setAccessToken(null);
+        setUnverified(true);
         return;
       }
       // The gate carries the screen that was open as `next`, and honouring it is
@@ -146,6 +160,18 @@ export function CredentialsForm({ mode }: { mode: "signup" | "login" }) {
     } finally {
       setPending(false);
     }
+  }
+
+  async function onResend() {
+    setResendState("pending");
+    const result = await resendVerification(email);
+    if (result.ok) {
+      setResendState("sent");
+      setResendMessage(null);
+      return;
+    }
+    setResendState("failed");
+    setResendMessage(result.message);
   }
 
   return (
@@ -188,6 +214,29 @@ export function CredentialsForm({ mode }: { mode: "signup" | "login" }) {
         </Alert>
       ) : null}
       {notice ? <Alert tone="info">{notice}</Alert> : null}
+      {unverified ? (
+        <Alert tone="info">
+          Emailmu belum diverifikasi, jadi workspace-mu belum bisa dibuka. Kirim ulang tautannya, lalu
+          buka dari email itu.
+          {resendState === "sent" ? " Tautan baru sudah dikirim ke alamat itu." : null}
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={onResend}
+              disabled={resendState === "pending"}
+              className="cursor-pointer rounded-full border border-bolu-border px-4 py-2 text-sm font-semibold disabled:opacity-60"
+            >
+              {resendState === "pending" ? "Mengirim…" : "Kirim ulang tautan verifikasi"}
+            </button>
+            <Link className="underline" href={`/verify?email=${encodeURIComponent(email)}`}>
+              Buka layar verifikasi
+            </Link>
+          </div>
+          {resendState === "failed" && resendMessage ? (
+            <p className="mt-2 text-sm">{resendMessage}</p>
+          ) : null}
+        </Alert>
+      ) : null}
 
       {/* Tanpa method, submit native memakai GET dan kata sandi berakhir di URL
           (history, log akses, Referer) saat React belum sempat hydrate. */}
