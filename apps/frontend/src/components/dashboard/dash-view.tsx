@@ -37,7 +37,7 @@ const HEADING = "font-display text-[22px] font-semibold";
 
 /** Dasbor is the overview screen. */
 export function DashView() {
-  const { user, drafts, tasks, agents, events, status, ready, workspaceID, decide, sendTask } =
+  const { user, drafts, pendingDrafts, tasks, agents, events, status, ready, workspaceID, decide, sendTask } =
     useWorkspace();
   const [instruction, setInstruction] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
@@ -64,7 +64,7 @@ export function DashView() {
   );
   const week = useMemo(() => buildWeek(tasks, now), [tasks, now]);
   const feed = useMemo(() => buildFeed(events, agents), [events, agents]);
-  const pending = useMemo(() => buildPending(drafts, agents), [drafts, agents]);
+  const pending = useMemo(() => buildPending(pendingDrafts, agents), [pendingDrafts, agents]);
 
   const initials = (user?.email ?? "A").slice(0, 1).toUpperCase();
 

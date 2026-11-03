@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { Task } from "@/lib/api";
-import { buildStats, buildWeek, expressionOf, STATE_EXPRESSION } from "./dashboard-view";
+import { buildStats, buildWeek, countPending, expressionOf, STATE_EXPRESSION } from "./dashboard-view";
 
 const now = new Date(2026, 9, 30, 12, 0, 0);
 
@@ -100,4 +100,14 @@ test("expressionOf keeps the face each known state already has", () => {
   assert.equal(expressionOf("waiting"), "kaget");
   assert.equal(expressionOf("idle"), "bosan");
   assert.equal(expressionOf("resting"), "capek");
+});
+
+test("countPending counts only drafts with pending status", () => {
+  const drafts = [
+    { status: "pending" },
+    { status: "approved" },
+    { status: "pending" },
+    { status: "rejected" },
+  ] as Parameters<typeof countPending>[0];
+  assert.equal(countPending(drafts), 2);
 });

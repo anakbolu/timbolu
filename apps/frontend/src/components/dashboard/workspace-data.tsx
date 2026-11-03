@@ -82,6 +82,9 @@ export type WorkspaceData = {
   agents: Agent[];
   conversations: ChatConversation[];
   drafts: Draft[];
+  /** pendingCount is the number of pending drafts, queried with status: "pending". */
+  pendingCount: number;
+  pendingDrafts: Draft[];
   tasks: Task[];
   policies: ApprovalPolicy[];
   hub: Hub;
@@ -150,6 +153,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [teams, setTeams] = useState<AgentTeam[]>([]);
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [pendingCount, setPendingCount] = useState<number>(0);
+  const [pendingDrafts, setPendingDrafts] = useState<Draft[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [policies, setPolicies] = useState<ApprovalPolicy[]>([]);
   const [hub, setHub] = useState<Hub>({
@@ -204,12 +209,21 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, [fail]);
 
   const loadDrafts = useCallback(async (id: string) => {
-    const result = await listDrafts(id, { limit: 50 });
+    // Drafts and pending drafts are queried separately so the pending badge
+    // reflects all pending drafts rather than just what fits in the general 50 draft page.
+    const [result, pendingResult] = await Promise.all([
+      listDrafts(id, { limit: 50 }),
+      listDrafts(id, { status: "pending", limit: 50 }),
+    ]);
     if (!result.ok) {
       fail(result.message);
       return;
     }
     setDrafts(result.data);
+    if (pendingResult.ok) {
+      setPendingCount(pendingResult.data.length);
+      setPendingDrafts(pendingResult.data);
+    }
   }, [fail]);
 
   const loadTasks = useCallback(async (id: string) => {
@@ -286,16 +300,21 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     }
     setWorkspaceID(id);
 
-    const [profile, people, pending, account] = await Promise.all([
+    const [profile, people, pending, pendingDrafts, account] = await Promise.all([
       currentWorkspace(id),
       listMembers(id),
       listDrafts(id, { limit: 50 }),
+      listDrafts(id, { status: "pending", limit: 50 }),
       currentUser(),
     ]);
 
     if (profile.ok) setWorkspace(profile.data);
     if (people.ok) setMembers(people.data);
     if (pending.ok) setDrafts(pending.data);
+    if (pendingDrafts.ok) {
+      setPendingCount(pendingDrafts.data.length);
+      setPendingDrafts(pendingDrafts.data);
+    }
     if (account.ok) setUser(account.data);
     else if (account.status === 401) {
       // The API rejected the token, so the session in hand is not one. Dropping it
@@ -516,6 +535,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       agents,
       conversations,
       drafts,
+      pendingCount,
+      pendingDrafts,
       tasks,
       policies,
       hub,
@@ -544,6 +565,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       agents,
       conversations,
       drafts,
+      pendingCount,
+      pendingDrafts,
       tasks,
       policies,
       hub,
