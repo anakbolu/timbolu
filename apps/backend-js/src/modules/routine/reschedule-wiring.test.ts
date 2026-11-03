@@ -6,11 +6,11 @@ import {
   KindDaily,
   makeRoutine,
   type Routine,
+  type Scope as RoutineScope,
 } from "./domain/routine.ts";
 import type {
   Engine,
   Repository as RoutineRepository,
-  Scope as RoutineScope,
 } from "./domain/service.ts";
 import { RoutineService } from "./service/service.ts";
 import type {
@@ -125,7 +125,7 @@ describe("Routine reschedule wiring", () => {
     const engine = new FakeEngine();
     const repo = new FakeRoutineRepository([r1, r2]);
     const routineService = new RoutineService({
-      repository: repo as RoutineRepository,
+      repository: repo as unknown as RoutineRepository,
       engine,
     });
 
@@ -151,7 +151,7 @@ describe("Routine reschedule wiring", () => {
     };
 
     const fakeService = new FakeWorkspaceService(initialWorkspace);
-    const handler = new WorkspaceHandler(fakeService as WorkspaceService, nopLogger);
+    const handler = new WorkspaceHandler(fakeService as unknown as WorkspaceService, nopLogger);
 
     const clockChanges: string[] = [];
     handler.withClockChange((workspaceId: string) => {
@@ -242,7 +242,7 @@ describe("Routine reschedule wiring", () => {
     const engine = new FakeEngine();
     const repository = new FakeRoutineRepository([r1, r2]);
     const routineService = new RoutineService({
-      repository: repository as RoutineRepository,
+      repository: repository as unknown as RoutineRepository,
       engine,
     });
 
@@ -260,7 +260,7 @@ describe("Routine reschedule wiring", () => {
     };
 
     const fakeService = new FakeWorkspaceService(initialWorkspace);
-    const handler = new WorkspaceHandler(fakeService as WorkspaceService, nopLogger);
+    const handler = new WorkspaceHandler(fakeService as unknown as WorkspaceService, nopLogger);
 
     wireClockChange(handler, routineService);
 
