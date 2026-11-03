@@ -41,7 +41,11 @@ import { routes as chatRoutes, managerRoutes as chatManager, streamRoutes as cha
 import { routes as integrationRoutes, managerRoutes as integrationManager, callbackRoutes as integrationCallback } from "../modules/integration/handler/handler.ts";
 import { routes as checklistRoutes } from "../modules/checklist/handler/handler.ts";
 import { routes as orderRoutes, managerRoutes as orderManager } from "../modules/order/handler/handler.ts";
-import { routes as billingRoutes, webhookRoutes as billingWebhook } from "../modules/billing/handler/handler.ts";
+import {
+  managerRoutes as billingManager,
+  routes as billingRoutes,
+  webhookRoutes as billingWebhook,
+} from "../modules/billing/handler/handler.ts";
 import { routes as approvalRoutes, managerRoutes as approvalManager } from "../modules/approval/handler/handler.ts";
 import { ownerRoutes as retentionOwner } from "../modules/retention/handler/handler.ts";
 import { routes as memoryRoutes } from "../modules/memory/handler/handler.ts";
@@ -209,6 +213,7 @@ export function registerRoutes(app: Hono<AppEnv>, c: Container): void {
     if (c.order) orderManager(g, c.order);
     if (c.approval) approvalManager(g, c.approval);
     if (c.integration) integrationManager(g, c.integration);
+    if (c.billing) billingManager(g, c.billing);
   }, requireUser(deps), requireTenant(deps), requireActiveSubscription(deps, prefix), requireRole("owner", "admin"));
 
   const owners = withGuards((g) => {
