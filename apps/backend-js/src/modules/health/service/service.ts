@@ -20,9 +20,12 @@ export interface ServicePort {
 }
 
 /**
- * The health service. Both dependencies are optional: a null dependency is
- * reported as not_configured instead of failing the probe, which keeps the API
- * usable while Postgres or Redis is down.
+ * The health service.
+ *
+ * The database is required for API operation: a missing or unreachable database
+ * marks readiness as unavailable. Redis remains optional (not_configured is acceptable,
+ * but an unreachable configured Redis marks readiness as unavailable). Realtime is
+ * informative only.
  */
 export class Service implements ServicePort {
   private readonly database: Repository | null;
@@ -57,16 +60,13 @@ export class Service implements ServicePort {
       await checkRealtime(this.realtime),
     ];
 
-    // Only database and redis decide the overall status. A dead live path must
-    // be visible, not fatal: restarting an API that still serves requests would
-    // turn a silent realtime outage into a restart loop. Realtime is reported
-    // so it can be read from /api/ready instead.
+    // Database is mandatory for the API process: not_configured or unavailable
+    // both drop overall status to unavailable.
+    // Redis is optional: not_configured is fine, but unavailable fails readiness.
+    // Realtime is informative only (visible in components, never fails readiness).
     const report: Report = { status: StatusOK, components };
-    for (const component of [database, redis]) {
-      if (component.status === StatusUnavailable) {
-        report.status = StatusUnavailable;
-        break;
-      }
+    if (database.status !== StatusOK || redis.status === StatusUnavailable) {
+      report.status = StatusUnavailable;
     }
     return report;
   }
