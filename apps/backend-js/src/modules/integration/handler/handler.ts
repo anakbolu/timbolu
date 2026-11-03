@@ -480,8 +480,6 @@ export function routes(group: Hono<AppEnv>, h: Handler): void {
   group.post("/integrations/:integrationID/refresh", h.refresh);
   group.get("/integrations/:app/connect", h.connect);
   group.get("/agents/:agentID/grants", h.grants);
-  group.put("/agents/:agentID/grants/:integrationID", h.setGrant);
-  group.delete("/agents/:agentID/grants/:integrationID", h.deleteGrant);
 
   // The MCP servers a workspace added. They are per workspace rather than per
   // connection, which is why they are their own set of routes.
@@ -489,6 +487,19 @@ export function routes(group: Hono<AppEnv>, h: Handler): void {
   group.post("/mcp/servers", h.addMCPServer);
   group.post("/mcp/servers/:serverID/refresh", h.refreshMCPServer);
   group.delete("/mcp/servers/:serverID", h.removeMCPServer);
+}
+
+/**
+ * Registers the grant writes, which belong to owner and admin only.
+ *
+ * They are not part of `routes()` on purpose: the tenant group carries no role
+ * guard, and a member who can set a grant can hand a Bolu the send tools — an
+ * action that cannot be taken back once the message is out. The container mounts
+ * this into the manager group, so the guard is the same one every other write uses.
+ */
+export function managerRoutes(group: Hono<AppEnv>, h: Handler): void {
+  group.put("/agents/:agentID/grants/:integrationID", h.setGrant);
+  group.delete("/agents/:agentID/grants/:integrationID", h.deleteGrant);
 }
 
 /**
