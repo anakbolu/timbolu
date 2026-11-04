@@ -16,6 +16,8 @@ import test from "node:test";
 import type { ReactElement, ReactNode } from "react";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+// `bun:test` ships no types for the Next build's `tsc` run; the module only exists under `bun test`.
+// @ts-ignore -- typed by bun's runner, not by the frontend's tsconfig
 import { mock } from "bun:test";
 import RootError from "./error";
 import WorkspaceError from "./(workspace)/error";
@@ -118,7 +120,7 @@ test("global-error.tsx renders root HTML document with Indonesian copy and funct
   assert.ok(retryBtn, 'GlobalError must have a button with "Coba lagi" text');
   assert.equal(typeof retryBtn.props.onClick, "function", "Coba lagi button must have an onClick handler");
 
-  retryBtn.props.onClick();
+  retryBtn.props.onClick!();
   assert.ok(
     resetCalled || retryCalled,
     "Clicking Coba lagi must invoke the recovery handler (reset or retry)"
@@ -159,7 +161,7 @@ test("(workspace)/error.tsx renders Indonesian copy, dashboard link, and invokes
   assert.ok(retryBtn, 'WorkspaceError must have a button with "Coba lagi" text');
   assert.equal(typeof retryBtn.props.onClick, "function", "Coba lagi button must have an onClick handler");
 
-  retryBtn.props.onClick();
+  retryBtn.props.onClick!();
   assert.ok(
     resetCalled || retryCalled,
     "Clicking Coba lagi must invoke the recovery handler (reset or retry)"
@@ -200,7 +202,7 @@ test("root error.tsx renders Indonesian copy, home link, and invokes recovery ha
   assert.ok(retryBtn, 'RootError must have a button with "Coba lagi" text');
   assert.equal(typeof retryBtn.props.onClick, "function", "Coba lagi button must have an onClick handler");
 
-  retryBtn.props.onClick();
+  retryBtn.props.onClick!();
   assert.ok(
     resetCalled || retryCalled,
     "Clicking Coba lagi must invoke the recovery handler (reset or retry)"
@@ -215,7 +217,7 @@ test("root error.tsx renders Indonesian copy, home link, and invokes recovery ha
     },
   });
   const fallbackBtn = findInTree(fallback.vnode, (el) => el.type === "button")[0];
-  fallbackBtn.props.onClick();
+  fallbackBtn.props.onClick!();
   assert.ok(fallbackResetCalled, "Clicking Coba lagi must invoke reset() when retry is omitted");
 });
 
