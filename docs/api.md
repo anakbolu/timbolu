@@ -1924,9 +1924,12 @@ pass.
 
 ### The way out is always open
 
-Past the period and past the grace window, the workspace is **read-only**: reads and exports
-keep working, and writes and new work are refused with `402 no_budget`. Nothing is deleted
-and nothing is hidden.
+Past the period and past the grace window, the workspace is **read-only**: reads keep
+working, and the usage report can still be downloaded as a CSV from the Pemakaian page
+(`apps/frontend/src/components/dashboard/usage-view.tsx`) because that CSV is built from
+rows the `/llm/usage/report` read already returns (`format=csv`). A workspace data export
+(conversations, tasks, drafts, memory) does **not** exist yet (#667). Writes and new work
+are refused with `402 no_budget`. Nothing is deleted and nothing is hidden.
 
 The billing endpoints are exempt from that guard, and the exemption is not a detail. A
 workspace that cannot pay would be read-only forever if the one call that fixes it were
