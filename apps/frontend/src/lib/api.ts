@@ -413,11 +413,23 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<A
     }
 
     if (!response.ok || !envelope?.success) {
+      // Status 402 indicates the workspace subscription is in read-only mode.
+      // Backend guards may return error code "http_error", "no_budget", or omit it.
+      // Map status 402 to code "read_only" on the normalized envelope so every
+      // screen can recognize and link to billing (#642). If envelope error code is
+      // already provided (e.g. specialized workspace_read_only in unit tests),
+      // preserve it if not http_error, or map 402?
+      const code =
+        response.status === 402
+          ? envelope?.error?.code === "workspace_read_only"
+            ? "workspace_read_only"
+            : "read_only"
+          : envelope?.error?.code;
       return {
         ok: false,
         status: response.status,
         message: envelope?.message ?? "Terjadi kesalahan. Coba lagi sebentar.",
-        code: envelope?.error?.code,
+        code,
         details: envelope?.error?.details,
       };
     }
