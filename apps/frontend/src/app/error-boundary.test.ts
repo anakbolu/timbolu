@@ -17,7 +17,7 @@ import type { ReactElement, ReactNode } from "react";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 // `bun:test` ships no types for the Next build's `tsc` run; the module only exists under `bun test`.
-// @ts-ignore -- typed by bun's runner, not by the frontend's tsconfig
+// @ts-expect-error -- bun:test is typed by bun's test runner, not by frontend's tsconfig
 import { mock } from "bun:test";
 import RootError from "./error";
 import WorkspaceError from "./(workspace)/error";
