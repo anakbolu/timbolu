@@ -16,9 +16,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { Task } from "@/lib/api";
+import type { Agent, Draft, Task } from "@/lib/api";
 import {
   applySectionResult,
+  buildPending,
   buildStats,
   buildWeek,
   canOpenWorkspaceStream,
@@ -28,6 +29,7 @@ import {
   STATE_EXPRESSION,
   streamRetryDelayMs,
   summarizeSectionErrors,
+  taskState,
 } from "./dashboard-view";
 
 const now = new Date(2026, 9, 30, 12, 0, 0);
@@ -235,4 +237,53 @@ test("streamRetryDelayMs backs off exponentially and caps at 30000ms", () => {
   assert.equal(streamRetryDelayMs(5), 30_000);
   assert.equal(streamRetryDelayMs(6), 30_000);
   assert.equal(streamRetryDelayMs(100), 30_000);
+});
+
+test("taskState reports a running task with stuck heartbeat as Terhenti rather than Berjalan", () => {
+  const state = taskState({ status: "running", health: "stuck" });
+  assert.equal(state.label, "Terhenti");
+  assert.notEqual(state.label, "Berjalan");
+  assert.equal(state.live, true);
+});
+
+test("buildPending preserves the full draft rupiah amount without scaling", () => {
+  const agents: Agent[] = [
+    {
+      id: "agent-1",
+      team_id: "team-1",
+      team_name: "Operasional",
+      team_kind: "default",
+      name: "Oren",
+      role: "Kasir",
+      persona: "Teliti",
+      tone: "Ramah",
+      shape: "round",
+      color: "#F97316",
+      status: "active",
+      display_status: "waiting",
+      position: 0,
+      tools: [],
+      default_model: {},
+      memory_extraction_enabled: true,
+      created_at: new Date(2026, 9, 30, 8, 0, 0).toISOString(),
+    },
+  ];
+  const drafts: Draft[] = [
+    {
+      draft_id: "draft-1",
+      task_id: "task-1",
+      agent_id: "agent-1",
+      action_kind: "kirim_invoice",
+      title: "Tagihan Oktober PT Maju",
+      status: "pending",
+      revision: 1,
+      payload: { amount: 1_124_000 },
+      created_at: new Date(2026, 9, 30, 11, 0, 0).toISOString(),
+    },
+  ];
+
+  const rows = buildPending(drafts, agents);
+  assert.equal(rows.length, 1);
+  assert.match(rows[0].meta, /Rp 1\.124\.000\b/);
+  assert.doesNotMatch(rows[0].meta, /Rp 1\.124(?!\.)/);
 });
