@@ -134,6 +134,10 @@ export class Service implements ServicePort {
   async register(req: RegisterRequest): Promise<User> {
     const email = normalizeEmail(req.email);
 
+    // Throttle mail dispatch before computing password hash or persisting the user.
+    // Register uses the mail throttle because registration sends a verification email.
+    await this.allowMailAttempt(email);
+
     try {
       await this.deps.passwords.validate(req.password);
     } catch (err) {
@@ -185,6 +189,11 @@ export class Service implements ServicePort {
       // never depends on what the caller typed.
       return;
     }
+
+    // Rate limit per email and per IP before looking up the user, issuing
+    // tokens, or sending mail. Throttle checks request rate only and does not
+    // leak account existence.
+    await this.allowMailAttempt(normalized);
 
     let user: User;
     try {
@@ -312,6 +321,10 @@ export class Service implements ServicePort {
     } catch {
       return;
     }
+
+    // Rate limit per email and per IP before checking existence, creating a
+    // reset token, or sending mail.
+    await this.allowMailAttempt(normalized);
 
     let user: User;
     try {
@@ -534,6 +547,45 @@ export class Service implements ServicePort {
   private async resetLoginAttempts(email: string): Promise<void> {
     if (!this.deps.throttle) return;
     await this.deps.throttle.reset("auth:login:email:" + email).catch(() => undefined);
+  }
+  /**
+   * Spends a token from the mail attempt buckets (per-email and optionally per-IP).
+   *
+   * Transactional mail (register, resend-verification, forgot-password) carries
+   * a real delivery cost: SMTP quota, spam score/reputation, and token storage.
+   * Therefore, mail attempts use a tighter bucket than login attempts:
+   * capacity = max(1, floor(loginThrottleCapacity / 2)), and
+   * refill = min(loginThrottleRefill, 1/60) so bursts are absorbed but repeated
+   * requests refill slowly (at most one email per minute).
+   *
+   * Degrades to "no throttling" if throttle is not configured or if Redis throws,
+   * matching allowLoginAttempt failure semantics.
+   */
+  private async allowMailAttempt(email: string, ip: string = ""): Promise<void> {
+    if (!this.deps.throttle) return;
+
+    const keys = ["auth:mail:email:" + email];
+    if (ip.trim() !== "") keys.push("auth:mail:ip:" + ip);
+
+    // Derived from existing login throttle config: smaller capacity and slower
+    // refill because sending a physical transactional email has higher cost
+    // and impact on domain sender reputation than evaluating a password.
+    const capacity = Math.max(1, Math.floor(this.deps.config.loginThrottleCapacity / 2));
+    const refill = Math.min(this.deps.config.loginThrottleRefill, 1 / 60);
+
+    for (const key of keys) {
+      let result;
+      try {
+        result = await this.deps.throttle.allow(key, capacity, refill);
+      } catch {
+        // A Redis failure degrades to "no throttling" rather than blocking
+        // users from signing up or resetting their password.
+        return;
+      }
+      if (!result.allowed) {
+        throw wrapAuthError(ErrTooManyAttempts, `retry in ${goDuration(result.retryAfter)}`);
+      }
+    }
   }
 
   /** Issues a one-time link and emails it. */
