@@ -152,13 +152,13 @@ procedure.
 
 | Endpoint | Auth | Body | Success | Errors |
 | --- | --- | --- | --- | --- |
-| `POST /auth/register` | — | `{email, password}` | `201` account | `400` invalid input / weak password, `409` email taken |
+| `POST /auth/register` | — | `{email, password}` | `201` account | `400` invalid input / weak password, `409` email taken, `429` too many attempts |
 | `POST /auth/verify-email` | — | `{token}` | `200` account | `400` token invalid, expired, or used |
-| `POST /auth/resend-verification` | — | `{email}` | `200` always | — |
+| `POST /auth/resend-verification` | — | `{email}` | `200` always | `429` too many attempts |
 | `POST /auth/login` | — | `{email, password}` | `200` session | `401` bad credentials, `429` too many attempts |
 | `POST /auth/refresh` | cookie, or `{token}` in the body | `{token}` only for a native client | `200` session, plus `refresh_token` on the body path | `400` token invalid or revoked |
 | `POST /auth/logout` | cookie | — | `200` always | — |
-| `POST /auth/password/forgot` | — | `{email}` | `200` always | — |
+| `POST /auth/password/forgot` | — | `{email}` | `200` always | `429` too many attempts |
 | `POST /auth/password/reset` | — | `{token, password}` | `200` | `400` token invalid / weak password |
 | `GET /auth/google/start` | — | — | `302` to Google | `503` not configured |
 | `GET /auth/google/callback` | — | `?code&state` | `302` to `{FRONTEND_URL}/login\|onboarding` | redirects with `?google_error=1` |
@@ -197,6 +197,17 @@ presented token is revoked, so only the rotated token works next time.
 Two endpoints answer identically whether or not the address exists
 (`resend-verification`, `password/forgot`), so they cannot be used to discover
 accounts.
+
+The endpoints that send email (`register`, `resend-verification`, `password/forgot`) use a
+tighter throttle than `login` because transactional mail carries delivery and reputation cost.
+Where `login` uses `loginThrottleCapacity` (default `5`) and `loginThrottleRefill` (default
+`0.2` tokens/second, or 1 attempt per 5 seconds) keyed per email (`auth:login:email:<email>`)
+and per IP (`auth:login:ip:<ip>`), the mail throttle halves the capacity
+(`max(1, floor(loginThrottleCapacity / 2))`, default `2`) and caps refill at 1 token per 60
+seconds (`min(loginThrottleRefill, 1/60)`), keyed per email address (`auth:mail:email:<email>`).
+That check runs before looking up the user or issuing a token; while under the rate limit,
+`resend-verification` and `password/forgot` still answer `200` for unregistered addresses so
+neither endpoint can be used to enumerate accounts.
 
 **Email verification is a deployment switch.** With `AUTH_REQUIRE_EMAIL_VERIFICATION=true` (the
 default) `register` creates a pending account and emails a link; `register` returns
@@ -1806,7 +1817,7 @@ level deep, so a screen that shows progress reads it rather than counting for it
 | `cannot_remove_yourself` | 409 | Use leave instead |
 | `invitation_pending` | 409 | An invitation for this address is already pending |
 | `validation_failed` | 422 | A write fails the module's own validation: a device `platform` that is not `ios`/`android`, or a device `token` that is empty or longer than 512 characters |
-| `too_many_attempts` | 429 | Login throttle |
+| `too_many_attempts` | 429 | Login or auth email (`register`, `resend-verification`, `password/forgot`) throttle |
 | `auth_not_configured` / `workspace_not_configured` | 503 | Module not wired (no database) |
 | `google_not_configured` | 503 | Google client not configured |
 | `agent_not_found` | 404 | No such Bolu in this workspace |
