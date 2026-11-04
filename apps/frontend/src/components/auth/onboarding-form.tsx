@@ -345,8 +345,15 @@ export function InviteAccept() {
   const router = useRouter();
   const token = useSearchParams().get("token");
 
-  const [status, setStatus] = useState<"checking" | "ready" | "joining" | "failed">("checking");
+  const [status, setStatus] = useState<"checking" | "unauthenticated" | "ready" | "joining" | "failed">("checking");
   const [message, setMessage] = useState<string | null>(null);
+
+  // When a visitor opens an invitation link before signing in, the login form
+  // needs the full `/join?token=…` path in `next` so `safeNextPath` brings them
+  // right back here instead of dropping them on the dashboard.
+  const loginHref = token
+    ? `/login?next=${encodeURIComponent(`/join?token=${encodeURIComponent(token)}`)}`
+    : "/login";
 
   const join = useCallback(async () => {
     setStatus("joining");
@@ -371,11 +378,13 @@ export function InviteAccept() {
       }
 
       // Accepting requires a signed-in account whose email matches the
-      // invitation, so the session is restored first.
+      // invitation, so the session is restored first. A missing session is not
+      // a broken invitation: send the visitor through login with this URL as
+      // `next` rather than telling them the link itself failed.
       const session = await refreshSession();
       if (!session.ok) {
-        setStatus("failed");
-        setMessage("Masuk dulu dengan email yang diundang, lalu buka tautan ini lagi.");
+        setStatus("unauthenticated");
+        setMessage("Masuk dulu dengan email yang diundang untuk menerima undangan ini.");
         return;
       }
 
@@ -394,11 +403,21 @@ export function InviteAccept() {
   return (
     <AuthShell title="Undangan bergabung" subtitle="Kami siapkan aksesmu ke workspace Bolu.">
       {status === "checking" ? <Alert tone="info">Memeriksa undangan…</Alert> : null}
+      {status === "unauthenticated" ? (
+        <>
+          <Alert tone="info">
+            {message ?? "Masuk dulu dengan email yang diundang untuk menerima undangan ini."}
+          </Alert>
+          <p className="text-sm text-bolu-muted">
+            Silakan <Link href={loginHref}>masuk dengan email yang diundang</Link> untuk melanjutkan ke undangan ini.
+          </p>
+        </>
+      ) : null}
       {status === "failed" ? (
         <>
           <Alert tone="error">{message ?? "Undangan tidak bisa dipakai."}</Alert>
           <p className="text-sm text-bolu-muted">
-            Minta pengundang mengirim undangan baru, atau <Link href="/login">masuk</Link> dengan email yang diundang.
+            Minta pengundang mengirim undangan baru, atau pastikan kamu masuk dengan email yang sesuai undangan.
           </p>
         </>
       ) : null}
