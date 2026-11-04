@@ -771,14 +771,15 @@ export async function newContainer(
     });
     task = new TaskHandler(taskService, log);
 
+    const whatsappRepo = new WhatsAppRepository(db);
     whatsapp = new WhatsAppHandler(
       new WhatsAppService({
-        repository: new WhatsAppRepository(db),
-        sessions: { forget: async () => undefined } as any,
-        storage,
+        repository: whatsappRepo,
+        sessions: whatsappRepo,
+        media: storage,
         hourlyLimit: config.whatsApp.hourlyLimit,
         logger: log,
-      } as any),
+      }),
       log,
     );
   }

@@ -26,6 +26,7 @@ import type { Database, Scope, Sql, Tx } from "../platform/database/index.ts";
 import { loadFromFile } from "../platform/config/init.ts";
 import { PostgresRepository as WorkspaceRepository } from "../modules/workspace/repository/postgres.ts";
 import { routes as deviceRoutes } from "../modules/device/handler/handler.ts";
+import { routes as whatsappRoutes } from "../modules/whatsapp/handler/handler.ts";
 import { AsyncSender } from "../platform/mail/async.ts";
 import { newContainer } from "./container.ts";
 
@@ -166,6 +167,24 @@ const deviceRow = {
   created_at: new Date("2026-10-30T09:00:00Z"),
 };
 
+const whatsappNumberId = "77777777-7777-7777-7777-777777777777";
+const whatsappNumberRow = {
+  id: whatsappNumberId,
+  workspace_id: workspaceId,
+  integration_id: null,
+  phone: "628123456789",
+  label: "WhatsApp ••••6789",
+  agent_id: "88888888-8888-8888-8888-888888888888",
+  status: "connected",
+  status_reason: "",
+  tos_accepted_at: new Date("2026-10-30T09:00:00Z"),
+  hourly_limit: 40,
+  connected_at: new Date("2026-10-30T09:00:00Z"),
+  last_seen_at: new Date("2026-10-30T09:00:00Z"),
+  created_at: new Date("2026-10-30T09:00:00Z"),
+  updated_at: new Date("2026-10-30T09:00:00Z"),
+};
+
 /** The statements onboarding and the trial issue, answered in order. */
 function answers(text: string): unknown[] {
   if (text.includes("FROM workspaces") && text.includes("owner_user_id")) return [];
@@ -174,6 +193,10 @@ function answers(text: string): unknown[] {
   if (text.startsWith("FROM plans") || text.includes("FROM plans")) return [trialPlanRow];
   if (text.startsWith("INSERT INTO subscriptions")) return [trialSubscriptionRow];
   if (text.startsWith("INSERT INTO device_tokens")) return [deviceRow];
+  if (text.startsWith("SELECT * FROM whatsapp_numbers WHERE id =")) return [whatsappNumberRow];
+  if (text.startsWith("UPDATE whatsapp_numbers SET status =")) {
+    return [{ ...whatsappNumberRow, status: "disconnected", status_reason: "dinonaktifkan" }];
+  }
 
   // The erasure path's own statements. `rows` on the count query is the number
   // the record keeps, and `count` on the delete is what postgres.js puts on a
@@ -293,6 +316,98 @@ describe("device wiring", () => {
     expect(insert).toBeDefined();
     expect(insert?.values[0]).toBe(userId);
     expect(insert?.values[3]).toBe("ExponentPushToken[abc123]");
+  });
+});
+
+describe("whatsapp wiring", () => {
+  test("the container's handler unlinks a number and forgets its session without 500", async () => {
+    // Issue #602: the container wired `sessions: { forget: async () => undefined } as any`
+    // instead of a `SessionForgetter` with `forgetSession(scope, numberID)`, so every
+    // `DELETE /api/whatsapp/numbers/:numberID` threw `this.deps.sessions.forgetSession is not a function`
+    // and answered 500 even when the number existed and no gateway was needed.
+    const config = loadFromFile("");
+    config.logging.level = "silent";
+    config.database.url = "";
+    config.redis.url = "";
+    config.temporal.hostPort = "";
+    config.storage.localRoot = "";
+    config.kms.masterKey = "";
+    config.llm.secretEncryptionKey = "";
+
+    const db = new FakeDatabase(answers);
+    const container = await newContainer({ config, db: db.database });
+
+    const handler = container.whatsapp;
+    if (!handler) throw new Error("the container built no whatsapp handler");
+
+    const app = new Hono<AppEnv>();
+    app.use("*", async (c, next) => {
+      c.set("userId", userId);
+      c.set("scope", { userId, workspaceId });
+      await next();
+    });
+    whatsappRoutes(app, handler);
+
+    const res = await app.request(`/whatsapp/numbers/${whatsappNumberId}`, {
+      method: "DELETE",
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      success: boolean;
+      data?: { id: string; status: string; reason: string; connected: boolean };
+    };
+    expect(body.success).toBe(true);
+    expect(body.data?.id).toBe(whatsappNumberId);
+    expect(body.data?.status).toBe("disconnected");
+    expect(body.data?.reason).toBe("dinonaktifkan");
+    expect(body.data?.connected).toBe(false);
+
+    const forgotSession = db.tx.statements.find((statement) =>
+      statement.text.startsWith("DELETE FROM whatsapp_sessions"),
+    );
+    expect(forgotSession).toBeDefined();
+    expect(forgotSession?.values).toEqual([whatsappNumberId, workspaceId]);
+
+    const disabledDirectory = db.tx.statements.find((statement) =>
+      statement.text.startsWith("INSERT INTO whatsapp_directory"),
+    );
+    expect(disabledDirectory).toBeDefined();
+    expect(disabledDirectory?.values).toEqual([whatsappNumberId, workspaceId, false]);
+  });
+
+  test("the container's handler answers 404 when unlinking a number that does not exist", async () => {
+    const config = loadFromFile("");
+    config.logging.level = "silent";
+    config.database.url = "";
+    config.redis.url = "";
+    config.temporal.hostPort = "";
+    config.storage.localRoot = "";
+    config.kms.masterKey = "";
+    config.llm.secretEncryptionKey = "";
+
+    const db = new FakeDatabase(() => []);
+    const container = await newContainer({ config, db: db.database });
+
+    const handler = container.whatsapp;
+    if (!handler) throw new Error("the container built no whatsapp handler");
+
+    const app = new Hono<AppEnv>();
+    app.use("*", async (c, next) => {
+      c.set("userId", userId);
+      c.set("scope", { userId, workspaceId });
+      await next();
+    });
+    whatsappRoutes(app, handler);
+
+    const res = await app.request(`/whatsapp/numbers/${whatsappNumberId}`, {
+      method: "DELETE",
+    });
+
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { success: boolean; error?: { code: string } };
+    expect(body.success).toBe(false);
+    expect(body.error?.code).toBe("whatsapp_not_found");
   });
 });
 

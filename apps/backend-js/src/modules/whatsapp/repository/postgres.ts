@@ -28,6 +28,7 @@ import {
   type Outbox,
   type OutboxFilter,
   type Scope,
+  type SessionForgetter,
   type Store,
 } from "../domain/whatsapp.ts";
 import {
@@ -82,7 +83,7 @@ function limitOr(value: number): number {
   return value;
 }
 
-export class PostgresRepository implements Store {
+export class PostgresRepository implements Store, SessionForgetter {
   constructor(private readonly db: Database) {}
 
   // ---------------------------------------------------------------- numbers
