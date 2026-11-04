@@ -33,6 +33,7 @@ import {
   listBillingPlans,
   payInvoice,
 } from "@/lib/api";
+import { formatRupiah, formatTokens } from "@/lib/format";
 import { formatBusinessDay } from "@/lib/jakarta-date";
 
 const CARD = "rounded-md border border-bolu-border bg-bolu-surface";
@@ -78,20 +79,6 @@ const KIND_LABEL: Record<string, string> = {
  * tahu bahwa tagihan yang lebih lama tidak ikut ditampilkan di layar ini.
  */
 const INVOICE_HISTORY_LIMIT = 50;
-
-/** formatRupiah renders the rupiah the API reports. */
-function formatRupiah(amount: number): string {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
-
-/** formatTokens renders a token count with thousands separators. */
-function formatTokens(tokens: number): string {
-  return new Intl.NumberFormat("id-ID").format(tokens);
-}
 
 /**
  * formatDay formats a billing period or due date into Indonesian business date format

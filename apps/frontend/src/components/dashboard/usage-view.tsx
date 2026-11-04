@@ -38,6 +38,7 @@ import {
   usageReport,
   usageReportCSV,
 } from "@/lib/api";
+import { formatRupiahCost, formatTokens } from "@/lib/format";
 
 import { useWorkspace } from "./workspace-data";
 
@@ -67,20 +68,6 @@ const ATTENTION: Record<AttentionTask["attention"], { label: string; tone: strin
     note: "draf sudah siap dan menunggu disetujui",
   },
 };
-
-/** formatRupiah renders rupiah the way a reader expects it. */
-function formatRupiah(amount: number): string {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: amount < 1000 ? 2 : 0,
-  }).format(amount);
-}
-
-/** formatTokens renders a token count with thousands separators. */
-function formatTokens(tokens: number): string {
-  return new Intl.NumberFormat("id-ID").format(tokens);
-}
 
 /** formatMoment renders an instant in the reader's own locale and zone. */
 function formatMoment(value: string): string {
@@ -242,7 +229,7 @@ export function UsageView() {
             <Stat label="Token masuk" value={formatTokens(report.totals.input_tokens)} />
             <Stat label="Token keluar" value={formatTokens(report.totals.output_tokens)} />
             <Stat label="Total token" value={formatTokens(report.totals.total_tokens)} />
-            <Stat label="Biaya" value={formatRupiah(report.totals.cost_idr)} />
+            <Stat label="Biaya" value={formatRupiahCost(report.totals.cost_idr)} />
             {report.totals.cache_read_tokens > 0 ? (
               <Stat label="Cache dibaca" value={formatTokens(report.totals.cache_read_tokens)} />
             ) : null}
@@ -258,7 +245,7 @@ export function UsageView() {
                   // calls reports a few micro-rupiah per period, and "Rp 0" in a caption reads
                   // as a bug rather than as a figure.
                   unrouted.cost >= 1_000_000
-                    ? `${formatRupiah(unrouted.cost / 1_000_000)} untuk memori dan embedding, yang tidak dimiliki satu tugas pun`
+                    ? `${formatRupiahCost(unrouted.cost / 1_000_000)} untuk memori dan embedding, yang tidak dimiliki satu tugas pun`
                     : "memori dan embedding, yang tidak dimiliki satu tugas pun"
                 }
               />
@@ -295,7 +282,7 @@ export function UsageView() {
                       </td>
                       <td className="px-3 py-2 text-right">{formatTokens(row.calls)}</td>
                       <td className="px-3 py-2 text-right">{formatTokens(row.total_tokens)}</td>
-                      <td className="px-6 py-2 text-right">{formatRupiah(row.cost_idr)}</td>
+                      <td className="px-6 py-2 text-right">{formatRupiahCost(row.cost_idr)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -331,7 +318,7 @@ export function UsageView() {
                         ) : null}
                       </td>
                       <td className="px-3 py-2 text-right">{formatTokens(row.total_tokens)}</td>
-                      <td className="px-6 py-2 text-right">{formatRupiah(row.cost_idr)}</td>
+                      <td className="px-6 py-2 text-right">{formatRupiahCost(row.cost_idr)}</td>
                     </tr>
                   ))}
                 </tbody>
