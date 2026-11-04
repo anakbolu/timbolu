@@ -13,12 +13,13 @@ import { describe, expect, test } from "bun:test";
 import {
   ErrInvalidCredentials,
   ErrTooManyAttempts,
+  ErrUserNotFound,
   isAuthError,
   type Repository,
   type SessionRecord,
   type User,
 } from "../domain/auth.ts";
-import type { LoginThrottle, Passwords, TokenIssuer, Tokens } from "../domain/ports.ts";
+import type { LoginThrottle, Mailer, Passwords, TokenIssuer, Tokens } from "../domain/ports.ts";
 import { Service, type Config, type Deps } from "./service.ts";
 
 /** In-memory bucket counter implementing LoginThrottle. */
@@ -45,6 +46,15 @@ class MemoryThrottle implements LoginThrottle {
   }
 }
 
+/** In-memory mailer tracking sent messages. */
+class MemoryMailer implements Mailer {
+  readonly sent: Array<{ to: string; subject: string; body: string }> = [];
+
+  async send(to: string, subject: string, body: string): Promise<void> {
+    this.sent.push({ to, subject, body });
+  }
+}
+
 /** Minimal in-memory auth repository for login flow tests. */
 class MemoryRepository implements Repository {
   private readonly usersByEmail = new Map<string, User>();
@@ -58,7 +68,7 @@ class MemoryRepository implements Repository {
 
   async userByEmail(email: string): Promise<User> {
     const user = this.usersByEmail.get(email);
-    if (!user) throw new Error("user not found");
+    if (!user) throw ErrUserNotFound;
     return user;
   }
 
@@ -125,24 +135,35 @@ class MemoryRepository implements Repository {
   async revokeSessionsForUser(): Promise<number> {
     throw new Error("not implemented");
   }
-  async createEmailVerificationToken(): Promise<void> {
-    throw new Error("not implemented");
-  }
+  async createEmailVerificationToken(): Promise<void> {}
   async consumeEmailVerificationToken(): Promise<string> {
     throw new Error("not implemented");
   }
-  async createPasswordResetToken(): Promise<void> {
-    throw new Error("not implemented");
-  }
+  async createPasswordResetToken(): Promise<void> {}
   async consumePasswordResetToken(): Promise<string> {
     throw new Error("not implemented");
   }
 }
 
-function makeHarness(capacity: number = 5) {
+function makeHarness<
+  TThrottle extends MemoryThrottle | null = MemoryThrottle,
+  TMailer extends MemoryMailer | null = MemoryMailer,
+>(
+  capacity: number = 5,
+  options: {
+    throttle?: TThrottle;
+    mailer?: TMailer;
+    requireEmailVerification?: boolean;
+  } = {},
+): {
+  service: Service;
+  repository: MemoryRepository;
+  throttle: TThrottle;
+  mailer: TMailer;
+} {
   const repository = new MemoryRepository();
-  const throttle = new MemoryThrottle();
-
+  const throttle = (options.throttle !== undefined ? options.throttle : new MemoryThrottle()) as TThrottle;
+  const mailer = (options.mailer !== undefined ? options.mailer : new MemoryMailer()) as TMailer;
   const dummyIssuer: TokenIssuer = {
     async issue(userID: string, sessionID: string) {
       return { token: `access-${userID}-${sessionID}`, expiresAt: new Date(Date.now() + 3600000) };
@@ -175,14 +196,14 @@ function makeHarness(capacity: number = 5) {
     frontendURL: "http://localhost:3000",
     loginThrottleCapacity: capacity,
     loginThrottleRefill: 0.2,
-    requireEmailVerification: false,
+    requireEmailVerification: options.requireEmailVerification ?? false,
   };
 
   const deps: Deps = {
     repository,
     issuer: dummyIssuer,
     states: null,
-    mailer: null,
+    mailer,
     throttle,
     google: null,
     passwords: dummyPasswords,
@@ -191,7 +212,7 @@ function makeHarness(capacity: number = 5) {
   };
 
   const service = new Service(deps);
-  return { service, repository, throttle };
+  return { service, repository, throttle, mailer };
 }
 
 describe("login throttling per-IP and per-email (#713)", () => {
@@ -317,5 +338,128 @@ describe("login throttling per-IP and per-email (#713)", () => {
     // Per-email bucket was reset.
     expect(throttle.resets).toContain(`auth:login:email:${userEmail}`);
     expect(throttle.counts.get(`auth:login:email:${userEmail}`)).toBeUndefined();
+  });
+});
+
+describe("email throttling (#616)", () => {
+  test("resendVerification: calls exceeding capacity are rejected with too_many_attempts and send() is not called", async () => {
+    // capacity 6 -> mailThrottleCapacity = floor(6 / 2) = 3
+    const { service, repository, throttle, mailer } = makeHarness(6, {
+      requireEmailVerification: true,
+    });
+    const email = "verify.user@example.com";
+    const user: User = {
+      id: "verify-user-1",
+      email,
+      emailVerified: false,
+      hasGoogle: false,
+      hasPassword: true,
+      onboarded: true,
+      role: "user",
+      createdAt: new Date(),
+    };
+    repository.addUser(user, "hash:password");
+
+    // 3 calls within capacity should succeed and send emails
+    for (let i = 0; i < 3; i++) {
+      await service.resendVerification(email);
+    }
+    expect(mailer.sent.length).toBe(3);
+    expect(throttle?.counts.get(`auth:mail:email:${email}`)).toBe(3);
+
+    // 4th call (N+1) exceeds capacity and MUST be rejected with ErrTooManyAttempts
+    let caughtErr: unknown = null;
+    try {
+      await service.resendVerification(email);
+    } catch (err) {
+      caughtErr = err;
+    }
+    expect(isAuthError(caughtErr, ErrTooManyAttempts)).toBe(true);
+    expect((caughtErr as Error).message).toContain("auth: too many attempts");
+
+    // mailer.send() must NOT have been called for the rejected call
+    expect(mailer.sent.length).toBe(3);
+  });
+
+  test("requestPasswordReset: calls exceeding capacity are rejected with too_many_attempts and send() is not called", async () => {
+    // capacity 6 -> mailThrottleCapacity = floor(6 / 2) = 3
+    const { service, repository, throttle, mailer } = makeHarness(6);
+    const email = "reset.user@example.com";
+    const user: User = {
+      id: "reset-user-1",
+      email,
+      emailVerified: true,
+      hasGoogle: false,
+      hasPassword: true,
+      onboarded: true,
+      role: "user",
+      createdAt: new Date(),
+    };
+    repository.addUser(user, "hash:password");
+
+    // 3 calls within capacity should succeed and send emails
+    for (let i = 0; i < 3; i++) {
+      await service.requestPasswordReset(email);
+    }
+    expect(mailer.sent.length).toBe(3);
+    expect(throttle?.counts.get(`auth:mail:email:${email}`)).toBe(3);
+
+    // 4th call (N+1) exceeds capacity and MUST be rejected with ErrTooManyAttempts
+    let caughtErr: unknown = null;
+    try {
+      await service.requestPasswordReset(email);
+    } catch (err) {
+      caughtErr = err;
+    }
+    expect(isAuthError(caughtErr, ErrTooManyAttempts)).toBe(true);
+    expect((caughtErr as Error).message).toContain("auth: too many attempts");
+
+    // mailer.send() must NOT have been called for the rejected call
+    expect(mailer.sent.length).toBe(3);
+  });
+
+  test("unregistered email returns success (does not throw) while under the rate limit", async () => {
+    // capacity 6 -> mailThrottleCapacity = 3
+    const { service, throttle, mailer } = makeHarness(6, {
+      requireEmailVerification: true,
+    });
+    const unknownEmail = "nonexistent@example.com";
+
+    // Under capacity, resendVerification and requestPasswordReset must not throw
+    await expect(service.resendVerification(unknownEmail)).resolves.toBeUndefined();
+    await expect(service.requestPasswordReset(unknownEmail)).resolves.toBeUndefined();
+
+    // Neither sends any email because user does not exist
+    expect(mailer.sent.length).toBe(0);
+
+    // Both attempts were tracked in throttle
+    expect(throttle?.counts.get(`auth:mail:email:${unknownEmail}`)).toBe(2);
+  });
+
+  test("without throttle (throttle: null), requests are never blocked", async () => {
+    const { service, repository, mailer } = makeHarness(2, {
+      throttle: null,
+      requireEmailVerification: true,
+    });
+    const email = "unlimited@example.com";
+    const user: User = {
+      id: "unlimited-user-1",
+      email,
+      emailVerified: false,
+      hasGoogle: false,
+      hasPassword: true,
+      onboarded: true,
+      role: "user",
+      createdAt: new Date(),
+    };
+    repository.addUser(user, "hash:password");
+
+    // Even after many calls, no error is thrown
+    for (let i = 0; i < 10; i++) {
+      await expect(service.resendVerification(email)).resolves.toBeUndefined();
+      await expect(service.requestPasswordReset(email)).resolves.toBeUndefined();
+    }
+    // 10 resendVerification + 10 requestPasswordReset = 20 emails
+    expect(mailer.sent.length).toBe(20);
   });
 });
